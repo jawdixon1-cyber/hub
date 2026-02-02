@@ -5,10 +5,8 @@ import {
   Calendar,
   ClipboardList,
   CalendarOff,
-  Pencil,
   Megaphone,
 } from 'lucide-react';
-import ChecklistEditorModal from '../ChecklistEditorModal';
 import AnnouncementEditorModal from '../AnnouncementEditorModal';
 import ChecklistTracker from '../ChecklistTracker';
 import { useAppStore } from '../../store/AppStoreContext';
@@ -25,16 +23,11 @@ export default function ManagementSection() {
   const permissions = useAppStore((s) => s.permissions);
   const timeOffRequests = useAppStore((s) => s.timeOffRequests);
   const teamChecklist = useAppStore((s) => s.teamChecklist);
-  const setTeamChecklist = useAppStore((s) => s.setTeamChecklist);
   const teamEndChecklist = useAppStore((s) => s.teamEndChecklist);
-  const setTeamEndChecklist = useAppStore((s) => s.setTeamEndChecklist);
   const ownerStartChecklist = useAppStore((s) => s.ownerStartChecklist);
-  const setOwnerStartChecklist = useAppStore((s) => s.setOwnerStartChecklist);
   const ownerEndChecklist = useAppStore((s) => s.ownerEndChecklist);
-  const setOwnerEndChecklist = useAppStore((s) => s.setOwnerEndChecklist);
   const checklistLog = useAppStore((s) => s.checklistLog);
 
-  const [showChecklistEditor, setShowChecklistEditor] = useState(false);
   const [showAnnouncementEditor, setShowAnnouncementEditor] = useState(false);
 
   const teamEmails = Object.keys(permissions || {});
@@ -100,13 +93,6 @@ export default function ManagementSection() {
         </button>
         <div className="w-px h-6 bg-border-strong mx-12 hidden sm:block" />
         <button
-          onClick={() => setShowChecklistEditor(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border-default bg-card text-secondary text-sm font-semibold hover:bg-surface hover:border-border-strong transition-colors cursor-pointer shadow-sm"
-        >
-          <Pencil size={16} className="text-brand-text" />
-          Edit Checklists
-        </button>
-        <button
           onClick={() => setShowAnnouncementEditor(true)}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border-default bg-card text-secondary text-sm font-semibold hover:bg-surface hover:border-border-strong transition-colors cursor-pointer shadow-sm"
         >
@@ -119,21 +105,6 @@ export default function ManagementSection() {
           )}
         </button>
       </div>
-
-      {/* Checklist Editor Modal */}
-      {showChecklistEditor && (
-        <ChecklistEditorModal
-          onClose={() => setShowChecklistEditor(false)}
-          teamChecklist={teamChecklist}
-          setTeamChecklist={setTeamChecklist}
-          teamEndChecklist={teamEndChecklist}
-          setTeamEndChecklist={setTeamEndChecklist}
-          ownerStartChecklist={ownerStartChecklist}
-          setOwnerStartChecklist={setOwnerStartChecklist}
-          ownerEndChecklist={ownerEndChecklist}
-          setOwnerEndChecklist={setOwnerEndChecklist}
-        />
-      )}
 
       {/* Team Availability */}
       <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">

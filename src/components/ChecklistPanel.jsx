@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { genId } from '../data';
+import renderLinkedText from '../utils/renderLinkedText';
 
 export default function ChecklistPanel({ title, items, checklistType, checklistLog, setChecklistLog }) {
   const normalized = items.map((item, i) =>
@@ -78,8 +79,8 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
           {normalized.map((item) => {
             if (item.type === 'header') {
               return (
-                <h3 key={item.id} className="font-bold text-primary text-sm uppercase tracking-wide pt-3 first:pt-0">
-                  {item.text}
+                <h3 key={item.id} className="font-bold text-primary text-sm uppercase tracking-wide pt-3 first:pt-0 break-words overflow-hidden">
+                  {renderLinkedText(item.text)}
                 </h3>
               );
             }
@@ -96,11 +97,11 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
                   className="w-5 h-5 rounded accent-emerald-600 shrink-0"
                 />
                 <span
-                  className={`text-sm transition-colors duration-150 ${
+                  className={`flex-1 min-w-0 text-sm break-words transition-colors duration-150 ${
                     checked.has(item.id) ? 'line-through text-muted' : 'text-secondary'
                   }`}
                 >
-                  {item.text}
+                  {renderLinkedText(item.text)}
                 </span>
               </label>
             );

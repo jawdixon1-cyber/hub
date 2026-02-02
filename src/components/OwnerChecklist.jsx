@@ -1,36 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { genId } from '../data';
-
-function renderLinkedText(text) {
-  const parts = [];
-  let lastIndex = 0;
-  const regex = /\[([^\]]+)\]\(([^)]+)\)/g;
-  let match;
-  let i = 0;
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-    parts.push(
-      <a
-        key={i++}
-        href={match[2]}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-brand-text hover:text-brand-text-strong underline"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {match[1]}
-      </a>
-    );
-    lastIndex = regex.lastIndex;
-  }
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-  return parts.length > 0 ? parts : text;
-}
+import renderLinkedText from '../utils/renderLinkedText';
 
 export default function OwnerChecklist({ title, items, setItems, checklistType, checklistLog, setChecklistLog }) {
   const [open, setOpen] = useState(false);
@@ -99,8 +70,8 @@ export default function OwnerChecklist({ title, items, setItems, checklistType, 
           {items.map((item) => {
             if (item.type === 'header') {
               return (
-                <h3 key={item.id} className="font-bold text-primary text-sm uppercase tracking-wide pt-3 first:pt-0">
-                  {item.text}
+                <h3 key={item.id} className="font-bold text-primary text-sm uppercase tracking-wide pt-3 first:pt-0 break-words overflow-hidden">
+                  {renderLinkedText(item.text)}
                 </h3>
               );
             }
@@ -117,7 +88,7 @@ export default function OwnerChecklist({ title, items, setItems, checklistType, 
                   className="w-5 h-5 mt-0.5 rounded accent-emerald-600 shrink-0 cursor-pointer"
                 />
                 <span
-                  className={`flex-1 text-sm transition-colors duration-150 ${
+                  className={`flex-1 min-w-0 text-sm break-words transition-colors duration-150 ${
                     item.done ? 'line-through text-muted' : 'text-secondary'
                   }`}
                 >

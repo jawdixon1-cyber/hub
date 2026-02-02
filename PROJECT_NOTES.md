@@ -231,6 +231,35 @@ Configured in `vite.config.js` via `vite-plugin-pwa`:
 
 ---
 
+## Deployment Playbook (GitHub → Vercel)
+
+### 1. Push to GitHub
+```bash
+git add <files>
+git commit -m "your message"
+git push origin master
+```
+
+### 2. First-time Vercel setup
+1. Go to [vercel.com/new](https://vercel.com/new)
+2. Import `jawdixon1-cyber/ClaudeCodeRepo`
+3. Application Preset: **Vite** (should auto-detect)
+4. Root Directory: leave as `./` (repo root is the app)
+5. Open **Environment Variables** and add:
+   - `VITE_SUPABASE_URL` = `https://onnytrkhbnsmstgywcrw.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY` = `sb_publishable_-gY5o6zmS6TQU-8U-RueUA_7G1b13Ts`
+6. Click **Deploy**
+
+### 3. Future deploys
+Just push to `master` — Vercel auto-deploys on every push. No manual steps needed.
+
+### 4. If something breaks
+- Check the **Deployments** tab in Vercel for build logs
+- Most common issue: missing env vars → white screen
+- To redeploy manually: Deployments → three dots on latest → Redeploy
+
+---
+
 ## Known Quirks / Technical Debt
 
 1. **No React Router** — navigation is tab state in App.jsx

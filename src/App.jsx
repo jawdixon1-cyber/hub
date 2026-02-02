@@ -21,7 +21,7 @@ import EquipmentIdeas from './pages/EquipmentIdeas';
 import HRPolicies from './pages/HRPolicies';
 import IdeasFeedback from './pages/IdeasFeedback';
 import Settings from './pages/Settings';
-import Buyback from './pages/Buyback';
+
 
 const TABS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -256,7 +256,6 @@ function AppShell() {
           <Route path="/equipment" element={<EquipmentIdeas />} />
           <Route path="/hr" element={<HRPolicies />} />
           <Route path="/ideas" element={<IdeasFeedback />} />
-          <Route path="/buyback" element={ownerMode ? <Buyback /> : <Navigate to="/" replace />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

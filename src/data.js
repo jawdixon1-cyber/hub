@@ -182,7 +182,6 @@ export const initialEquipment = [
     serialNumber: '400425612',
     manualUrl: '',
     status: 'operational',
-    lastMaintenance: '1/19/2026',
   },
   {
     id: '31',
@@ -191,7 +190,6 @@ export const initialEquipment = [
     serialNumber: 'S72014339',
     manualUrl: '',
     status: 'needs-repair',
-    lastMaintenance: '1/9/2026',
     reportedIssue: 'Engine starts but dies after 30 seconds',
     reportedBy: 'Mike',
     reportedDate: '1/26/2026',
@@ -203,7 +201,6 @@ export const initialEquipment = [
     serialNumber: 'MAGA-1234567',
     manualUrl: '',
     status: 'operational',
-    lastMaintenance: '1/17/2026',
   },
 ];
 

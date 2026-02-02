@@ -17,7 +17,6 @@ import {
   initialTeamChecklist,
   initialTeamEndChecklist,
   initialChecklistLog,
-  initialBuybackIdeas,
 } from '../data';
 
 const DATA_CACHE_KEY = 'greenteam-data-cache';
@@ -38,7 +37,6 @@ const STATE_KEYS = [
   { key: 'suggestions',           supaKey: 'greenteam-suggestions',           initial: initialIdeas },
   { key: 'teamEndChecklist',      supaKey: 'greenteam-teamEndChecklist',      initial: initialTeamEndChecklist },
   { key: 'checklistLog',          supaKey: 'greenteam-checklistLog',          initial: initialChecklistLog },
-  { key: 'buybackIdeas',         supaKey: 'greenteam-buybackIdeas',          initial: initialBuybackIdeas },
 ];
 
 function resolveInitial(cloudValue, initial) {

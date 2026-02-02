@@ -4,6 +4,7 @@ import {
   ClipboardList,
   Briefcase,
   AlertTriangle,
+  CircleCheck,
 } from 'lucide-react';
 import ManagementSection from '../components/owner/ManagementSection';
 import MyDaySection from '../components/owner/MyDaySection';
@@ -30,7 +31,8 @@ export default function OwnerDashboard() {
   const equipmentRepairLog = useAppStore((s) => s.equipmentRepairLog);
   const setEquipmentRepairLog = useAppStore((s) => s.setEquipmentRepairLog);
 
-  const [showActionRequired, setShowActionRequired] = useState(true);
+  const hasActionItems = equipment.some((e) => e.status === 'needs-repair') || timeOffRequests.some((r) => r.status === 'pending') || suggestions.some((s) => s.status === 'New');
+  const [showActionRequired, setShowActionRequired] = useState(hasActionItems);
   const [showManagement, setShowManagement] = useState(false);
   const [showMyDay, setShowMyDay] = useState(false);
 
@@ -64,7 +66,7 @@ export default function OwnerDashboard() {
     setEquipment(
       equipment.map((e) =>
         e.id === id
-          ? { ...e, status: 'operational', lastMaintenance: today, reportedIssue: undefined, reportedBy: undefined, reportedDate: undefined, urgency: undefined, photo: undefined }
+          ? { ...e, status: 'operational', reportedIssue: undefined, reportedBy: undefined, reportedDate: undefined, urgency: undefined, photo: undefined }
           : e
       )
     );
@@ -92,13 +94,29 @@ export default function OwnerDashboard() {
         <p className="text-emerald-100 mt-2 text-lg">Here's your business overview</p>
       </div>
 
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-3 sm:p-5">
+          <p className="text-xs sm:text-sm text-tertiary font-medium">Labor Efficiency</p>
+          <p className="text-xl sm:text-3xl font-bold text-primary mt-1">40%</p>
+        </div>
+        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-3 sm:p-5">
+          <p className="text-xs sm:text-sm text-tertiary font-medium">Sales Efficiency</p>
+          <p className="text-xl sm:text-3xl font-bold text-primary mt-1">60%</p>
+        </div>
+        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-3 sm:p-5">
+          <p className="text-xs sm:text-sm text-tertiary font-medium truncate">Revenue / Man-Hr</p>
+          <p className="text-xl sm:text-3xl font-bold text-primary mt-1">$70/hr</p>
+        </div>
+      </div>
+
       {/* Action Required */}
       <button
         onClick={() => setShowActionRequired((v) => !v)}
         className="flex items-center gap-3 pt-4 w-full cursor-pointer group"
       >
         <div className="flex items-center gap-2">
-          {actionItems.length > 0 && <AlertTriangle size={20} className="text-amber-500" />}
+          {actionItems.length > 0 ? <AlertTriangle size={20} className="text-amber-500" /> : <CircleCheck size={20} className="text-emerald-500" />}
           <h2 className="text-xl font-bold text-primary">Action Required</h2>
           {actionItems.length > 0 && (
             <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
@@ -252,24 +270,6 @@ export default function OwnerDashboard() {
         ))}
       </div>
 
-      {/* Management */}
-      <button
-        onClick={() => setShowManagement((v) => !v)}
-        className="flex items-center gap-3 pt-4 w-full cursor-pointer group"
-      >
-        <div className="flex items-center gap-2">
-          <ClipboardList size={20} className="text-muted" />
-          <h2 className="text-xl font-bold text-primary">Team Management</h2>
-        </div>
-        <div className="flex-1 h-px bg-border-default" />
-        <ChevronDown
-          size={20}
-          className={`text-muted group-hover:text-secondary transition-transform duration-200 ${showManagement ? '' : '-rotate-90'}`}
-        />
-      </button>
-
-      {showManagement && <ManagementSection />}
-
       {/* My Day */}
       <button
         onClick={() => setShowMyDay((v) => !v)}
@@ -287,6 +287,24 @@ export default function OwnerDashboard() {
       </button>
 
       {showMyDay && <MyDaySection />}
+
+      {/* Management */}
+      <button
+        onClick={() => setShowManagement((v) => !v)}
+        className="flex items-center gap-3 pt-4 w-full cursor-pointer group"
+      >
+        <div className="flex items-center gap-2">
+          <ClipboardList size={20} className="text-muted" />
+          <h2 className="text-xl font-bold text-primary">Management</h2>
+        </div>
+        <div className="flex-1 h-px bg-border-default" />
+        <ChevronDown
+          size={20}
+          className={`text-muted group-hover:text-secondary transition-transform duration-200 ${showManagement ? '' : '-rotate-90'}`}
+        />
+      </button>
+
+      {showManagement && <ManagementSection />}
 
       {/* Apps — horizontal scroll on mobile only */}
       <div className="lg:hidden">

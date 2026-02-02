@@ -9,8 +9,10 @@ import {
   ChevronRight,
   ChevronLeft,
   Type,
+  Link,
 } from 'lucide-react';
 import { genId } from '../data';
+import renderLinkedText from '../utils/renderLinkedText';
 
 function normalizeItem(item) {
   return {
@@ -31,8 +33,10 @@ function ChecklistSection({ title, items, setItems }) {
   const [editText, setEditText] = useState('');
   const [addText, setAddText] = useState('');
   const [addType, setAddType] = useState('item');
+  const [selectedId, setSelectedId] = useState(null);
   const dragItem = useRef(null);
   const dragOverItem = useRef(null);
+  const editInputRef = useRef(null);
 
   const normalized = normalizeItems(items);
 
@@ -67,6 +71,7 @@ function ChecklistSection({ title, items, setItems }) {
   const startEdit = (item) => {
     setEditingId(item.id);
     setEditText(item.text);
+    setSelectedId(null);
   };
 
   const saveEdit = () => {
@@ -79,13 +84,14 @@ function ChecklistSection({ title, items, setItems }) {
 
   const deleteItem = (id) => {
     setItems(normalized.filter((i) => i.id !== id));
+    if (selectedId === id) setSelectedId(null);
   };
 
-  const indent = (id) => {
+  const indentItem = (id) => {
     setItems(normalized.map((i) => (i.id === id ? { ...i, indent: Math.min((i.indent || 0) + 1, 3) } : i)));
   };
 
-  const outdent = (id) => {
+  const outdentItem = (id) => {
     setItems(normalized.map((i) => (i.id === id ? { ...i, indent: Math.max((i.indent || 0) - 1, 0) } : i)));
   };
 
@@ -100,24 +106,46 @@ function ChecklistSection({ title, items, setItems }) {
     setAddText('');
   };
 
+  const insertLink = () => {
+    const input = editInputRef.current;
+    if (!input) return;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const selected = editText.substring(start, end);
+    const url = prompt('Enter URL:', 'https://');
+    if (!url) return;
+    const linkText = selected || prompt('Enter link text:', '') || url;
+    const markdown = `[${linkText}](${url})`;
+    const newText = editText.substring(0, start) + markdown + editText.substring(end);
+    setEditText(newText);
+    setTimeout(() => {
+      input.focus();
+      const cursor = start + markdown.length;
+      input.setSelectionRange(cursor, cursor);
+    }, 0);
+  };
+
   return (
-    <div>
-      <h3 className="font-bold text-primary text-sm mb-3">{title}</h3>
-      <div className="space-y-1 mb-3">
+    <div className="flex flex-col h-full">
+      <h3 className="font-bold text-primary text-sm mb-3 shrink-0">{title}</h3>
+
+      {/* Item list */}
+      <div className="flex-1 overflow-y-auto space-y-1 mb-3 min-h-0">
         {normalized.map((item, index) => (
           <div
             key={item.id}
-            draggable
-            onDragStart={() => handleDragStart(index)}
+            draggable={editingId !== item.id}
+            onDragStart={() => { if (editingId === item.id) return; handleDragStart(index); }}
             onDragOver={(e) => handleDragOver(e, index)}
             onDrop={handleDrop}
             onDragEnd={handleDragEnd}
-            className="group"
-            style={{ marginLeft: `${(item.indent || 0) * 24}px` }}
+            style={{ paddingLeft: `${(item.indent || 0) * 20}px` }}
           >
             {editingId === item.id ? (
-              <div className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 p-2">
+              /* ── Edit mode ── */
+              <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-2 space-y-2">
                 <input
+                  ref={editInputRef}
                   type="text"
                   value={editText}
                   onChange={(e) => setEditText(e.target.value)}
@@ -125,79 +153,105 @@ function ChecklistSection({ title, items, setItems }) {
                     if (e.key === 'Enter') saveEdit();
                     if (e.key === 'Escape') { setEditingId(null); setEditText(''); }
                   }}
-                  className="flex-1 rounded border border-border-default px-2 py-1 text-sm text-primary outline-none focus:ring-1 focus:ring-emerald-400"
+                  className="w-full rounded border border-border-default px-2 py-1.5 text-sm text-primary outline-none focus:ring-1 focus:ring-emerald-400"
                   autoFocus
                 />
-                <button onClick={saveEdit} className="p-1 rounded text-brand-text hover:bg-brand-light cursor-pointer">
-                  <Check size={14} />
-                </button>
-                <button onClick={() => { setEditingId(null); setEditText(''); }} className="p-1 rounded text-muted hover:bg-surface-alt cursor-pointer">
-                  <X size={14} />
-                </button>
+                <div className="flex items-center justify-between">
+                  <button onClick={insertLink} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted hover:text-blue-500 hover:bg-blue-50 cursor-pointer" title="Add link">
+                    <Link size={12} />
+                    Link
+                  </button>
+                  <div className="flex gap-1">
+                    <button onClick={() => { setEditingId(null); setEditText(''); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted hover:bg-surface-alt cursor-pointer">
+                      Cancel
+                    </button>
+                    <button onClick={saveEdit} className="px-2.5 py-1 rounded text-xs font-medium bg-brand text-on-brand hover:bg-brand-hover cursor-pointer">
+                      Save
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="flex items-center gap-1 rounded-lg p-1.5 hover:bg-surface transition-colors">
-                <div className="cursor-grab text-muted hover:text-tertiary shrink-0">
-                  <GripVertical size={14} />
+              /* ── Display mode ── */
+              <div
+                className={`rounded-lg p-2 transition-colors cursor-pointer ${selectedId === item.id ? 'bg-surface-alt ring-1 ring-border-strong' : 'hover:bg-surface'}`}
+                onClick={() => setSelectedId(selectedId === item.id ? null : item.id)}
+              >
+                <div className="flex items-start gap-1.5">
+                  <div className="cursor-grab text-muted hover:text-tertiary shrink-0 mt-0.5" onMouseDown={(e) => e.stopPropagation()}>
+                    <GripVertical size={14} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className={`text-sm break-words ${
+                        item.type === 'header'
+                          ? 'font-bold text-primary uppercase tracking-wide text-xs'
+                          : 'text-secondary'
+                      }`}
+                    >
+                      {item.type === 'header' && <span className="text-purple-500 mr-1 inline-block">H</span>}
+                      {renderLinkedText(item.text)}
+                    </div>
+                  </div>
                 </div>
-                <span
-                  className={`flex-1 text-sm ${
-                    item.type === 'header'
-                      ? 'font-bold text-primary uppercase tracking-wide text-xs'
-                      : 'text-secondary'
-                  }`}
-                >
-                  {item.type === 'header' && <span className="text-purple-500 mr-1">H</span>}
-                  {item.text}
-                </span>
-                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button onClick={() => outdent(item.id)} className="p-1 rounded text-muted hover:text-blue-500 cursor-pointer" title="Outdent">
-                    <ChevronLeft size={12} />
-                  </button>
-                  <button onClick={() => indent(item.id)} className="p-1 rounded text-muted hover:text-blue-500 cursor-pointer" title="Indent">
-                    <ChevronRight size={12} />
-                  </button>
-                  <button onClick={() => toggleType(item.id)} className="p-1 rounded text-muted hover:text-purple-500 cursor-pointer" title="Toggle header">
-                    <Type size={12} />
-                  </button>
-                  <button onClick={() => startEdit(item)} className="p-1 rounded text-muted hover:text-blue-500 cursor-pointer" title="Edit">
-                    <Pencil size={12} />
-                  </button>
-                  <button onClick={() => deleteItem(item.id)} className="p-1 rounded text-muted hover:text-red-500 cursor-pointer" title="Delete">
-                    <Trash2 size={12} />
-                  </button>
-                </div>
+
+                {/* Action bar — shown when selected */}
+                {selectedId === item.id && (
+                  <div className="flex items-center gap-1 mt-2 pt-2 border-t border-border-subtle flex-wrap">
+                    <button onClick={(e) => { e.stopPropagation(); outdentItem(item.id); }} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-secondary hover:bg-surface-strong cursor-pointer" title="Outdent">
+                      <ChevronLeft size={12} />
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); indentItem(item.id); }} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-secondary hover:bg-surface-strong cursor-pointer" title="Indent">
+                      <ChevronRight size={12} />
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); toggleType(item.id); }} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-secondary hover:text-purple-600 hover:bg-purple-50 cursor-pointer" title="Toggle header">
+                      <Type size={12} />
+                      {item.type === 'header' ? 'Item' : 'Header'}
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); startEdit(item); }} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-secondary hover:text-blue-600 hover:bg-blue-50 cursor-pointer" title="Edit">
+                      <Pencil size={12} />
+                      Edit
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-secondary hover:text-red-600 hover:bg-red-50 cursor-pointer" title="Delete">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
         ))}
         {normalized.length === 0 && (
-          <p className="text-muted text-sm py-2">No items yet. Add one below.</p>
+          <p className="text-muted text-sm py-4 text-center">No items yet. Add one below.</p>
         )}
       </div>
-      <form onSubmit={addItem} className="flex items-center gap-2 border-t border-border-subtle pt-3">
-        <select
-          value={addType}
-          onChange={(e) => setAddType(e.target.value)}
-          className="rounded-lg border border-border-default px-2 py-1.5 text-xs text-secondary outline-none cursor-pointer bg-card"
-        >
-          <option value="item">Item</option>
-          <option value="header">Header</option>
-        </select>
-        <input
-          type="text"
-          value={addText}
-          onChange={(e) => setAddText(e.target.value)}
-          placeholder="Add item... (use [text](url) for links)"
-          className="flex-1 rounded-lg border border-border-default px-3 py-1.5 text-sm text-primary outline-none focus:ring-1 focus:ring-emerald-400"
-        />
-        <button
-          type="submit"
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
-        >
-          <Plus size={12} />
-          Add
-        </button>
+
+      {/* Add new item */}
+      <form onSubmit={addItem} className="shrink-0 border-t border-border-subtle pt-3 space-y-2">
+        <div className="flex gap-2">
+          <select
+            value={addType}
+            onChange={(e) => setAddType(e.target.value)}
+            className="rounded-lg border border-border-default px-2 py-2 text-xs text-secondary outline-none cursor-pointer bg-card shrink-0"
+          >
+            <option value="item">Item</option>
+            <option value="header">Header</option>
+          </select>
+          <input
+            type="text"
+            value={addText}
+            onChange={(e) => setAddText(e.target.value)}
+            placeholder="Add new item..."
+            className="flex-1 min-w-0 rounded-lg border border-border-default px-3 py-2 text-sm text-primary outline-none focus:ring-1 focus:ring-emerald-400"
+          />
+          <button
+            type="submit"
+            className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer shrink-0"
+          >
+            <Plus size={14} />
+            Add
+          </button>
+        </div>
       </form>
     </div>
   );
@@ -230,14 +284,14 @@ export default function ChecklistEditorModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-stretch bg-black/50" onClick={onClose}>
       <div
-        className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+        className="bg-card w-full h-full sm:m-4 sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 pb-4 border-b border-border-subtle">
-          <h2 className="text-xl font-bold text-primary">Edit Checklists</h2>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-border-subtle shrink-0">
+          <h2 className="text-lg font-bold text-primary">Edit Checklists</h2>
           <button
             onClick={onClose}
             className="p-2 rounded-lg text-muted hover:text-secondary hover:bg-surface-alt transition-colors cursor-pointer"
@@ -247,7 +301,7 @@ export default function ChecklistEditorModal({
         </div>
 
         {/* Tab Selector */}
-        <div className="px-6 pt-4 space-y-3">
+        <div className="px-4 sm:px-6 pt-3 pb-1 space-y-2 shrink-0">
           <div className="flex gap-1 bg-surface-alt p-1 rounded-xl">
             <button
               onClick={() => setActiveTab('team')}
@@ -255,7 +309,7 @@ export default function ChecklistEditorModal({
                 activeTab === 'team' ? 'bg-card text-primary shadow-sm' : 'text-tertiary hover:text-secondary'
               }`}
             >
-              Team Checklist
+              Team
             </button>
             <button
               onClick={() => setActiveTab('owner')}
@@ -263,7 +317,7 @@ export default function ChecklistEditorModal({
                 activeTab === 'owner' ? 'bg-card text-primary shadow-sm' : 'text-tertiary hover:text-secondary'
               }`}
             >
-              Owner Checklist
+              Owner
             </button>
           </div>
           <div className="flex gap-1 bg-surface-alt p-1 rounded-xl">
@@ -287,20 +341,13 @@ export default function ChecklistEditorModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 min-h-0 px-4 sm:px-6 py-4 flex flex-col">
           <ChecklistSection
             key={`${activeTab}-${activeTime}`}
             title={`${activeTab === 'team' ? 'Team' : 'Owner'} — ${activeTime === 'start' ? 'Start of Day' : 'End of Day'}`}
             items={getActiveItems()}
             setItems={getActiveSetter()}
           />
-        </div>
-
-        {/* Footer */}
-        <div className="p-6 pt-4 border-t border-border-subtle">
-          <p className="text-xs text-muted">
-            Drag items to reorder. Use indent/outdent arrows to nest sub-tasks. Use [text](url) for links.
-          </p>
         </div>
       </div>
     </div>

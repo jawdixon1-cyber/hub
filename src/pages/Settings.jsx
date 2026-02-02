@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { Shield, Plus, ChevronUp, Eye, EyeOff, Pencil, Trash2, X, Check, Sun, Moon, Clock, Globe, Settings as SettingsIcon } from 'lucide-react';
+import { useState, lazy, Suspense } from 'react';
+import { Shield, Plus, ChevronUp, Eye, EyeOff, Pencil, Trash2, X, Check, Sun, Moon, Clock, Globe, Settings as SettingsIcon, ClipboardList } from 'lucide-react';
+
+const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
 import { createSignUpClient } from '../lib/supabase';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppStore } from '../store/AppStoreContext';
@@ -41,6 +43,16 @@ export default function Settings() {
   const [editingEmail, setEditingEmail] = useState(null);
   const [editPlaybooks, setEditPlaybooks] = useState([]);
   const [confirmRemove, setConfirmRemove] = useState(null);
+  const [showChecklistEditor, setShowChecklistEditor] = useState(false);
+
+  const teamChecklist = useAppStore((s) => s.teamChecklist);
+  const setTeamChecklist = useAppStore((s) => s.setTeamChecklist);
+  const teamEndChecklist = useAppStore((s) => s.teamEndChecklist);
+  const setTeamEndChecklist = useAppStore((s) => s.setTeamEndChecklist);
+  const ownerStartChecklist = useAppStore((s) => s.ownerStartChecklist);
+  const setOwnerStartChecklist = useAppStore((s) => s.setOwnerStartChecklist);
+  const ownerEndChecklist = useAppStore((s) => s.ownerEndChecklist);
+  const setOwnerEndChecklist = useAppStore((s) => s.setOwnerEndChecklist);
 
   const handleTimezoneChange = (value) => {
     setTimezone(value);
@@ -220,6 +232,46 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      {/* ── Edit Checklists (owner only) ── */}
+      {ownerMode && (
+        <div>
+          <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <ClipboardList size={18} className="text-muted" />
+                <div>
+                  <p className="text-sm font-medium text-primary">Checklists</p>
+                  <p className="text-xs text-tertiary">Edit team and owner daily checklists</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowChecklistEditor(true)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand font-medium text-sm hover:bg-brand-hover transition-colors"
+              >
+                <Pencil size={14} />
+                Edit Checklists
+              </button>
+            </div>
+          </div>
+
+          {showChecklistEditor && (
+            <Suspense fallback={null}>
+              <ChecklistEditorModal
+                onClose={() => setShowChecklistEditor(false)}
+                teamChecklist={teamChecklist}
+                setTeamChecklist={setTeamChecklist}
+                teamEndChecklist={teamEndChecklist}
+                setTeamEndChecklist={setTeamEndChecklist}
+                ownerStartChecklist={ownerStartChecklist}
+                setOwnerStartChecklist={setOwnerStartChecklist}
+                ownerEndChecklist={ownerEndChecklist}
+                setOwnerEndChecklist={setOwnerEndChecklist}
+              />
+            </Suspense>
+          )}
+        </div>
+      )}
 
       {/* ── Team Management (owner only) ── */}
       {ownerMode && (

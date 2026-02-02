@@ -33,6 +33,8 @@ export default function EquipmentIdeas() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [historyItem, setHistoryItem] = useState(null);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesText, setNotesText] = useState('');
 
   const handleAddEquipment = (form) => {
     setEquipment([...equipment, { id: genId(), ...form }]);
@@ -81,7 +83,6 @@ export default function EquipmentIdeas() {
           ? {
               ...e,
               status: 'operational',
-              lastMaintenance: today,
               reportedIssue: undefined,
               reportedBy: undefined,
               reportedDate: undefined,
@@ -273,21 +274,13 @@ export default function EquipmentIdeas() {
                       )}
                     </div>
 
-                    {/* Serial & Dates row */}
-                    <div className="flex flex-wrap gap-x-8 gap-y-1 mt-3 text-xs">
-                      {item.serialNumber && (
-                        <div>
-                          <span className="text-muted">S/N:</span>{' '}
-                          <span className="font-medium text-secondary">{item.serialNumber}</span>
-                        </div>
-                      )}
-                      {item.lastMaintenance && (
-                        <div>
-                          <span className="text-muted">Last Maint:</span>{' '}
-                          <span className="font-medium text-secondary">{item.lastMaintenance}</span>
-                        </div>
-                      )}
-                    </div>
+                    {/* Serial row */}
+                    {item.serialNumber && (
+                      <div className="mt-3 text-xs">
+                        <span className="text-muted">S/N:</span>{' '}
+                        <span className="font-medium text-secondary">{item.serialNumber}</span>
+                      </div>
+                    )}
 
                     {needsRepair && item.reportedIssue && (
                       <div className="mt-3">
@@ -302,11 +295,11 @@ export default function EquipmentIdeas() {
                     {/* Action buttons */}
                     <div className="flex flex-wrap gap-2 mt-4">
                       <button
-                        onClick={() => setHistoryItem(item)}
+                        onClick={() => { setHistoryItem(item); setEditingNotes(false); setNotesText(item.notes || ''); }}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-semibold hover:bg-surface-strong transition-colors cursor-pointer"
                       >
-                        <ClipboardList size={14} />
-                        History{repairs.length > 0 ? ` (${repairs.length})` : ''}
+                        <ExternalLink size={14} />
+                        View
                       </button>
                       {item.manualUrl && (
                         <a
@@ -409,12 +402,6 @@ export default function EquipmentIdeas() {
                       <p className="font-medium text-primary">{historyItem.serialNumber}</p>
                     </div>
                   )}
-                  {historyItem.lastMaintenance && (
-                    <div>
-                      <p className="text-xs text-muted">Last Maintenance</p>
-                      <p className="font-medium text-primary">{historyItem.lastMaintenance}</p>
-                    </div>
-                  )}
                   {historyItem.manualUrl && (
                     <div>
                       <p className="text-xs text-muted">Manual</p>
@@ -428,6 +415,55 @@ export default function EquipmentIdeas() {
                         View Manual
                       </a>
                     </div>
+                  )}
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-secondary uppercase tracking-wide">Notes</p>
+                    {ownerMode && !editingNotes && (
+                      <button
+                        onClick={() => { setEditingNotes(true); setNotesText(historyItem.notes || ''); }}
+                        className="text-xs text-brand-text hover:text-brand-text-strong font-medium cursor-pointer"
+                      >
+                        Edit
+                      </button>
+                    )}
+                  </div>
+                  {editingNotes ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={notesText}
+                        onChange={(e) => setNotesText(e.target.value)}
+                        placeholder="Specific oils, parts, maintenance notes..."
+                        rows={3}
+                        className="w-full rounded-lg border border-border-default px-3 py-2 text-sm text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition resize-none"
+                        autoFocus
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => setEditingNotes(false)}
+                          className="px-3 py-1.5 rounded-lg border border-border-default text-xs font-medium text-secondary hover:bg-surface transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEquipment(equipment.map((e) => e.id === historyItem.id ? { ...e, notes: notesText } : e));
+                            setHistoryItem({ ...historyItem, notes: notesText });
+                            setEditingNotes(false);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-secondary whitespace-pre-wrap">
+                      {historyItem.notes || <span className="text-muted">No notes yet</span>}
+                    </p>
                   )}
                 </div>
 
@@ -479,10 +515,25 @@ export default function EquipmentIdeas() {
                               {r.urgency === 'critical' ? 'CRITICAL' : 'MAINT'}
                             </span>
                           </div>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted">
-                            <span>Reported: {r.reportedDate}</span>
-                            <span>Fixed: {r.repairedDate}</span>
-                            <span>By: {r.reportedBy}</span>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+                              <span>Reported: {r.reportedDate}</span>
+                              <span>Fixed: {r.repairedDate}</span>
+                              <span>By: {r.reportedBy}</span>
+                            </div>
+                            {ownerMode && (
+                              <button
+                                onClick={() => {
+                                  if (confirm('Delete this repair record?')) {
+                                    setEquipmentRepairLog((prev) => prev.filter((entry) => entry.id !== r.id));
+                                  }
+                                }}
+                                className="p-1 rounded text-muted hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer shrink-0"
+                                title="Delete record"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
                           </div>
                         </div>
                       ))}

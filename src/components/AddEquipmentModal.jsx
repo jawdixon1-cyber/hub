@@ -9,19 +9,16 @@ export default function AddEquipmentModal({ onSave, onClose }) {
     serialNumber: '',
     manualUrl: '',
     status: 'operational',
-    lastMaintenance: '',
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const fmt = (iso) => (iso ? new Date(iso + 'T00:00').toLocaleDateString('en-US') : '');
     onSave({
       name: form.name,
       type: form.type,
       serialNumber: form.serialNumber,
       manualUrl: form.manualUrl,
       status: form.status,
-      lastMaintenance: fmt(form.lastMaintenance),
     });
   };
 
@@ -97,15 +94,6 @@ export default function AddEquipmentModal({ onSave, onClose }) {
               <option value="operational">Operational</option>
               <option value="needs-repair">Needs Repair</option>
             </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-secondary mb-1">Last Maintenance</label>
-            <input
-              type="date"
-              value={form.lastMaintenance}
-              onChange={(e) => setForm({ ...form, lastMaintenance: e.target.value })}
-              className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
-            />
           </div>
           <div className="flex gap-3 justify-end pt-2">
             <button
