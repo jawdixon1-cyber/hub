@@ -43,9 +43,6 @@ const STATE_KEYS = [
 
 function resolveInitial(cloudValue, initial) {
   if (cloudValue !== undefined && cloudValue !== null) {
-    if (Array.isArray(cloudValue) && cloudValue.length === 0 && Array.isArray(initial) && initial.length > 0) {
-      return initial;
-    }
     return cloudValue;
   }
   return initial;
