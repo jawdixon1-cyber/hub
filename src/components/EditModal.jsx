@@ -1,4 +1,4 @@
-import { useState, Suspense, lazy } from 'react';
+import { useState, useRef, Suspense, lazy } from 'react';
 import { X } from 'lucide-react';
 
 const RichTextEditor = lazy(() => import('./RichTextEditor'));
@@ -6,8 +6,8 @@ const RichTextEditor = lazy(() => import('./RichTextEditor'));
 export default function EditModal({ item, categories, onSave, onClose, title, richText }) {
   const [form, setForm] = useState(() =>
     item
-      ? { title: item.title || '', category: item.category || categories[0] || '', content: item.content || '' }
-      : { title: '', category: categories[0] || '', content: '' }
+      ? { title: item.title || '', category: item.category || (categories?.[0]) || '', content: item.content || '' }
+      : { title: '', category: (categories?.[0]) || '', content: '' }
   );
 
   const handleSubmit = (e) => {
@@ -15,14 +15,21 @@ export default function EditModal({ item, categories, onSave, onClose, title, ri
     onSave(form);
   };
 
+  const mouseDownTarget = useRef(null);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
+      onMouseDown={(e) => { mouseDownTarget.current = e.target; }}
+      onMouseUp={(e) => {
+        if (e.target === e.currentTarget && mouseDownTarget.current === e.currentTarget) {
+          onClose();
+        }
+        mouseDownTarget.current = null;
+      }}
     >
       <div
         className="bg-card rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="bg-gradient-to-r from-emerald-500 to-emerald-700 px-8 py-6 relative">
           <button
@@ -46,18 +53,20 @@ export default function EditModal({ item, categories, onSave, onClose, title, ri
               className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
             />
           </div>
-          <div>
-            <label className="block text-sm font-semibold text-secondary mb-1">Category</label>
-            <select
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
-            >
-              {categories.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
+          {categories && categories.length > 0 && (
+            <div>
+              <label className="block text-sm font-semibold text-secondary mb-1">Category</label>
+              <select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
+              >
+                {categories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-semibold text-secondary mb-1">Content</label>
             {richText ? (

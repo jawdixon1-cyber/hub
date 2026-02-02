@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Lightbulb, MessageSquare, Plus, X, Trash2 } from 'lucide-react';
+import { Lightbulb, MessageSquare, GraduationCap, Plus, X, Trash2 } from 'lucide-react';
+// GraduationCap kept for training submissions that come from the Training tab
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,7 +13,13 @@ const STATUS_COLORS = {
   Rejected: 'bg-red-100 text-red-700',
 };
 
-export default function IdeasFeedback() {
+const TYPE_ICON = {
+  idea: { Icon: Lightbulb, color: 'text-amber-500' },
+  feedback: { Icon: MessageSquare, color: 'text-blue-500' },
+  training: { Icon: GraduationCap, color: 'text-teal-500' },
+};
+
+export function IdeasFeedbackContent({ filterByUser, compact }) {
   const { ownerMode, currentUser } = useAuth();
   const suggestions = useAppStore((s) => s.suggestions);
   const setSuggestions = useAppStore((s) => s.setSuggestions);
@@ -21,9 +28,13 @@ export default function IdeasFeedback() {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ type: 'idea', title: '', description: '' });
 
+  const baseSuggestions = filterByUser
+    ? suggestions.filter((s) => s.submittedBy === filterByUser)
+    : suggestions;
+
   const filtered = filter === 'all'
-    ? suggestions
-    : suggestions.filter((s) => s.type === filter);
+    ? baseSuggestions
+    : baseSuggestions.filter((s) => s.type === filter);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -54,15 +65,34 @@ export default function IdeasFeedback() {
     }
   };
 
+  const getPlaceholder = (type, field) => {
+    if (field === 'title') {
+      if (type === 'idea') return "What's your idea?";
+      return 'What could be better?';
+    }
+    if (type === 'idea') return 'Describe your idea and how it helps the business...';
+    return "Describe the issue or what you'd like to see improved...";
+  };
+
+  const filterTabs = [
+    { key: 'all', label: 'All' },
+    { key: 'idea', label: 'Business Ideas' },
+    { key: 'feedback', label: 'Software Feedback' },
+  ];
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-2">
-            <Lightbulb size={22} className="text-amber-500" />
-            <h2 className="text-2xl font-bold text-primary">Ideas & Feedback</h2>
+            <Lightbulb size={compact ? 18 : 22} className="text-amber-500" />
+            <h2 className={`${compact ? 'text-lg' : 'text-2xl'} font-bold text-primary`}>
+              {filterByUser ? 'My Ideas & Feedback' : 'Ideas & Feedback'}
+            </h2>
           </div>
-          <p className="text-tertiary mt-1">Submit ideas to improve the business or feedback on the software</p>
+          {!compact && (
+            <p className="text-tertiary mt-1">Submit ideas to improve the business or feedback on the software</p>
+          )}
         </div>
         {!adding && (
           <button
@@ -85,7 +115,7 @@ export default function IdeasFeedback() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-semibold text-secondary mb-2">What type?</label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => setForm({ ...form, type: 'idea' })}
@@ -120,7 +150,7 @@ export default function IdeasFeedback() {
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
                 className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition"
-                placeholder={form.type === 'idea' ? 'What\'s your idea?' : 'What could be better?'}
+                placeholder={getPlaceholder(form.type, 'title')}
               />
             </div>
             <div>
@@ -131,7 +161,7 @@ export default function IdeasFeedback() {
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition resize-y"
-                placeholder={form.type === 'idea' ? 'Describe your idea and how it helps the business...' : 'Describe the issue or what you\'d like to see improved...'}
+                placeholder={getPlaceholder(form.type, 'description')}
               />
             </div>
             <div className="flex gap-3 justify-end pt-2">
@@ -153,16 +183,12 @@ export default function IdeasFeedback() {
         </div>
       )}
 
-      <div className="flex items-center gap-1 bg-surface-alt p-1 rounded-xl w-fit mb-6">
-        {[
-          { key: 'all', label: 'All' },
-          { key: 'idea', label: 'Business Ideas' },
-          { key: 'feedback', label: 'Software Feedback' },
-        ].map((t) => (
+      <div className="flex items-center gap-1 bg-surface-alt p-1 rounded-xl w-fit mb-6 overflow-x-auto">
+        {filterTabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setFilter(t.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
               filter === t.key
                 ? 'bg-card text-primary shadow-sm'
                 : 'text-tertiary hover:text-secondary'
@@ -177,65 +203,71 @@ export default function IdeasFeedback() {
         <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-12 text-center">
           <Lightbulb size={40} className="text-muted mx-auto mb-3" />
           <p className="text-muted text-sm">
-            {suggestions.length === 0
-              ? 'No submissions yet. Be the first to share an idea or give feedback!'
+            {baseSuggestions.length === 0
+              ? filterByUser
+                ? 'You haven\'t submitted any ideas or feedback yet.'
+                : 'No submissions yet. Be the first to share an idea or give feedback!'
               : 'No submissions in this category.'}
           </p>
         </div>
       ) : (
         <div className="space-y-4">
-          {filtered.map((item) => (
-            <div
-              key={item.id}
-              className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    {item.type === 'idea' ? (
-                      <Lightbulb size={16} className="text-amber-500 shrink-0" />
-                    ) : (
-                      <MessageSquare size={16} className="text-blue-500 shrink-0" />
-                    )}
-                    <h3 className="text-base font-bold text-primary">{item.title}</h3>
-                  </div>
-                  <p className="text-sm text-secondary mt-1 ml-6">{item.description}</p>
-                  <div className="flex items-center gap-3 mt-3 ml-6">
-                    <p className="text-xs text-muted">
-                      {item.submittedBy} &middot; {item.date}
-                    </p>
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[item.status] || 'bg-surface-alt text-secondary'}`}>
-                      {item.status}
-                    </span>
-                  </div>
-                  {ownerMode && (
-                    <div className="flex flex-wrap gap-2 mt-3 ml-6">
-                      {['New', 'Reviewing', 'Approved', 'Implemented', 'Rejected']
-                        .filter((s) => s !== item.status)
-                        .map((s) => (
-                          <button
-                            key={s}
-                            onClick={() => handleStatus(item.id, s)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${STATUS_COLORS[s]} hover:opacity-80`}
-                          >
-                            {s}
-                          </button>
-                        ))}
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100 transition-colors cursor-pointer"
-                      >
-                        <Trash2 size={12} />
-                        Delete
-                      </button>
+          {filtered.map((item) => {
+            const typeInfo = TYPE_ICON[item.type] || TYPE_ICON.idea;
+            const ItemIcon = typeInfo.Icon;
+            return (
+              <div
+                key={item.id}
+                className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <ItemIcon size={16} className={`${typeInfo.color} shrink-0`} />
+                      <h3 className="text-base font-bold text-primary">{item.title}</h3>
                     </div>
-                  )}
+                    <p className="text-sm text-secondary mt-1 ml-6 whitespace-pre-line">{item.description}</p>
+                    <div className="flex items-center gap-3 mt-3 ml-6">
+                      <p className="text-xs text-muted">
+                        {item.submittedBy} &middot; {item.date}
+                      </p>
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[item.status] || 'bg-surface-alt text-secondary'}`}>
+                        {item.status}
+                      </span>
+                    </div>
+                    {ownerMode && (
+                      <div className="flex flex-wrap gap-2 mt-3 ml-6">
+                        {['New', 'Reviewing', 'Approved', 'Implemented', 'Rejected']
+                          .filter((s) => s !== item.status)
+                          .map((s) => (
+                            <button
+                              key={s}
+                              onClick={() => handleStatus(item.id, s)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${STATUS_COLORS[s]} hover:opacity-80`}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100 transition-colors cursor-pointer"
+                        >
+                          <Trash2 size={12} />
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
   );
+}
+
+export default function IdeasFeedback() {
+  return <IdeasFeedbackContent />;
 }

@@ -1,16 +1,18 @@
 import { useState, lazy, Suspense } from 'react';
-import { Shield, Plus, ChevronUp, Eye, EyeOff, Pencil, Trash2, X, Check, Sun, Moon, Clock, Globe, Settings as SettingsIcon, ClipboardList } from 'lucide-react';
+import { Shield, Plus, ChevronUp, ChevronRight, Eye, EyeOff, Pencil, Trash2, X, Check, Sun, Moon, Clock, Globe, Settings as SettingsIcon, ClipboardList, GraduationCap } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
 import { createSignUpClient } from '../lib/supabase';
+import { MODULE_LIST } from './Training';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 
 const PLAYBOOK_OPTIONS = [
-  { key: 'service', label: 'Service', color: 'bg-emerald-100 text-emerald-700' },
-  { key: 'sales', label: 'Sales', color: 'bg-purple-100 text-purple-700' },
-  { key: 'strategy', label: 'Strategy', color: 'bg-blue-100 text-blue-700' },
+  { key: 'service', label: 'Field Team', color: 'bg-emerald-100 text-emerald-700' },
+  { key: 'sales', label: 'Sales Team', color: 'bg-purple-100 text-purple-700' },
+  { key: 'strategy', label: 'General Manager', color: 'bg-blue-100 text-blue-700' },
 ];
 
 const TIMEZONE_OPTIONS = [
@@ -25,7 +27,8 @@ const TIMEZONE_OPTIONS = [
 
 const TZ_STORAGE_KEY = 'greenteam-timezone';
 
-export default function Settings() {
+export function SettingsContent() {
+  const navigate = useNavigate();
   const { ownerMode } = useAuth();
   const permissions = useAppStore((s) => s.permissions);
   const setPermissions = useAppStore((s) => s.setPermissions);
@@ -44,6 +47,8 @@ export default function Settings() {
   const [editPlaybooks, setEditPlaybooks] = useState([]);
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [showChecklistEditor, setShowChecklistEditor] = useState(false);
+  const trainingConfig = useAppStore((s) => s.trainingConfig);
+  const setTrainingConfig = useAppStore((s) => s.setTrainingConfig);
 
   const teamChecklist = useAppStore((s) => s.teamChecklist);
   const setTeamChecklist = useAppStore((s) => s.setTeamChecklist);
@@ -273,6 +278,63 @@ export default function Settings() {
         </div>
       )}
 
+      {/* ── Training Modules (owner only) ── */}
+      {ownerMode && (
+        <div>
+          <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <GraduationCap size={18} className="text-muted" />
+              <div>
+                <p className="text-sm font-medium text-primary">Training Modules</p>
+                <p className="text-xs text-tertiary">Edit sections, content, and team-specific training from each module page</p>
+              </div>
+            </div>
+
+            {/* Module list — navigates to module pages for editing */}
+            <div className="space-y-2">
+              {MODULE_LIST.map((mod) => {
+                const showModule = !mod.optional || trainingConfig?.showModule5;
+                if (!showModule) return null;
+                return (
+                  <button
+                    key={mod.id}
+                    onClick={() => navigate(`/training/${mod.id}`)}
+                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-border-default hover:bg-surface transition-colors cursor-pointer text-left"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <mod.icon size={16} className={mod.color} />
+                      <span className="text-sm font-medium text-primary truncate">{mod.title}</span>
+                    </div>
+                    <ChevronRight size={14} className="text-muted shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Module 5 toggle */}
+            <div className="flex items-center justify-between mt-4 pt-4 border-t border-border-subtle">
+              <div>
+                <p className="text-sm font-medium text-primary">Module 5 (Optional)</p>
+                <p className="text-xs text-tertiary">Show Refinement &amp; Adaptation module</p>
+              </div>
+              <button
+                onClick={() => setTrainingConfig({ ...trainingConfig, showModule5: !trainingConfig?.showModule5 })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
+                  trainingConfig?.showModule5 ? 'bg-brand' : 'bg-surface-alt border border-border-default'
+                }`}
+                aria-label="Toggle Module 5 visibility"
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                    trainingConfig?.showModule5 ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Team Management (owner only) ── */}
       {ownerMode && (
         <div>
@@ -355,7 +417,7 @@ export default function Settings() {
                       </button>
                     ))}
                   </div>
-                  <p className="text-xs text-muted mt-1">New members default to Service only. Sales and Strategy contain sensitive data.</p>
+                  <p className="text-xs text-muted mt-1">New members default to Field Team only. Sales Team and General Manager contain sensitive data.</p>
                 </div>
 
                 {formError && (
@@ -504,4 +566,8 @@ export default function Settings() {
       )}
     </div>
   );
+}
+
+export default function Settings() {
+  return <SettingsContent />;
 }

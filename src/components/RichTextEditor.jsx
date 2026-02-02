@@ -1,6 +1,7 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
+import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import {
   Bold,
@@ -11,6 +12,7 @@ import {
   List,
   ListOrdered,
   ImagePlus,
+  Link as LinkIcon,
   Undo,
   Redo,
 } from 'lucide-react';
@@ -64,6 +66,7 @@ export default function RichTextEditor({ content, onChange }) {
     extensions: [
       StarterKit,
       Image,
+      Link.configure({ openOnClick: false, HTMLAttributes: { class: 'text-blue-600 underline hover:text-blue-800 cursor-pointer' } }),
       Placeholder.configure({ placeholder: 'Start writing your guide...' }),
     ],
     content: content || '',
@@ -96,6 +99,17 @@ export default function RichTextEditor({ content, onChange }) {
   });
 
   if (!editor) return null;
+
+  const handleLink = () => {
+    if (editor.isActive('link')) {
+      editor.chain().focus().unsetLink().run();
+      return;
+    }
+    const url = prompt('Enter URL:', 'https://');
+    if (url) {
+      editor.chain().focus().setLink({ href: url }).run();
+    }
+  };
 
   const handleImageUpload = () => {
     const input = document.createElement('input');
@@ -167,6 +181,9 @@ export default function RichTextEditor({ content, onChange }) {
           <ListOrdered size={16} />
         </ToolbarButton>
         <div className="w-px h-5 bg-surface-strong mx-1" />
+        <ToolbarButton onClick={handleLink} active={editor.isActive('link')} title="Add Link">
+          <LinkIcon size={16} />
+        </ToolbarButton>
         <ToolbarButton onClick={handleImageUpload} title="Insert Image">
           <ImagePlus size={16} />
         </ToolbarButton>
@@ -186,7 +203,7 @@ export default function RichTextEditor({ content, onChange }) {
       </div>
       <EditorContent
         editor={editor}
-        className="prose prose-sm max-w-none px-4 py-3 min-h-[300px] focus:outline-none [&_.tiptap]:outline-none [&_.tiptap]:min-h-[280px] [&_img]:rounded-lg [&_img]:max-h-64 [&_img]:object-cover [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:h-0"
+        className="prose prose-sm max-w-none px-4 py-3 min-h-[300px] focus:outline-none [&_.tiptap]:outline-none [&_.tiptap]:min-h-[280px] [&_p]:my-1 [&_h1]:mt-4 [&_h1]:mb-1 [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_img]:rounded-lg [&_img]:max-h-64 [&_img]:object-cover [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:h-0"
       />
     </div>
   );

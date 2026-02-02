@@ -1,8 +1,9 @@
-import { Megaphone, ChevronRight, ClipboardCheck, AlertCircle, Lightbulb, Check } from 'lucide-react';
+import { Megaphone, ChevronRight, ClipboardCheck, AlertCircle, Lightbulb, GraduationCap, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ChecklistPanel from '../components/ChecklistPanel';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
+
 
 export default function Home() {
   const navigate = useNavigate();
@@ -91,19 +92,6 @@ export default function Home() {
         </div>
       )}
 
-      <div className="bg-gradient-to-r from-emerald-600 to-emerald-800 rounded-2xl p-8 md:p-12 text-white mb-8">
-        <div className="mb-4">
-          <h1 className="text-3xl md:text-4xl font-bold">Welcome to HQ</h1>
-          <p className="text-emerald-100 mt-1 text-lg">Your lawn care operations center</p>
-        </div>
-        <p className="text-emerald-100 max-w-2xl">
-          Everything you need to do great work — playbooks, HR policies, and a place to share ideas that move the business forward.
-        </p>
-        <p className="text-white font-semibold mt-4 text-lg">
-          Knock out your checklist, grab your route, and let's have a great day.
-        </p>
-      </div>
-
       <div className="flex items-center gap-2 mb-6">
         <ClipboardCheck size={22} className="text-brand-text" />
         <h2 className="text-2xl font-bold text-primary">Daily Checklists</h2>
@@ -114,7 +102,7 @@ export default function Home() {
         <ChecklistPanel title="End of Day" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3 mt-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
         <a
           href="http://heyjudeslawncare.com/app"
           target="_blank"
@@ -138,7 +126,7 @@ export default function Home() {
           <AlertCircle size={24} />
         </button>
         <button
-          onClick={() => navigate('/ideas')}
+          onClick={() => navigate('/profile')}
           className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-purple-500 to-purple-700 p-6 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
         >
           <div>
@@ -146,6 +134,16 @@ export default function Home() {
             <p className="text-sm text-white/80 mt-1">Suggest an improvement</p>
           </div>
           <Lightbulb size={24} />
+        </button>
+        <button
+          onClick={() => navigate('/training')}
+          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 p-6 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
+        >
+          <div>
+            <h3 className="text-lg font-bold">My Training</h3>
+            <p className="text-sm text-white/80 mt-1">View your training path</p>
+          </div>
+          <GraduationCap size={24} />
         </button>
       </div>
     </div>

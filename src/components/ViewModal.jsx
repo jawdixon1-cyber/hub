@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { X } from 'lucide-react';
 
 const gradients = {
@@ -23,14 +24,21 @@ export default function ViewModal({ item, onClose }) {
   if (!item) return null;
   const gradient = gradients[item.category] || 'from-gray-500 to-gray-700';
 
+  const mouseDownTarget = useRef(null);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
+      onMouseDown={(e) => { mouseDownTarget.current = e.target; }}
+      onMouseUp={(e) => {
+        if (e.target === e.currentTarget && mouseDownTarget.current === e.currentTarget) {
+          onClose();
+        }
+        mouseDownTarget.current = null;
+      }}
     >
       <div
         className="bg-card rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className={`bg-gradient-to-r ${gradient} px-8 py-6 relative`}>
           <button
@@ -44,10 +52,19 @@ export default function ViewModal({ item, onClose }) {
           </span>
           <h2 className="mt-3 text-2xl font-bold text-white">{item.title}</h2>
         </div>
-        <div className="p-8 overflow-y-auto">
+        <div
+          className="p-8 overflow-y-auto"
+          onCopy={(e) => {
+            const sel = window.getSelection()?.toString();
+            if (sel) {
+              e.preventDefault();
+              e.clipboardData.setData('text/plain', sel.replace(/\n{2,}/g, '\n'));
+            }
+          }}
+        >
           {item.content && item.content.includes('<') ? (
             <div
-              className="prose prose-sm max-w-none text-secondary [&_img]:rounded-lg [&_img]:max-h-64 [&_img]:object-cover"
+              className="prose prose-sm max-w-none text-secondary [&_p]:my-1 [&_h1]:mt-4 [&_h1]:mb-1 [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_img]:rounded-lg [&_img]:max-h-64 [&_img]:object-cover [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
               dangerouslySetInnerHTML={{ __html: item.content }}
             />
           ) : (

@@ -71,10 +71,12 @@ export default function HRPolicies() {
   };
 
   const handleSavePolicy = (form) => {
+    const plainText = form.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const summary = plainText.slice(0, 80) + (plainText.length > 80 ? '...' : '');
     if (editing) {
-      setItems(items.map((i) => (i.id === editing.id ? { ...i, ...form, summary: form.content.slice(0, 80) + '...' } : i)));
+      setItems(items.map((i) => (i.id === editing.id ? { ...i, ...form, summary } : i)));
     } else {
-      setItems([...items, { id: genId(), ...form, summary: form.content.slice(0, 80) + '...' }]);
+      setItems([...items, { id: genId(), ...form, summary }]);
     }
     setEditing(null);
     setAddingPolicy(false);

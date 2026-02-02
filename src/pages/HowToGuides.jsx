@@ -6,18 +6,32 @@ import EditModal from '../components/EditModal';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 
-const ALL_CATEGORIES = ['Service', 'Sales', 'Strategy'];
+const ALL_CATEGORIES = ['Field Team', 'Sales Team', 'General Manager'];
 
 const CATEGORY_TO_TYPE = {
+  'Field Team': 'field-team',
+  'Sales Team': 'sales',
+  'General Manager': 'strategy',
+  // Backward compat for existing saved guides
   'Service': 'field-team',
   'Sales': 'sales',
   'Strategy': 'strategy',
 };
 
+const TYPE_TO_CATEGORY = {
+  'field-team': 'Field Team',
+  'service': 'Field Team',
+  'equipment': 'Field Team',
+  'sales': 'Sales Team',
+  'pme': 'Sales Team',
+  'strategy': 'General Manager',
+  'owner': 'General Manager',
+};
+
 const ALL_TABS = [
-  { key: 'field-team', label: 'Service', activeColor: 'text-brand-text-strong', playbookKey: 'service' },
-  { key: 'sales', label: 'Sales', activeColor: 'text-purple-700', playbookKey: 'sales' },
-  { key: 'strategy', label: 'Strategy', activeColor: 'text-blue-700', playbookKey: 'strategy' },
+  { key: 'field-team', label: 'Field Team', activeColor: 'text-brand-text-strong', playbookKey: 'service' },
+  { key: 'sales', label: 'Sales Team', activeColor: 'text-purple-700', playbookKey: 'sales' },
+  { key: 'strategy', label: 'General Manager', activeColor: 'text-blue-700', playbookKey: 'strategy' },
 ];
 
 export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
@@ -50,9 +64,22 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
     if (filter === 'strategy') return itemType === 'owner';
     return false;
   };
+
+  // Team members: show all allowed playbooks in a flat list (no category tabs)
+  const allowedTypeMatch = (itemType) => {
+    return visibleTabs.some((t) => {
+      if (t.key === itemType) return true;
+      if (t.key === 'field-team') return itemType === 'service' || itemType === 'equipment';
+      if (t.key === 'sales') return itemType === 'pme';
+      if (t.key === 'strategy') return itemType === 'owner';
+      return false;
+    });
+  };
+
   const filtered = items.filter((i) => {
-    if (!query) return typeMatch(i.type);
-    return (i.title?.toLowerCase().includes(query) || i.summary?.toLowerCase().includes(query));
+    if (query) return allowedTypeMatch(i.type) && (i.title?.toLowerCase().includes(query) || i.summary?.toLowerCase().includes(query));
+    if (ownerMode) return typeMatch(i.type);
+    return allowedTypeMatch(i.type);
   });
 
   const handleDelete = (item) => {
@@ -110,11 +137,7 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
         />
       </div>
 
-      {visibleTabs.length === 0 ? (
-        <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-8 text-center mb-6">
-          <p className="text-muted text-sm">No playbooks available. Contact the team owner for access.</p>
-        </div>
-      ) : (
+      {ownerMode && (
         <div className="flex items-center gap-1 bg-surface-alt p-1 rounded-xl w-fit mb-6 overflow-x-auto">
           {visibleTabs.map((tab) => (
             <button
@@ -133,7 +156,7 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
       )}
 
       {filtered.length === 0 ? (
-        <p className="text-muted text-sm">{query ? 'No playbooks match your search.' : 'No playbooks in this category yet.'}</p>
+        <p className="text-muted text-sm">{query ? 'No playbooks match your search.' : ownerMode ? 'No playbooks in this category yet.' : 'No playbooks available yet.'}</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((item) => (
@@ -152,7 +175,7 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
       {viewing && <ViewModal item={viewing} onClose={() => setViewing(null)} />}
       {(editing || adding) && (
         <EditModal
-          item={editing}
+          item={editing ? { ...editing, category: TYPE_TO_CATEGORY[editing.type] || ALL_CATEGORIES[0] } : null}
           categories={ALL_CATEGORIES}
           title="Guide"
           richText

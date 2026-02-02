@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   ChevronDown,
   ClipboardList,
-  Briefcase,
   AlertTriangle,
   CircleCheck,
 } from 'lucide-react';
@@ -34,7 +33,6 @@ export default function OwnerDashboard() {
   const hasActionItems = equipment.some((e) => e.status === 'needs-repair') || timeOffRequests.some((r) => r.status === 'pending') || suggestions.some((s) => s.status === 'New');
   const [showActionRequired, setShowActionRequired] = useState(hasActionItems);
   const [showManagement, setShowManagement] = useState(false);
-  const [showMyDay, setShowMyDay] = useState(false);
 
   const pendingPTO = timeOffRequests.filter((r) => r.status === 'pending');
   const repairEquipment = equipment.filter((e) => e.status === 'needs-repair');
@@ -88,25 +86,22 @@ export default function OwnerDashboard() {
 
   return (
     <div className="space-y-8">
-      {/* Hero Banner */}
-      <div className="bg-gradient-to-r from-emerald-600 to-emerald-800 rounded-2xl p-8 md:p-12 text-white">
-        <h1 className="text-3xl md:text-4xl font-bold">{getGreeting()}, {currentUser?.split(' ')[0]}</h1>
-        <p className="text-emerald-100 mt-2 text-lg">Here's your business overview</p>
-      </div>
-
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3 sm:gap-4">
-        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-3 sm:p-5">
-          <p className="text-xs sm:text-sm text-tertiary font-medium">Labor Efficiency</p>
-          <p className="text-xl sm:text-3xl font-bold text-primary mt-1">40%</p>
-        </div>
-        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-3 sm:p-5">
-          <p className="text-xs sm:text-sm text-tertiary font-medium">Sales Efficiency</p>
-          <p className="text-xl sm:text-3xl font-bold text-primary mt-1">60%</p>
-        </div>
-        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-3 sm:p-5">
-          <p className="text-xs sm:text-sm text-tertiary font-medium truncate">Revenue / Man-Hr</p>
-          <p className="text-xl sm:text-3xl font-bold text-primary mt-1">$70/hr</p>
+      <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-4 sm:p-6">
+        <h2 className="text-lg font-bold text-primary mb-3">Business Health</h2>
+        <div className="grid grid-cols-3 gap-3 sm:gap-4">
+          <div className="bg-surface rounded-xl p-3 sm:p-4">
+            <p className="text-xs sm:text-sm text-tertiary font-medium">Labor Efficiency</p>
+            <p className="text-xl sm:text-3xl font-bold text-primary mt-1">40%</p>
+          </div>
+          <div className="bg-surface rounded-xl p-3 sm:p-4">
+            <p className="text-xs sm:text-sm text-tertiary font-medium">Sales Efficiency</p>
+            <p className="text-xl sm:text-3xl font-bold text-primary mt-1">60%</p>
+          </div>
+          <div className="bg-surface rounded-xl p-3 sm:p-4">
+            <p className="text-xs sm:text-sm text-tertiary font-medium truncate">Revenue / Man-Hr</p>
+            <p className="text-xl sm:text-3xl font-bold text-primary mt-1">$70/hr</p>
+          </div>
         </div>
       </div>
 
@@ -270,31 +265,13 @@ export default function OwnerDashboard() {
         ))}
       </div>
 
-      {/* My Day */}
-      <button
-        onClick={() => setShowMyDay((v) => !v)}
-        className="flex items-center gap-3 pt-4 w-full cursor-pointer group"
-      >
-        <div className="flex items-center gap-2">
-          <Briefcase size={20} className="text-muted" />
-          <h2 className="text-xl font-bold text-primary">Me</h2>
-        </div>
-        <div className="flex-1 h-px bg-border-default" />
-        <ChevronDown
-          size={20}
-          className={`text-muted group-hover:text-secondary transition-transform duration-200 ${showMyDay ? '' : '-rotate-90'}`}
-        />
-      </button>
-
-      {showMyDay && <MyDaySection />}
-
       {/* Management */}
       <button
         onClick={() => setShowManagement((v) => !v)}
         className="flex items-center gap-3 pt-4 w-full cursor-pointer group"
       >
         <div className="flex items-center gap-2">
-          <ClipboardList size={20} className="text-muted" />
+          <ClipboardList size={20} className="text-brand-text" />
           <h2 className="text-xl font-bold text-primary">Management</h2>
         </div>
         <div className="flex-1 h-px bg-border-default" />
@@ -306,41 +283,9 @@ export default function OwnerDashboard() {
 
       {showManagement && <ManagementSection />}
 
-      {/* Apps — horizontal scroll on mobile only */}
-      <div className="lg:hidden">
-        <h2 className="text-lg font-bold text-primary mb-3">Apps</h2>
-        <div className="flex gap-4 overflow-x-auto pb-3 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
-          {[
-            { name: 'Jobber', url: 'https://getjobber.com', bg: 'bg-[#1a3a3a]', icon: 'J', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://getjobber.com&size=128' },
-            { name: 'GoHighLevel', url: 'https://app.gohighlevel.com', bg: 'bg-[#1a2332]', icon: 'G', logo: '/logos/ghl-icon.jpg' },
-            { name: 'QuickBooks', url: 'https://quickbooks.intuit.com', bg: 'bg-[#2ca01c]', icon: 'QB', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://quickbooks.intuit.com&size=128' },
-            { name: 'ADP', url: 'https://my.adp.com', bg: 'bg-[#d0271d]', icon: 'ADP', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://adp.com&size=128' },
-            { name: 'Canva', url: 'https://www.canva.com', bg: 'bg-[#00c4cc]', icon: 'C', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://canva.com&size=128' },
-            { name: 'ChatGPT', url: 'https://chat.openai.com', bg: 'bg-[#10a37f]', icon: 'AI', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://chat.openai.com&size=128' },
-            { name: 'Gemini', url: 'https://gemini.google.com', bg: 'bg-white', icon: 'Ge', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://gemini.google.com&size=128' },
-            { name: 'Claude', url: 'https://claude.ai', bg: 'bg-[#d97757]', icon: 'Cl', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://claude.ai&size=128' },
-          ].map((app) => (
-            <a
-              key={app.name}
-              href={app.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex flex-col items-center gap-2 shrink-0"
-            >
-              <div className={`w-16 h-16 rounded-2xl ${app.bg} flex items-center justify-center text-white font-bold text-lg shadow-md hover:scale-105 transition-transform overflow-hidden`}>
-                <img
-                  src={app.logo}
-                  alt={app.name}
-                  className="w-full h-full object-cover"
-                  onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = ''; }}
-                />
-                <span style={{ display: 'none' }}>{app.icon}</span>
-              </div>
-              <span className="text-xs font-medium text-secondary w-16 text-center truncate">{app.name}</span>
-            </a>
-          ))}
-        </div>
-      </div>
+      {/* Daily Checklists */}
+      <MyDaySection />
+
     </div>
   );
 }

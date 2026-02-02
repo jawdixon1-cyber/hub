@@ -4,10 +4,9 @@ import {
   Home as HomeIcon,
   BookOpen,
   Users,
-  Lightbulb,
+  GraduationCap,
   LogOut,
   RefreshCw,
-  Settings as SettingsIcon,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -15,19 +14,20 @@ import { useAuth } from './contexts/AuthContext';
 import { AppStoreProvider, useAppStore } from './store/AppStoreContext';
 import LoginForm from './components/LoginForm';
 import Home from './pages/Home';
-import OwnerDashboard from './pages/OwnerDashboard';
 import HowToGuides from './pages/HowToGuides';
 import EquipmentIdeas from './pages/EquipmentIdeas';
 import HRPolicies from './pages/HRPolicies';
-import IdeasFeedback from './pages/IdeasFeedback';
-import Settings from './pages/Settings';
+import Profile from './pages/Profile';
+import Training from './pages/Training';
+import TrainingModule from './pages/TrainingModule';
+import OwnerDashboard from './pages/OwnerDashboard';
 
 
 const TABS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
   { id: 'hr', path: '/hr', label: 'HR', icon: Users },
-  { id: 'ideas', path: '/ideas', label: 'Ideas', icon: Lightbulb },
+  { id: 'training', path: '/training', label: 'Training', icon: GraduationCap },
 ];
 
 /* ─── App (outer) — auth gate + data loading ─── */
@@ -151,8 +151,15 @@ function App() {
 
 /* ─── AppShell (inner) — the main app ─── */
 
+function getInitials(name) {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 function AppShell() {
-  const { user, currentUser, ownerMode, signOut } = useAuth();
+  const { user, currentUser, ownerMode } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -162,14 +169,12 @@ function AppShell() {
     ? ['service', 'sales', 'strategy']
     : (permissions[userEmail]?.playbooks || ['service']);
 
-  const handleSignOut = async () => {
-    await signOut();
-  };
-
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
     return location.pathname.startsWith(path);
   };
+
+  const isProfileActive = location.pathname === '/profile';
 
   return (
     <div className="min-h-screen bg-surface">
@@ -202,25 +207,19 @@ function AppShell() {
               })}
             </div>
 
+            {/* Profile Avatar */}
             <div className="flex items-center gap-2">
               <span className="text-sm text-tertiary hidden sm:inline">{currentUser}</span>
               <button
-                onClick={() => navigate('/settings')}
-                className={`p-2 rounded-lg transition-colors ${
-                  isActive('/settings')
-                    ? 'text-brand-text-strong bg-brand-light'
-                    : 'text-muted hover:text-secondary hover:bg-surface'
+                onClick={() => navigate('/profile')}
+                className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
+                  isProfileActive
+                    ? 'bg-brand text-on-brand ring-2 ring-brand ring-offset-2 ring-offset-card'
+                    : 'bg-brand-light text-brand-text-strong hover:bg-brand hover:text-on-brand'
                 }`}
-                title="Settings"
+                title="Profile"
               >
-                <SettingsIcon size={18} />
-              </button>
-              <button
-                onClick={handleSignOut}
-                className="p-2 rounded-lg text-muted hover:text-secondary hover:bg-surface transition-colors"
-                title="Sign out"
-              >
-                <LogOut size={18} />
+                {getInitials(currentUser)}
               </button>
             </div>
           </div>
@@ -255,8 +254,11 @@ function AppShell() {
           <Route path="/guides" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
           <Route path="/equipment" element={<EquipmentIdeas />} />
           <Route path="/hr" element={<HRPolicies />} />
-          <Route path="/ideas" element={<IdeasFeedback />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/training" element={<Training />} />
+          <Route path="/training/:moduleId" element={<TrainingModule />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/ideas" element={<Navigate to="/profile" replace />} />
+          <Route path="/settings" element={<Navigate to="/profile" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
