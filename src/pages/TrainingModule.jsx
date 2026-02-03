@@ -129,7 +129,7 @@ export default function TrainingModule() {
   }
 
   // Lock guard: non-owners must complete onboarding first
-  if (!ownerMode && !isOnboardingComplete(suggestions, currentUser)) {
+  if (!ownerMode && !isOnboardingComplete(suggestions, currentUser, userEmail)) {
     return (
       <div className="text-center py-12">
         <div className="w-16 h-16 rounded-2xl bg-surface-alt border border-border-default flex items-center justify-center mx-auto mb-4">
@@ -137,7 +137,7 @@ export default function TrainingModule() {
         </div>
         <h2 className="text-lg font-bold text-primary mb-2">Training Locked</h2>
         <p className="text-sm text-muted max-w-sm mx-auto mb-6">
-          Complete all 3 onboarding steps and get owner approval on Step 3 to unlock training modules.
+          Complete all onboarding steps and get owner approval to unlock training modules.
         </p>
         <button
           onClick={() => navigate('/training')}

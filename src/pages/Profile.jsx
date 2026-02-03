@@ -140,7 +140,8 @@ export default function Profile() {
   // Onboarding progress
   const getStepStatus = (stepId) => {
     const entry = suggestions.find(
-      (s) => s.type === 'onboarding' && s.stepId === stepId && s.submittedBy === currentUser
+      (s) => s.type === 'onboarding' && s.stepId === stepId &&
+        (s.submittedByEmail === userEmail || s.submittedBy?.toLowerCase() === currentUser?.toLowerCase())
     );
     return entry ? entry.status : null;
   };
@@ -154,7 +155,7 @@ export default function Profile() {
     return { total: items.length, done };
   };
 
-  const onboardingDone = isOnboardingComplete(suggestions, currentUser);
+  const onboardingDone = isOnboardingComplete(suggestions, currentUser, userEmail);
 
   // Ideas kanban grouping
   const submitted = myIdeas.filter((s) => s.status === 'New');
@@ -235,7 +236,7 @@ export default function Profile() {
                     <StepIcon size={14} className={step.color} />
                   </div>
                   <span className="text-xs font-semibold text-primary truncate flex-1">{step.title}</span>
-                  {(status === 'Approved' || (total > 0 && done === total)) && (
+                  {status === 'Approved' && (
                     <Check size={14} className="text-emerald-500 shrink-0" />
                   )}
                 </div>
@@ -251,9 +252,9 @@ export default function Profile() {
                   </div>
                 )}
                 <span className={`text-[10px] font-semibold mt-1.5 block ${
-                  status === 'Approved' || (total > 0 && done === total) ? 'text-emerald-600' : done > 0 ? 'text-amber-600' : 'text-muted'
+                  status === 'Approved' ? 'text-emerald-600' : done > 0 || status ? 'text-amber-600' : 'text-muted'
                 }`}>
-                  {status === 'Approved' || (total > 0 && done === total) ? 'Finished' : done > 0 ? 'In progress' : 'Not started'}
+                  {status === 'Approved' ? 'Finished' : done > 0 || status ? 'In progress' : 'Not started'}
                 </span>
               </button>
             );

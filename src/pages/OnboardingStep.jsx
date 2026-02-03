@@ -7,7 +7,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
-import { ONBOARDING_STEPS, RichContent } from './Training';
+import { ONBOARDING_STEPS, RichContent, isOnboardingComplete } from './Training';
 import { genId } from '../data';
 import SignaturePad from '../components/SignaturePad';
 
@@ -49,6 +49,15 @@ function generateDefaultSections(stepId) {
       { id: 'ob2-overview', title: 'How Everything Connects', content: '<p>Each system has a specific role:</p><ul><li><strong>ADP</strong> \u2014 payroll, time tracking, HR documents</li><li><strong>DRO</strong> \u2014 daily routes, job assignments, task updates</li><li><strong>This app</strong> \u2014 playbooks, training, HR policies, checklists</li></ul><p>If you have trouble logging in or something doesn\'t make sense, ask your lead \u2014 that\'s what this step is for.</p>' },
       { id: 'ob2-next', title: "What's Next", content: '<p>Once the owner approves this step, <strong>training modules unlock automatically</strong>. You\'ll work through them in order with your mentor.</p>' },
     ],
+    'onboard-3': [
+      { id: 'ob3-about', title: 'What This Step Is About', content: '<p><strong>Review and sign key company policies.</strong> These policies cover expectations, scheduling, conduct, and other important guidelines you\'ll need to follow as a team member.</p>' },
+      { id: 'ob3-policies', title: 'Policies Overview', content: '<p>All company policies are accessible on the <a href="/hr">HR page</a>. During this step, you\'ll read through and formally accept the policies listed below. Each one requires your signature to confirm you\'ve read and understood it.</p>' },
+    ],
+    'onboard-4': [
+      { id: 'ob4-about', title: 'What This Step Is About', content: '<p><strong>Review your team\'s playbook(s) and confirm your understanding.</strong> Playbooks outline the procedures, expectations, and guidelines for how your team operates day-to-day.</p>' },
+      { id: 'ob4-where', title: 'Where to Find Playbooks', content: '<p>Your team\'s playbooks are available on the <a href="/guides">Playbooks page</a>. Take your time reading through each one carefully. If anything is unclear, ask your lead or mentor for clarification.</p>' },
+      { id: 'ob4-next', title: "What's Next", content: '<p>Once the owner approves this step, <strong>training modules unlock automatically</strong>. You\'ll work through them in order with your mentor.</p>' },
+    ],
   };
   return data[stepId] || [];
 }
@@ -70,6 +79,14 @@ function generateDefaultActionItems(stepId) {
       { id: 'ai2-dro', type: 'checklist', label: 'Log into DRO and verify your account' },
       { id: 'ai2-dro-walk', type: 'checklist', label: 'Complete DRO walkthrough with your lead' },
       { id: 'ai2-confirm', type: 'checklist', label: 'Confirm all logins are working' },
+    ],
+    'onboard-3': [
+      { id: 'ai3-timeoff', type: 'policy', label: 'Read and accept Time Off & Scheduling', policyId: '51' },
+      { id: 'ai3-conduct', type: 'policy', label: 'Read and accept Code of Conduct', policyId: '53' },
+      { id: 'ai3-newhire', type: 'policy', label: 'Read and accept New Hire Onboarding', policyId: '52' },
+    ],
+    'onboard-4': [
+      { id: 'ai4-playbook', type: 'policy', label: 'I have reviewed and understand my assigned team playbook(s)', policyText: 'I confirm that I have reviewed the playbook(s) assigned to my team. I understand the procedures, expectations, and guidelines outlined in the playbook(s) and agree to follow them in my daily work.' },
     ],
   };
   return data[stepId] || [];
@@ -145,8 +162,13 @@ export default function OnboardingStep() {
 
   // Current user's submission status for this step
   const existingSubmission = suggestions.find(
-    (s) => s.type === 'onboarding' && s.stepId === stepId && s.submittedBy === currentUser
+    (s) => s.type === 'onboarding' && s.stepId === stepId &&
+      (s.submittedByEmail === userEmail || s.submittedBy?.toLowerCase() === currentUser?.toLowerCase())
   );
+
+  // Navigate back to onboarding hub or training depending on state
+  const backPath = isOnboardingComplete(suggestions, currentUser, userEmail) || ownerMode ? '/training' : '/';
+  const backLabel = isOnboardingComplete(suggestions, currentUser, userEmail) || ownerMode ? 'Back to Training' : 'Back to Onboarding';
 
   const showToast = (message) => {
     setToast(message);
@@ -315,6 +337,7 @@ export default function OnboardingStep() {
         title: `${currentUser} \u2013 ${step.title} Complete`,
         description: `${currentUser} has completed ${step.title}.`,
         submittedBy: currentUser,
+        submittedByEmail: userEmail,
         date: today,
         status: 'New',
         internalNote: '',
@@ -325,9 +348,12 @@ export default function OnboardingStep() {
   };
 
   /* ── Prev / Next ── */
+  const inOnboardingGate = !isOnboardingComplete(suggestions, currentUser, userEmail) && !ownerMode;
   const currentIdx = ONBOARDING_STEPS.findIndex((s) => s.id === stepId);
   const prevStep = currentIdx > 0 ? ONBOARDING_STEPS[currentIdx - 1] : null;
-  const nextStep = currentIdx < ONBOARDING_STEPS.length - 1 ? ONBOARDING_STEPS[currentIdx + 1] : null;
+  const nextStep = currentIdx < ONBOARDING_STEPS.length - 1 && !inOnboardingGate
+    ? ONBOARDING_STEPS[currentIdx + 1]
+    : null;
 
   /* ─── Render ─── */
 
@@ -345,11 +371,11 @@ export default function OnboardingStep() {
       <div className={`bg-gradient-to-r ${gradient} px-4 sm:px-6 lg:px-8 pt-6 pb-12`}>
         <div className="max-w-7xl mx-auto">
           <button
-            onClick={() => navigate('/training')}
+            onClick={() => navigate(backPath)}
             className="inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition-colors cursor-pointer mb-6"
           >
             <ArrowLeft size={16} />
-            Back to Training
+            {backLabel}
           </button>
 
           <div className="flex items-start gap-4">
@@ -630,10 +656,10 @@ export default function OnboardingStep() {
             </button>
           ) : (
             <button
-              onClick={() => navigate('/training')}
+              onClick={() => navigate(backPath)}
               className="flex items-center gap-2 px-5 py-3 rounded-xl bg-brand text-on-brand text-sm font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
             >
-              Back to Training
+              {backLabel}
               <Check size={16} />
             </button>
           )}

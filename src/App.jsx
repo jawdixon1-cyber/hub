@@ -7,6 +7,7 @@ import {
   GraduationCap,
   LogOut,
   RefreshCw,
+  Lock,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -21,9 +22,11 @@ import Profile from './pages/Profile';
 import Training from './pages/Training';
 import TrainingModule from './pages/TrainingModule';
 import OnboardingStep from './pages/OnboardingStep';
+import OnboardingHub from './pages/OnboardingHub';
 import OwnerDashboard from './pages/OwnerDashboard';
 import TeamManagement from './pages/TeamManagement';
 import TeamMemberDetail from './pages/TeamMemberDetail';
+import { isOnboardingComplete } from './pages/Training';
 
 
 const TABS = [
@@ -167,10 +170,13 @@ function AppShell() {
   const location = useLocation();
 
   const permissions = useAppStore((s) => s.permissions);
+  const suggestions = useAppStore((s) => s.suggestions);
   const userEmail = user?.email?.toLowerCase();
   const allowedPlaybooks = ownerMode
     ? ['service', 'sales', 'strategy']
     : (permissions[userEmail]?.playbooks || ['service']);
+
+  const needsOnboarding = !ownerMode && !isOnboardingComplete(suggestions, currentUser, userEmail);
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
@@ -192,15 +198,17 @@ function AppShell() {
             {/* Desktop Tabs */}
             <div className="hidden md:flex items-center gap-1">
               {TABS.map((t) => {
-                const Icon = t.icon;
+                const Icon = needsOnboarding ? Lock : t.icon;
                 return (
                   <button
                     key={t.id}
-                    onClick={() => navigate(t.path)}
+                    onClick={() => !needsOnboarding && navigate(t.path)}
                     className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      isActive(t.path)
-                        ? 'bg-brand-light text-brand-text-strong'
-                        : 'text-tertiary hover:text-secondary hover:bg-surface'
+                      needsOnboarding
+                        ? 'opacity-50 cursor-not-allowed text-muted'
+                        : isActive(t.path)
+                          ? 'bg-brand-light text-brand-text-strong'
+                          : 'text-tertiary hover:text-secondary hover:bg-surface'
                     }`}
                   >
                     <Icon size={18} />
@@ -214,15 +222,17 @@ function AppShell() {
             <div className="flex items-center gap-2">
               <span className="text-sm text-tertiary hidden sm:inline">{currentUser}</span>
               <button
-                onClick={() => navigate('/profile')}
+                onClick={() => !needsOnboarding && navigate('/profile')}
                 className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
-                  isProfileActive
-                    ? 'bg-brand text-on-brand ring-2 ring-brand ring-offset-2 ring-offset-card'
-                    : 'bg-brand-light text-brand-text-strong hover:bg-brand hover:text-on-brand'
+                  needsOnboarding
+                    ? 'opacity-50 cursor-not-allowed bg-brand-light text-brand-text-strong'
+                    : isProfileActive
+                      ? 'bg-brand text-on-brand ring-2 ring-brand ring-offset-2 ring-offset-card'
+                      : 'bg-brand-light text-brand-text-strong hover:bg-brand hover:text-on-brand'
                 }`}
-                title="Profile"
+                title={needsOnboarding ? 'Complete onboarding first' : 'Profile'}
               >
-                {getInitials(currentUser)}
+                {needsOnboarding ? <Lock size={14} /> : getInitials(currentUser)}
               </button>
             </div>
           </div>
@@ -231,15 +241,17 @@ function AppShell() {
         {/* Mobile Tabs */}
         <div className="md:hidden flex border-t border-border-subtle overflow-x-auto">
           {TABS.map((t) => {
-            const Icon = t.icon;
+            const Icon = needsOnboarding ? Lock : t.icon;
             return (
               <button
                 key={t.id}
-                onClick={() => navigate(t.path)}
+                onClick={() => !needsOnboarding && navigate(t.path)}
                 className={`flex-1 flex flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors min-w-[64px] ${
-                  isActive(t.path)
-                    ? 'text-brand-text-strong border-b-2 border-border-brand'
-                    : 'text-muted'
+                  needsOnboarding
+                    ? 'opacity-50 cursor-not-allowed text-muted'
+                    : isActive(t.path)
+                      ? 'text-brand-text-strong border-b-2 border-border-brand'
+                      : 'text-muted'
                 }`}
               >
                 <Icon size={18} />
@@ -252,21 +264,28 @@ function AppShell() {
 
       {/* Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Routes>
-          <Route path="/" element={ownerMode ? <OwnerDashboard /> : <Home />} />
-          <Route path="/guides" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
-          <Route path="/equipment" element={<EquipmentIdeas />} />
-          <Route path="/hr" element={<HRPolicies />} />
-          <Route path="/training" element={<Training />} />
-          <Route path="/training/onboard/:stepId" element={<OnboardingStep />} />
-          <Route path="/training/:moduleId" element={<TrainingModule />} />
-          <Route path="/team" element={<TeamManagement />} />
-          <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/ideas" element={<Navigate to="/profile" replace />} />
-          <Route path="/settings" element={<Navigate to="/profile" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        {needsOnboarding ? (
+          <Routes>
+            <Route path="/training/onboard/:stepId" element={<OnboardingStep />} />
+            <Route path="*" element={<OnboardingHub />} />
+          </Routes>
+        ) : (
+          <Routes>
+            <Route path="/" element={ownerMode ? <OwnerDashboard /> : <Home />} />
+            <Route path="/guides" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
+            <Route path="/equipment" element={<EquipmentIdeas />} />
+            <Route path="/hr" element={<HRPolicies />} />
+            <Route path="/training" element={<Training />} />
+            <Route path="/training/onboard/:stepId" element={<OnboardingStep />} />
+            <Route path="/training/:moduleId" element={<TrainingModule />} />
+            <Route path="/team" element={<TeamManagement />} />
+            <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/ideas" element={<Navigate to="/profile" replace />} />
+            <Route path="/settings" element={<Navigate to="/profile" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        )}
       </main>
     </div>
   );

@@ -36,7 +36,7 @@ export default function OwnerDashboard() {
 
   const pendingPTO = timeOffRequests.filter((r) => r.status === 'pending');
   const repairEquipment = equipment.filter((e) => e.status === 'needs-repair');
-  const newSuggestions = suggestions.filter((s) => s.status === 'New');
+  const newSuggestions = suggestions.filter((s) => s.status === 'New' && s.type !== 'onboarding');
 
   const handleApprove = (id) => {
     setTimeOffRequests(timeOffRequests.map((r) => (r.id === id ? { ...r, status: 'approved' } : r)));

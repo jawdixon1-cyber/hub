@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   GraduationCap, BookOpen, ChevronRight, Send,
   Briefcase, Monitor, Shield, Star, Check,
-  ClipboardCheck, LogIn, Lock,
+  ClipboardCheck, LogIn, FileText,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { genId } from '../data';
@@ -14,18 +14,38 @@ import { useAppStore } from '../store/AppStoreContext';
 export const ONBOARDING_STEPS = [
   { id: 'onboard-1', title: 'Test Day Prep', icon: ClipboardCheck, color: 'text-orange-500', bg: 'bg-orange-50', borderColor: 'border-orange-200', gradient: 'from-orange-500 to-amber-600' },
   { id: 'onboard-2', title: 'Logins', icon: LogIn, color: 'text-blue-500', bg: 'bg-blue-50', borderColor: 'border-blue-200', gradient: 'from-blue-500 to-indigo-600' },
+  { id: 'onboard-3', title: 'Company Policies', icon: Shield, color: 'text-purple-500', bg: 'bg-purple-50', borderColor: 'border-purple-200', gradient: 'from-purple-500 to-violet-600' },
+  { id: 'onboard-4', title: 'Playbook Review', icon: BookOpen, color: 'text-teal-500', bg: 'bg-teal-50', borderColor: 'border-teal-200', gradient: 'from-teal-500 to-emerald-600' },
 ];
 
 /**
  * Check whether the current user has completed onboarding.
- * Requires an approved Step 3 submission in the suggestions array.
+ * Requires ALL onboarding steps to have an approved submission.
+ * Matches by email (reliable) with name fallback for old data.
  */
-export function isOnboardingComplete(suggestions, currentUser) {
+export function isOnboardingComplete(suggestions, currentUser, userEmail) {
+  const nameLower = currentUser?.toLowerCase();
+  return ONBOARDING_STEPS.every((step) =>
+    suggestions.some(
+      (s) =>
+        s.type === 'onboarding' &&
+        s.stepId === step.id &&
+        (s.submittedByEmail === userEmail || s.submittedBy?.toLowerCase() === nameLower) &&
+        s.status === 'Approved'
+    )
+  );
+}
+
+/**
+ * Check whether a specific onboarding step is approved for the current user.
+ */
+export function isStepApproved(suggestions, currentUser, userEmail, stepId) {
+  const nameLower = currentUser?.toLowerCase();
   return suggestions.some(
     (s) =>
       s.type === 'onboarding' &&
-      s.stepId === 'onboard-2' &&
-      s.submittedBy === currentUser &&
+      s.stepId === stepId &&
+      (s.submittedByEmail === userEmail || s.submittedBy?.toLowerCase() === nameLower) &&
       s.status === 'Approved'
   );
 }
@@ -123,18 +143,6 @@ export default function Training() {
     showToast('Update submitted! Owner will review.');
   };
 
-  const onboardingDone = isOnboardingComplete(suggestions, currentUser);
-  const modulesLocked = !ownerMode && !onboardingDone;
-
-  // Per-step status for the current user
-  const getStepStatus = (stepId) => {
-    const entry = suggestions.find(
-      (s) => s.type === 'onboarding' && s.stepId === stepId && s.submittedBy === currentUser
-    );
-    if (!entry) return null;
-    return entry.status;
-  };
-
   return (
     <div className="space-y-6">
       {/* Toast */}
@@ -152,38 +160,26 @@ export default function Training() {
           <h1 className="text-2xl font-bold text-primary">Your Training Path</h1>
         </div>
         <p className="text-secondary text-sm">
-          Complete the onboarding steps first, then work through the training modules with your mentor.
+          Work through the training modules with your mentor.
         </p>
       </div>
 
-      {/* ── Onboarding Section ── */}
+      {/* ── Logins Step ── */}
       <div>
-        <h2 className="text-sm font-bold text-secondary uppercase tracking-wider mb-3">Onboarding</h2>
-        <div className="space-y-3">
-          {ONBOARDING_STEPS.map((step) => {
-            const Icon = step.icon;
-            const status = getStepStatus(step.id);
-            const statusBadge = status === 'Approved'
-              ? <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">Complete</span>
-              : null;
-            return (
-              <button
-                key={step.id}
-                onClick={() => navigate(`/training/onboard/${step.id}`)}
-                className="w-full flex items-center gap-4 p-5 bg-card rounded-2xl shadow-sm border border-border-subtle hover:border-border-strong hover:shadow-md transition-all text-left cursor-pointer group"
-              >
-                <div className={`w-11 h-11 rounded-xl ${step.bg} ${step.borderColor} border flex items-center justify-center shrink-0`}>
-                  <Icon size={20} className={step.color} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="font-semibold text-primary block">{step.title}</span>
-                </div>
-                {statusBadge && <div className="shrink-0">{statusBadge}</div>}
-                <ChevronRight size={18} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />
-              </button>
-            );
-          })}
-        </div>
+        <h2 className="text-sm font-bold text-secondary uppercase tracking-wider mb-3">Logins</h2>
+        <button
+          onClick={() => navigate('/training/onboard/onboard-2')}
+          className="w-full flex items-center gap-4 p-5 bg-card rounded-2xl shadow-sm border border-border-subtle hover:border-border-strong hover:shadow-md transition-all text-left cursor-pointer group"
+        >
+          <div className="w-11 h-11 rounded-xl bg-blue-50 border-blue-200 border flex items-center justify-center shrink-0">
+            <LogIn size={20} className="text-blue-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <span className="font-semibold text-primary block">Logins</span>
+            <span className="text-xs text-tertiary">Get logged into every system you'll use on the job</span>
+          </div>
+          <ChevronRight size={18} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />
+        </button>
       </div>
 
       {/* ── Training Modules Section ── */}
@@ -193,27 +189,6 @@ export default function Training() {
           {visibleModules.map((mod) => {
             const Icon = mod.icon;
             const customTitle = getCustomTitle(mod.id);
-
-            if (modulesLocked) {
-              return (
-                <div
-                  key={mod.id}
-                  onClick={() => showToast('Complete onboarding to unlock training modules')}
-                  className="w-full flex items-center gap-4 p-5 bg-card rounded-2xl shadow-sm border border-border-subtle opacity-50 cursor-pointer"
-                >
-                  <div className={`w-11 h-11 rounded-xl bg-surface-alt border border-border-default flex items-center justify-center shrink-0`}>
-                    <Lock size={20} className="text-muted" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className="font-semibold text-muted block">{customTitle || mod.title}</span>
-                    {mod.optional && (
-                      <span className="text-xs text-muted">Optional</span>
-                    )}
-                  </div>
-                  <Lock size={16} className="text-muted shrink-0" />
-                </div>
-              );
-            }
 
             return (
               <button
@@ -236,15 +211,10 @@ export default function Training() {
           })}
         </div>
 
-        {modulesLocked && (
-          <p className="text-xs text-muted mt-2 text-center">
-            Complete onboarding Step 3 and get owner approval to unlock training modules.
-          </p>
-        )}
       </div>
 
-      {/* Submit Progress Update (team member only, when unlocked) */}
-      {!ownerMode && !modulesLocked && (
+      {/* Submit Progress Update (team member only) */}
+      {!ownerMode && (
         <div>
           {!showProgressForm ? (
             <button
