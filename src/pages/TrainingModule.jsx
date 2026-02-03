@@ -114,11 +114,10 @@ export default function TrainingModule() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
 
-  const showModule5 = !!trainingConfig?.showModule5;
-  const visibleModules = MODULE_LIST.filter((m) => !m.optional || showModule5);
+  const visibleModules = MODULE_LIST;
 
   const mod = MODULE_LIST.find((m) => m.id === id);
-  if (!mod || (mod.optional && !showModule5)) {
+  if (!mod) {
     return (
       <div className="text-center py-12">
         <p className="text-muted">Module not found.</p>

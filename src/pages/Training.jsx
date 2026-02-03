@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   GraduationCap, BookOpen, ChevronRight, Send,
   Briefcase, Monitor, Shield, Star, Check,
-  ClipboardCheck, UserCheck, FileCheck, Lock,
+  ClipboardCheck, LogIn, Lock,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { genId } from '../data';
@@ -12,9 +12,8 @@ import { useAppStore } from '../store/AppStoreContext';
 /* ─── Onboarding steps (prerequisite before training modules) ─── */
 
 export const ONBOARDING_STEPS = [
-  { id: 'onboard-1', title: 'Step 1: Pre-Test Day Prep', icon: ClipboardCheck, color: 'text-orange-500', bg: 'bg-orange-50', borderColor: 'border-orange-200', gradient: 'from-orange-500 to-amber-600' },
-  { id: 'onboard-2', title: 'Step 2: Test Day Evaluation', icon: UserCheck, color: 'text-cyan-500', bg: 'bg-cyan-50', borderColor: 'border-cyan-200', gradient: 'from-cyan-500 to-teal-600' },
-  { id: 'onboard-3', title: 'Step 3: Post-Test Admin Setup', icon: FileCheck, color: 'text-violet-500', bg: 'bg-violet-50', borderColor: 'border-violet-200', gradient: 'from-violet-500 to-purple-600' },
+  { id: 'onboard-1', title: 'Test Day Prep', icon: ClipboardCheck, color: 'text-orange-500', bg: 'bg-orange-50', borderColor: 'border-orange-200', gradient: 'from-orange-500 to-amber-600' },
+  { id: 'onboard-2', title: 'Logins', icon: LogIn, color: 'text-blue-500', bg: 'bg-blue-50', borderColor: 'border-blue-200', gradient: 'from-blue-500 to-indigo-600' },
 ];
 
 /**
@@ -25,7 +24,7 @@ export function isOnboardingComplete(suggestions, currentUser) {
   return suggestions.some(
     (s) =>
       s.type === 'onboarding' &&
-      s.stepId === 'onboard-3' &&
+      s.stepId === 'onboard-2' &&
       s.submittedBy === currentUser &&
       s.status === 'Approved'
   );
@@ -83,8 +82,7 @@ export default function Training() {
     ? ['service', 'sales', 'strategy']
     : (permissions[userEmail]?.playbooks || ['service']);
 
-  const showModule5 = !!trainingConfig?.showModule5;
-  const visibleModules = MODULE_LIST.filter((m) => !m.optional || showModule5);
+  const visibleModules = MODULE_LIST;
 
   // Custom titles from team-specific content
   const primaryTeam = allowedPlaybooks[0] || 'service';
@@ -166,10 +164,8 @@ export default function Training() {
             const Icon = step.icon;
             const status = getStepStatus(step.id);
             const statusBadge = status === 'Approved'
-              ? <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">Approved</span>
-              : status
-                ? <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">{status}</span>
-                : null;
+              ? <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">Complete</span>
+              : null;
             return (
               <button
                 key={step.id}

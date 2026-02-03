@@ -2,12 +2,14 @@ import { useState, lazy, Suspense } from 'react';
 import {
   ArrowLeft, Pencil, Plus, Trash2,
   ArrowUp, ArrowDown, X, Check, Send,
+  ClipboardList, Shield, CheckSquare, ExternalLink, FileSignature,
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { ONBOARDING_STEPS, RichContent } from './Training';
 import { genId } from '../data';
+import SignaturePad from '../components/SignaturePad';
 
 const RichTextEditor = lazy(() => import('../components/RichTextEditor'));
 
@@ -41,17 +43,33 @@ function generateDefaultSections(stepId) {
       { id: 'ob1-actions', title: 'Actions', content: '<ol><li>Read all HR policies in the HR tab</li><li>Review safety basics (PPE, hazard awareness)</li><li>Confirm your test day schedule with your lead</li><li>Mark this step complete when ready</li></ol>' },
     ],
     'onboard-2': [
-      { id: 'ob2-about', title: 'What This Step Is About', content: '<p><strong>Your practical evaluation day with a lead or owner.</strong> This is your chance to show what you can do and learn on the job.</p>' },
-      { id: 'ob2-eval', title: "What You'll Be Evaluated On", content: '<ul><li>Safety awareness and PPE compliance</li><li>Equipment handling and care</li><li>Following playbook steps correctly</li><li>Attitude, communication, and teamwork</li><li>Willingness to ask questions and take feedback</li></ul>' },
-      { id: 'ob2-tips', title: 'Tips for Success', content: '<ul><li>Ask questions \u2014 it shows initiative</li><li>Be on time and ready to work</li><li>Wear appropriate gear (closed-toe shoes, work clothes)</li><li>Stay positive and be coachable</li><li>Take notes if it helps you remember</li></ul>' },
-      { id: 'ob2-after', title: 'After the Evaluation', content: '<ul><li>Your lead will submit a private evaluation</li><li>You submit your own progress update below</li><li>Owner reviews both and decides next steps</li></ul>' },
+      { id: 'ob2-about', title: 'What This Step Is About', content: '<p><strong>Get logged into every system you\'ll use on the job.</strong> Your lead will walk you through each one so you know what it does and how to use it.</p>' },
+      { id: 'ob2-adp', title: 'ADP (Payroll & HR)', content: '<ul><li>ADP handles your pay, direct deposit, tax forms, and time tracking</li><li>Log in with the credentials provided by your lead</li><li>Verify your personal info and direct deposit details are correct</li><li>Learn how to view your pay stubs and schedule</li></ul>' },
+      { id: 'ob2-dro', title: 'DRO', content: '<ul><li>DRO is used for daily route operations and job management</li><li>Log in and familiarize yourself with the interface</li><li>Your lead will walk you through how jobs, routes, and tasks are organized</li><li>Learn how to check your assignments and update job status</li></ul>' },
+      { id: 'ob2-overview', title: 'How Everything Connects', content: '<p>Each system has a specific role:</p><ul><li><strong>ADP</strong> \u2014 payroll, time tracking, HR documents</li><li><strong>DRO</strong> \u2014 daily routes, job assignments, task updates</li><li><strong>This app</strong> \u2014 playbooks, training, HR policies, checklists</li></ul><p>If you have trouble logging in or something doesn\'t make sense, ask your lead \u2014 that\'s what this step is for.</p>' },
+      { id: 'ob2-next', title: "What's Next", content: '<p>Once the owner approves this step, <strong>training modules unlock automatically</strong>. You\'ll work through them in order with your mentor.</p>' },
     ],
-    'onboard-3': [
-      { id: 'ob3-about', title: 'What This Step Is About', content: '<p><strong>Get fully set up in all company systems.</strong> This is the final admin step before you can start training modules.</p>' },
-      { id: 'ob3-accounts', title: 'Account Setup', content: '<ul><li>Jobber login \u2014 for scheduling, clock-in/out, job tracking</li><li>ADP / payroll enrollment \u2014 direct deposit, tax forms</li><li>App access \u2014 this app for playbooks, training, HR</li></ul>' },
-      { id: 'ob3-gear', title: 'Gear & Uniform', content: '<ul><li>Company shirts \u2014 get from your lead or owner</li><li>PPE \u2014 safety glasses, ear protection, gloves</li><li>Assigned equipment \u2014 any tools specific to your role</li></ul>' },
-      { id: 'ob3-actions', title: 'Actions', content: '<ol><li>Confirm all accounts are working (Jobber, ADP, app)</li><li>Collect your gear and uniform</li><li>Submit "Ready to start training" below</li></ol>' },
-      { id: 'ob3-next', title: "What's Next", content: '<p>Once the owner approves this step, <strong>training modules unlock automatically</strong>. You\'ll work through them in order with your mentor.</p>' },
+  };
+  return data[stepId] || [];
+}
+
+/* ── Default action items per onboarding step ── */
+
+function generateDefaultActionItems(stepId) {
+  const data = {
+    'onboard-1': [
+      { id: 'ai1-hr', type: 'policy', label: 'Read and accept HR Policies', link: '/hr', policyText: 'I acknowledge that I have read and understand the HR Policies of Hey Jude\'s Lawn Care, including policies on time off, code of conduct, and pay schedule. I agree to comply with all company policies as a condition of my employment.' },
+      { id: 'ai1-safety', type: 'policy', label: 'Read and accept Safety Guidelines', policyText: 'I acknowledge that I have read and understand the Safety Guidelines of Hey Jude\'s Lawn Care. I agree to follow all safety protocols, wear required PPE, and report any hazards or unsafe conditions immediately.' },
+      { id: 'ai1-app-cert', type: 'policy', label: 'Application Certification & Background Check Authorization', policyText: 'I certify that the information provided in this application is true and complete to the best of my knowledge. I understand that false or misleading information may disqualify me from employment or result in dismissal if discovered later.\n\nI authorize Hey Jude\'s Lawn Care to contact any references or employers listed above for the purpose of verifying employment and qualifications.\n\nHey Jude\'s Lawn Care may conduct a background check as part of the hiring process. By signing below, I authorize this screening for employment purposes.' },
+      { id: 'ai1-schedule', type: 'checklist', label: 'Confirm test day schedule with lead' },
+      { id: 'ai1-docs', type: 'checklist', label: 'Gather required documents (ID, direct deposit info)' },
+    ],
+    'onboard-2': [
+      { id: 'ai2-adp', type: 'checklist', label: 'Log into ADP and verify your account' },
+      { id: 'ai2-adp-walk', type: 'checklist', label: 'Complete ADP walkthrough with your lead' },
+      { id: 'ai2-dro', type: 'checklist', label: 'Log into DRO and verify your account' },
+      { id: 'ai2-dro-walk', type: 'checklist', label: 'Complete DRO walkthrough with your lead' },
+      { id: 'ai2-confirm', type: 'checklist', label: 'Confirm all logins are working' },
     ],
   };
   return data[stepId] || [];
@@ -71,6 +89,7 @@ export default function OnboardingStep() {
   const setSuggestions = useAppStore((s) => s.setSuggestions);
   const trainingConfig = useAppStore((s) => s.trainingConfig);
   const setTrainingConfig = useAppStore((s) => s.setTrainingConfig);
+  const policies = useAppStore((s) => s.policies) || [];
 
   const allowedPlaybooks = ownerMode
     ? ['service', 'sales', 'strategy']
@@ -85,6 +104,12 @@ export default function OnboardingStep() {
   const [editTitle, setEditTitle] = useState('');
   const [editTitleSize, setEditTitleSize] = useState('lg');
   const [editContent, setEditContent] = useState('');
+
+  // Action items state
+  const [editingActions, setEditingActions] = useState(false);
+  const [actionDraft, setActionDraft] = useState([]);
+  const [acceptingPolicy, setAcceptingPolicy] = useState(null); // action item being signed
+  const [viewingPolicy, setViewingPolicy] = useState(null); // accepted policy being viewed
 
   const [toast, setToast] = useState(null);
 
@@ -110,6 +135,14 @@ export default function OnboardingStep() {
   const sections = savedSections || defaultSections;
   const isUsingDefaults = !savedSections;
 
+  // Action items: saved custom → defaults
+  const savedActionItems = trainingConfig?.onboardingSteps?.[activeTeam]?.[stepId]?.actionItems || null;
+  const actionItems = savedActionItems || generateDefaultActionItems(stepId);
+
+  // Action completions for current user
+  const completions = trainingConfig?.actionCompletions?.[userEmail]?.[stepId] || {};
+  const completedCount = actionItems.filter((item) => completions[item.id]?.completed).length;
+
   // Current user's submission status for this step
   const existingSubmission = suggestions.find(
     (s) => s.type === 'onboarding' && s.stepId === stepId && s.submittedBy === currentUser
@@ -134,6 +167,30 @@ export default function OnboardingStep() {
   };
 
   const saveSections = (next) => saveStepData({ sections: next });
+
+  const saveActionItems = (items) => saveStepData({ actionItems: items });
+
+  const saveCompletion = (itemId, data) => {
+    const cfg = JSON.parse(JSON.stringify(trainingConfig || {}));
+    if (!cfg.actionCompletions) cfg.actionCompletions = {};
+    if (!cfg.actionCompletions[userEmail]) cfg.actionCompletions[userEmail] = {};
+    if (!cfg.actionCompletions[userEmail][stepId]) cfg.actionCompletions[userEmail][stepId] = {};
+    cfg.actionCompletions[userEmail][stepId][itemId] = data;
+    setTrainingConfig(cfg);
+  };
+
+  const toggleChecklist = (itemId) => {
+    const current = completions[itemId];
+    if (current?.completed) {
+      // Un-complete
+      saveCompletion(itemId, { completed: false });
+    } else {
+      saveCompletion(itemId, {
+        completed: true,
+        date: new Date().toLocaleDateString('en-US'),
+      });
+    }
+  };
 
   const baseSections = () =>
     (isUsingDefaults ? defaultSections : sections).map((s) => ({ ...s }));
@@ -183,6 +240,67 @@ export default function OnboardingStep() {
   const handleTeamChange = (key) => {
     setSelectedTeam(key);
     setEditingSection(null);
+    setEditingActions(false);
+  };
+
+  /* ── Action Item Editor helpers (owner) ── */
+
+  const openActionEditor = () => {
+    setActionDraft(actionItems.map((item) => ({ ...item })));
+    setEditingActions(true);
+  };
+
+  const addDraftItem = (type) => {
+    setActionDraft([...actionDraft, { id: genId(), type, label: '', ...(type === 'policy' ? { policyId: '', policyText: '' } : {}) }]);
+  };
+
+  const updateDraftItem = (id, field, value) => {
+    setActionDraft(actionDraft.map((item) =>
+      item.id === id ? { ...item, [field]: value } : item
+    ));
+  };
+
+  const removeDraftItem = (id) => {
+    setActionDraft(actionDraft.filter((item) => item.id !== id));
+  };
+
+  const moveDraftItem = (id, dir) => {
+    const arr = [...actionDraft];
+    const i = arr.findIndex((item) => item.id === id);
+    const j = dir === 'up' ? i - 1 : i + 1;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    setActionDraft(arr);
+  };
+
+  const handleSaveActions = () => {
+    const cleaned = actionDraft
+      .filter((item) => item.label.trim())
+      .map((item) => {
+        const out = { id: item.id, type: item.type, label: item.label.trim() };
+        if (item.type === 'policy') {
+          if (item.policyId) out.policyId = item.policyId;
+          if (item.link?.trim()) out.link = item.link.trim();
+          if (item.policyText?.trim()) out.policyText = item.policyText.trim();
+        }
+        return out;
+      });
+    saveActionItems(cleaned);
+    setEditingActions(false);
+    showToast('Action items saved');
+  };
+
+  /* ── Policy acceptance (team member) ── */
+
+  const handlePolicySign = (dataUrl) => {
+    if (!acceptingPolicy) return;
+    saveCompletion(acceptingPolicy.id, {
+      completed: true,
+      date: new Date().toLocaleDateString('en-US'),
+      signature: dataUrl,
+    });
+    showToast('Policy accepted and signed');
+    setAcceptingPolicy(null);
   };
 
   /* ── Mark Complete ── */
@@ -320,21 +438,162 @@ export default function OnboardingStep() {
           )}
         </div>
 
+        {/* ── Action Steps Section ── */}
+        {actionItems.length > 0 && (
+          <div className="mt-8 bg-card rounded-2xl shadow-sm border border-border-subtle p-6">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2">
+                <ClipboardList size={20} className="text-brand-text" />
+                <h2 className="text-lg font-bold text-primary">Action Steps</h2>
+              </div>
+              {ownerMode ? (
+                <button
+                  onClick={openActionEditor}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-brand-text bg-brand-light hover:bg-brand-light/80 transition-colors cursor-pointer"
+                >
+                  <Pencil size={12} />
+                  Edit Action Items
+                </button>
+              ) : (
+                <span className="text-xs font-semibold text-secondary">
+                  {completedCount}/{actionItems.length} completed
+                </span>
+              )}
+            </div>
+
+            {/* Progress bar */}
+            {!ownerMode && actionItems.length > 0 && (
+              <div className="mb-4">
+                <div className="w-full h-2 bg-surface-alt rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-300"
+                    style={{ width: `${actionItems.length > 0 ? (completedCount / actionItems.length) * 100 : 0}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {actionItems.map((item) => {
+                const done = completions[item.id]?.completed;
+
+                /* ── Owner view: static preview with type badges ── */
+                if (ownerMode) {
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface-alt"
+                    >
+                      {item.type === 'policy' ? (
+                        <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                          <Shield size={10} />
+                          Policy
+                        </span>
+                      ) : (
+                        <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                          <CheckSquare size={10} />
+                          Checklist
+                        </span>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-primary">{item.label}</span>
+                        {item.policyText && (
+                          <p className="text-[11px] text-tertiary mt-0.5 line-clamp-1">{item.policyText}</p>
+                        )}
+                      </div>
+                      {item.link && (
+                        <span className="text-xs text-muted shrink-0">{item.link}</span>
+                      )}
+                    </div>
+                  );
+                }
+
+                /* ── Team view: interactive items ── */
+                if (item.type === 'checklist') {
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => toggleChecklist(item.id)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-alt transition-colors text-left cursor-pointer"
+                    >
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                        done
+                          ? 'bg-emerald-500 border-emerald-500'
+                          : 'border-border-strong'
+                      }`}>
+                        {done && <Check size={12} className="text-white" />}
+                      </div>
+                      <span className={`text-sm flex-1 ${done ? 'line-through text-muted' : 'text-primary'}`}>
+                        {item.label}
+                      </span>
+                      {done && completions[item.id]?.date && (
+                        <span className="text-[10px] text-muted shrink-0">{completions[item.id].date}</span>
+                      )}
+                    </button>
+                  );
+                }
+
+                /* Policy type */
+                return (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-alt transition-colors"
+                  >
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                      done
+                        ? 'bg-emerald-500 border-emerald-500'
+                        : 'border-amber-400 bg-amber-50'
+                    }`}>
+                      {done ? (
+                        <Check size={12} className="text-white" />
+                      ) : (
+                        <FileSignature size={10} className="text-amber-600" />
+                      )}
+                    </div>
+                    <span className={`text-sm flex-1 ${done ? 'line-through text-muted' : 'text-primary'}`}>
+                      {item.label}
+                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {done ? (
+                        <button
+                          onClick={() => setViewingPolicy(item)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer"
+                        >
+                          <ExternalLink size={12} />
+                          View
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setAcceptingPolicy(item)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors cursor-pointer"
+                        >
+                          <FileSignature size={12} />
+                          Read &amp; Accept
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* ── Mark Complete (team member only) ── */}
         {!ownerMode && (
           <div className="mt-8">
             {existingSubmission ? (
               <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5 text-center">
                 <p className="text-sm text-secondary">
-                  You submitted this step on <span className="font-semibold">{existingSubmission.date}</span>.
+                  {existingSubmission.status === 'Approved'
+                    ? 'This step is complete.'
+                    : `You submitted this step on ${existingSubmission.date}.`}
                 </p>
-                <span className={`inline-block mt-2 text-xs font-semibold px-3 py-1.5 rounded-full ${
-                  existingSubmission.status === 'Approved'
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-amber-100 text-amber-700'
-                }`}>
-                  Status: {existingSubmission.status}
-                </span>
+                {existingSubmission.status === 'Approved' && (
+                  <span className="inline-block mt-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700">
+                    Complete
+                  </span>
+                )}
               </div>
             ) : (
               <button
@@ -459,6 +718,277 @@ export default function OnboardingStep() {
           </div>
         </div>
       )}
+
+      {/* ── Action Item Editor Modal (owner) ── */}
+      {editingActions && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setEditingActions(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle shrink-0">
+              <h3 className="text-lg font-bold text-primary">Edit Action Items</h3>
+              <button onClick={() => setEditingActions(false)} className="p-1.5 rounded-lg text-muted hover:text-secondary hover:bg-surface transition-colors cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-3">
+              {actionDraft.length === 0 && (
+                <p className="text-sm text-muted text-center py-4">No action items yet. Add one below.</p>
+              )}
+              {actionDraft.map((item, idx) => (
+                <div key={item.id} className="flex items-start gap-2 p-3 rounded-lg bg-surface-alt border border-border-subtle">
+                  <div className="flex flex-col gap-0.5 pt-2 shrink-0">
+                    {idx > 0 && (
+                      <button onClick={() => moveDraftItem(item.id, 'up')} className="p-0.5 text-muted hover:text-secondary cursor-pointer">
+                        <ArrowUp size={12} />
+                      </button>
+                    )}
+                    {idx < actionDraft.length - 1 && (
+                      <button onClick={() => moveDraftItem(item.id, 'down')} className="p-0.5 text-muted hover:text-secondary cursor-pointer">
+                        <ArrowDown size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`shrink-0 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                        item.type === 'policy'
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {item.type}
+                      </span>
+                      <input
+                        type="text"
+                        value={item.label}
+                        onChange={(e) => updateDraftItem(item.id, 'label', e.target.value)}
+                        placeholder={item.type === 'policy' ? 'e.g. Read and accept HR Policies' : 'e.g. Confirm schedule with lead'}
+                        className="flex-1 rounded-lg border border-border-strong px-3 py-1.5 text-sm text-primary focus:ring-2 focus:ring-brand focus:border-brand outline-none transition"
+                      />
+                    </div>
+                    {item.type === 'policy' && (
+                      <>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-tertiary uppercase tracking-wider mb-1">Link to HR Policy</label>
+                          <select
+                            value={item.policyId || ''}
+                            onChange={(e) => {
+                              const pid = e.target.value;
+                              const pol = policies.find((p) => p.id === pid);
+                              setActionDraft(actionDraft.map((ai) =>
+                                ai.id === item.id
+                                  ? { ...ai, policyId: pid, ...(pol ? { label: pol.title } : {}) }
+                                  : ai
+                              ));
+                            }}
+                            className="w-full rounded-lg border border-border-strong px-3 py-1.5 text-sm text-primary focus:ring-2 focus:ring-brand focus:border-brand outline-none transition bg-card"
+                          >
+                            <option value="">None — custom text only</option>
+                            {policies.map((p) => (
+                              <option key={p.id} value={p.id}>{p.title}</option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] text-muted mt-1">Select a policy from the HR handbook, or leave blank and write custom text below.</p>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-tertiary uppercase tracking-wider mb-1">
+                            {item.policyId ? 'Additional acknowledgment text (optional)' : 'Custom acknowledgment text'}
+                          </label>
+                          <textarea
+                            value={item.policyText || ''}
+                            onChange={(e) => updateDraftItem(item.id, 'policyText', e.target.value)}
+                            placeholder={item.policyId
+                              ? 'Add any extra text the team member should acknowledge alongside the policy...'
+                              : 'Write what the team member must read and sign, e.g. "I understand the pay rate is $X/hr and I will follow all safety procedures..."'}
+                            rows={3}
+                            className="w-full rounded-lg border border-border-strong px-3 py-2 text-sm text-primary focus:ring-2 focus:ring-brand focus:border-brand outline-none transition resize-y"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => removeDraftItem(item.id)}
+                    className="p-1.5 rounded-lg text-muted hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer shrink-0 mt-1"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+
+              {/* Add buttons */}
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  onClick={() => addDraftItem('checklist')}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-blue-300 text-blue-600 text-xs font-semibold hover:bg-blue-50 transition-colors cursor-pointer"
+                >
+                  <Plus size={14} />
+                  Checklist Item
+                </button>
+                <button
+                  onClick={() => addDraftItem('policy')}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-amber-300 text-amber-600 text-xs font-semibold hover:bg-amber-50 transition-colors cursor-pointer"
+                >
+                  <Plus size={14} />
+                  Policy Item
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end px-6 py-4 border-t border-border-subtle shrink-0">
+              <button
+                onClick={() => setEditingActions(false)}
+                className="px-5 py-2.5 rounded-lg border border-border-strong text-secondary font-medium hover:bg-surface transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveActions}
+                className="px-5 py-2.5 rounded-lg bg-brand text-on-brand font-medium hover:bg-brand-hover transition-colors cursor-pointer"
+              >
+                Save Action Items
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Policy Acceptance Modal (team member) ── */}
+      {acceptingPolicy && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setAcceptingPolicy(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle shrink-0">
+              <h3 className="text-lg font-bold text-primary">{acceptingPolicy.label}</h3>
+              <button onClick={() => setAcceptingPolicy(null)} className="p-1.5 rounded-lg text-muted hover:text-secondary hover:bg-surface transition-colors cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {/* HR Policy content from store */}
+              {(() => {
+                const linkedPolicy = acceptingPolicy.policyId
+                  ? policies.find((p) => p.id === acceptingPolicy.policyId)
+                  : null;
+                return linkedPolicy ? (
+                  <div className="bg-surface-alt rounded-lg border border-border-subtle p-4 max-h-60 overflow-y-auto">
+                    <p className="text-[10px] font-bold text-tertiary uppercase tracking-wider mb-2">{linkedPolicy.title}</p>
+                    <div className="text-sm text-primary leading-relaxed whitespace-pre-wrap">{linkedPolicy.content}</div>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Custom acknowledgment text */}
+              {acceptingPolicy.policyText && (
+                <div className="bg-surface-alt rounded-lg border border-border-subtle p-4 max-h-60 overflow-y-auto">
+                  <p className="text-[10px] font-bold text-tertiary uppercase tracking-wider mb-2">Please read the following carefully</p>
+                  {acceptingPolicy.policyText.split('\n\n').map((paragraph, i) => (
+                    <p key={i} className="text-sm text-primary leading-relaxed mb-2 last:mb-0 whitespace-pre-wrap">
+                      {paragraph}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              {/* Fallback when no content */}
+              {!acceptingPolicy.policyId && !acceptingPolicy.policyText && (
+                <div className="bg-surface-alt rounded-lg p-4">
+                  <p className="text-sm text-secondary">{acceptingPolicy.label}</p>
+                </div>
+              )}
+
+              {/* Acknowledgment */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-xs text-amber-800 font-medium">
+                  By signing below, I acknowledge that I have read and understood the above and agree to its terms.
+                </p>
+              </div>
+
+              {/* Signature */}
+              <div>
+                <label className="block text-sm font-semibold text-secondary mb-2">Your Signature</label>
+                <SignaturePad
+                  onSave={handlePolicySign}
+                  onCancel={() => setAcceptingPolicy(null)}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── View Accepted Policy Modal ── */}
+      {viewingPolicy && (() => {
+        const completion = completions[viewingPolicy.id] || {};
+        const linkedPolicy = viewingPolicy.policyId
+          ? policies.find((p) => p.id === viewingPolicy.policyId)
+          : null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setViewingPolicy(null)}>
+            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle shrink-0">
+                <h3 className="text-lg font-bold text-primary">{viewingPolicy.label}</h3>
+                <button onClick={() => setViewingPolicy(null)} className="p-1.5 rounded-lg text-muted hover:text-secondary hover:bg-surface transition-colors cursor-pointer">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {/* HR Policy content */}
+                {linkedPolicy && (
+                  <div className="bg-surface-alt rounded-lg border border-border-subtle p-4 max-h-60 overflow-y-auto">
+                    <p className="text-[10px] font-bold text-tertiary uppercase tracking-wider mb-2">{linkedPolicy.title}</p>
+                    <div className="text-sm text-primary leading-relaxed whitespace-pre-wrap">{linkedPolicy.content}</div>
+                  </div>
+                )}
+
+                {/* Custom acknowledgment text */}
+                {viewingPolicy.policyText && (
+                  <div className="bg-surface-alt rounded-lg border border-border-subtle p-4 max-h-60 overflow-y-auto">
+                    <p className="text-[10px] font-bold text-tertiary uppercase tracking-wider mb-2">Acknowledgment</p>
+                    {viewingPolicy.policyText.split('\n\n').map((paragraph, i) => (
+                      <p key={i} className="text-sm text-primary leading-relaxed mb-2 last:mb-0 whitespace-pre-wrap">
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {/* Fallback */}
+                {!linkedPolicy && !viewingPolicy.policyText && (
+                  <div className="bg-surface-alt rounded-lg p-4">
+                    <p className="text-sm text-secondary">{viewingPolicy.label}</p>
+                  </div>
+                )}
+
+                {/* Signature */}
+                {completion.signature && (
+                  <div>
+                    <p className="text-[10px] font-bold text-tertiary uppercase tracking-wider mb-2">Your Signature</p>
+                    <div className="bg-white rounded-lg border border-border-subtle p-3">
+                      <img src={completion.signature} alt="Signature" className="max-h-32 mx-auto" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Accepted date */}
+                {completion.date && (
+                  <p className="text-xs text-muted text-center">
+                    Accepted on {completion.date}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex justify-end px-6 py-4 border-t border-border-subtle shrink-0">
+                <button
+                  onClick={() => setViewingPolicy(null)}
+                  className="px-5 py-2.5 rounded-lg bg-brand text-on-brand font-medium hover:bg-brand-hover transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

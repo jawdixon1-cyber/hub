@@ -22,6 +22,8 @@ import Training from './pages/Training';
 import TrainingModule from './pages/TrainingModule';
 import OnboardingStep from './pages/OnboardingStep';
 import OwnerDashboard from './pages/OwnerDashboard';
+import TeamManagement from './pages/TeamManagement';
+import TeamMemberDetail from './pages/TeamMemberDetail';
 
 
 const TABS = [
@@ -258,6 +260,8 @@ function AppShell() {
           <Route path="/training" element={<Training />} />
           <Route path="/training/onboard/:stepId" element={<OnboardingStep />} />
           <Route path="/training/:moduleId" element={<TrainingModule />} />
+          <Route path="/team" element={<TeamManagement />} />
+          <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/ideas" element={<Navigate to="/profile" replace />} />
           <Route path="/settings" element={<Navigate to="/profile" replace />} />

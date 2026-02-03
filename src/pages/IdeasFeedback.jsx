@@ -232,7 +232,7 @@ export function IdeasFeedbackContent({ filterByUser, compact }) {
                       <h3 className="text-base font-bold text-primary">{item.title}</h3>
                       {item.type === 'onboarding' && item.stepId && (
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
-                          {item.stepId === 'onboard-1' ? 'Step 1' : item.stepId === 'onboard-2' ? 'Step 2' : 'Step 3'}
+                          {item.stepId === 'onboard-1' ? 'Test Day Prep' : item.stepId === 'onboard-2' ? 'Logins' : item.stepId}
                         </span>
                       )}
                     </div>
@@ -241,11 +241,13 @@ export function IdeasFeedbackContent({ filterByUser, compact }) {
                       <p className="text-xs text-muted">
                         {item.submittedBy} &middot; {item.date}
                       </p>
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[item.status] || 'bg-surface-alt text-secondary'}`}>
-                        {item.status}
-                      </span>
+                      {item.type !== 'onboarding' && (
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[item.status] || 'bg-surface-alt text-secondary'}`}>
+                          {item.status}
+                        </span>
+                      )}
                     </div>
-                    {ownerMode && (
+                    {ownerMode && item.type !== 'onboarding' && (
                       <div className="flex flex-wrap gap-2 mt-3 ml-6">
                         {['New', 'Reviewing', 'Approved', 'Implemented', 'Rejected']
                           .filter((s) => s !== item.status)
