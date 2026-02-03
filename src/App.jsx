@@ -20,6 +20,7 @@ import HRPolicies from './pages/HRPolicies';
 import Profile from './pages/Profile';
 import Training from './pages/Training';
 import TrainingModule from './pages/TrainingModule';
+import OnboardingStep from './pages/OnboardingStep';
 import OwnerDashboard from './pages/OwnerDashboard';
 
 
@@ -255,6 +256,7 @@ function AppShell() {
           <Route path="/equipment" element={<EquipmentIdeas />} />
           <Route path="/hr" element={<HRPolicies />} />
           <Route path="/training" element={<Training />} />
+          <Route path="/training/onboard/:stepId" element={<OnboardingStep />} />
           <Route path="/training/:moduleId" element={<TrainingModule />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/ideas" element={<Navigate to="/profile" replace />} />

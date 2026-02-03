@@ -2,11 +2,34 @@ import { useState } from 'react';
 import {
   GraduationCap, BookOpen, ChevronRight, Send,
   Briefcase, Monitor, Shield, Star, Check,
+  ClipboardCheck, UserCheck, FileCheck, Lock,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { genId } from '../data';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
+
+/* ─── Onboarding steps (prerequisite before training modules) ─── */
+
+export const ONBOARDING_STEPS = [
+  { id: 'onboard-1', title: 'Step 1: Pre-Test Day Prep', icon: ClipboardCheck, color: 'text-orange-500', bg: 'bg-orange-50', borderColor: 'border-orange-200', gradient: 'from-orange-500 to-amber-600' },
+  { id: 'onboard-2', title: 'Step 2: Test Day Evaluation', icon: UserCheck, color: 'text-cyan-500', bg: 'bg-cyan-50', borderColor: 'border-cyan-200', gradient: 'from-cyan-500 to-teal-600' },
+  { id: 'onboard-3', title: 'Step 3: Post-Test Admin Setup', icon: FileCheck, color: 'text-violet-500', bg: 'bg-violet-50', borderColor: 'border-violet-200', gradient: 'from-violet-500 to-purple-600' },
+];
+
+/**
+ * Check whether the current user has completed onboarding.
+ * Requires an approved Step 3 submission in the suggestions array.
+ */
+export function isOnboardingComplete(suggestions, currentUser) {
+  return suggestions.some(
+    (s) =>
+      s.type === 'onboarding' &&
+      s.stepId === 'onboard-3' &&
+      s.submittedBy === currentUser &&
+      s.status === 'Approved'
+  );
+}
 
 /* ─── Module metadata (exported for Settings editor) ─── */
 
@@ -102,6 +125,18 @@ export default function Training() {
     showToast('Update submitted! Owner will review.');
   };
 
+  const onboardingDone = isOnboardingComplete(suggestions, currentUser);
+  const modulesLocked = !ownerMode && !onboardingDone;
+
+  // Per-step status for the current user
+  const getStepStatus = (stepId) => {
+    const entry = suggestions.find(
+      (s) => s.type === 'onboarding' && s.stepId === stepId && s.submittedBy === currentUser
+    );
+    if (!entry) return null;
+    return entry.status;
+  };
+
   return (
     <div className="space-y-6">
       {/* Toast */}
@@ -119,39 +154,101 @@ export default function Training() {
           <h1 className="text-2xl font-bold text-primary">Your Training Path</h1>
         </div>
         <p className="text-secondary text-sm">
-          Complete these {visibleModules.length} modules in order with your mentor (Field Lead or owner).
-          Submit updates when you finish each one. If no mentor, owner will guide you.
+          Complete the onboarding steps first, then work through the training modules with your mentor.
         </p>
       </div>
 
-      {/* Module cards */}
-      <div className="space-y-3">
-        {visibleModules.map((mod) => {
-          const Icon = mod.icon;
-          const customTitle = getCustomTitle(mod.id);
-          return (
-            <button
-              key={mod.id}
-              onClick={() => navigate(`/training/${mod.id}`)}
-              className="w-full flex items-center gap-4 p-5 bg-card rounded-2xl shadow-sm border border-border-subtle hover:border-border-strong hover:shadow-md transition-all text-left cursor-pointer group"
-            >
-              <div className={`w-11 h-11 rounded-xl ${mod.bg} ${mod.borderColor} border flex items-center justify-center shrink-0`}>
-                <Icon size={20} className={mod.color} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="font-semibold text-primary block">{customTitle || mod.title}</span>
-                {mod.optional && (
-                  <span className="text-xs text-muted">Optional</span>
-                )}
-              </div>
-              <ChevronRight size={18} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />
-            </button>
-          );
-        })}
+      {/* ── Onboarding Section ── */}
+      <div>
+        <h2 className="text-sm font-bold text-secondary uppercase tracking-wider mb-3">Onboarding</h2>
+        <div className="space-y-3">
+          {ONBOARDING_STEPS.map((step) => {
+            const Icon = step.icon;
+            const status = getStepStatus(step.id);
+            const statusBadge = status === 'Approved'
+              ? <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">Approved</span>
+              : status
+                ? <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">{status}</span>
+                : null;
+            return (
+              <button
+                key={step.id}
+                onClick={() => navigate(`/training/onboard/${step.id}`)}
+                className="w-full flex items-center gap-4 p-5 bg-card rounded-2xl shadow-sm border border-border-subtle hover:border-border-strong hover:shadow-md transition-all text-left cursor-pointer group"
+              >
+                <div className={`w-11 h-11 rounded-xl ${step.bg} ${step.borderColor} border flex items-center justify-center shrink-0`}>
+                  <Icon size={20} className={step.color} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="font-semibold text-primary block">{step.title}</span>
+                </div>
+                {statusBadge && <div className="shrink-0">{statusBadge}</div>}
+                <ChevronRight size={18} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Submit Progress Update (team member only) */}
-      {!ownerMode && (
+      {/* ── Training Modules Section ── */}
+      <div>
+        <h2 className="text-sm font-bold text-secondary uppercase tracking-wider mb-3">Training Modules</h2>
+        <div className="space-y-3">
+          {visibleModules.map((mod) => {
+            const Icon = mod.icon;
+            const customTitle = getCustomTitle(mod.id);
+
+            if (modulesLocked) {
+              return (
+                <div
+                  key={mod.id}
+                  onClick={() => showToast('Complete onboarding to unlock training modules')}
+                  className="w-full flex items-center gap-4 p-5 bg-card rounded-2xl shadow-sm border border-border-subtle opacity-50 cursor-pointer"
+                >
+                  <div className={`w-11 h-11 rounded-xl bg-surface-alt border border-border-default flex items-center justify-center shrink-0`}>
+                    <Lock size={20} className="text-muted" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold text-muted block">{customTitle || mod.title}</span>
+                    {mod.optional && (
+                      <span className="text-xs text-muted">Optional</span>
+                    )}
+                  </div>
+                  <Lock size={16} className="text-muted shrink-0" />
+                </div>
+              );
+            }
+
+            return (
+              <button
+                key={mod.id}
+                onClick={() => navigate(`/training/${mod.id}`)}
+                className="w-full flex items-center gap-4 p-5 bg-card rounded-2xl shadow-sm border border-border-subtle hover:border-border-strong hover:shadow-md transition-all text-left cursor-pointer group"
+              >
+                <div className={`w-11 h-11 rounded-xl ${mod.bg} ${mod.borderColor} border flex items-center justify-center shrink-0`}>
+                  <Icon size={20} className={mod.color} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="font-semibold text-primary block">{customTitle || mod.title}</span>
+                  {mod.optional && (
+                    <span className="text-xs text-muted">Optional</span>
+                  )}
+                </div>
+                <ChevronRight size={18} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />
+              </button>
+            );
+          })}
+        </div>
+
+        {modulesLocked && (
+          <p className="text-xs text-muted mt-2 text-center">
+            Complete onboarding Step 3 and get owner approval to unlock training modules.
+          </p>
+        )}
+      </div>
+
+      {/* Submit Progress Update (team member only, when unlocked) */}
+      {!ownerMode && !modulesLocked && (
         <div>
           {!showProgressForm ? (
             <button

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
 import { createSignUpClient } from '../lib/supabase';
-import { MODULE_LIST } from './Training';
+import { MODULE_LIST, ONBOARDING_STEPS } from './Training';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -290,7 +290,29 @@ export function SettingsContent() {
               </div>
             </div>
 
+            {/* Onboarding steps */}
+            <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Onboarding Steps</p>
+            <div className="space-y-2 mb-4">
+              {ONBOARDING_STEPS.map((step) => {
+                const StepIcon = step.icon;
+                return (
+                  <button
+                    key={step.id}
+                    onClick={() => navigate(`/training/onboard/${step.id}`)}
+                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-border-default hover:bg-surface transition-colors cursor-pointer text-left"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <StepIcon size={16} className={step.color} />
+                      <span className="text-sm font-medium text-primary truncate">{step.title}</span>
+                    </div>
+                    <ChevronRight size={14} className="text-muted shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Module list — navigates to module pages for editing */}
+            <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Modules</p>
             <div className="space-y-2">
               {MODULE_LIST.map((mod) => {
                 const showModule = !mod.optional || trainingConfig?.showModule5;

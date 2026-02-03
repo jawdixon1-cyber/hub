@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { Lightbulb, MessageSquare, GraduationCap, Plus, X, Trash2 } from 'lucide-react';
-// GraduationCap kept for training submissions that come from the Training tab
+import { Lightbulb, MessageSquare, GraduationCap, ClipboardCheck, Plus, X, Trash2 } from 'lucide-react';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,6 +16,7 @@ const TYPE_ICON = {
   idea: { Icon: Lightbulb, color: 'text-amber-500' },
   feedback: { Icon: MessageSquare, color: 'text-blue-500' },
   training: { Icon: GraduationCap, color: 'text-teal-500' },
+  onboarding: { Icon: ClipboardCheck, color: 'text-orange-500' },
 };
 
 export function IdeasFeedbackContent({ filterByUser, compact }) {
@@ -55,8 +55,12 @@ export function IdeasFeedbackContent({ filterByUser, compact }) {
     setAdding(false);
   };
 
-  const handleStatus = (id, status) => {
-    setSuggestions(suggestions.map((s) => (s.id === id ? { ...s, status } : s)));
+  const handleStatus = (id, newStatus) => {
+    setSuggestions(suggestions.map((s) => (s.id === id ? { ...s, status: newStatus } : s)));
+  };
+
+  const handleInternalNote = (id, note) => {
+    setSuggestions(suggestions.map((s) => (s.id === id ? { ...s, internalNote: note } : s)));
   };
 
   const handleDelete = (id) => {
@@ -78,6 +82,7 @@ export function IdeasFeedbackContent({ filterByUser, compact }) {
     { key: 'all', label: 'All' },
     { key: 'idea', label: 'Business Ideas' },
     { key: 'feedback', label: 'Software Feedback' },
+    { key: 'onboarding', label: 'Onboarding' },
   ];
 
   return (
@@ -222,9 +227,14 @@ export function IdeasFeedbackContent({ filterByUser, compact }) {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <ItemIcon size={16} className={`${typeInfo.color} shrink-0`} />
                       <h3 className="text-base font-bold text-primary">{item.title}</h3>
+                      {item.type === 'onboarding' && item.stepId && (
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                          {item.stepId === 'onboard-1' ? 'Step 1' : item.stepId === 'onboard-2' ? 'Step 2' : 'Step 3'}
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm text-secondary mt-1 ml-6 whitespace-pre-line">{item.description}</p>
                     <div className="flex items-center gap-3 mt-3 ml-6">
@@ -255,6 +265,18 @@ export function IdeasFeedbackContent({ filterByUser, compact }) {
                           <Trash2 size={12} />
                           Delete
                         </button>
+                      </div>
+                    )}
+                    {ownerMode && item.type === 'onboarding' && (
+                      <div className="mt-3 ml-6">
+                        <label className="block text-xs font-semibold text-muted mb-1">Internal Note (private)</label>
+                        <textarea
+                          rows={2}
+                          value={item.internalNote || ''}
+                          onChange={(e) => handleInternalNote(item.id, e.target.value)}
+                          className="w-full rounded-lg border-2 border-dashed border-border-strong px-3 py-2 text-sm text-primary focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none transition resize-y bg-surface"
+                          placeholder="Private evaluation notes..."
+                        />
                       </div>
                     )}
                   </div>

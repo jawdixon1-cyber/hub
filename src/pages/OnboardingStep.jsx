@@ -1,12 +1,12 @@
 import { useState, lazy, Suspense } from 'react';
 import {
-  ArrowLeft, ChevronLeft, ChevronRight, Pencil, Plus, Trash2,
-  ArrowUp, ArrowDown, X, Check,
+  ArrowLeft, Pencil, Plus, Trash2,
+  ArrowUp, ArrowDown, X, Check, Send,
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
-import { MODULE_LIST, RichContent, isOnboardingComplete } from './Training';
+import { ONBOARDING_STEPS, RichContent } from './Training';
 import { genId } from '../data';
 
 const RichTextEditor = lazy(() => import('../components/RichTextEditor'));
@@ -30,98 +30,69 @@ const TITLE_SIZE_OPTIONS = [
 const titleSizeClass = (key) =>
   (TITLE_SIZE_OPTIONS.find((o) => o.key === key) || TITLE_SIZE_OPTIONS[2]).class;
 
-const MODULE_GRADIENTS = {
-  1: 'from-emerald-500 to-teal-600',
-  2: 'from-red-500 to-rose-600',
-  3: 'from-blue-500 to-indigo-600',
-  4: 'from-purple-500 to-violet-600',
-  5: 'from-amber-500 to-orange-600',
-};
+/* ── Default sections per onboarding step ── */
 
-/* ── Default sections per module (used when nothing custom is saved) ── */
-
-function generateDefaultSections(moduleId, playbookLabels) {
+function generateDefaultSections(stepId) {
   const data = {
-    1: [
-      { id: 'd1-goal', title: 'Goal', content: '<p><strong>Set expectations, get set up, build company culture.</strong></p>' },
-      { id: 'd1-learn', title: "What You'll Learn", content: '<ul><li>Welcome from Jude: Our story, values (client respect, quality first)</li><li>Role overview: Daily duties as field member/lead</li><li>HR essentials: Pay schedule, time off, code of conduct</li><li>Uniform/shirts: Get from mentor/owner, why important (professionalism/safety)</li><li>Logistics: Schedule, meeting points, communication (app announcements)</li></ul>' },
-      { id: 'd1-actions', title: 'Actions', content: '<ol><li>Read HR policies.</li><li>Get shirts/uniform.</li><li>Acknowledge understanding.</li><li>Submit progress: \u201COnboarded \u2013 questions?\u201D</li></ol>' },
-      { id: 'd1-links', title: 'Quick Links', content: '<p><a href="/hr">View HR Policies</a> \u00B7 <a href="/hr">Request Time Off</a></p>' },
+    'onboard-1': [
+      { id: 'ob1-about', title: 'What This Step Is About', content: '<p><strong>Prepare before your first day in the field.</strong> This step makes sure you have everything you need to hit the ground running on test day.</p>' },
+      { id: 'ob1-before', title: 'Before You Arrive', content: '<ul><li>Review company values and mission</li><li>Read through HR policies (time off, code of conduct, pay schedule)</li><li>Gather any required documents (ID, direct deposit info)</li><li>Confirm your schedule and meeting point with your lead</li></ul>' },
+      { id: 'ob1-expect', title: 'What to Expect on Test Day', content: '<ul><li>You\'ll shadow an experienced crew member</li><li>Demonstrate basic skills and willingness to learn</li><li>Receive real-time feedback from your lead</li><li>Get familiar with the job site flow</li></ul>' },
+      { id: 'ob1-actions', title: 'Actions', content: '<ol><li>Read all HR policies in the HR tab</li><li>Review safety basics (PPE, hazard awareness)</li><li>Confirm your test day schedule with your lead</li><li>Mark this step complete when ready</li></ol>' },
     ],
-    2: [
-      { id: 'd2-goal', title: 'Goal', content: '<p><strong>Prioritize zero accidents with PPE and safe practices.</strong></p>' },
-      { id: 'd2-learn', title: "What You'll Learn", content: '<ul><li>PPE requirements: Hard hat, safety glasses, ear protection, steel-toe boots \u2013 storage/care</li><li>Hazard recognition: Weather, chemicals, slips, equipment risks</li><li>Safe practices: Fueling (engine off, no smoking), startup sequences</li><li>Emergency protocols: Report injuries/near-misses</li><li>Equipment basics: Pre-checks, maintenance</li></ul>' },
-      { id: 'd2-actions', title: 'Actions', content: '<ol><li>Review safety reminders.</li><li>Demo PPE/equipment with mentor (photo in submit).</li><li>Complete safety checklist in Home.</li><li>Submit progress: \u201CSafety understood \u2013 practiced startup.\u201D</li></ol>' },
-      { id: 'd2-links', title: 'Quick Links', content: '<p><a href="/equipment">Report Hazard / Issue</a> \u00B7 <a href="/equipment">View Equipment Log</a></p>' },
+    'onboard-2': [
+      { id: 'ob2-about', title: 'What This Step Is About', content: '<p><strong>Your practical evaluation day with a lead or owner.</strong> This is your chance to show what you can do and learn on the job.</p>' },
+      { id: 'ob2-eval', title: "What You'll Be Evaluated On", content: '<ul><li>Safety awareness and PPE compliance</li><li>Equipment handling and care</li><li>Following playbook steps correctly</li><li>Attitude, communication, and teamwork</li><li>Willingness to ask questions and take feedback</li></ul>' },
+      { id: 'ob2-tips', title: 'Tips for Success', content: '<ul><li>Ask questions \u2014 it shows initiative</li><li>Be on time and ready to work</li><li>Wear appropriate gear (closed-toe shoes, work clothes)</li><li>Stay positive and be coachable</li><li>Take notes if it helps you remember</li></ul>' },
+      { id: 'ob2-after', title: 'After the Evaluation', content: '<ul><li>Your lead will submit a private evaluation</li><li>You submit your own progress update below</li><li>Owner reviews both and decides next steps</li></ul>' },
     ],
-    3: [
-      { id: 'd3-goal', title: 'Goal', content: '<p><strong>Master Jobber, this app, payroll for efficient ops.</strong></p>' },
-      { id: 'd3-learn', title: "What You'll Learn", content: '<ul><li>App mastery: Home checklists, Playbooks search, HR time off, Ideas submits</li><li>Jobber how-to: Login, clock in/out, schedules, post-job photos/checklists</li><li>Payroll/ADP: Setup, timesheets, pay stubs</li><li>Other tools: QuickBooks basics (if applicable), equipment reporting</li><li>Troubleshooting: Offline mode, common issues</li></ul>' },
-      { id: 'd3-actions', title: 'Actions', content: '<ol><li>Log into Jobber/ADP with mentor.</li><li>Practice app features (test Idea submit).</li><li>Complete a Jobber job cycle (simulated ok).</li><li>Submit progress: \u201CTools set up \u2013 practiced clock in.\u201D</li></ol>' },
-      { id: 'd3-links', title: 'Quick Links', content: '<p><a href="http://heyjudeslawncare.com/app" target="_blank" rel="noopener noreferrer">Open Jobber</a> \u00B7 <a href="/profile">Submit Test Idea</a></p>' },
-    ],
-    4: [
-      { id: 'd4-goal', title: 'Goal', content: '<p><strong>Know what \u201Cdone right\u201D looks like for services.</strong></p>' },
-      { id: 'd4-learn', title: "What You'll Learn", content: `<ul><li>Quality overview: Success criteria (clean edges, no debris)</li><li>Playbooks deep dive: Read all assigned (${playbookLabels}), steps/order</li><li>Adaptation: Site tweaks (client notes, weather)</li></ul>` },
-      { id: 'd4-actions', title: 'Actions', content: '<ol><li>Read all Playbooks.</li><li>Note what success looks like.</li><li>Shadow mentor on job.</li><li>Submit progress: \u201CPlaybooks reviewed \u2013 questions on [specific].\u201D</li></ol>' },
-      { id: 'd4-links', title: 'Quick Links', content: '<p><a href="/guides">View Playbooks</a></p>' },
-    ],
-    5: [
-      { id: 'd5-goal', title: 'Goal', content: '<p><strong>Polish skills through practice.</strong></p>' },
-      { id: 'd5-learn', title: "What You'll Learn", content: '<ul><li>Practice jobs: Follow playbooks, adapt to variables</li><li>Mentor feedback: Refine techniques</li><li>Continuous improvement: Suggest Ideas, refreshers</li></ul>' },
-      { id: 'd5-actions', title: 'Actions', content: '<ol><li>Complete supervised jobs.</li><li>Get input after each.</li><li>Submit final update: \u201CReady for independent work.\u201D</li></ol>' },
-      { id: 'd5-links', title: 'Quick Links', content: '<p><a href="/profile">Submit Idea</a></p>' },
+    'onboard-3': [
+      { id: 'ob3-about', title: 'What This Step Is About', content: '<p><strong>Get fully set up in all company systems.</strong> This is the final admin step before you can start training modules.</p>' },
+      { id: 'ob3-accounts', title: 'Account Setup', content: '<ul><li>Jobber login \u2014 for scheduling, clock-in/out, job tracking</li><li>ADP / payroll enrollment \u2014 direct deposit, tax forms</li><li>App access \u2014 this app for playbooks, training, HR</li></ul>' },
+      { id: 'ob3-gear', title: 'Gear & Uniform', content: '<ul><li>Company shirts \u2014 get from your lead or owner</li><li>PPE \u2014 safety glasses, ear protection, gloves</li><li>Assigned equipment \u2014 any tools specific to your role</li></ul>' },
+      { id: 'ob3-actions', title: 'Actions', content: '<ol><li>Confirm all accounts are working (Jobber, ADP, app)</li><li>Collect your gear and uniform</li><li>Submit "Ready to start training" below</li></ol>' },
+      { id: 'ob3-next', title: "What's Next", content: '<p>Once the owner approves this step, <strong>training modules unlock automatically</strong>. You\'ll work through them in order with your mentor.</p>' },
     ],
   };
-  return data[moduleId] || [];
+  return data[stepId] || [];
 }
 
 /* ── Component ── */
 
-export default function TrainingModule() {
+export default function OnboardingStep() {
   const navigate = useNavigate();
-  const { moduleId } = useParams();
-  const id = Number(moduleId);
+  const { stepId } = useParams();
 
   const { user, currentUser, ownerMode } = useAuth();
   const userEmail = user?.email?.toLowerCase();
 
   const permissions = useAppStore((s) => s.permissions);
   const suggestions = useAppStore((s) => s.suggestions);
+  const setSuggestions = useAppStore((s) => s.setSuggestions);
   const trainingConfig = useAppStore((s) => s.trainingConfig);
   const setTrainingConfig = useAppStore((s) => s.setTrainingConfig);
 
   const allowedPlaybooks = ownerMode
     ? ['service', 'sales', 'strategy']
     : (permissions[userEmail]?.playbooks || ['service']);
-  const playbookLabels = allowedPlaybooks
-    .map((k) => k.charAt(0).toUpperCase() + k.slice(1))
-    .join(', ');
-
   const primaryTeam = allowedPlaybooks[0] || 'service';
 
-  // Owner team selector
   const [selectedTeam, setSelectedTeam] = useState(primaryTeam);
   const activeTeam = ownerMode ? selectedTeam : primaryTeam;
 
   // Section editor state
-  const [editingSection, setEditingSection] = useState(null); // section id or 'new'
+  const [editingSection, setEditingSection] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editTitleSize, setEditTitleSize] = useState('lg');
   const [editContent, setEditContent] = useState('');
 
-  // Module title editor state
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState('');
+  const [toast, setToast] = useState(null);
 
-  const showModule5 = !!trainingConfig?.showModule5;
-  const visibleModules = MODULE_LIST.filter((m) => !m.optional || showModule5);
-
-  const mod = MODULE_LIST.find((m) => m.id === id);
-  if (!mod || (mod.optional && !showModule5)) {
+  const step = ONBOARDING_STEPS.find((s) => s.id === stepId);
+  if (!step) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted">Module not found.</p>
+        <p className="text-muted">Onboarding step not found.</p>
         <button onClick={() => navigate('/training')} className="mt-4 text-sm text-blue-600 underline cursor-pointer">
           Back to Training
         </button>
@@ -129,67 +100,41 @@ export default function TrainingModule() {
     );
   }
 
-  // Lock guard: non-owners must complete onboarding first
-  if (!ownerMode && !isOnboardingComplete(suggestions, currentUser)) {
-    return (
-      <div className="text-center py-12">
-        <div className="w-16 h-16 rounded-2xl bg-surface-alt border border-border-default flex items-center justify-center mx-auto mb-4">
-          <ArrowLeft size={28} className="text-muted" />
-        </div>
-        <h2 className="text-lg font-bold text-primary mb-2">Training Locked</h2>
-        <p className="text-sm text-muted max-w-sm mx-auto mb-6">
-          Complete all 3 onboarding steps and get owner approval on Step 3 to unlock training modules.
-        </p>
-        <button
-          onClick={() => navigate('/training')}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand text-on-brand font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
-        >
-          <ArrowLeft size={16} />
-          Back to Training
-        </button>
-      </div>
-    );
-  }
+  const Icon = step.icon;
+  const gradient = step.gradient;
+  const stepNum = ONBOARDING_STEPS.findIndex((s) => s.id === stepId) + 1;
 
-  const Icon = mod.icon;
-  const gradient = MODULE_GRADIENTS[id] || MODULE_GRADIENTS[1];
+  // Sections: saved custom → defaults
+  const savedSections = trainingConfig?.onboardingSteps?.[activeTeam]?.[stepId]?.sections || null;
+  const defaultSections = generateDefaultSections(stepId);
+  const sections = savedSections || defaultSections;
+  const isUsingDefaults = !savedSections;
 
-  // Module data for active team
-  const moduleData = trainingConfig?.teamModules?.[activeTeam]?.[id];
-  const customTitle = moduleData?.title || null;
+  // Current user's submission status for this step
+  const existingSubmission = suggestions.find(
+    (s) => s.type === 'onboarding' && s.stepId === stepId && s.submittedBy === currentUser
+  );
 
-  // Sections: saved sections → legacy single-blob → generated defaults
-  const savedSections = moduleData?.sections || null;
-  const legacySections = (!savedSections && moduleData?.content)
-    ? [{ id: 'legacy-content', title: 'Content', content: moduleData.content }]
-    : null;
-  const defaultSections = generateDefaultSections(id, playbookLabels);
-  const sections = savedSections || legacySections || defaultSections;
-  const isUsingDefaults = !savedSections && !legacySections;
-
-  // Prev / Next
-  const currentIdx = visibleModules.findIndex((m) => m.id === id);
-  const prevMod = currentIdx > 0 ? visibleModules[currentIdx - 1] : null;
-  const nextMod = currentIdx < visibleModules.length - 1 ? visibleModules[currentIdx + 1] : null;
+  const showToast = (message) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 4000);
+  };
 
   /* ── Persistence helpers ── */
 
-  const saveModuleData = (updates) => {
+  const saveStepData = (updates) => {
     const cfg = JSON.parse(JSON.stringify(trainingConfig || {}));
-    if (!cfg.teamModules) cfg.teamModules = {};
-    if (!cfg.teamModules[activeTeam]) cfg.teamModules[activeTeam] = {};
-    cfg.teamModules[activeTeam][id] = {
-      ...(cfg.teamModules[activeTeam][id] || {}),
+    if (!cfg.onboardingSteps) cfg.onboardingSteps = {};
+    if (!cfg.onboardingSteps[activeTeam]) cfg.onboardingSteps[activeTeam] = {};
+    cfg.onboardingSteps[activeTeam][stepId] = {
+      ...(cfg.onboardingSteps[activeTeam][stepId] || {}),
       ...updates,
     };
-    // Migrate: drop old single-blob when saving sections
-    if (updates.sections) delete cfg.teamModules[activeTeam][id].content;
     setTrainingConfig(cfg);
   };
 
-  const saveSections = (next) => saveModuleData({ sections: next });
+  const saveSections = (next) => saveStepData({ sections: next });
 
-  // Always copy to a mutable array before mutating
   const baseSections = () =>
     (isUsingDefaults ? defaultSections : sections).map((s) => ({ ...s }));
 
@@ -235,34 +180,49 @@ export default function TrainingModule() {
     saveSections(arr);
   };
 
-  /* ── Module title editing ── */
-
-  const handleSaveTitle = () => {
-    const t = titleDraft.trim();
-    if (t && t !== mod.title) {
-      saveModuleData({ title: t });
-    } else {
-      const cfg = JSON.parse(JSON.stringify(trainingConfig || {}));
-      if (cfg.teamModules?.[activeTeam]?.[id]) {
-        delete cfg.teamModules[activeTeam][id].title;
-        setTrainingConfig(cfg);
-      }
-    }
-    setEditingTitle(false);
-  };
-
-  /* ── Team switch (close any open editor) ── */
-
   const handleTeamChange = (key) => {
     setSelectedTeam(key);
     setEditingSection(null);
-    setEditingTitle(false);
   };
+
+  /* ── Mark Complete ── */
+
+  const handleMarkComplete = () => {
+    const today = new Date().toLocaleDateString('en-US');
+    setSuggestions([
+      {
+        id: genId(),
+        type: 'onboarding',
+        stepId,
+        title: `${currentUser} \u2013 ${step.title} Complete`,
+        description: `${currentUser} has completed ${step.title}.`,
+        submittedBy: currentUser,
+        date: today,
+        status: 'New',
+        internalNote: '',
+      },
+      ...suggestions,
+    ]);
+    showToast('Step submitted! Owner will review.');
+  };
+
+  /* ── Prev / Next ── */
+  const currentIdx = ONBOARDING_STEPS.findIndex((s) => s.id === stepId);
+  const prevStep = currentIdx > 0 ? ONBOARDING_STEPS[currentIdx - 1] : null;
+  const nextStep = currentIdx < ONBOARDING_STEPS.length - 1 ? ONBOARDING_STEPS[currentIdx + 1] : null;
 
   /* ─── Render ─── */
 
   return (
     <div className="-mx-4 sm:-mx-6 lg:-mx-8 -mt-8">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl bg-emerald-600 text-white text-sm font-medium shadow-lg flex items-center gap-2 max-w-sm text-center">
+          <Check size={16} className="shrink-0" />
+          {toast}
+        </div>
+      )}
+
       {/* ── Hero banner ── */}
       <div className={`bg-gradient-to-r ${gradient} px-4 sm:px-6 lg:px-8 pt-6 pb-12`}>
         <div className="max-w-7xl mx-auto">
@@ -280,39 +240,11 @@ export default function TrainingModule() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white/70 text-sm font-medium mb-1">
-                Module {id} of {visibleModules.length}
+                Onboarding Step {stepNum} of {ONBOARDING_STEPS.length}
               </p>
-
-              {editingTitle ? (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <input
-                    value={titleDraft}
-                    onChange={(e) => setTitleDraft(e.target.value)}
-                    className="text-xl sm:text-2xl font-bold bg-white/20 text-white rounded-lg px-3 py-1 outline-none placeholder-white/50 flex-1 min-w-0"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSaveTitle();
-                      if (e.key === 'Escape') setEditingTitle(false);
-                    }}
-                  />
-                  <button onClick={handleSaveTitle} className="p-1.5 rounded-lg bg-white/20 text-white hover:bg-white/30 transition-colors cursor-pointer"><Check size={18} /></button>
-                  <button onClick={() => setEditingTitle(false)} className="p-1.5 rounded-lg bg-white/20 text-white hover:bg-white/30 transition-colors cursor-pointer"><X size={18} /></button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl sm:text-3xl font-bold text-white truncate">
-                    {customTitle || mod.title}
-                  </h1>
-                  {ownerMode && (
-                    <button
-                      onClick={() => { setTitleDraft(customTitle || mod.title); setEditingTitle(true); }}
-                      className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/20 transition-colors cursor-pointer shrink-0"
-                    >
-                      <Pencil size={16} />
-                    </button>
-                  )}
-                </div>
-              )}
+              <h1 className="text-2xl sm:text-3xl font-bold text-white truncate">
+                {step.title}
+              </h1>
             </div>
           </div>
         </div>
@@ -347,7 +279,6 @@ export default function TrainingModule() {
               key={section.id}
               className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 group relative"
             >
-              {/* Section header */}
               <div className="flex items-center justify-between gap-3 mb-4">
                 <h2 className={`${titleSizeClass(section.titleSize)} font-bold text-primary`}>{section.title}</h2>
 
@@ -373,7 +304,6 @@ export default function TrainingModule() {
                 )}
               </div>
 
-              {/* Section body */}
               <RichContent html={section.content} navigate={navigate} />
             </div>
           ))}
@@ -390,34 +320,62 @@ export default function TrainingModule() {
           )}
         </div>
 
+        {/* ── Mark Complete (team member only) ── */}
+        {!ownerMode && (
+          <div className="mt-8">
+            {existingSubmission ? (
+              <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5 text-center">
+                <p className="text-sm text-secondary">
+                  You submitted this step on <span className="font-semibold">{existingSubmission.date}</span>.
+                </p>
+                <span className={`inline-block mt-2 text-xs font-semibold px-3 py-1.5 rounded-full ${
+                  existingSubmission.status === 'Approved'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-amber-100 text-amber-700'
+                }`}>
+                  Status: {existingSubmission.status}
+                </span>
+              </div>
+            ) : (
+              <button
+                onClick={handleMarkComplete}
+                className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r ${gradient} text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer`}
+              >
+                <Send size={16} />
+                Mark Complete
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Prev / Next */}
         <div className="flex items-center justify-between gap-4 mt-8">
-          {prevMod ? (
+          {prevStep ? (
             <button
-              onClick={() => navigate(`/training/${prevMod.id}`)}
+              onClick={() => navigate(`/training/onboard/${prevStep.id}`)}
               className="flex items-center gap-2 px-5 py-3 rounded-xl border border-border-strong text-secondary text-sm font-medium hover:bg-surface transition-colors cursor-pointer"
             >
-              <ChevronLeft size={16} />
-              <span className="hidden sm:inline">{prevMod.title}</span>
+              <ArrowLeft size={16} />
+              <span className="hidden sm:inline">{prevStep.title}</span>
               <span className="sm:hidden">Previous</span>
             </button>
           ) : <div />}
-          {nextMod ? (
+          {nextStep ? (
             <button
-              onClick={() => navigate(`/training/${nextMod.id}`)}
-              className={`flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r ${MODULE_GRADIENTS[nextMod.id] || gradient} text-white text-sm font-semibold hover:opacity-90 transition-opacity cursor-pointer`}
+              onClick={() => navigate(`/training/onboard/${nextStep.id}`)}
+              className={`flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r ${nextStep.gradient} text-white text-sm font-semibold hover:opacity-90 transition-opacity cursor-pointer`}
             >
-              <span className="hidden sm:inline">{nextMod.title}</span>
-              <span className="sm:hidden">Next Module</span>
-              <ChevronRight size={16} />
+              <span className="hidden sm:inline">{nextStep.title}</span>
+              <span className="sm:hidden">Next Step</span>
+              <Check size={16} />
             </button>
           ) : (
             <button
               onClick={() => navigate('/training')}
               className="flex items-center gap-2 px-5 py-3 rounded-xl bg-brand text-on-brand text-sm font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
             >
-              Back to All Modules
-              <ChevronRight size={16} />
+              Back to Training
+              <Check size={16} />
             </button>
           )}
         </div>
@@ -427,7 +385,6 @@ export default function TrainingModule() {
       {editingSection !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setEditingSection(null)}>
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle shrink-0">
               <h3 className="text-lg font-bold text-primary">
                 {editingSection === 'new' ? 'Add Section' : 'Edit Section'}
@@ -437,7 +394,6 @@ export default function TrainingModule() {
               </button>
             </div>
 
-            {/* Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-secondary mb-1">Section Title</label>
@@ -446,7 +402,7 @@ export default function TrainingModule() {
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
                   className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-brand focus:border-brand outline-none transition"
-                  placeholder="e.g. Goal, What You'll Learn, Actions..."
+                  placeholder="e.g. What to Expect, Actions..."
                   autoFocus
                 />
               </div>
@@ -486,7 +442,6 @@ export default function TrainingModule() {
               </div>
             </div>
 
-            {/* Footer */}
             <div className="flex gap-3 justify-end px-6 py-4 border-t border-border-subtle shrink-0">
               <button
                 onClick={() => setEditingSection(null)}
