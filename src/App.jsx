@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import {
   Home as HomeIcon,
@@ -8,6 +8,8 @@ import {
   LogOut,
   RefreshCw,
   Lock,
+  Unlock,
+  Wrench,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -26,12 +28,13 @@ import OnboardingHub from './pages/OnboardingHub';
 import OwnerDashboard from './pages/OwnerDashboard';
 import TeamManagement from './pages/TeamManagement';
 import TeamMemberDetail from './pages/TeamMemberDetail';
-import { isOnboardingComplete } from './pages/Training';
+import { isOnboardingComplete, isOnboardingEffectivelyComplete } from './pages/Training';
 
 
 const TABS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
+  { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'hr', path: '/hr', label: 'HR', icon: Users },
   { id: 'training', path: '/training', label: 'Training', icon: GraduationCap },
 ];
@@ -171,12 +174,39 @@ function AppShell() {
 
   const permissions = useAppStore((s) => s.permissions);
   const suggestions = useAppStore((s) => s.suggestions);
+  const trainingConfig = useAppStore((s) => s.trainingConfig);
   const userEmail = user?.email?.toLowerCase();
   const allowedPlaybooks = ownerMode
     ? ['service', 'sales', 'strategy']
     : (permissions[userEmail]?.playbooks || ['service']);
 
-  const needsOnboarding = !ownerMode && !isOnboardingComplete(suggestions, currentUser, userEmail);
+  const needsOnboarding = !ownerMode && !isOnboardingEffectivelyComplete(suggestions, currentUser, userEmail, trainingConfig, permissions);
+
+  // Unlock animation: detect when onboarding transitions from incomplete → complete (once only)
+  const [showUnlockAnimation, setShowUnlockAnimation] = useState(false);
+  const [unlockPhase, setUnlockPhase] = useState('idle');
+  const prevNeedsOnboarding = useRef(needsOnboarding);
+  const hasPlayedUnlock = useRef(false);
+
+  useEffect(() => {
+    if (!hasPlayedUnlock.current && prevNeedsOnboarding.current === true && needsOnboarding === false && !ownerMode) {
+      hasPlayedUnlock.current = true;
+      prevNeedsOnboarding.current = false;
+      setShowUnlockAnimation(true);
+      setUnlockPhase('animating');
+      const fadeTimer = setTimeout(() => setUnlockPhase('fading'), 2800);
+      const removeTimer = setTimeout(() => {
+        setShowUnlockAnimation(false);
+        setUnlockPhase('idle');
+        navigate('/');
+      }, 3400);
+      return () => { clearTimeout(fadeTimer); clearTimeout(removeTimer); };
+    }
+    prevNeedsOnboarding.current = needsOnboarding;
+  }, [needsOnboarding, ownerMode, navigate]);
+
+  // Owners manage training from Settings — hide the tab
+  const visibleTabs = ownerMode ? TABS.filter((t) => t.id !== 'training') : TABS;
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
@@ -197,7 +227,7 @@ function AppShell() {
 
             {/* Desktop Tabs */}
             <div className="hidden md:flex items-center gap-1">
-              {TABS.map((t) => {
+              {visibleTabs.map((t) => {
                 const Icon = needsOnboarding ? Lock : t.icon;
                 return (
                   <button
@@ -240,7 +270,7 @@ function AppShell() {
 
         {/* Mobile Tabs */}
         <div className="md:hidden flex border-t border-border-subtle overflow-x-auto">
-          {TABS.map((t) => {
+          {visibleTabs.map((t) => {
             const Icon = needsOnboarding ? Lock : t.icon;
             return (
               <button
@@ -287,6 +317,63 @@ function AppShell() {
           </Routes>
         )}
       </main>
+
+      {/* Unlock Animation Overlay */}
+      {showUnlockAnimation && (
+        <div
+          className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-emerald-900/90 backdrop-blur-sm ${
+            unlockPhase === 'fading' ? 'unlock-overlay-out' : 'unlock-overlay-in'
+          }`}
+        >
+          {/* Expanding rings */}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-24 h-24 rounded-full border-4 border-emerald-400/40 unlock-ring-1 opacity-0" />
+          </div>
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-24 h-24 rounded-full border-4 border-emerald-300/30 unlock-ring-2 opacity-0" />
+          </div>
+
+          {/* Particles */}
+          {[...Array(8)].map((_, i) => {
+            const angle = (i / 8) * 360;
+            const rad = (angle * Math.PI) / 180;
+            const tx = Math.cos(rad) * 120;
+            const ty = Math.sin(rad) * 120;
+            return (
+              <div
+                key={i}
+                className="absolute w-2 h-2 rounded-full bg-emerald-400 opacity-0"
+                style={{
+                  animation: `unlock-particle 1s ${0.8 + i * 0.05}s ease-out forwards`,
+                  left: '50%',
+                  top: '50%',
+                  marginLeft: '-4px',
+                  marginTop: '-4px',
+                  '--px': `${tx}px`,
+                  '--py': `${ty}px`,
+                }}
+              />
+            );
+          })}
+
+          {/* Lock icon — shakes then bursts into unlock */}
+          <div className="relative">
+            <div className="unlock-icon-shake">
+              <div className="unlock-icon-burst">
+                <Unlock size={64} className="text-emerald-400 drop-shadow-lg" strokeWidth={2.5} />
+              </div>
+            </div>
+          </div>
+
+          {/* Text */}
+          <p className="unlock-text text-2xl font-bold text-white mt-8 tracking-wide">
+            Welcome to the team!
+          </p>
+          <p className="unlock-text text-emerald-300/80 text-sm mt-2" style={{ animationDelay: '1.4s' }}>
+            All features unlocked
+          </p>
+        </div>
+      )}
     </div>
   );
 }

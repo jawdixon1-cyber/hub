@@ -9,6 +9,34 @@ export default function OwnerChecklist({ title, items, setItems, checklistType, 
   const checkableItems = items.filter((i) => i.type !== 'header');
   const completedCount = checkableItems.filter((i) => i.done).length;
   const logDebounce = useRef(null);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  // Reset checks at the start of each new day
+  useEffect(() => {
+    const storageKey = `greenteam-checklist-date-${checklistType}`;
+    const today = () => new Date().toISOString().split('T')[0];
+
+    const resetIfNewDay = () => {
+      const saved = localStorage.getItem(storageKey);
+      const now = today();
+      if (saved !== now) {
+        const current = itemsRef.current;
+        if (current.some((i) => i.type !== 'header' && i.done)) {
+          setItems(current.map((i) => ({ ...i, done: false })));
+        }
+        localStorage.setItem(storageKey, now);
+      }
+    };
+
+    resetIfNewDay();
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') resetIfNewDay();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [checklistType, setItems]);
 
   // Log completion to cloud
   useEffect(() => {

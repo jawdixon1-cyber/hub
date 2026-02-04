@@ -2,34 +2,41 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { EQUIPMENT_TYPES } from '../data';
 
-export default function AddEquipmentModal({ onSave, onClose }) {
+export default function AddEquipmentModal({ onSave, onClose, equipmentCategories = [] }) {
+  const allTypes = equipmentCategories.length > 0 ? equipmentCategories : EQUIPMENT_TYPES;
   const [form, setForm] = useState({
     name: '',
     type: 'mower',
     serialNumber: '',
     manualUrl: '',
     status: 'operational',
+    reportedIssue: '',
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave({
+    const data = {
       name: form.name,
       type: form.type,
       serialNumber: form.serialNumber,
       manualUrl: form.manualUrl,
       status: form.status,
-    });
+    };
+    if (form.status === 'needs-repair') {
+      data.reportedIssue = form.reportedIssue;
+      data.urgency = 'critical';
+      data.reportedBy = 'Owner';
+      data.reportedDate = new Date().toLocaleDateString('en-US');
+    }
+    onSave(data);
   };
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
     >
       <div
         className="bg-card rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="bg-gradient-to-r from-emerald-500 to-emerald-700 px-8 py-6 relative shrink-0">
           <button
@@ -59,7 +66,7 @@ export default function AddEquipmentModal({ onSave, onClose }) {
               onChange={(e) => setForm({ ...form, type: e.target.value })}
               className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
             >
-              {EQUIPMENT_TYPES.map((t) => (
+              {allTypes.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
             </select>
@@ -77,11 +84,11 @@ export default function AddEquipmentModal({ onSave, onClose }) {
           <div>
             <label className="block text-sm font-semibold text-secondary mb-1">Manual Link</label>
             <input
-              type="url"
+              type="text"
               value={form.manualUrl}
               onChange={(e) => setForm({ ...form, manualUrl: e.target.value })}
               className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
-              placeholder="https://example.com/manual.pdf"
+              placeholder="https://example.com/manual.pdf or unknown"
             />
           </div>
           <div>
@@ -95,6 +102,19 @@ export default function AddEquipmentModal({ onSave, onClose }) {
               <option value="needs-repair">Needs Repair</option>
             </select>
           </div>
+          {form.status === 'needs-repair' && (
+            <div>
+              <label className="block text-sm font-semibold text-secondary mb-1">What's Wrong?</label>
+              <textarea
+                required
+                rows={3}
+                value={form.reportedIssue}
+                onChange={(e) => setForm({ ...form, reportedIssue: e.target.value })}
+                className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition resize-y"
+                placeholder="Describe what's wrong..."
+              />
+            </div>
+          )}
           <div className="flex gap-3 justify-end pt-2">
             <button
               type="button"

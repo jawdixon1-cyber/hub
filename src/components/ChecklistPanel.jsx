@@ -11,6 +11,22 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
   const [checked, setChecked] = useState(() => new Set());
   const [open, setOpen] = useState(false);
   const logDebounce = useRef(null);
+  const dateRef = useRef(new Date().toISOString().split('T')[0]);
+
+  // Reset checks if the tab is revisited on a new day (midnight crossing)
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const now = new Date().toISOString().split('T')[0];
+        if (dateRef.current !== now) {
+          setChecked(new Set());
+          dateRef.current = now;
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
 
   const checkableItems = normalized.filter((i) => i.type !== 'header');
   const completedCount = checkableItems.filter((i) => checked.has(i.id)).length;

@@ -38,6 +38,8 @@ const STATE_KEYS = [
   { key: 'teamEndChecklist',      supaKey: 'greenteam-teamEndChecklist',      initial: initialTeamEndChecklist },
   { key: 'checklistLog',          supaKey: 'greenteam-checklistLog',          initial: initialChecklistLog },
   { key: 'trainingConfig',        supaKey: 'greenteam-trainingConfig',        initial: {} },
+  { key: 'equipmentCategories',  supaKey: 'greenteam-equipmentCategories',  initial: [] },
+  { key: 'customModules',        supaKey: 'greenteam-customModules',        initial: [] },
 ];
 
 function resolveInitial(cloudValue, initial) {

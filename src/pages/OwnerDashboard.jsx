@@ -4,7 +4,11 @@ import {
   ClipboardList,
   AlertTriangle,
   CircleCheck,
+  Eye,
+  X,
+  ExternalLink,
 } from 'lucide-react';
+import { EQUIPMENT_TYPES } from '../data';
 import ManagementSection from '../components/owner/ManagementSection';
 import MyDaySection from '../components/owner/MyDaySection';
 import { genId } from '../data';
@@ -30,9 +34,14 @@ export default function OwnerDashboard() {
   const equipmentRepairLog = useAppStore((s) => s.equipmentRepairLog);
   const setEquipmentRepairLog = useAppStore((s) => s.setEquipmentRepairLog);
 
+  const equipmentCategories = useAppStore((s) => s.equipmentCategories);
+  const allTypes = equipmentCategories?.length > 0 ? equipmentCategories : EQUIPMENT_TYPES;
+
   const hasActionItems = equipment.some((e) => e.status === 'needs-repair') || timeOffRequests.some((r) => r.status === 'pending') || suggestions.some((s) => s.status === 'New');
   const [showActionRequired, setShowActionRequired] = useState(hasActionItems);
   const [showManagement, setShowManagement] = useState(false);
+  const [viewingRepair, setViewingRepair] = useState(null);
+  const [confirmFixId, setConfirmFixId] = useState(null);
 
   const pendingPTO = timeOffRequests.filter((r) => r.status === 'pending');
   const repairEquipment = equipment.filter((e) => e.status === 'needs-repair');
@@ -137,31 +146,50 @@ export default function OwnerDashboard() {
             {actionItems.map((item) => {
               if (item.kind === 'repair') {
                 const eq = item.data;
+                const typeLabel = allTypes.find((t) => t.value === eq.type)?.label || eq.type;
                 return (
-                  <div key={`repair-${eq.id}`} className="rounded-xl border border-red-200 bg-red-50/50 p-4">
+                  <div key={`repair-${eq.id}`} className="rounded-xl border-2 border-red-400 bg-red-50 dark:bg-red-950/40 dark:border-red-700 p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-red-500">Equipment Repair</span>
-                          <span
-                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                              eq.urgency === 'critical'
-                                ? 'bg-red-600 text-white'
-                                : 'bg-amber-100 text-amber-700'
-                            }`}
-                          >
-                            {eq.urgency === 'critical' ? 'CRITICAL' : 'MAINTENANCE'}
-                          </span>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">Equipment Repair</span>
                         </div>
                         <h4 className="font-bold text-primary mt-1">{eq.name}</h4>
                         {eq.reportedIssue && <p className="text-sm text-secondary mt-0.5">{eq.reportedIssue}</p>}
                       </div>
-                      <button
-                        onClick={() => handleMarkRepaired(eq.id)}
-                        className="shrink-0 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
-                      >
-                        Mark Fixed
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => setViewingRepair(eq)}
+                          className="px-3 py-1.5 rounded-lg border border-border-strong text-secondary text-xs font-semibold hover:bg-surface transition-colors cursor-pointer"
+                        >
+                          <Eye size={14} className="inline -mt-0.5 mr-1" />
+                          View
+                        </button>
+                        {confirmFixId === eq.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => { handleMarkRepaired(eq.id); setConfirmFixId(null); }}
+                              className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => setConfirmFixId(null)}
+                              className="px-3 py-1.5 rounded-lg border border-border-strong text-secondary text-xs font-semibold hover:bg-surface transition-colors cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmFixId(eq.id)}
+                            className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
+                          >
+                            Mark Fixed
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -285,6 +313,96 @@ export default function OwnerDashboard() {
 
       {/* Daily Checklists */}
       <MyDaySection />
+
+      {/* View Repair Equipment Modal */}
+      {viewingRepair && (() => {
+        const eq = viewingRepair;
+        const typeLabel = allTypes.find((t) => t.value === eq.type)?.label || eq.type;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="bg-gradient-to-r from-red-500 to-orange-500 px-8 py-6 relative shrink-0">
+                <button
+                  onClick={() => setViewingRepair(null)}
+                  className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X size={24} />
+                </button>
+                <h2 className="text-2xl font-bold text-white">{eq.name}</h2>
+                <p className="text-white/80 text-sm mt-1">{typeLabel}</p>
+              </div>
+              <div className="p-6 overflow-y-auto space-y-4">
+                {eq.reportedIssue && (
+                  <div>
+                    <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Problem</p>
+                    <p className="text-sm text-primary bg-red-50 border border-red-200 rounded-lg p-3">{eq.reportedIssue}</p>
+                  </div>
+                )}
+                {eq.reportedBy && (
+                  <div className="flex gap-6">
+                    <div>
+                      <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Reported By</p>
+                      <p className="text-sm text-primary">{eq.reportedBy}</p>
+                    </div>
+                    {eq.reportedDate && (
+                      <div>
+                        <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Date</p>
+                        <p className="text-sm text-primary">{eq.reportedDate}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {eq.serialNumber && (
+                  <div>
+                    <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Serial Number</p>
+                    <p className="text-sm text-primary font-mono">{eq.serialNumber}</p>
+                  </div>
+                )}
+                {eq.manualUrl && eq.manualUrl !== 'unknown' && (
+                  <div>
+                    <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Manual</p>
+                    <a
+                      href={eq.manualUrl.startsWith('http') ? eq.manualUrl : `https://${eq.manualUrl}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm text-brand-text font-medium hover:underline"
+                    >
+                      <ExternalLink size={14} />
+                      Open Manual
+                    </a>
+                  </div>
+                )}
+                {eq.manualUrl === 'unknown' && (
+                  <div>
+                    <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Manual</p>
+                    <p className="text-sm text-muted italic">Unknown</p>
+                  </div>
+                )}
+                {eq.photo && (
+                  <div>
+                    <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Photo</p>
+                    <img src={eq.photo} alt="Issue" className="rounded-lg max-h-48 object-cover" />
+                  </div>
+                )}
+                {eq.notes && (
+                  <div>
+                    <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Notes</p>
+                    <p className="text-sm text-primary">{eq.notes}</p>
+                  </div>
+                )}
+              </div>
+              <div className="px-6 py-4 border-t border-border-default shrink-0 flex justify-end">
+                <button
+                  onClick={() => setViewingRepair(null)}
+                  className="px-5 py-2.5 rounded-lg border border-border-strong text-secondary font-medium hover:bg-surface transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

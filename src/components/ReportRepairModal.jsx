@@ -1,15 +1,23 @@
 import { useState } from 'react';
 import { X, Upload } from 'lucide-react';
+import { EQUIPMENT_TYPES } from '../data';
 
-export default function ReportRepairModal({ equipment, currentUser, onSubmit, onClose }) {
+export default function ReportRepairModal({ equipment, currentUser, onSubmit, onClose, equipmentCategories = [] }) {
+  const allTypes = equipmentCategories.length > 0 ? equipmentCategories : EQUIPMENT_TYPES;
+
   const [form, setForm] = useState({
+    typeFilter: '',
     equipmentId: '',
     problemDescription: '',
     photo: null,
-    urgency: 'maintenance',
     reportedBy: currentUser,
   });
   const [photoPreview, setPhotoPreview] = useState(null);
+
+  // Equipment filtered by selected type
+  const filteredEquipment = form.typeFilter
+    ? equipment.filter((eq) => eq.type === form.typeFilter)
+    : [];
 
   const handlePhotoChange = (e) => {
     const file = e.target.files[0];
@@ -31,16 +39,14 @@ export default function ReportRepairModal({ equipment, currentUser, onSubmit, on
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
     >
       <div
         className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="bg-gradient-to-r from-orange-500 to-red-500 px-8 py-6 relative">
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"
+            className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors cursor-pointer"
           >
             <X size={24} />
           </button>
@@ -48,18 +54,35 @@ export default function ReportRepairModal({ equipment, currentUser, onSubmit, on
         </div>
         <form onSubmit={handleSubmit} className="p-8 overflow-y-auto space-y-5">
           <div>
+            <label className="block text-sm font-semibold text-secondary mb-1">Equipment Type</label>
+            <select
+              required
+              value={form.typeFilter}
+              onChange={(e) => setForm({ ...form, typeFilter: e.target.value, equipmentId: '' })}
+              className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
+            >
+              <option value="">Select type...</option>
+              {allTypes.map((t) => {
+                const count = equipment.filter((eq) => eq.type === t.value).length;
+                return count > 0 ? (
+                  <option key={t.value} value={t.value}>{t.label} ({count})</option>
+                ) : null;
+              })}
+            </select>
+          </div>
+
+          <div>
             <label className="block text-sm font-semibold text-secondary mb-1">Equipment</label>
             <select
               required
               value={form.equipmentId}
               onChange={(e) => setForm({ ...form, equipmentId: e.target.value })}
-              className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
+              disabled={!form.typeFilter}
+              className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <option value="">Select equipment...</option>
-              {equipment.map((eq) => (
-                <option key={eq.id} value={eq.id}>
-                  {eq.name}
-                </option>
+              <option value="">{form.typeFilter ? 'Select equipment...' : 'Select a type first'}</option>
+              {filteredEquipment.map((eq) => (
+                <option key={eq.id} value={eq.id}>{eq.name}</option>
               ))}
             </select>
           </div>
@@ -100,34 +123,6 @@ export default function ReportRepairModal({ equipment, currentUser, onSubmit, on
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-secondary mb-2">Urgency</label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="urgency"
-                  value="critical"
-                  checked={form.urgency === 'critical'}
-                  onChange={(e) => setForm({ ...form, urgency: e.target.value })}
-                  className="accent-red-600"
-                />
-                <span className="text-sm font-medium text-red-600">Critical</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="urgency"
-                  value="maintenance"
-                  checked={form.urgency === 'maintenance'}
-                  onChange={(e) => setForm({ ...form, urgency: e.target.value })}
-                  className="accent-amber-600"
-                />
-                <span className="text-sm font-medium text-amber-600">Maintenance</span>
-              </label>
-            </div>
-          </div>
-
-          <div>
             <label className="block text-sm font-semibold text-secondary mb-1">Reported by</label>
             <input
               type="text"
@@ -141,13 +136,13 @@ export default function ReportRepairModal({ equipment, currentUser, onSubmit, on
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 rounded-lg border border-border-strong text-secondary font-medium hover:bg-surface transition-colors"
+              className="px-5 py-2.5 rounded-lg border border-border-strong text-secondary font-medium hover:bg-surface transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 text-white font-medium hover:opacity-90 transition-opacity"
+              className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 text-white font-medium hover:opacity-90 transition-opacity cursor-pointer"
             >
               Submit Report
             </button>

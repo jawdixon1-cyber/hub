@@ -50,6 +50,48 @@ export function isStepApproved(suggestions, currentUser, userEmail, stepId) {
   );
 }
 
+/** Default action items per onboarding step */
+const DEFAULT_ACTION_ITEMS = {
+  'onboard-1': [
+    { id: 'ai1-hr' }, { id: 'ai1-safety' }, { id: 'ai1-app-cert' },
+    { id: 'ai1-schedule' }, { id: 'ai1-docs' },
+  ],
+  'onboard-2': [
+    { id: 'ai2-adp' }, { id: 'ai2-adp-walk' }, { id: 'ai2-dro' },
+    { id: 'ai2-dro-walk' }, { id: 'ai2-confirm' },
+  ],
+  'onboard-3': [
+    { id: 'ai3-timeoff' }, { id: 'ai3-conduct' }, { id: 'ai3-newhire' },
+  ],
+  'onboard-4': [
+    { id: 'ai4-playbook' },
+  ],
+};
+
+/**
+ * "Effectively complete" — step 1 must be owner-approved (hiring decision),
+ * but steps 2-4 auto-complete when the team member finishes all action items.
+ */
+export function isOnboardingEffectivelyComplete(suggestions, currentUser, userEmail, trainingConfig, permissions) {
+  // Already fully approved the normal way
+  if (isOnboardingComplete(suggestions, currentUser, userEmail)) return true;
+
+  // Step 1 (hiring decision) must still be owner-approved
+  if (!isStepApproved(suggestions, currentUser, userEmail, 'onboard-1')) return false;
+
+  // For steps 2-4, check if all action items are completed
+  const myPlaybooks = permissions?.[userEmail]?.playbooks || [];
+  const primaryTeam = myPlaybooks[0] || 'service';
+  const autoSteps = ['onboard-2', 'onboard-3', 'onboard-4'];
+
+  return autoSteps.every((stepId) => {
+    const saved = trainingConfig?.onboardingSteps?.[primaryTeam]?.[stepId]?.actionItems;
+    const items = saved || DEFAULT_ACTION_ITEMS[stepId] || [];
+    const completions = trainingConfig?.actionCompletions?.[userEmail]?.[stepId] || {};
+    return items.length > 0 && items.every((i) => completions[i.id]?.completed);
+  });
+}
+
 /* ─── Module metadata (exported for Settings editor) ─── */
 
 export const MODULE_LIST = [

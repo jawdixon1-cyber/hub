@@ -10,6 +10,8 @@ import {
   ExternalLink,
   AlertTriangle,
   ClipboardList,
+  Pencil,
+  Eye,
 } from 'lucide-react';
 import { genId, EQUIPMENT_TYPES } from '../data';
 import AddEquipmentModal from '../components/AddEquipmentModal';
@@ -17,12 +19,14 @@ import ReportRepairModal from '../components/ReportRepairModal';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 
-const TYPE_LABEL = Object.fromEntries(EQUIPMENT_TYPES.map((t) => [t.value, t.label]));
-
 export default function EquipmentIdeas() {
   const { ownerMode, currentUser } = useAuth();
   const equipment = useAppStore((s) => s.equipment);
   const setEquipment = useAppStore((s) => s.setEquipment);
+  const equipmentCategories = useAppStore((s) => s.equipmentCategories);
+
+  const allTypes = equipmentCategories.length > 0 ? equipmentCategories : EQUIPMENT_TYPES;
+  const TYPE_LABEL = Object.fromEntries(allTypes.map((t) => [t.value, t.label]));
   const equipmentRepairLog = useAppStore((s) => s.equipmentRepairLog);
   const setEquipmentRepairLog = useAppStore((s) => s.setEquipmentRepairLog);
 
@@ -35,6 +39,8 @@ export default function EquipmentIdeas() {
   const [historyItem, setHistoryItem] = useState(null);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesText, setNotesText] = useState('');
+  const [editingEquipment, setEditingEquipment] = useState(null);
+  const [editForm, setEditForm] = useState({});
 
   const handleAddEquipment = (form) => {
     setEquipment([...equipment, { id: genId(), ...form }]);
@@ -52,7 +58,7 @@ export default function EquipmentIdeas() {
               reportedIssue: form.problemDescription,
               reportedBy: form.reportedBy,
               reportedDate: today,
-              urgency: form.urgency,
+              urgency: 'critical',
               photo: form.photo,
             }
           : eq
@@ -101,9 +107,37 @@ export default function EquipmentIdeas() {
     setConfirmDeleteText('');
   };
 
+  const openEditModal = (item) => {
+    setEditForm({
+      name: item.name || '',
+      type: item.type || 'mower',
+      serialNumber: item.serialNumber || '',
+      manualUrl: item.manualUrl || '',
+      notes: item.notes || '',
+    });
+    setEditingEquipment(item);
+  };
+
+  const handleSaveEdit = () => {
+    setEquipment(
+      equipment.map((e) =>
+        e.id === editingEquipment.id
+          ? { ...e, ...editForm }
+          : e
+      )
+    );
+    if (historyItem && historyItem.id === editingEquipment.id) {
+      setHistoryItem({ ...historyItem, ...editForm });
+    }
+    setEditingEquipment(null);
+  };
+
+  const needsRepairCount = equipment.filter((e) => e.status === 'needs-repair').length;
+
   // Filter equipment
   const filtered = equipment.filter((item) => {
-    if (typeFilter !== 'all' && item.type !== typeFilter) return false;
+    if (typeFilter === 'needs-repair' && item.status !== 'needs-repair') return false;
+    if (typeFilter !== 'all' && typeFilter !== 'needs-repair' && item.type !== typeFilter) return false;
     if (search) {
       const q = search.toLowerCase();
       return (
@@ -134,34 +168,22 @@ export default function EquipmentIdeas() {
         <p className="text-tertiary mt-1">Equipment tracking and maintenance history</p>
       </div>
 
-      {/* Type Filter Tabs */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        <button
-          onClick={() => setTypeFilter('all')}
-          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer ${
-            typeFilter === 'all'
-              ? 'bg-brand text-on-brand'
-              : 'bg-card border border-border-default text-secondary hover:bg-surface'
-          }`}
+      {/* Type Filter */}
+      <div className="mb-4">
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="rounded-xl border border-border-default px-4 py-2.5 text-sm font-semibold text-primary bg-card focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition cursor-pointer"
         >
-          All ({equipment.length})
-        </button>
-        {EQUIPMENT_TYPES.map((t) => {
-          const count = equipment.filter((e) => e.type === t.value).length;
-          return (
-            <button
-              key={t.value}
-              onClick={() => setTypeFilter(t.value)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors cursor-pointer ${
-                typeFilter === t.value
-                  ? 'bg-brand text-on-brand'
-                  : 'bg-card border border-border-default text-secondary hover:bg-surface'
-              }`}
-            >
-              {t.label} ({count})
-            </button>
-          );
-        })}
+          <option value="all">All Types ({equipment.length})</option>
+          <option value="needs-repair">Needs Repair ({needsRepairCount})</option>
+          {allTypes.map((t) => {
+            const count = equipment.filter((e) => e.type === t.value).length;
+            return (
+              <option key={t.value} value={t.value}>{t.label} ({count})</option>
+            );
+          })}
+        </select>
       </div>
 
       {/* Search & Actions */}
@@ -223,116 +245,48 @@ export default function EquipmentIdeas() {
           </span>
         </h2>
 
-        <div className="space-y-4">
+        <div className="space-y-2">
           {filtered.length === 0 && (
             <p className="text-muted text-sm py-4 text-center">No equipment matches your filters</p>
           )}
           {filtered.map((item) => {
             const needsRepair = item.status === 'needs-repair';
-            const repairs = getRepairHistory(item);
 
             return (
               <div
                 key={item.id}
-                className={`rounded-xl border-l-4 p-5 ${
+                className={`rounded-xl border-l-4 px-5 py-3.5 flex items-center justify-between ${
                   needsRepair
                     ? 'border-l-red-500 bg-red-50/50 border border-red-200'
                     : 'border-l-emerald-500 bg-card border border-border-subtle'
                 }`}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-base font-bold text-primary">{item.name}</h3>
-                      {item.type && (
-                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                          {TYPE_LABEL[item.type] || item.type}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      <span
-                        className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
-                          needsRepair
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-emerald-100 text-emerald-700'
-                        }`}
-                      >
-                        {needsRepair ? <AlertCircle size={12} /> : <CheckCircle size={12} />}
-                        {needsRepair ? 'Needs Repair' : 'Operational'}
-                      </span>
-                      {needsRepair && item.urgency && (
-                        <span
-                          className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                            item.urgency === 'critical'
-                              ? 'bg-red-600 text-white'
-                              : 'bg-amber-100 text-amber-700'
-                          }`}
-                        >
-                          {item.urgency === 'critical' ? 'CRITICAL' : 'Maintenance'}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Serial row */}
-                    {item.serialNumber && (
-                      <div className="mt-3 text-xs">
-                        <span className="text-muted">S/N:</span>{' '}
-                        <span className="font-medium text-secondary">{item.serialNumber}</span>
-                      </div>
-                    )}
-
-                    {needsRepair && item.reportedIssue && (
-                      <div className="mt-3">
-                        <p className="text-xs text-muted">Reported Issue</p>
-                        <p className="text-sm text-red-600 mt-0.5">{item.reportedIssue}</p>
-                        <p className="text-xs text-muted mt-1">
-                          Reported by {item.reportedBy} on {item.reportedDate}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Action buttons */}
-                    <div className="flex flex-wrap gap-2 mt-4">
-                      <button
-                        onClick={() => { setHistoryItem(item); setEditingNotes(false); setNotesText(item.notes || ''); }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-semibold hover:bg-surface-strong transition-colors cursor-pointer"
-                      >
-                        <ExternalLink size={14} />
-                        View
-                      </button>
-                      {item.manualUrl && (
-                        <a
-                          href={item.manualUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-light text-brand-text-strong text-xs font-semibold hover:bg-brand-light transition-colors"
-                        >
-                          <ExternalLink size={14} />
-                          Manual
-                        </a>
-                      )}
-                      {ownerMode && needsRepair && (
-                        <button
-                          onClick={() => handleMarkRepaired(item.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
-                        >
-                          <CheckCircle size={14} />
-                          Mark Repaired
-                        </button>
-                      )}
-                      {ownerMode && (
-                        <button
-                          onClick={() => { setConfirmDelete(item); setConfirmDeleteText(''); }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100 transition-colors cursor-pointer"
-                        >
-                          <Trash2 size={14} />
-                          Delete
-                        </button>
-                      )}
-                    </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3">
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${needsRepair ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                    <h3 className="text-sm font-semibold text-primary truncate">{item.name}</h3>
                   </div>
-                  <Wrench size={22} className={`shrink-0 ml-4 ${needsRepair ? 'text-red-400' : 'text-emerald-400'}`} />
+                  {needsRepair && item.reportedIssue && (
+                    <p className="text-xs text-red-600 mt-1 ml-5.5 line-clamp-2">{item.reportedIssue}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-3">
+                  <button
+                    onClick={() => { setHistoryItem(item); setEditingNotes(false); setNotesText(item.notes || ''); }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-semibold hover:bg-surface-strong transition-colors cursor-pointer"
+                  >
+                    <Eye size={14} />
+                    View
+                  </button>
+                  {ownerMode && (
+                    <button
+                      onClick={() => openEditModal(item)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-light text-brand-text-strong text-xs font-semibold hover:bg-brand-light/80 transition-colors cursor-pointer"
+                    >
+                      <Pencil size={14} />
+                      Edit
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -344,12 +298,14 @@ export default function EquipmentIdeas() {
         <AddEquipmentModal
           onSave={handleAddEquipment}
           onClose={() => setAddingEquipment(false)}
+          equipmentCategories={equipmentCategories}
         />
       )}
 
       {reportingRepair && (
         <ReportRepairModal
           equipment={equipment}
+          equipmentCategories={equipmentCategories}
           currentUser={currentUser}
           onSubmit={handleRepairSubmit}
           onClose={() => setReportingRepair(false)}
@@ -363,11 +319,9 @@ export default function EquipmentIdeas() {
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-            onClick={() => setHistoryItem(null)}
           >
             <div
               className="bg-card rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col max-h-[85vh]"
-              onClick={(e) => e.stopPropagation()}
             >
               <div className="bg-gradient-to-r from-gray-700 to-gray-900 px-8 py-6 relative shrink-0">
                 <button
@@ -503,17 +457,8 @@ export default function EquipmentIdeas() {
                           key={r.id}
                           className="rounded-lg border border-border-subtle p-3 bg-surface/50"
                         >
-                          <div className="flex items-center justify-between">
+                          <div>
                             <p className="text-sm text-secondary">{r.issue}</p>
-                            <span
-                              className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ml-2 ${
-                                r.urgency === 'critical'
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-amber-100 text-amber-700'
-                              }`}
-                            >
-                              {r.urgency === 'critical' ? 'CRITICAL' : 'MAINT'}
-                            </span>
                           </div>
                           <div className="flex items-center justify-between mt-2">
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
@@ -550,11 +495,9 @@ export default function EquipmentIdeas() {
       {confirmDelete && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onClick={() => { setConfirmDelete(null); setConfirmDeleteText(''); }}
         >
           <div
             className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6"
-            onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-bold text-primary mb-2">Delete Equipment</h3>
             <p className="text-sm text-secondary mb-4">
@@ -584,6 +527,109 @@ export default function EquipmentIdeas() {
               >
                 Delete
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Edit Equipment Modal */}
+      {editingEquipment && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div
+            className="bg-card rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]"
+          >
+            <div className="bg-gradient-to-r from-blue-500 to-blue-700 px-8 py-6 relative shrink-0">
+              <button
+                onClick={() => setEditingEquipment(null)}
+                className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors cursor-pointer"
+              >
+                <X size={24} />
+              </button>
+              <h2 className="text-2xl font-bold text-white">Edit Equipment</h2>
+            </div>
+            <div className="p-8 space-y-5 overflow-y-auto">
+              <div>
+                <label className="block text-sm font-semibold text-secondary mb-1">Equipment Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-secondary mb-1">Type</label>
+                <select
+                  value={editForm.type}
+                  onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
+                  className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
+                >
+                  {allTypes.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-secondary mb-1">Serial Number</label>
+                <input
+                  type="text"
+                  value={editForm.serialNumber}
+                  onChange={(e) => setEditForm({ ...editForm, serialNumber: e.target.value })}
+                  className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-secondary mb-1">Manual Link</label>
+                <input
+                  type="text"
+                  value={editForm.manualUrl}
+                  onChange={(e) => setEditForm({ ...editForm, manualUrl: e.target.value })}
+                  className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-secondary mb-1">Notes</label>
+                <textarea
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                  placeholder="Specific oils, parts, maintenance notes..."
+                  rows={3}
+                  className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition resize-none"
+                />
+              </div>
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingEquipment(null);
+                    setConfirmDelete(editingEquipment);
+                    setConfirmDeleteText('');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100 transition-colors cursor-pointer"
+                >
+                  <Trash2 size={15} />
+                  Delete
+                </button>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditingEquipment(null)}
+                    className="px-5 py-2.5 rounded-lg border border-border-strong text-secondary font-medium hover:bg-surface transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!editForm.name.trim()}
+                    onClick={handleSaveEdit}
+                    className="px-5 py-2.5 rounded-lg bg-brand text-on-brand font-medium hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

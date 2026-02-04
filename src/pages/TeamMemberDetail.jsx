@@ -4,6 +4,7 @@ import {
   ClipboardCheck, LogIn, Pencil,
   Check, ChevronRight, ChevronDown,
   Lightbulb, MessageSquare, GraduationCap, Trash2,
+  Wrench, RotateCcw, AlertTriangle, UserCheck, UserX,
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -74,12 +75,18 @@ export default function TeamMemberDetail() {
   const suggestions = useAppStore((s) => s.suggestions);
   const setSuggestions = useAppStore((s) => s.setSuggestions);
   const trainingConfig = useAppStore((s) => s.trainingConfig);
+  const setTrainingConfig = useAppStore((s) => s.setTrainingConfig);
   const setPermissions = useAppStore((s) => s.setPermissions);
+  const equipment = useAppStore((s) => s.equipment);
+  const equipmentRepairLog = useAppStore((s) => s.equipmentRepairLog);
 
   const [signatureModal, setSignatureModal] = useState(null);
   const [editPlaybooks, setEditPlaybooks] = useState(null); // null = not editing, array = editing
   const [expandedStep, setExpandedStep] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmResetTraining, setConfirmResetTraining] = useState(false);
+  const [confirmDontHire, setConfirmDontHire] = useState(false);
+  const [resetToast, setResetToast] = useState(null);
 
   if (!ownerMode) {
     return (
@@ -155,10 +162,11 @@ export default function TeamMemberDetail() {
   };
 
   const savePlaybooks = () => {
-    setPermissions({
-      ...permissions,
-      [email]: { ...permissions[email], playbooks: editPlaybooks },
-    });
+    if (!editPlaybooks) return;
+    setPermissions((prev) => ({
+      ...prev,
+      [email]: { ...prev[email], playbooks: [...editPlaybooks] },
+    }));
     setEditPlaybooks(null);
   };
 
@@ -179,6 +187,105 @@ export default function TeamMemberDetail() {
   };
 
   const removeMember = () => {
+    const next = { ...permissions };
+    delete next[email];
+    setPermissions(next);
+    navigate('/team');
+  };
+
+  /* ── Equipment repairs data ── */
+
+  const activeRepairs = (equipment || []).filter(
+    (item) => item.reportedBy === name && item.status === 'needs-repair'
+  );
+  const repairHistory = (equipmentRepairLog || []).filter(
+    (entry) => entry.reportedBy === name
+  );
+  const totalRepairs = activeRepairs.length + repairHistory.length;
+
+  /* ── Reset Training ── */
+
+  const nameToEmail = {};
+  Object.entries(permissions || {}).forEach(([em, p]) => {
+    if (p.name) nameToEmail[p.name.trim().toLowerCase()] = em;
+  });
+
+  const suggestionBelongsTo = (s, memberEmail, memberName) => {
+    if (s.submittedByEmail === memberEmail) return true;
+    if (s.submittedBy?.trim().toLowerCase() === memberName.trim().toLowerCase()) return true;
+    const resolved = nameToEmail[s.submittedBy?.trim().toLowerCase()];
+    if (resolved === memberEmail) return true;
+    return false;
+  };
+
+  const showToast = (msg) => {
+    setResetToast(msg);
+    setTimeout(() => setResetToast(null), 4000);
+  };
+
+  const handleResetTraining = () => {
+    // 1. Clear action completions for this member
+    const updated = { ...trainingConfig };
+    if (updated.actionCompletions?.[email]) {
+      updated.actionCompletions = { ...updated.actionCompletions };
+      delete updated.actionCompletions[email];
+    }
+    setTrainingConfig(updated);
+
+    // 2. Remove onboarding & training suggestions submitted by this member
+    const filtered = suggestions.filter(
+      (s) =>
+        !((s.type === 'onboarding' || s.type === 'training') &&
+          suggestionBelongsTo(s, email, name))
+    );
+    setSuggestions(filtered);
+
+    setConfirmResetTraining(false);
+    showToast(`Training reset for ${name}`);
+  };
+
+  /* ── Hiring decision ── */
+
+  const step1Status = getStepStatus('onboard-1');
+  const step1Submitted = step1Status.status && step1Status.status !== 'Approved';
+  const step1Approved = step1Status.status === 'Approved';
+
+  // Check if all step 1 action items are done (even if not yet submitted)
+  const step1Items = getActionItems('onboard-1');
+  const step1Completions = getCompletions('onboard-1');
+  const step1AllDone = step1Items.length > 0 && step1Items.every((i) => step1Completions[i.id]?.completed);
+
+  // Show hiring decision when step 1 actions are complete OR submitted, but not yet approved
+  const needsHiringDecision = !step1Approved && (step1Submitted || step1AllDone);
+
+  const handleHire = () => {
+    if (step1Status.id) {
+      // Approve existing submission
+      handleStatus(step1Status.id, 'Approved');
+    } else {
+      // No submission yet but all items done — create an approved submission
+      const today = new Date().toLocaleDateString('en-US');
+      setSuggestions([
+        ...suggestions,
+        {
+          id: `hire-${Date.now()}`,
+          type: 'onboarding',
+          stepId: 'onboard-1',
+          title: `${name} – Test Day Prep Complete`,
+          description: 'Approved via hiring decision.',
+          submittedBy: name,
+          submittedByEmail: email,
+          date: today,
+          status: 'Approved',
+          internalNote: '',
+        },
+      ]);
+    }
+    showToast(`${name} has been hired! Onboarding unlocked.`);
+  };
+
+  const handleDontHire = () => {
+    // Remove the member from the team
     const next = { ...permissions };
     delete next[email];
     setPermissions(next);
@@ -260,11 +367,18 @@ export default function TeamMemberDetail() {
           </div>
         </div>
 
-        {/* Remove member */}
-        <div className="flex justify-end mt-3">
+        {/* Action buttons */}
+        <div className="flex justify-end gap-2 mt-3">
+          <button
+            onClick={() => setConfirmResetTraining(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer"
+          >
+            <RotateCcw size={13} />
+            Reset Training
+          </button>
           <button
             onClick={() => setConfirmRemove(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer"
           >
             <Trash2 size={13} />
             Remove from Team
@@ -272,7 +386,7 @@ export default function TeamMemberDetail() {
         </div>
 
         {/* Summary stats row */}
-        <div className="grid grid-cols-3 gap-3 mt-5 pt-5 border-t border-border-subtle">
+        <div className="grid grid-cols-4 gap-3 mt-5 pt-5 border-t border-border-subtle">
           <div className="text-center">
             <p className="text-lg font-bold text-primary">{allActionStats.done}/{allActionStats.total}</p>
             <p className="text-[10px] text-tertiary font-medium">Actions Done</p>
@@ -285,8 +399,49 @@ export default function TeamMemberDetail() {
             <p className="text-lg font-bold text-primary">{ideasAndFeedback.length + trainingUpdates.length}</p>
             <p className="text-[10px] text-tertiary font-medium">Submissions</p>
           </div>
+          <div className="text-center">
+            <p className="text-lg font-bold text-primary">{totalRepairs}</p>
+            <p className="text-[10px] text-tertiary font-medium">Repairs</p>
+          </div>
         </div>
       </div>
+
+      {/* ── Hiring Decision Banner ── */}
+      {needsHiringDecision && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 rounded-2xl border-2 border-amber-300 dark:border-amber-700 p-5">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0">
+              <ClipboardCheck size={20} className="text-amber-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-primary text-lg">Hiring Decision Required</h3>
+              <p className="text-sm text-secondary mt-0.5">
+                <span className="font-semibold">{name}</span> has completed Test Day Prep.
+                {step1Submitted ? ' Their submission is awaiting your review.' : ' All action items are finished.'}
+              </p>
+              <p className="text-xs text-tertiary mt-1">
+                Hiring will unlock the remaining onboarding steps (Logins, Company Policies, Playbook Review).
+              </p>
+              <div className="flex flex-wrap gap-3 mt-4">
+                <button
+                  onClick={handleHire}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors cursor-pointer shadow-sm"
+                >
+                  <UserCheck size={16} />
+                  Hire — Unlock Onboarding
+                </button>
+                <button
+                  onClick={() => setConfirmDontHire(true)}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 text-sm font-semibold hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                >
+                  <UserX size={16} />
+                  Don't Hire
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Onboarding Progress ── */}
       <div>
@@ -502,6 +657,127 @@ export default function TeamMemberDetail() {
       </div>
 
 
+      {/* ── Equipment Repairs ── */}
+      <div>
+        <h2 className="text-sm font-bold text-secondary uppercase tracking-wider mb-3">
+          Equipment Repairs ({totalRepairs})
+        </h2>
+        {totalRepairs === 0 ? (
+          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 text-center">
+            <Wrench size={28} className="text-muted mx-auto mb-2" />
+            <p className="text-sm text-muted">No equipment repairs reported by this member.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Active repair reports */}
+            {activeRepairs.map((item) => (
+              <div key={item.id} className="bg-card rounded-2xl shadow-sm border border-red-200 dark:border-red-800 p-4">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <Wrench size={14} className="text-red-500 shrink-0" />
+                  <span className="text-sm font-bold text-primary">{item.name}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400">
+                    Needs Repair
+                  </span>
+                  {item.urgency && (
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                      item.urgency === 'critical'
+                        ? 'bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400'
+                        : 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
+                    }`}>
+                      {item.urgency}
+                    </span>
+                  )}
+                </div>
+                {item.reportedIssue && (
+                  <p className="text-xs text-secondary mt-1">{item.reportedIssue}</p>
+                )}
+                {item.reportedDate && (
+                  <p className="text-[10px] text-muted mt-1">Reported: {item.reportedDate}</p>
+                )}
+              </div>
+            ))}
+
+            {/* Completed repair history */}
+            {repairHistory.map((entry) => (
+              <div key={entry.id} className="bg-card rounded-2xl shadow-sm border border-border-subtle p-4">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <Wrench size={14} className="text-emerald-500 shrink-0" />
+                  <span className="text-sm font-bold text-primary">{entry.equipmentName}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400">
+                    Repaired
+                  </span>
+                  {entry.urgency && (
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                      entry.urgency === 'critical'
+                        ? 'bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400'
+                        : 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
+                    }`}>
+                      {entry.urgency}
+                    </span>
+                  )}
+                </div>
+                {entry.issue && (
+                  <p className="text-xs text-secondary mt-1">{entry.issue}</p>
+                )}
+                <div className="flex gap-3 mt-1">
+                  {entry.reportedDate && (
+                    <p className="text-[10px] text-muted">Reported: {entry.reportedDate}</p>
+                  )}
+                  {entry.repairedDate && (
+                    <p className="text-[10px] text-muted">Repaired: {entry.repairedDate}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Toast ── */}
+      {resetToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl bg-emerald-600 text-white text-sm font-medium shadow-lg flex items-center gap-2 max-w-sm text-center">
+          <Check size={16} className="shrink-0" />
+          {resetToast}
+        </div>
+      )}
+
+      {/* ── Confirm Reset Training Modal ── */}
+      {confirmResetTraining && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setConfirmResetTraining(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl border border-border-subtle max-w-sm w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-950/30 flex items-center justify-center shrink-0">
+                <AlertTriangle size={20} className="text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-primary">Reset Training?</h3>
+                <p className="text-sm text-secondary">
+                  This will clear all onboarding and training progress for{' '}
+                  <span className="font-semibold">{name}</span>.
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-tertiary">
+              Action item completions, signatures, and submitted onboarding/training updates will be permanently removed.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmResetTraining(false)}
+                className="px-4 py-2 rounded-lg border border-border-strong text-secondary text-sm font-medium hover:bg-surface transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetTraining}
+                className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-colors cursor-pointer"
+              >
+                Reset Training
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Confirm Remove Modal ── */}
       {confirmRemove && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setConfirmRemove(false)}>
@@ -525,6 +801,42 @@ export default function TeamMemberDetail() {
                 className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors cursor-pointer"
               >
                 Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm Don't Hire Modal ── */}
+      {confirmDontHire && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setConfirmDontHire(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl border border-border-subtle max-w-sm w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-950/30 flex items-center justify-center shrink-0">
+                <UserX size={20} className="text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-primary">Don't Hire?</h3>
+                <p className="text-sm text-secondary">
+                  This will remove <span className="font-semibold">{name}</span> from the team.
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-tertiary">
+              They will lose access to the app and see "Access Denied" on their next login.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmDontHire(false)}
+                className="px-4 py-2 rounded-lg border border-border-strong text-secondary text-sm font-medium hover:bg-surface transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDontHire}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors cursor-pointer"
+              >
+                Remove from Team
               </button>
             </div>
           </div>

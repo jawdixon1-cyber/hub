@@ -3,7 +3,7 @@ import {
   ArrowLeft, ChevronRight, ChevronUp, Plus,
   Users, Shield, CheckSquare,
   ClipboardCheck, UserCheck, FileCheck,
-  Check, Clock, Eye, EyeOff, Trash2,
+  Check, Clock, Eye, EyeOff, Trash2, AlertCircle,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createSignUpClient } from '../lib/supabase';
@@ -190,6 +190,21 @@ export default function TeamManagement() {
     );
   };
 
+  const needsHiringDecision = (memberName, memberEmail) => {
+    const step1Entry = suggestions.find(
+      (s) => s.type === 'onboarding' && s.stepId === 'onboard-1' && s.submittedBy === memberName
+    );
+    const step1Approved = step1Entry?.status === 'Approved';
+    if (step1Approved) return false;
+
+    // Submitted but not approved
+    if (step1Entry) return true;
+
+    // All action items done but not submitted
+    const p = getActionItemsProgress(memberEmail, 'onboard-1');
+    return p.total > 0 && p.done === p.total;
+  };
+
   /* ── Stats ── */
   const totalMembers = members.length;
   const fullyOnboarded = members.filter((m) => isFullyOnboarded(m.name)).length;
@@ -336,6 +351,7 @@ export default function TeamManagement() {
         <div className="space-y-3">
           {members.map((member) => {
             const onboarded = isFullyOnboarded(member.name);
+            const pendingHire = needsHiringDecision(member.name, member.email);
 
             // Step status dots
             const stepOverview = ONBOARDING_STEPS.map((step) => {
@@ -371,6 +387,12 @@ export default function TeamManagement() {
                       {onboarded && (
                         <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
                           Onboarded
+                        </span>
+                      )}
+                      {pendingHire && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                          <AlertCircle size={10} />
+                          Hiring Decision
                         </span>
                       )}
                     </div>
