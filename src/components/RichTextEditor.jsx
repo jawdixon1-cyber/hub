@@ -17,6 +17,7 @@ import {
   Redo,
   IndentIncrease,
   IndentDecrease,
+  Lightbulb,
 } from 'lucide-react';
 
 const MAX_DIMENSION = 1200;
@@ -166,6 +167,13 @@ export default function RichTextEditor({ content, onChange }) {
           title="Italic"
         >
           <Italic size={16} />
+        </ToolbarButton>
+        <div className="w-px h-5 bg-surface-strong mx-1" />
+        <ToolbarButton
+          onClick={() => editor.chain().focus().insertContent(' — ').run()}
+          title="Add Why (insert em dash)"
+        >
+          <Lightbulb size={16} />
         </ToolbarButton>
         <div className="w-px h-5 bg-surface-strong mx-1" />
         <ToolbarButton
