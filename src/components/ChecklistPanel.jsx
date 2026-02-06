@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { genId } from '../data';
 import renderLinkedText from '../utils/renderLinkedText';
+import { getTodayInTimezone } from '../utils/timezone';
 
 export default function ChecklistPanel({ title, items, checklistType, checklistLog, setChecklistLog }) {
   const normalized = items.map((item, i) =>
@@ -11,13 +12,13 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
   const [checked, setChecked] = useState(() => new Set());
   const [open, setOpen] = useState(false);
   const logDebounce = useRef(null);
-  const dateRef = useRef(new Date().toISOString().split('T')[0]);
+  const dateRef = useRef(getTodayInTimezone());
 
   // Reset checks if the tab is revisited on a new day (midnight crossing)
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
-        const now = new Date().toISOString().split('T')[0];
+        const now = getTodayInTimezone();
         if (dateRef.current !== now) {
           setChecked(new Set());
           dateRef.current = now;
@@ -37,7 +38,7 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
     if (logDebounce.current) clearTimeout(logDebounce.current);
 
     logDebounce.current = setTimeout(() => {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayInTimezone();
       setChecklistLog((prev) => {
         const existing = prev.findIndex(
           (e) => e.date === today && e.checklistType === checklistType

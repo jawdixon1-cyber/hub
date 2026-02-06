@@ -15,6 +15,8 @@ import {
   Link as LinkIcon,
   Undo,
   Redo,
+  IndentIncrease,
+  IndentDecrease,
 } from 'lucide-react';
 
 const MAX_DIMENSION = 1200;
@@ -179,6 +181,18 @@ export default function RichTextEditor({ content, onChange }) {
           title="Numbered List"
         >
           <ListOrdered size={16} />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().sinkListItem('listItem').run()}
+          title="Indent (nest)"
+        >
+          <IndentIncrease size={16} />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().liftListItem('listItem').run()}
+          title="Outdent (un-nest)"
+        >
+          <IndentDecrease size={16} />
         </ToolbarButton>
         <div className="w-px h-5 bg-surface-strong mx-1" />
         <ToolbarButton onClick={handleLink} active={editor.isActive('link')} title="Add Link">

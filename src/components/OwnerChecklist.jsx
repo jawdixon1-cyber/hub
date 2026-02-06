@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { genId } from '../data';
 import renderLinkedText from '../utils/renderLinkedText';
+import { getTodayInTimezone } from '../utils/timezone';
 
 export default function OwnerChecklist({ title, items, setItems, checklistType, checklistLog, setChecklistLog }) {
   const [open, setOpen] = useState(false);
@@ -15,7 +16,7 @@ export default function OwnerChecklist({ title, items, setItems, checklistType, 
   // Reset checks at the start of each new day
   useEffect(() => {
     const storageKey = `greenteam-checklist-date-${checklistType}`;
-    const today = () => new Date().toISOString().split('T')[0];
+    const today = () => getTodayInTimezone();
 
     const resetIfNewDay = () => {
       const saved = localStorage.getItem(storageKey);
@@ -44,7 +45,7 @@ export default function OwnerChecklist({ title, items, setItems, checklistType, 
     if (logDebounce.current) clearTimeout(logDebounce.current);
 
     logDebounce.current = setTimeout(() => {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayInTimezone();
       setChecklistLog((prev) => {
         const existing = prev.findIndex(
           (e) => e.date === today && e.checklistType === checklistType

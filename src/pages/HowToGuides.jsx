@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, Plus, Search } from 'lucide-react';
+import { BookOpen, Plus, Search, Sparkles } from 'lucide-react';
 import Card from '../components/Card';
 import ViewModal from '../components/ViewModal';
 import EditModal from '../components/EditModal';
+import AIPlaybookModal from '../components/AIPlaybookModal';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 
@@ -41,6 +42,7 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
   const [viewing, setViewing] = useState(null);
   const [editing, setEditing] = useState(null);
   const [adding, setAdding] = useState(false);
+  const [showAIGenerator, setShowAIGenerator] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmDeleteText, setConfirmDeleteText] = useState('');
   const visibleTabs = allowedPlaybooks
@@ -106,6 +108,21 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
     setAdding(false);
   };
 
+  const handleAIGenerated = (generated) => {
+    const type = CATEGORY_TO_TYPE[generated.category] || 'service';
+    const newGuide = {
+      id: genId(),
+      title: generated.title,
+      summary: generated.summary,
+      content: generated.content,
+      type,
+      category: generated.category,
+    };
+    setItems([...items, newGuide]);
+    setShowAIGenerator(false);
+    setEditing(newGuide); // Open in edit mode so user can review/adjust
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -117,12 +134,20 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
           <p className="text-tertiary mt-1">Step-by-step procedures</p>
         </div>
         {ownerMode && (
-          <button
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand font-medium text-sm hover:bg-brand-hover transition-colors"
-          >
-            <Plus size={18} /> Add Guide
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAIGenerator(true)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-600 text-white font-medium text-sm hover:bg-purple-700 transition-colors"
+            >
+              <Sparkles size={18} /> AI Generate
+            </button>
+            <button
+              onClick={() => setAdding(true)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand font-medium text-sm hover:bg-brand-hover transition-colors"
+            >
+              <Plus size={18} /> Add Guide
+            </button>
+          </div>
         )}
       </div>
 
@@ -183,6 +208,12 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
           onClose={() => { setEditing(null); setAdding(false); }}
         />
       )}
+      {showAIGenerator && (
+        <AIPlaybookModal
+          onGenerated={handleAIGenerated}
+          onClose={() => setShowAIGenerator(false)}
+        />
+      )}
 
       {/* Confirm Delete Modal */}
       {confirmDelete && (
@@ -196,13 +227,13 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
           >
             <h3 className="text-lg font-bold text-primary mb-2">Delete Playbook</h3>
             <p className="text-sm text-secondary mb-4">
-              Type <span className="font-bold text-red-600">{confirmDelete.title}</span> to confirm deletion.
+              Type <span className="font-bold text-red-600">DELETE</span> to confirm.
             </p>
             <input
               type="text"
               value={confirmDeleteText}
               onChange={(e) => setConfirmDeleteText(e.target.value)}
-              placeholder="Type playbook title..."
+              placeholder="Type DELETE..."
               className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition mb-4"
               autoFocus
             />
@@ -216,7 +247,7 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
               </button>
               <button
                 type="button"
-                disabled={confirmDeleteText !== confirmDelete.title}
+                disabled={confirmDeleteText !== 'DELETE'}
                 onClick={executeDelete}
                 className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
               >

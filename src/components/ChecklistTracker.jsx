@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, ClipboardCheck } from 'lucide-react';
+import { getTodayInTimezone, getTimezone } from '../utils/timezone';
 
 const CHECKLIST_LABELS = {
   'team-start': 'Team Start',
@@ -23,7 +24,14 @@ function getWeekDates(weekOffset) {
 }
 
 function formatDate(d) {
-  return d.toISOString().split('T')[0];
+  const tz = getTimezone();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(d);
 }
 
 function StatusDot({ status }) {
@@ -39,7 +47,7 @@ function StatusDot({ status }) {
 export default function ChecklistTracker({ checklistLog }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const weekDates = getWeekDates(weekOffset);
-  const today = formatDate(new Date());
+  const today = getTodayInTimezone();
 
   const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const checklistTypes = ['team-start', 'team-end', 'owner-start', 'owner-end'];

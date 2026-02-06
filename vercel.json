@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/generate-playbook.js": {
+      "maxDuration": 60
+    }
+  }
+}
