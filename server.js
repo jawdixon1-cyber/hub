@@ -28,58 +28,37 @@ app.post('/api/generate-playbook', async (req, res) => {
 
   const audience = audienceMap[category] || 'team members';
 
-  const systemPrompt = `You create playbooks for lawn care crews. Scannable on the job, clear enough to train someone new.
+  const systemPrompt = `Your job is to follow the spec exactly, not "make something nice."
 
-STRUCTURE (this exact order):
-1. SUCCESS LOOKS LIKE — 2-4 bullet points. The visual standard of "done right."
-2. PROCEDURE — Organized by phase if the service has multiple parts. For EVERY instruction that isn't obvious, include the "why" after an em dash. Examples:
-   - "Park outside the service area — keeps the work zone clear for edging"
-   - "Mow the template lap first — shows cut height so trimmers know where to hold"
-   - "String trim before mowing — mower runs over the clippings and makes them disappear"
-   - "Keep both tires moving when turning — prevents ruts"
-   The why helps them understand, not just follow. If they know why, they'll do it right even in weird situations.
-3. WATCH OUT FOR — 2-4 common mistakes for THIS SPECIFIC SERVICE ONLY. Generate based on actual risks for this service. Do not use examples from other services.
+NON-NEGOTIABLE OUTPUT CONSTRAINTS
+- Output MUST be valid HTML only (no markdown, no plaintext, no intro).
+- Start immediately with: <h2>SUCCESS LOOKS LIKE</h2>
+- Use bullet lists only. Never use paragraphs.
+- Use nested <ul> for sub-details. Do not cram multiple ideas into one long line.
 
-WRITING RULES:
-- No fluff. Write like a crew leader explaining to a new hire.
-- Use hierarchy: nest related sub-details under main points. Group logically.
-- Add "why" ONLY when it's not obvious. Don't explain "put on safety glasses" or "blow all hard surfaces." Do explain things like turning technique or order of operations.
-- Don't double-explain. If the instruction already contains the why (e.g., "slow down over bumps — mower bounces and misses grass"), don't add another explanation after it.
-- Reorganize sections to be more efficient if needed — group related items, put the most important things first, cut redundancy.
-- Use vivid, memorable language — "zebra stripes" not "uneven lines." Make it stick.
+STRUCTURE (MUST FOLLOW THIS ORDER)
+1) <h2>SUCCESS LOOKS LIKE</h2> with 2–4 <li> items.
+2) <h2>PROCEDURE</h2>
+   - <h3>Arrival & Prep</h3>
+   - IF the owner input contains "ORDER OF OPERATIONS", you MUST include:
+     <h3>Order of Operations</h3> immediately after Arrival & Prep.
+     Do NOT merge it into any other phase.
+   - Then remaining phases as <h3>...</h3> in logical order.
+3) <h2>WATCH OUT FOR</h2> with 2–4 <li> items using:
+   <li><strong>Mistake</strong> — description</li>
+
+CONTENT RULES
+- The owner's non-negotiables MUST all appear somewhere in PROCEDURE.
+- You may reorganize for clarity, but you may not omit items.
+- Add "why" only for non-obvious instructions.
+- If the owner already includes a why using an em dash, do not add an additional why.
+- When a topic has multiple sub-points (example: Turning technique), make it a parent bullet with nested sub-bullets. Do not leave it as one long sentence.
 - This is for ${audience}.
 
-CRITICAL: Start IMMEDIATELY with <h2>SUCCESS LOOKS LIKE</h2>. No intro. No preamble.
-
-HTML STRUCTURE (follow exactly):
-
-For SUCCESS LOOKS LIKE:
-<h2>SUCCESS LOOKS LIKE</h2>
-<ul>
-<li>Point one</li>
-<li>Point two</li>
-</ul>
-
-For PROCEDURE with phases:
-<h2>PROCEDURE</h2>
-<h3>Phase Name</h3>
-<ul>
-<li>Main point
-  <ul>
-  <li>Nested detail or why</li>
-  </ul>
-</li>
-<li>Another main point — with inline why after em dash</li>
-</ul>
-
-For WATCH OUT FOR:
-<h2>WATCH OUT FOR</h2>
-<ul>
-<li><strong>Mistake name</strong> — description</li>
-<li><strong>Another mistake</strong> — description</li>
-</ul>
-
-Use <strong> for key terms, <em> for clarifications. Always use bullet lists, never paragraphs.`;
+FINAL CHECK BEFORE YOU ANSWER
+- Confirm you included <h3>Order of Operations</h3> if the owner input had it.
+- Confirm the output contains only HTML tags and lists.
+- If any constraint is violated, rewrite the output until it passes.`;
 
   const userPrompt = `Create a playbook for: "${serviceName}"
 
@@ -88,6 +67,7 @@ ${nonNegotiables}
 
 IMPORTANT:
 - The owner's non-negotiables above are things that MUST be included — but you should reorganize them for better flow, hierarchy, and understanding.
+- CRITICAL: If the owner includes an "ORDER OF OPERATIONS" section, you MUST keep it as its own <h3>Order of Operations</h3> section right after Arrival & Prep. Do NOT merge it into other sections. This defines the sequence of the entire job.
 - Structure it so a new hire can learn it easily. Group related concepts. Put foundational stuff first.
 - Use nesting to show hierarchy — main points with sub-details underneath. Example: "Turning" is a main point, with sub-bullets for "keep both tires moving", "back up before 90-degree turns", "fix misalignment immediately".
 - Add "why" only where it adds real value. Skip obvious ones.
