@@ -123,7 +123,7 @@ export default function OwnerDashboard() {
           {actionItems.length > 0 ? <AlertTriangle size={20} className="text-amber-500" /> : <CircleCheck size={20} className="text-emerald-500" />}
           <h2 className="text-xl font-bold text-primary">Action Required</h2>
           {actionItems.length > 0 && (
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
               {actionItems.length}
             </span>
           )}
@@ -137,9 +137,9 @@ export default function OwnerDashboard() {
 
       {showActionRequired && (
         actionItems.length === 0 ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 flex items-center gap-3">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40 p-5 flex items-center gap-3">
             <span className="w-3 h-3 rounded-full bg-emerald-400" />
-            <p className="text-sm font-semibold text-emerald-700">All clear — nothing needs your attention right now</p>
+            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">All clear — nothing needs your attention right now</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -197,8 +197,8 @@ export default function OwnerDashboard() {
               if (item.kind === 'pto') {
                 const req = item.data;
                 return (
-                  <div key={`pto-${req.id}`} className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Time Off Request</span>
+                  <div key={`pto-${req.id}`} className="rounded-xl border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/40 p-4">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Time Off Request</span>
                     <h4 className="font-bold text-primary mt-1">{req.name}</h4>
                     <p className="text-sm text-secondary mt-0.5">
                       {req.startDate} - {req.endDate} ({req.days} day{req.days > 1 ? 's' : ''}) &middot; {req.reason}
@@ -223,15 +223,15 @@ export default function OwnerDashboard() {
               if (item.kind === 'idea') {
                 const idea = item.data;
                 return (
-                  <div key={`idea-${idea.id}`} className="rounded-xl border border-purple-300 bg-purple-50 p-4">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600">Team Idea</span>
+                  <div key={`idea-${idea.id}`} className="rounded-xl border border-purple-300 bg-purple-50 dark:border-purple-800 dark:bg-purple-950/40 p-4">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Team Idea</span>
                     <h4 className="font-bold text-primary mt-1">{idea.title}</h4>
                     <p className="text-sm text-secondary mt-0.5">{idea.description}</p>
                     <p className="text-xs text-muted mt-1">By {idea.submittedBy} &middot; {idea.date}</p>
                     <div className="flex gap-2 mt-3">
                       <button
                         onClick={() => handleIdeaStatus(idea.id, 'Approved')}
-                        className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 text-xs font-semibold hover:opacity-80 transition-colors cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 text-xs font-semibold hover:opacity-80 transition-colors cursor-pointer"
                       >
                         Approve
                       </button>
@@ -243,7 +243,7 @@ export default function OwnerDashboard() {
                       </button>
                       <button
                         onClick={() => handleIdeaStatus(idea.id, 'Rejected')}
-                        className="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 text-xs font-semibold hover:opacity-80 transition-colors cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 text-xs font-semibold hover:opacity-80 transition-colors cursor-pointer"
                       >
                         Reject
                       </button>
@@ -286,7 +286,7 @@ export default function OwnerDashboard() {
               />
               <span style={{ display: 'none' }}>{app.icon}</span>
             </div>
-            <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+            <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-lg bg-gray-900 dark:bg-gray-700 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
               {app.name}
             </span>
           </a>
@@ -335,7 +335,7 @@ export default function OwnerDashboard() {
                 {eq.reportedIssue && (
                   <div>
                     <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Problem</p>
-                    <p className="text-sm text-primary bg-red-50 border border-red-200 rounded-lg p-3">{eq.reportedIssue}</p>
+                    <p className="text-sm text-primary bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg p-3">{eq.reportedIssue}</p>
                   </div>
                 )}
                 {eq.reportedBy && (

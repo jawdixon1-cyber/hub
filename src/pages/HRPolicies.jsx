@@ -90,15 +90,13 @@ export default function HRPolicies() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-primary">Human Resources</h1>
-          <p className="text-tertiary mt-1">Employee handbook and time off requests</p>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-primary">Human Resources</h1>
+        <p className="text-tertiary mt-1">Employee handbook and time off requests</p>
         {!isOwner && (
           <button
             onClick={() => setRequestingOff(true)}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-brand text-on-brand text-sm font-semibold rounded-xl hover:bg-brand-hover transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 mt-3 bg-brand text-on-brand text-sm font-semibold rounded-xl hover:bg-brand-hover transition-colors cursor-pointer"
           >
             <Calendar size={16} />
             Request Time Off
@@ -152,13 +150,13 @@ export default function HRPolicies() {
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                     <button
                       onClick={(e) => { e.stopPropagation(); setEditing(item); }}
-                      className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                      className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/40 dark:text-blue-400 dark:hover:bg-blue-900/60 transition-colors"
                     >
                       <Pencil size={14} />
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDeletePolicy(item); }}
-                      className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                      className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60 transition-colors"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -182,7 +180,7 @@ export default function HRPolicies() {
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold text-primary">Time Off Requests</h2>
               {timeOffRequests.filter((r) => r.status === 'pending').length > 0 && (
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                   {timeOffRequests.filter((r) => r.status === 'pending').length} pending
                 </span>
               )}
@@ -201,10 +199,10 @@ export default function HRPolicies() {
                 key={req.id}
                 className={`rounded-xl border-l-4 p-5 ${
                   req.status === 'pending'
-                    ? 'border-l-amber-400 bg-amber-50/50 border border-amber-200'
+                    ? 'border-l-amber-400 bg-amber-50/50 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-800'
                     : req.status === 'approved'
-                    ? 'border-l-emerald-400 bg-emerald-50/30 border border-emerald-200'
-                    : 'border-l-red-400 bg-red-50/30 border border-red-200'
+                    ? 'border-l-emerald-400 bg-emerald-50/30 border border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800'
+                    : 'border-l-red-400 bg-red-50/30 border border-red-200 dark:bg-red-950/30 dark:border-red-800'
                 }`}
               >
                 <div className="flex items-start justify-between">
@@ -212,8 +210,8 @@ export default function HRPolicies() {
                     <h3 className="font-bold text-primary">{req.name}</h3>
                     <p className="text-sm text-secondary mt-0.5">
                       {req.startDate} - {req.endDate} ({req.days} day{req.days > 1 ? 's' : ''})
-                      {req.partialDay && <span className="ml-1 text-xs font-medium text-purple-600">({req.startTime} – {req.endTime})</span>}
-                      {req.specificTimes && <span className="ml-1 text-xs font-medium text-purple-600">(Leaving {req.startTime}, returning {req.endTime})</span>}
+                      {req.partialDay && <span className="ml-1 text-xs font-medium text-purple-600 dark:text-purple-400">({req.startTime} – {req.endTime})</span>}
+                      {req.specificTimes && <span className="ml-1 text-xs font-medium text-purple-600 dark:text-purple-400">(Leaving {req.startTime}, returning {req.endTime})</span>}
                     </p>
                     <p className="text-sm text-tertiary mt-1">Reason: {req.reason}</p>
                     <p className="text-xs text-muted mt-1">Requested: {req.requestedDate}</p>
@@ -222,17 +220,17 @@ export default function HRPolicies() {
                     <span
                       className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
                         req.status === 'pending'
-                          ? 'bg-amber-100 text-amber-700'
+                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
                           : req.status === 'approved'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-red-100 text-red-700'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                          : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
                       }`}
                     >
                       {req.status.toUpperCase()}
                     </span>
                     <button
                       onClick={() => handleDeleteRequest(req.id)}
-                      className="p-1.5 rounded-lg text-muted hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                      className="p-1.5 rounded-lg text-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/40 dark:hover:text-red-400 transition-colors cursor-pointer"
                       title="Delete request"
                     >
                       <Trash2 size={14} />
@@ -269,7 +267,7 @@ export default function HRPolicies() {
         </div>
       )}
 
-      {viewing && <ViewModal item={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <ViewModal item={viewing} onClose={() => setViewing(null)} hideWhy />}
 
       {(editing || addingPolicy) && (
         <EditModal

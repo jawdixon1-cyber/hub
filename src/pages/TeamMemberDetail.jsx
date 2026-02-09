@@ -12,7 +12,8 @@ import { useAppStore } from '../store/AppStoreContext';
 import { ONBOARDING_STEPS } from './Training';
 
 const PLAYBOOK_OPTIONS = [
-  { key: 'service', label: 'Field Team', color: 'bg-emerald-100 text-emerald-700' },
+  { key: 'service', label: 'Team Member', color: 'bg-emerald-100 text-emerald-700' },
+  { key: 'leader', label: 'Leader', color: 'bg-amber-100 text-amber-700' },
   { key: 'sales', label: 'Sales Team', color: 'bg-purple-100 text-purple-700' },
   { key: 'strategy', label: 'General Manager', color: 'bg-blue-100 text-blue-700' },
 ];
@@ -82,6 +83,8 @@ export default function TeamMemberDetail() {
 
   const [signatureModal, setSignatureModal] = useState(null);
   const [editPlaybooks, setEditPlaybooks] = useState(null); // null = not editing, array = editing
+  const [editingRole, setEditingRole] = useState(false);
+  const [roleInput, setRoleInput] = useState('');
   const [expandedStep, setExpandedStep] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [confirmResetTraining, setConfirmResetTraining] = useState(false);
@@ -111,6 +114,7 @@ export default function TeamMemberDetail() {
 
   const name = memberData.name;
   const playbooks = memberData.playbooks || [];
+  const role = memberData.role || 'Team Member';
 
   /* ── Data helpers ── */
 
@@ -136,8 +140,26 @@ export default function TeamMemberDetail() {
     (s) => s.type === 'onboarding' && s.stepId === 'onboard-2' && s.submittedBy === name && s.status === 'Approved'
   );
 
+  // Name → email lookup for robust matching
+  const nameToEmail = {};
+  Object.entries(permissions || {}).forEach(([em, p]) => {
+    if (p.name) nameToEmail[p.name.trim().toLowerCase()] = em;
+  });
+
+  const suggestionBelongsTo = (s, memberEmail, memberName) => {
+    if (s.submittedByEmail === memberEmail) return true;
+    const subName = s.submittedBy?.trim().toLowerCase() || '';
+    const memName = memberName.trim().toLowerCase();
+    if (subName === memName) return true;
+    // Match "Ethan Brant" to "Ethan" (display_name vs permissions name)
+    if (subName && memName && (subName.startsWith(memName + ' ') || memName.startsWith(subName + ' '))) return true;
+    const resolved = nameToEmail[subName];
+    if (resolved === memberEmail) return true;
+    return false;
+  };
+
   // All submissions by this member (ideas, feedback, onboarding, training)
-  const memberSubmissions = suggestions.filter((s) => s.submittedBy === name);
+  const memberSubmissions = suggestions.filter((s) => suggestionBelongsTo(s, email, name));
   const ideasAndFeedback = memberSubmissions.filter((s) => s.type === 'idea' || s.type === 'feedback');
   const trainingUpdates = memberSubmissions.filter((s) => s.type === 'training');
 
@@ -204,19 +226,6 @@ export default function TeamMemberDetail() {
   const totalRepairs = activeRepairs.length + repairHistory.length;
 
   /* ── Reset Training ── */
-
-  const nameToEmail = {};
-  Object.entries(permissions || {}).forEach(([em, p]) => {
-    if (p.name) nameToEmail[p.name.trim().toLowerCase()] = em;
-  });
-
-  const suggestionBelongsTo = (s, memberEmail, memberName) => {
-    if (s.submittedByEmail === memberEmail) return true;
-    if (s.submittedBy?.trim().toLowerCase() === memberName.trim().toLowerCase()) return true;
-    const resolved = nameToEmail[s.submittedBy?.trim().toLowerCase()];
-    if (resolved === memberEmail) return true;
-    return false;
-  };
 
   const showToast = (msg) => {
     setResetToast(msg);
@@ -314,6 +323,41 @@ export default function TeamMemberDetail() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl font-bold text-primary">{name}</h1>
+              {editingRole ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={roleInput}
+                    onChange={(e) => setRoleInput(e.target.value)}
+                    className="px-2 py-0.5 rounded-lg border border-border-strong text-xs font-medium text-primary w-28 outline-none focus:ring-1 focus:ring-brand"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setPermissions((prev) => ({ ...prev, [email]: { ...prev[email], role: roleInput.trim() || undefined } }));
+                        setEditingRole(false);
+                      }
+                      if (e.key === 'Escape') setEditingRole(false);
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      setPermissions((prev) => ({ ...prev, [email]: { ...prev[email], role: roleInput.trim() || undefined } }));
+                      setEditingRole(false);
+                    }}
+                    className="p-1 rounded-lg text-brand-text hover:bg-brand-light cursor-pointer"
+                  >
+                    <Check size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setRoleInput(role); setEditingRole(true); }}
+                  className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 hover:opacity-80 cursor-pointer"
+                  title="Click to edit role"
+                >
+                  {role}
+                </button>
+              )}
               {isFullyOnboarded && (
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
                   Onboarded

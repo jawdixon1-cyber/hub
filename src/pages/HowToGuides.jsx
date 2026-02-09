@@ -31,8 +31,8 @@ const TYPE_TO_CATEGORY = {
 
 const ALL_TABS = [
   { key: 'field-team', label: 'Field Team', activeColor: 'text-brand-text-strong', playbookKey: 'service' },
-  { key: 'sales', label: 'Sales Team', activeColor: 'text-purple-700', playbookKey: 'sales' },
-  { key: 'strategy', label: 'General Manager', activeColor: 'text-blue-700', playbookKey: 'strategy' },
+  { key: 'sales', label: 'Sales Team', activeColor: 'text-purple-700 dark:text-purple-300', playbookKey: 'sales' },
+  { key: 'strategy', label: 'General Manager', activeColor: 'text-blue-700 dark:text-blue-300', playbookKey: 'strategy' },
 ];
 
 export default function HowToGuides({ ownerMode, allowedPlaybooks }) {

@@ -12,7 +12,8 @@ import { useAppStore } from '../store/AppStoreContext';
 import { ONBOARDING_STEPS } from './Training';
 
 const PLAYBOOK_OPTIONS = [
-  { key: 'service', label: 'Field Team', color: 'bg-emerald-100 text-emerald-700' },
+  { key: 'service', label: 'Team Member', color: 'bg-emerald-100 text-emerald-700' },
+  { key: 'leader', label: 'Leader', color: 'bg-amber-100 text-amber-700' },
   { key: 'sales', label: 'Sales Team', color: 'bg-purple-100 text-purple-700' },
   { key: 'strategy', label: 'General Manager', color: 'bg-blue-100 text-blue-700' },
 ];

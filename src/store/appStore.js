@@ -17,6 +17,7 @@ import {
   initialTeamChecklist,
   initialTeamEndChecklist,
   initialChecklistLog,
+  initialQuests,
 } from '../data';
 
 const DATA_CACHE_KEY = 'greenteam-data-cache';
@@ -40,6 +41,9 @@ const STATE_KEYS = [
   { key: 'trainingConfig',        supaKey: 'greenteam-trainingConfig',        initial: {} },
   { key: 'equipmentCategories',  supaKey: 'greenteam-equipmentCategories',  initial: [] },
   { key: 'customModules',        supaKey: 'greenteam-customModules',        initial: [] },
+  { key: 'quests',              supaKey: 'greenteam-quests',              initial: initialQuests },
+  { key: 'questCompletions',    supaKey: 'greenteam-questCompletions',    initial: [] },
+  { key: 'userXP',              supaKey: 'greenteam-userXP',              initial: {} },
 ];
 
 function resolveInitial(cloudValue, initial) {

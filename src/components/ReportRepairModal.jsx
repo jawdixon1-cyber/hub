@@ -59,7 +59,7 @@ export default function ReportRepairModal({ equipment, currentUser, onSubmit, on
               required
               value={form.typeFilter}
               onChange={(e) => setForm({ ...form, typeFilter: e.target.value, equipmentId: '' })}
-              className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
+              className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-primary focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
             >
               <option value="">Select type...</option>
               {allTypes.map((t) => {
@@ -78,7 +78,7 @@ export default function ReportRepairModal({ equipment, currentUser, onSubmit, on
               value={form.equipmentId}
               onChange={(e) => setForm({ ...form, equipmentId: e.target.value })}
               disabled={!form.typeFilter}
-              className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-primary focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="">{form.typeFilter ? 'Select equipment...' : 'Select a type first'}</option>
               {filteredEquipment.map((eq) => (
@@ -101,7 +101,7 @@ export default function ReportRepairModal({ equipment, currentUser, onSubmit, on
 
           <div>
             <label className="block text-sm font-semibold text-secondary mb-1">Photo</label>
-            <label className="flex items-center gap-3 px-4 py-3 rounded-lg border border-dashed border-border-strong cursor-pointer hover:border-orange-400 hover:bg-orange-50/50 transition-colors">
+            <label className="flex items-center gap-3 px-4 py-3 rounded-lg border border-dashed border-border-strong cursor-pointer hover:border-orange-400 hover:bg-orange-50/50 dark:hover:bg-orange-950/30 transition-colors">
               <Upload size={20} className="text-muted" />
               <span className="text-sm text-tertiary">
                 {photoPreview ? 'Photo attached — click to change' : 'Upload a photo of the issue'}

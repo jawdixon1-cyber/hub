@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Wrench,
   AlertCircle,
@@ -13,6 +13,7 @@ import {
   Pencil,
   Eye,
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { genId, EQUIPMENT_TYPES } from '../data';
 import AddEquipmentModal from '../components/AddEquipmentModal';
 import ReportRepairModal from '../components/ReportRepairModal';
@@ -30,8 +31,18 @@ export default function EquipmentIdeas() {
   const equipmentRepairLog = useAppStore((s) => s.equipmentRepairLog);
   const setEquipmentRepairLog = useAppStore((s) => s.setEquipmentRepairLog);
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [addingEquipment, setAddingEquipment] = useState(false);
   const [reportingRepair, setReportingRepair] = useState(false);
+
+  // Auto-open report repair modal when navigated with ?report=1
+  useEffect(() => {
+    if (searchParams.get('report') === '1') {
+      setReportingRepair(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmDeleteText, setConfirmDeleteText] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -146,7 +157,7 @@ export default function EquipmentIdeas() {
       );
     }
     return true;
-  });
+  }).sort((a, b) => (a.status === 'needs-repair' ? -1 : 1) - (b.status === 'needs-repair' ? -1 : 1));
 
   // Recurring issues
   const repairCounts = {};
@@ -168,8 +179,8 @@ export default function EquipmentIdeas() {
         <p className="text-tertiary mt-1">Equipment tracking and maintenance history</p>
       </div>
 
-      {/* Type Filter */}
-      <div className="mb-4">
+      {/* Filter & Actions */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
@@ -184,38 +195,34 @@ export default function EquipmentIdeas() {
             );
           })}
         </select>
+        {ownerMode && (
+          <button
+            onClick={() => setAddingEquipment(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand text-on-brand text-sm font-semibold rounded-xl hover:bg-brand-hover transition-colors cursor-pointer"
+          >
+            <Plus size={16} />
+            Add Equipment
+          </button>
+        )}
+        <button
+          onClick={() => setReportingRepair(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer"
+        >
+          <AlertCircle size={16} />
+          Report Repair
+        </button>
       </div>
 
-      {/* Search & Actions */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search equipment by name or serial..."
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border-default text-sm text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          {ownerMode && (
-            <button
-              onClick={() => setAddingEquipment(true)}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand text-on-brand text-sm font-semibold rounded-xl hover:bg-brand-hover transition-colors cursor-pointer"
-            >
-              <Plus size={16} />
-              Add Equipment
-            </button>
-          )}
-          <button
-            onClick={() => setReportingRepair(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer"
-          >
-            <AlertCircle size={16} />
-            Report Repair
-          </button>
-        </div>
+      {/* Search */}
+      <div className="relative mb-6">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search equipment by name or serial..."
+          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border-default text-sm text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none"
+        />
       </div>
 
       {/* Recurring Issues Warning */}

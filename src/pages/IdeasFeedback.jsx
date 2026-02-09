@@ -1,36 +1,36 @@
-import { useState } from 'react';
-import { Lightbulb, MessageSquare, GraduationCap, ClipboardCheck, Plus, X, Trash2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Lightbulb, MessageSquare, Plus, X, Trash2 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 
 const STATUS_COLORS = {
-  New: 'bg-purple-100 text-purple-700',
-  Reviewing: 'bg-amber-100 text-amber-700',
-  Approved: 'bg-blue-100 text-blue-700',
-  Implemented: 'bg-emerald-100 text-emerald-700',
-  Rejected: 'bg-red-100 text-red-700',
+  New: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+  Reviewing: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  Approved: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+  Implemented: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  Rejected: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
 };
 
 const TYPE_ICON = {
   idea: { Icon: Lightbulb, color: 'text-amber-500' },
   feedback: { Icon: MessageSquare, color: 'text-blue-500' },
-  training: { Icon: GraduationCap, color: 'text-teal-500' },
-  onboarding: { Icon: ClipboardCheck, color: 'text-orange-500' },
 };
 
-export function IdeasFeedbackContent({ filterByUser, compact }) {
-  const { ownerMode, currentUser } = useAuth();
+export function IdeasFeedbackContent({ filterByUser, compact, autoSubmit }) {
+  const { user, ownerMode, currentUser } = useAuth();
   const suggestions = useAppStore((s) => s.suggestions);
   const setSuggestions = useAppStore((s) => s.setSuggestions);
 
   const [filter, setFilter] = useState('all');
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(autoSubmit || false);
   const [form, setForm] = useState({ type: 'idea', title: '', description: '' });
 
-  const baseSuggestions = filterByUser
+  const baseSuggestions = (filterByUser
     ? suggestions.filter((s) => s.submittedBy === filterByUser)
-    : suggestions;
+    : suggestions
+  ).filter((s) => s.type !== 'onboarding' && !s.stepId && !s.title?.includes('Policy Acknowledgment'));
 
   const filtered = filter === 'all'
     ? baseSuggestions
@@ -46,6 +46,7 @@ export function IdeasFeedbackContent({ filterByUser, compact }) {
         title: form.title.trim(),
         description: form.description.trim(),
         submittedBy: currentUser,
+        submittedByEmail: user?.email?.toLowerCase(),
         date: today,
         status: 'New',
       },
@@ -82,7 +83,6 @@ export function IdeasFeedbackContent({ filterByUser, compact }) {
     { key: 'all', label: 'All' },
     { key: 'idea', label: 'Business Ideas' },
     { key: 'feedback', label: 'Software Feedback' },
-    { key: 'onboarding', label: 'Onboarding' },
   ];
 
   return (
@@ -230,24 +230,17 @@ export function IdeasFeedbackContent({ filterByUser, compact }) {
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <ItemIcon size={16} className={`${typeInfo.color} shrink-0`} />
                       <h3 className="text-base font-bold text-primary">{item.title}</h3>
-                      {item.type === 'onboarding' && item.stepId && (
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
-                          {item.stepId === 'onboard-1' ? 'Test Day Prep' : item.stepId === 'onboard-2' ? 'Logins' : item.stepId}
-                        </span>
-                      )}
                     </div>
                     <p className="text-sm text-secondary mt-1 ml-6 whitespace-pre-line">{item.description}</p>
                     <div className="flex items-center gap-3 mt-3 ml-6">
                       <p className="text-xs text-muted">
                         {item.submittedBy} &middot; {item.date}
                       </p>
-                      {item.type !== 'onboarding' && (
-                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[item.status] || 'bg-surface-alt text-secondary'}`}>
-                          {item.status}
-                        </span>
-                      )}
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[item.status] || 'bg-surface-alt text-secondary'}`}>
+                        {item.status}
+                      </span>
                     </div>
-                    {ownerMode && item.type !== 'onboarding' && (
+                    {ownerMode && (
                       <div className="flex flex-wrap gap-2 mt-3 ml-6">
                         {['New', 'Reviewing', 'Approved', 'Implemented', 'Rejected']
                           .filter((s) => s !== item.status)
@@ -262,23 +255,11 @@ export function IdeasFeedbackContent({ filterByUser, compact }) {
                           ))}
                         <button
                           onClick={() => handleDelete(item.id)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100 transition-colors cursor-pointer"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 dark:bg-red-900/40 dark:text-red-400 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-900/60 transition-colors cursor-pointer"
                         >
                           <Trash2 size={12} />
                           Delete
                         </button>
-                      </div>
-                    )}
-                    {ownerMode && item.type === 'onboarding' && (
-                      <div className="mt-3 ml-6">
-                        <label className="block text-xs font-semibold text-muted mb-1">Internal Note (private)</label>
-                        <textarea
-                          rows={2}
-                          value={item.internalNote || ''}
-                          onChange={(e) => handleInternalNote(item.id, e.target.value)}
-                          className="w-full rounded-lg border-2 border-dashed border-border-strong px-3 py-2 text-sm text-primary focus:ring-2 focus:ring-orange-400 focus:border-orange-400 outline-none transition resize-y bg-surface"
-                          placeholder="Private evaluation notes..."
-                        />
                       </div>
                     )}
                   </div>
@@ -293,5 +274,14 @@ export function IdeasFeedbackContent({ filterByUser, compact }) {
 }
 
 export default function IdeasFeedback() {
-  return <IdeasFeedbackContent />;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoOpen = searchParams.get('submit') === '1';
+
+  useEffect(() => {
+    if (autoOpen) {
+      setSearchParams({}, { replace: true });
+    }
+  }, [autoOpen, setSearchParams]);
+
+  return <IdeasFeedbackContent autoSubmit={autoOpen} />;
 }

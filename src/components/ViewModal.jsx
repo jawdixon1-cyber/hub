@@ -20,24 +20,38 @@ const gradients = {
   'Time Off': 'from-cyan-500 to-cyan-700',
 };
 
-export default function ViewModal({ item, onClose }) {
+export default function ViewModal({ item, onClose, hideWhy }) {
   if (!item) return null;
   const gradient = gradients[item.category] || 'from-gray-500 to-gray-700';
 
   const mouseDownTarget = useRef(null);
-  const [showWhy, setShowWhy] = useState(false);
+  const [showWhy, setShowWhy] = useState(() => {
+    try { return localStorage.getItem('greenteam-showWhy') === 'true'; } catch { return false; }
+  });
 
-  // Process content to handle "why" portions (text after em dashes)
+  const toggleWhy = () => {
+    setShowWhy((v) => {
+      const next = !v;
+      try { localStorage.setItem('greenteam-showWhy', String(next)); } catch {}
+      return next;
+    });
+  };
+
+  // Process content to handle "why" portions (highlight marks + legacy em dashes)
   const processedContent = useMemo(() => {
     if (!item.content || !item.content.includes('<')) return null;
 
     let html = item.content;
 
     if (showWhy) {
-      // Highlight the "why" portions (text after — em dash)
+      // Show highlight marks with visible styling
+      html = html.replace(/<mark([^>]*)>/g, '<mark$1 style="background:var(--why-bg);padding:1px 4px;border-radius:3px;">');
+      // Legacy: highlight text after em dashes
       html = html.replace(/—\s*([^<]+)(?=<|$)/g, '— <span class="why-highlight">$1</span>');
     } else {
-      // Hide the "why" portions
+      // Hide highlight marks entirely
+      html = html.replace(/<mark[^>]*>([^<]*)<\/mark>/g, '');
+      // Legacy: hide text after em dashes
       html = html.replace(/\s*—\s*[^<]+(?=<|$)/g, '');
     }
 
@@ -46,7 +60,7 @@ export default function ViewModal({ item, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black p-4"
       onMouseDown={(e) => { mouseDownTarget.current = e.target; }}
       onMouseUp={(e) => {
         if (e.target === e.currentTarget && mouseDownTarget.current === e.currentTarget) {
@@ -72,17 +86,19 @@ export default function ViewModal({ item, onClose }) {
               </span>
               <h2 className="mt-3 text-2xl font-bold text-white">{item.title}</h2>
             </div>
-            <button
-              onClick={() => setShowWhy((v) => !v)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                showWhy
-                  ? 'bg-yellow-400 text-yellow-900'
-                  : 'bg-white/20 text-white hover:bg-white/30'
-              }`}
-            >
-              <Lightbulb size={16} />
-              {showWhy ? 'Why: ON' : 'Why: OFF'}
-            </button>
+            {!hideWhy && (
+              <button
+                onClick={toggleWhy}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  showWhy
+                    ? 'bg-yellow-400 text-yellow-900'
+                    : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+              >
+                <Lightbulb size={16} />
+                {showWhy ? 'Why: ON' : 'Why: OFF'}
+              </button>
+            )}
           </div>
         </div>
         <div
@@ -97,7 +113,8 @@ export default function ViewModal({ item, onClose }) {
         >
           {item.content && item.content.includes('<') ? (
             <div
-              className="prose prose-sm max-w-none text-secondary [&_p]:my-1 [&_h1]:mt-4 [&_h1]:mb-1 [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_img]:rounded-lg [&_img]:max-h-64 [&_img]:object-cover [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800 [&_.why-highlight]:bg-yellow-100 [&_.why-highlight]:text-yellow-800 [&_.why-highlight]:px-1 [&_.why-highlight]:py-0.5 [&_.why-highlight]:rounded [&_.why-highlight]:font-medium"
+              style={{ '--why-bg': '#fef08a' }}
+              className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-primary [&_p]:my-1 [&_p]:text-primary [&_h1]:mt-4 [&_h1]:mb-1 [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_li]:text-primary [&_img]:rounded-lg [&_img]:max-h-64 [&_img]:object-cover [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-800 dark:[&_a:hover]:text-blue-300 [&_.why-highlight]:bg-yellow-300 [&_.why-highlight]:text-yellow-900 dark:[&_.why-highlight]:bg-yellow-400/30 dark:[&_.why-highlight]:text-yellow-200 [&_.why-highlight]:px-1 [&_.why-highlight]:py-0.5 [&_.why-highlight]:rounded [&_.why-highlight]:font-semibold [&_mark]:bg-yellow-300 [&_mark]:text-yellow-900 [&_mark]:px-1 [&_mark]:py-0.5 [&_mark]:rounded [&_mark]:font-semibold dark:[&_mark]:!bg-yellow-400/30 dark:[&_mark]:!text-yellow-200"
               dangerouslySetInnerHTML={{ __html: processedContent }}
             />
           ) : (

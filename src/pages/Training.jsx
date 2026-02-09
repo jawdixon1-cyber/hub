@@ -12,10 +12,10 @@ import { useAppStore } from '../store/AppStoreContext';
 /* ─── Onboarding steps (prerequisite before training modules) ─── */
 
 export const ONBOARDING_STEPS = [
-  { id: 'onboard-1', title: 'Test Day Prep', icon: ClipboardCheck, color: 'text-orange-500', bg: 'bg-orange-50', borderColor: 'border-orange-200', gradient: 'from-orange-500 to-amber-600' },
-  { id: 'onboard-2', title: 'Logins', icon: LogIn, color: 'text-blue-500', bg: 'bg-blue-50', borderColor: 'border-blue-200', gradient: 'from-blue-500 to-indigo-600' },
-  { id: 'onboard-3', title: 'Company Policies', icon: Shield, color: 'text-purple-500', bg: 'bg-purple-50', borderColor: 'border-purple-200', gradient: 'from-purple-500 to-violet-600' },
-  { id: 'onboard-4', title: 'Playbook Review', icon: BookOpen, color: 'text-teal-500', bg: 'bg-teal-50', borderColor: 'border-teal-200', gradient: 'from-teal-500 to-emerald-600' },
+  { id: 'onboard-1', title: 'Test Day Prep', icon: ClipboardCheck, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/40', borderColor: 'border-orange-200 dark:border-orange-800', gradient: 'from-orange-500 to-amber-600' },
+  { id: 'onboard-2', title: 'Logins', icon: LogIn, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/40', borderColor: 'border-blue-200 dark:border-blue-800', gradient: 'from-blue-500 to-indigo-600' },
+  { id: 'onboard-3', title: 'Company Policies', icon: Shield, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-950/40', borderColor: 'border-purple-200 dark:border-purple-800', gradient: 'from-purple-500 to-violet-600' },
+  { id: 'onboard-4', title: 'Playbook Review', icon: BookOpen, color: 'text-teal-500', bg: 'bg-teal-50 dark:bg-teal-950/40', borderColor: 'border-teal-200 dark:border-teal-800', gradient: 'from-teal-500 to-emerald-600' },
 ];
 
 /**
@@ -95,11 +95,11 @@ export function isOnboardingEffectivelyComplete(suggestions, currentUser, userEm
 /* ─── Module metadata (exported for Settings editor) ─── */
 
 export const MODULE_LIST = [
-  { id: 1, title: 'Module 1: Onboarding & Company Basics', icon: Briefcase, color: 'text-emerald-500', bg: 'bg-emerald-50', borderColor: 'border-emerald-200' },
-  { id: 2, title: 'Module 2: Safety & Equipment Handling', icon: Shield, color: 'text-red-500', bg: 'bg-red-50', borderColor: 'border-red-200' },
-  { id: 3, title: 'Module 3: Technical Tools & Software', icon: Monitor, color: 'text-blue-500', bg: 'bg-blue-50', borderColor: 'border-blue-200' },
-  { id: 4, title: 'Module 4: Quality Standards & Playbooks', icon: BookOpen, color: 'text-purple-500', bg: 'bg-purple-50', borderColor: 'border-purple-200' },
-  { id: 5, title: 'Module 5: Refinement & Adaptation (Ongoing)', icon: Star, color: 'text-amber-500', bg: 'bg-amber-50', borderColor: 'border-amber-200', optional: true },
+  { id: 1, title: 'Module 1: Onboarding & Company Basics', icon: Briefcase, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950/40', borderColor: 'border-emerald-200 dark:border-emerald-800' },
+  { id: 2, title: 'Module 2: Safety & Equipment Handling', icon: Shield, color: 'text-red-500', bg: 'bg-red-50 dark:bg-red-950/40', borderColor: 'border-red-200 dark:border-red-800' },
+  { id: 3, title: 'Module 3: Technical Tools & Software', icon: Monitor, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/40', borderColor: 'border-blue-200 dark:border-blue-800' },
+  { id: 4, title: 'Module 4: Quality Standards & Playbooks', icon: BookOpen, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-950/40', borderColor: 'border-purple-200 dark:border-purple-800' },
+  { id: 5, title: 'Module 5: Refinement & Adaptation (Ongoing)', icon: Star, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-950/40', borderColor: 'border-amber-200 dark:border-amber-800', optional: true },
 ];
 
 /* ─── Rich HTML content renderer with internal link interception ─── */
@@ -118,7 +118,7 @@ export function RichContent({ html, navigate }) {
   return (
     <div
       onClick={handleClick}
-      className="prose prose-sm max-w-none text-secondary [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_a]:text-blue-600 [&_a]:underline [&_a]:font-medium [&_a]:cursor-pointer [&_strong]:text-primary [&_h3]:text-primary [&_h3]:text-sm [&_h3]:font-bold"
+      className="prose prose-sm dark:prose-invert max-w-none text-secondary [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:font-medium [&_a]:cursor-pointer [&_strong]:text-primary [&_h3]:text-primary [&_h3]:text-sm [&_h3]:font-bold"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
@@ -213,7 +213,7 @@ export default function Training() {
           onClick={() => navigate('/training/onboard/onboard-2')}
           className="w-full flex items-center gap-4 p-5 bg-card rounded-2xl shadow-sm border border-border-subtle hover:border-border-strong hover:shadow-md transition-all text-left cursor-pointer group"
         >
-          <div className="w-11 h-11 rounded-xl bg-blue-50 border-blue-200 border flex items-center justify-center shrink-0">
+          <div className="w-11 h-11 rounded-xl bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 border flex items-center justify-center shrink-0">
             <LogIn size={20} className="text-blue-500" />
           </div>
           <div className="flex-1 min-w-0">

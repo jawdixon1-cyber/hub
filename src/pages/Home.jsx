@@ -1,4 +1,4 @@
-import { Megaphone, ChevronRight, ClipboardCheck, AlertCircle, Lightbulb, GraduationCap, Check } from 'lucide-react';
+import { Megaphone, ChevronRight, ClipboardCheck, AlertCircle, Lightbulb, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ChecklistPanel from '../components/ChecklistPanel';
 import { useAppStore } from '../store/AppStoreContext';
@@ -44,7 +44,7 @@ export default function Home() {
             <div className="flex items-center gap-2 px-6 py-4 border-b border-border-subtle shrink-0">
               <Megaphone size={18} className="text-brand-text" />
               <h2 className="text-lg font-bold text-primary">New Announcements</h2>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                 {unacknowledged.length}
               </span>
             </div>
@@ -54,14 +54,14 @@ export default function Home() {
                   key={a.id}
                   className={`rounded-xl border p-5 ${
                     a.priority === 'high'
-                      ? 'border-red-200 bg-red-50/50'
+                      ? 'border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/40'
                       : 'border-border-subtle bg-surface'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <h3 className="text-base font-bold text-primary">{a.title}</h3>
                     {a.priority === 'high' && (
-                      <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700">
+                      <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
                         HIGH
                       </span>
                     )}
@@ -102,48 +102,38 @@ export default function Home() {
         <ChecklistPanel title="End of Day" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+      <div className="flex flex-col gap-3 mt-6">
         <a
-          href="http://heyjudeslawncare.com/app"
+          href="jobber://"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 p-6 text-white hover:opacity-90 transition-opacity"
+          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-4 text-white hover:opacity-90 transition-opacity"
         >
           <div>
-            <h3 className="text-lg font-bold">Open Jobber</h3>
-            <p className="text-sm text-white/80 mt-1">View today's schedule and jobs</p>
+            <h3 className="text-base font-bold">Open Jobber</h3>
+            <p className="text-sm text-white/80">View today's schedule and jobs</p>
           </div>
-          <ChevronRight size={24} />
+          <ChevronRight size={22} className="shrink-0" />
         </a>
         <button
-          onClick={() => navigate('/equipment')}
-          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-orange-500 to-red-500 p-6 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
+          onClick={() => navigate('/equipment?report=1')}
+          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-orange-500 to-red-500 px-6 py-4 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
         >
           <div>
-            <h3 className="text-lg font-bold">Report Issue</h3>
-            <p className="text-sm text-white/80 mt-1">Equipment needs repair</p>
+            <h3 className="text-base font-bold">Report Repair</h3>
+            <p className="text-sm text-white/80">Equipment needs repair</p>
           </div>
-          <AlertCircle size={24} />
+          <AlertCircle size={22} className="shrink-0" />
         </button>
         <button
-          onClick={() => navigate('/profile')}
-          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-purple-500 to-purple-700 p-6 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
+          onClick={() => navigate('/ideas?submit=1')}
+          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-purple-500 to-purple-700 px-6 py-4 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
         >
           <div>
-            <h3 className="text-lg font-bold">Submit Idea</h3>
-            <p className="text-sm text-white/80 mt-1">Suggest an improvement</p>
+            <h3 className="text-base font-bold">Submit Idea</h3>
+            <p className="text-sm text-white/80">Suggest an improvement</p>
           </div>
-          <Lightbulb size={24} />
-        </button>
-        <button
-          onClick={() => navigate('/training')}
-          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 p-6 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
-        >
-          <div>
-            <h3 className="text-lg font-bold">My Training</h3>
-            <p className="text-sm text-white/80 mt-1">View your training path</p>
-          </div>
-          <GraduationCap size={24} />
+          <Lightbulb size={22} className="shrink-0" />
         </button>
       </div>
     </div>

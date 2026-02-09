@@ -4,7 +4,7 @@ import {
   Home as HomeIcon,
   BookOpen,
   Users,
-  GraduationCap,
+  Swords,
   LogOut,
   RefreshCw,
   Lock,
@@ -28,6 +28,8 @@ import OnboardingHub from './pages/OnboardingHub';
 import OwnerDashboard from './pages/OwnerDashboard';
 import TeamManagement from './pages/TeamManagement';
 import TeamMemberDetail from './pages/TeamMemberDetail';
+import QuestBoard from './pages/QuestBoard';
+import IdeasFeedback from './pages/IdeasFeedback';
 import { isOnboardingComplete, isOnboardingEffectivelyComplete } from './pages/Training';
 
 
@@ -36,7 +38,7 @@ const TABS = [
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'hr', path: '/hr', label: 'HR', icon: Users },
-  { id: 'training', path: '/training', label: 'Training', icon: GraduationCap },
+  // { id: 'quests', path: '/quests', label: 'Quests', icon: Swords },  // v2 — uncomment to enable
 ];
 
 /* ─── App (outer) — auth gate + data loading ─── */
@@ -205,8 +207,7 @@ function AppShell() {
     prevNeedsOnboarding.current = needsOnboarding;
   }, [needsOnboarding, ownerMode, navigate]);
 
-  // Owners manage training from Settings — hide the tab
-  const visibleTabs = ownerMode ? TABS.filter((t) => t.id !== 'training') : TABS;
+  const visibleTabs = TABS;
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
@@ -305,13 +306,14 @@ function AppShell() {
             <Route path="/guides" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
             <Route path="/equipment" element={<EquipmentIdeas />} />
             <Route path="/hr" element={<HRPolicies />} />
-            <Route path="/training" element={<Training />} />
-            <Route path="/training/onboard/:stepId" element={<OnboardingStep />} />
-            <Route path="/training/:moduleId" element={<TrainingModule />} />
+            {/* <Route path="/quests" element={<QuestBoard />} /> */}
+            {/* <Route path="/training" element={<Training />} /> */}
+            {/* <Route path="/training/onboard/:stepId" element={<OnboardingStep />} /> */}
+            {/* <Route path="/training/:moduleId" element={<TrainingModule />} /> */}
             <Route path="/team" element={<TeamManagement />} />
             <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
             <Route path="/profile" element={<Profile />} />
-            <Route path="/ideas" element={<Navigate to="/profile" replace />} />
+            <Route path="/ideas" element={<IdeasFeedback />} />
             <Route path="/settings" element={<Navigate to="/profile" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

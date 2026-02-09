@@ -2,6 +2,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
+import Highlight from '@tiptap/extension-highlight';
 import Placeholder from '@tiptap/extension-placeholder';
 import {
   Bold,
@@ -69,7 +70,8 @@ export default function RichTextEditor({ content, onChange }) {
     extensions: [
       StarterKit,
       Image,
-      Link.configure({ openOnClick: false, HTMLAttributes: { class: 'text-blue-600 underline hover:text-blue-800 cursor-pointer' } }),
+      Link.configure({ openOnClick: false, HTMLAttributes: { class: 'text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer' } }),
+      Highlight.configure({ HTMLAttributes: { class: 'why-mark' } }),
       Placeholder.configure({ placeholder: 'Start writing your guide...' }),
     ],
     content: content || '',
@@ -170,8 +172,9 @@ export default function RichTextEditor({ content, onChange }) {
         </ToolbarButton>
         <div className="w-px h-5 bg-surface-strong mx-1" />
         <ToolbarButton
-          onClick={() => editor.chain().focus().insertContent(' — ').run()}
-          title="Add Why (insert em dash)"
+          onClick={() => editor.chain().focus().toggleHighlight().run()}
+          active={editor.isActive('highlight')}
+          title="Highlight as Why"
         >
           <Lightbulb size={16} />
         </ToolbarButton>
@@ -225,7 +228,7 @@ export default function RichTextEditor({ content, onChange }) {
       </div>
       <EditorContent
         editor={editor}
-        className="prose prose-sm max-w-none px-4 py-3 min-h-[300px] focus:outline-none [&_.tiptap]:outline-none [&_.tiptap]:min-h-[280px] [&_p]:my-1 [&_h1]:mt-4 [&_h1]:mb-1 [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_img]:rounded-lg [&_img]:max-h-64 [&_img]:object-cover [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:h-0"
+        className="prose prose-sm dark:prose-invert max-w-none px-4 py-3 min-h-[300px] focus:outline-none [&_.tiptap]:outline-none [&_.tiptap]:min-h-[280px] [&_p]:my-1 [&_h1]:mt-4 [&_h1]:mb-1 [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_img]:rounded-lg [&_img]:max-h-64 [&_img]:object-cover [&_.why-mark]:bg-yellow-100 dark:[&_.why-mark]:bg-yellow-900/40 [&_.why-mark]:px-0.5 [&_.why-mark]:rounded [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:h-0"
       />
     </div>
   );
