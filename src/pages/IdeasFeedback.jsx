@@ -55,8 +55,8 @@ export function IdeasFeedbackContent({ filterByUser, compact, autoSubmit }) {
     ]);
     setForm({ type: 'idea', title: '', description: '' });
     setAdding(false);
-    setSuccessToast('Thanks for your submission! It\'s been sent to the owner.');
-    setTimeout(() => setSuccessToast(null), 5000);
+    setSuccessToast('Thanks for your submission! It\'s been sent to the general manager.');
+    setTimeout(() => setSuccessToast(null), 7000);
   };
 
   const handleStatus = (id, newStatus) => {
@@ -281,7 +281,7 @@ export function IdeasFeedbackContent({ filterByUser, compact, autoSubmit }) {
               <CheckCircle size={32} className="text-emerald-600 dark:text-emerald-400" />
             </div>
             <h3 className="text-lg font-bold text-primary mb-2">Submitted!</h3>
-            <p className="text-sm text-secondary">Thanks for your feedback! It's been sent to the owner for review.</p>
+            <p className="text-sm text-secondary">Thanks for your feedback! It's been sent to the general manager for review.</p>
             <button onClick={() => setSuccessToast(null)} className="mt-5 px-6 py-2.5 rounded-xl bg-brand text-on-brand text-sm font-semibold hover:bg-brand-hover transition-colors cursor-pointer">
               Got it
             </button>

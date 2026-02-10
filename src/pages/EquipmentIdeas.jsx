@@ -88,8 +88,8 @@ export default function EquipmentIdeas() {
       })
     );
     setReportingRepair(false);
-    setSuccessToast('Repair reported! The owner has been notified.');
-    setTimeout(() => setSuccessToast(null), 5000);
+    setSuccessToast('Repair reported! The general manager has been notified.');
+    setTimeout(() => setSuccessToast(null), 7000);
   };
 
   const handleMarkRepaired = (id) => {
@@ -714,7 +714,7 @@ export default function EquipmentIdeas() {
               <CheckCircle size={32} className="text-emerald-600 dark:text-emerald-400" />
             </div>
             <h3 className="text-lg font-bold text-primary mb-2">Repair Reported!</h3>
-            <p className="text-sm text-secondary">Thanks for reporting this. The owner has been notified and will follow up.</p>
+            <p className="text-sm text-secondary">Thanks for reporting this. The general manager has been notified and will follow up.</p>
             <button onClick={() => setSuccessToast(null)} className="mt-5 px-6 py-2.5 rounded-xl bg-brand text-on-brand text-sm font-semibold hover:bg-brand-hover transition-colors cursor-pointer">
               Got it
             </button>
