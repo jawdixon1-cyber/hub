@@ -36,7 +36,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col min-h-[calc(100dvh-9rem)] md:min-h-0">
+    <div className="flex flex-col h-[calc(100svh-9rem)] overflow-y-auto md:h-auto md:overflow-visible">
       {/* Blocking announcement modal */}
       {unacknowledged.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
@@ -102,7 +102,8 @@ export default function Home() {
         <ChecklistPanel title="End of Day" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
       </div>
 
-      <div className="flex flex-col gap-2 sm:gap-3 mt-auto pt-2 md:mt-6 md:pt-0">
+      <div className="flex-1 md:hidden" />
+      <div className="flex flex-col gap-2 sm:gap-3 pt-2 md:mt-6 md:pt-0">
         <a
           href="jobber://"
           target="_blank"
