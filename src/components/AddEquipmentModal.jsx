@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
-import { EQUIPMENT_TYPES } from '../data';
+import { EQUIPMENT_TYPES, genId } from '../data';
 
 export default function AddEquipmentModal({ onSave, onClose, equipmentCategories = [] }) {
   const allTypes = equipmentCategories.length > 0 ? equipmentCategories : EQUIPMENT_TYPES;
@@ -23,10 +23,14 @@ export default function AddEquipmentModal({ onSave, onClose, equipmentCategories
       status: form.status,
     };
     if (form.status === 'needs-repair') {
-      data.reportedIssue = form.reportedIssue;
-      data.urgency = 'critical';
-      data.reportedBy = 'Owner';
-      data.reportedDate = new Date().toLocaleDateString('en-US');
+      data.activeRepairs = [{
+        id: genId(),
+        issue: form.reportedIssue,
+        reportedBy: 'Owner',
+        reportedDate: new Date().toLocaleDateString('en-US'),
+        urgency: 'critical',
+        photo: null,
+      }];
     }
     onSave(data);
   };

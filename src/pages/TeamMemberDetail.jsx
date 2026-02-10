@@ -10,6 +10,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { ONBOARDING_STEPS } from './Training';
+import { getActiveRepairs } from '../data';
 
 const PLAYBOOK_OPTIONS = [
   { key: 'service', label: 'Team Member', color: 'bg-emerald-100 text-emerald-700' },
@@ -217,9 +218,21 @@ export default function TeamMemberDetail() {
 
   /* ── Equipment repairs data ── */
 
-  const activeRepairs = (equipment || []).filter(
-    (item) => item.reportedBy === name && item.status === 'needs-repair'
-  );
+  const activeRepairs = (equipment || [])
+    .filter((item) => item.status === 'needs-repair')
+    .flatMap((item) => {
+      return getActiveRepairs(item)
+        .filter((r) => r.reportedBy === name)
+        .map((r) => ({
+          id: r.id,
+          name: item.name,
+          reportedIssue: r.issue,
+          reportedBy: r.reportedBy,
+          reportedDate: r.reportedDate,
+          urgency: r.urgency,
+          status: 'needs-repair',
+        }));
+    });
   const repairHistory = (equipmentRepairLog || []).filter(
     (entry) => entry.reportedBy === name
   );

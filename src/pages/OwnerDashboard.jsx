@@ -7,11 +7,11 @@ import {
   Eye,
   X,
   ExternalLink,
+  Trash2,
 } from 'lucide-react';
-import { EQUIPMENT_TYPES } from '../data';
+import { EQUIPMENT_TYPES, genId, getActiveRepairs } from '../data';
 import ManagementSection from '../components/owner/ManagementSection';
 import MyDaySection from '../components/owner/MyDaySection';
-import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -55,25 +55,63 @@ export default function OwnerDashboard() {
     setTimeOffRequests(timeOffRequests.map((r) => (r.id === id ? { ...r, status: 'denied' } : r)));
   };
 
-  const handleMarkRepaired = (id) => {
+  const handleMarkRepairFixed = (eqId, repairId) => {
     const today = new Date().toLocaleDateString('en-US');
-    const eq = equipment.find((e) => e.id === id);
-    if (eq && eq.reportedIssue) {
+    const eq = equipment.find((e) => e.id === eqId);
+    if (!eq) return;
+
+    const repairs = getActiveRepairs(eq);
+    const repair = repairs.find((r) => r.id === repairId);
+    if (repair) {
       const logEntry = {
         id: genId(),
+        equipmentId: eq.id,
         equipmentName: eq.name,
-        issue: eq.reportedIssue,
-        reportedBy: eq.reportedBy || 'Unknown',
-        reportedDate: eq.reportedDate || today,
+        issue: repair.issue,
+        reportedBy: repair.reportedBy || 'Unknown',
+        reportedDate: repair.reportedDate || today,
         repairedDate: today,
-        urgency: eq.urgency || 'maintenance',
+        urgency: repair.urgency || 'maintenance',
       };
       setEquipmentRepairLog((prev) => [logEntry, ...prev]);
     }
+
+    const remaining = repairs.filter((r) => r.id !== repairId);
     setEquipment(
       equipment.map((e) =>
-        e.id === id
-          ? { ...e, status: 'operational', reportedIssue: undefined, reportedBy: undefined, reportedDate: undefined, urgency: undefined, photo: undefined }
+        e.id === eqId
+          ? {
+              ...e,
+              activeRepairs: remaining,
+              status: remaining.length > 0 ? 'needs-repair' : 'operational',
+              reportedIssue: undefined,
+              reportedBy: undefined,
+              reportedDate: undefined,
+              urgency: undefined,
+              photo: undefined,
+            }
+          : e
+      )
+    );
+  };
+
+  const handleDeleteRepair = (eqId, repairId) => {
+    const eq = equipment.find((e) => e.id === eqId);
+    if (!eq) return;
+    const remaining = getActiveRepairs(eq).filter((r) => r.id !== repairId);
+    setEquipment(
+      equipment.map((e) =>
+        e.id === eqId
+          ? {
+              ...e,
+              activeRepairs: remaining,
+              status: remaining.length > 0 ? 'needs-repair' : 'operational',
+              reportedIssue: undefined,
+              reportedBy: undefined,
+              reportedDate: undefined,
+              urgency: undefined,
+              photo: undefined,
+            }
           : e
       )
     );
@@ -84,13 +122,17 @@ export default function OwnerDashboard() {
   };
 
   const actionItems = [];
-  repairEquipment
-    .filter((eq) => eq.urgency === 'critical')
-    .forEach((eq) => actionItems.push({ kind: 'repair', data: eq }));
+  repairEquipment.forEach((eq) => {
+    getActiveRepairs(eq)
+      .filter((r) => r.urgency === 'critical')
+      .forEach((r) => actionItems.push({ kind: 'repair', data: eq, repair: r }));
+  });
   pendingPTO.forEach((req) => actionItems.push({ kind: 'pto', data: req }));
-  repairEquipment
-    .filter((eq) => eq.urgency !== 'critical')
-    .forEach((eq) => actionItems.push({ kind: 'repair', data: eq }));
+  repairEquipment.forEach((eq) => {
+    getActiveRepairs(eq)
+      .filter((r) => r.urgency !== 'critical')
+      .forEach((r) => actionItems.push({ kind: 'repair', data: eq, repair: r }));
+  });
   newSuggestions.forEach((idea) => actionItems.push({ kind: 'idea', data: idea }));
 
   return (
@@ -146,9 +188,10 @@ export default function OwnerDashboard() {
             {actionItems.map((item) => {
               if (item.kind === 'repair') {
                 const eq = item.data;
+                const r = item.repair;
                 const typeLabel = allTypes.find((t) => t.value === eq.type)?.label || eq.type;
                 return (
-                  <div key={`repair-${eq.id}`} className="rounded-xl border-2 border-red-400 bg-red-50 dark:bg-red-950/40 dark:border-red-700 p-4">
+                  <div key={`repair-${r.id}`} className="rounded-xl border-2 border-red-400 bg-red-50 dark:bg-red-950/40 dark:border-red-700 p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -156,20 +199,28 @@ export default function OwnerDashboard() {
                           <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">Equipment Repair</span>
                         </div>
                         <h4 className="font-bold text-primary mt-1">{eq.name}</h4>
-                        {eq.reportedIssue && <p className="text-sm text-secondary mt-0.5">{eq.reportedIssue}</p>}
+                        <p className="text-sm text-secondary mt-0.5">{r.issue}</p>
+                        <p className="text-xs text-muted mt-1">Reported by {r.reportedBy} on {r.reportedDate}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <button
-                          onClick={() => setViewingRepair(eq)}
+                          onClick={() => setViewingRepair({ eq, repair: r })}
                           className="px-3 py-1.5 rounded-lg border border-border-strong text-secondary text-xs font-semibold hover:bg-surface transition-colors cursor-pointer"
                         >
                           <Eye size={14} className="inline -mt-0.5 mr-1" />
                           View
                         </button>
-                        {confirmFixId === eq.id ? (
+                        <button
+                          onClick={() => { if (confirm('Delete this repair report?')) handleDeleteRepair(eq.id, r.id); }}
+                          className="p-1.5 rounded-lg text-muted hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                          title="Delete repair"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                        {confirmFixId === r.id ? (
                           <div className="flex items-center gap-1.5">
                             <button
-                              onClick={() => { handleMarkRepaired(eq.id); setConfirmFixId(null); }}
+                              onClick={() => { handleMarkRepairFixed(eq.id, r.id); setConfirmFixId(null); }}
                               className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
                             >
                               Confirm
@@ -183,7 +234,7 @@ export default function OwnerDashboard() {
                           </div>
                         ) : (
                           <button
-                            onClick={() => setConfirmFixId(eq.id)}
+                            onClick={() => setConfirmFixId(r.id)}
                             className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
                           >
                             Mark Fixed
@@ -316,7 +367,8 @@ export default function OwnerDashboard() {
 
       {/* View Repair Equipment Modal */}
       {viewingRepair && (() => {
-        const eq = viewingRepair;
+        const eq = viewingRepair.eq;
+        const repair = viewingRepair.repair;
         const typeLabel = allTypes.find((t) => t.value === eq.type)?.label || eq.type;
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -332,22 +384,20 @@ export default function OwnerDashboard() {
                 <p className="text-white/80 text-sm mt-1">{typeLabel}</p>
               </div>
               <div className="p-6 overflow-y-auto space-y-4">
-                {eq.reportedIssue && (
-                  <div>
-                    <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Problem</p>
-                    <p className="text-sm text-primary bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg p-3">{eq.reportedIssue}</p>
-                  </div>
-                )}
-                {eq.reportedBy && (
+                <div>
+                  <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Problem</p>
+                  <p className="text-sm text-primary bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg p-3">{repair.issue}</p>
+                </div>
+                {repair.reportedBy && (
                   <div className="flex gap-6">
                     <div>
                       <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Reported By</p>
-                      <p className="text-sm text-primary">{eq.reportedBy}</p>
+                      <p className="text-sm text-primary">{repair.reportedBy}</p>
                     </div>
-                    {eq.reportedDate && (
+                    {repair.reportedDate && (
                       <div>
                         <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Date</p>
-                        <p className="text-sm text-primary">{eq.reportedDate}</p>
+                        <p className="text-sm text-primary">{repair.reportedDate}</p>
                       </div>
                     )}
                   </div>
@@ -378,10 +428,10 @@ export default function OwnerDashboard() {
                     <p className="text-sm text-muted italic">Unknown</p>
                   </div>
                 )}
-                {eq.photo && (
+                {repair.photo && (
                   <div>
                     <p className="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Photo</p>
-                    <img src={eq.photo} alt="Issue" className="rounded-lg max-h-48 object-cover" />
+                    <img src={repair.photo} alt="Issue" className="rounded-lg max-h-48 object-cover" />
                   </div>
                 )}
                 {eq.notes && (

@@ -1,5 +1,20 @@
 export const genId = () => crypto.randomUUID();
 
+export function getActiveRepairs(eq) {
+  if (eq.activeRepairs?.length > 0) return eq.activeRepairs;
+  if (eq.status === 'needs-repair' && eq.reportedIssue) {
+    return [{
+      id: eq.id + '-legacy',
+      issue: eq.reportedIssue,
+      reportedBy: eq.reportedBy,
+      reportedDate: eq.reportedDate,
+      urgency: eq.urgency || 'critical',
+      photo: eq.photo,
+    }];
+  }
+  return [];
+}
+
 export const initialAnnouncements = [
   {
     id: '1',
@@ -190,9 +205,14 @@ export const initialEquipment = [
     serialNumber: 'S72014339',
     manualUrl: '',
     status: 'needs-repair',
-    reportedIssue: 'Engine starts but dies after 30 seconds',
-    reportedBy: 'Mike',
-    reportedDate: '1/26/2026',
+    activeRepairs: [{
+      id: '31-r1',
+      issue: 'Engine starts but dies after 30 seconds',
+      reportedBy: 'Mike',
+      reportedDate: '1/26/2026',
+      urgency: 'critical',
+      photo: null,
+    }],
   },
   {
     id: '32',

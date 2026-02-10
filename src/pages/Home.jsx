@@ -36,7 +36,7 @@ export default function Home() {
   };
 
   return (
-    <div>
+    <div className="flex flex-col min-h-[calc(100dvh-9rem)] md:min-h-0">
       {/* Blocking announcement modal */}
       {unacknowledged.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
@@ -92,22 +92,22 @@ export default function Home() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 mb-6">
-        <ClipboardCheck size={22} className="text-brand-text" />
-        <h2 className="text-2xl font-bold text-primary">Daily Checklists</h2>
+      <div className="flex items-center gap-2 mb-2 sm:mb-6">
+        <ClipboardCheck size={20} className="text-brand-text sm:w-[22px] sm:h-[22px]" />
+        <h2 className="text-xl sm:text-2xl font-bold text-primary">Daily Checklists</h2>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-2 sm:gap-4 md:grid-cols-2">
         <ChecklistPanel title="Start of Day" items={teamChecklist} checklistType="team-start" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
         <ChecklistPanel title="End of Day" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
       </div>
 
-      <div className="flex flex-col gap-3 mt-6">
+      <div className="flex flex-col gap-2 sm:gap-3 mt-auto pt-2 md:mt-6 md:pt-0">
         <a
           href="jobber://"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-4 text-white hover:opacity-90 transition-opacity"
+          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-3 sm:px-6 sm:py-4 text-white hover:opacity-90 transition-opacity"
         >
           <div>
             <h3 className="text-base font-bold">Open Jobber</h3>
@@ -117,7 +117,7 @@ export default function Home() {
         </a>
         <button
           onClick={() => navigate('/equipment?report=1')}
-          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-orange-500 to-red-500 px-6 py-4 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
+          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-orange-500 to-red-500 px-5 py-3 sm:px-6 sm:py-4 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
         >
           <div>
             <h3 className="text-base font-bold">Report Repair</h3>
@@ -127,7 +127,7 @@ export default function Home() {
         </button>
         <button
           onClick={() => navigate('/ideas?submit=1')}
-          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-purple-500 to-purple-700 px-6 py-4 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
+          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-purple-500 to-purple-700 px-5 py-3 sm:px-6 sm:py-4 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
         >
           <div>
             <h3 className="text-base font-bold">Submit Idea</h3>

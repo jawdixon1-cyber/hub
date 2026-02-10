@@ -14,7 +14,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { genId, EQUIPMENT_TYPES } from '../data';
+import { genId, EQUIPMENT_TYPES, getActiveRepairs } from '../data';
 import AddEquipmentModal from '../components/AddEquipmentModal';
 import ReportRepairModal from '../components/ReportRepairModal';
 import { useAppStore } from '../store/AppStoreContext';
@@ -61,19 +61,30 @@ export default function EquipmentIdeas() {
   const handleRepairSubmit = (form) => {
     const today = new Date().toLocaleDateString('en-US');
     setEquipment(
-      equipment.map((eq) =>
-        eq.id === form.equipmentId
-          ? {
-              ...eq,
-              status: 'needs-repair',
-              reportedIssue: form.problemDescription,
+      equipment.map((eq) => {
+        if (eq.id !== form.equipmentId) return eq;
+        const existing = getActiveRepairs(eq);
+        return {
+          ...eq,
+          status: 'needs-repair',
+          activeRepairs: [
+            ...existing,
+            {
+              id: genId(),
+              issue: form.problemDescription,
               reportedBy: form.reportedBy,
               reportedDate: today,
               urgency: 'critical',
               photo: form.photo,
-            }
-          : eq
-      )
+            },
+          ],
+          reportedIssue: undefined,
+          reportedBy: undefined,
+          reportedDate: undefined,
+          urgency: undefined,
+          photo: undefined,
+        };
+      })
     );
     setReportingRepair(false);
   };
@@ -81,18 +92,21 @@ export default function EquipmentIdeas() {
   const handleMarkRepaired = (id) => {
     const today = new Date().toLocaleDateString('en-US');
     const eq = equipment.find((e) => e.id === id);
-    if (eq && eq.reportedIssue) {
-      const logEntry = {
-        id: genId(),
-        equipmentId: eq.id,
-        equipmentName: eq.name,
-        issue: eq.reportedIssue,
-        reportedBy: eq.reportedBy || 'Unknown',
-        reportedDate: eq.reportedDate || today,
-        repairedDate: today,
-        urgency: eq.urgency || 'maintenance',
-      };
-      setEquipmentRepairLog((prev) => [logEntry, ...prev]);
+    if (eq) {
+      const repairs = getActiveRepairs(eq);
+      if (repairs.length > 0) {
+        const logEntries = repairs.map((r) => ({
+          id: genId(),
+          equipmentId: eq.id,
+          equipmentName: eq.name,
+          issue: r.issue,
+          reportedBy: r.reportedBy || 'Unknown',
+          reportedDate: r.reportedDate || today,
+          repairedDate: today,
+          urgency: r.urgency || 'maintenance',
+        }));
+        setEquipmentRepairLog((prev) => [...logEntries, ...prev]);
+      }
     }
     setEquipment(
       equipment.map((e) =>
@@ -100,6 +114,7 @@ export default function EquipmentIdeas() {
           ? {
               ...e,
               status: 'operational',
+              activeRepairs: [],
               reportedIssue: undefined,
               reportedBy: undefined,
               reportedDate: undefined,
@@ -109,6 +124,24 @@ export default function EquipmentIdeas() {
           : e
       )
     );
+  };
+
+  const handleDeleteRepair = (eqId, repairId) => {
+    const eq = equipment.find((e) => e.id === eqId);
+    if (!eq) return;
+    const remaining = getActiveRepairs(eq).filter((r) => r.id !== repairId);
+    const updated = {
+      ...eq,
+      activeRepairs: remaining,
+      status: remaining.length > 0 ? 'needs-repair' : 'operational',
+      reportedIssue: undefined,
+      reportedBy: undefined,
+      reportedDate: undefined,
+      urgency: undefined,
+      photo: undefined,
+    };
+    setEquipment(equipment.map((e) => (e.id === eqId ? updated : e)));
+    setHistoryItem((prev) => prev?.id === eqId ? updated : prev);
   };
 
   const handleDeleteEquipment = (id) => {
@@ -273,9 +306,16 @@ export default function EquipmentIdeas() {
                     <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${needsRepair ? 'bg-red-500' : 'bg-emerald-500'}`} />
                     <h3 className="text-sm font-semibold text-primary truncate">{item.name}</h3>
                   </div>
-                  {needsRepair && item.reportedIssue && (
-                    <p className="text-xs text-red-600 mt-1 ml-5.5 line-clamp-2">{item.reportedIssue}</p>
-                  )}
+                  {needsRepair && (() => {
+                    const repairs = getActiveRepairs(item);
+                    if (repairs.length === 0) return null;
+                    return (
+                      <p className="text-xs text-red-600 mt-1 ml-5.5 line-clamp-2">
+                        {repairs.length > 1 && <span className="font-semibold">{repairs.length} issues: </span>}
+                        {repairs[0].issue}
+                      </p>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-3">
                   <button
@@ -428,23 +468,44 @@ export default function EquipmentIdeas() {
                   )}
                 </div>
 
-                {/* Current Issue */}
-                {needsRepair && historyItem.reportedIssue && (
-                  <div className="rounded-xl bg-red-50 border border-red-200 p-4">
-                    <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-1">Current Issue</p>
-                    <p className="text-sm text-red-600">{historyItem.reportedIssue}</p>
-                    {historyItem.photo && (
-                      <img
-                        src={historyItem.photo}
-                        alt="Repair photo"
-                        className="mt-2 rounded-lg max-h-40 object-cover"
-                      />
-                    )}
-                    <p className="text-xs text-muted mt-2">
-                      Reported by {historyItem.reportedBy} on {historyItem.reportedDate}
-                    </p>
-                  </div>
-                )}
+                {/* Active Issues */}
+                {needsRepair && (() => {
+                  const activeIssues = getActiveRepairs(historyItem);
+                  if (activeIssues.length === 0) return null;
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
+                        Active Issues ({activeIssues.length})
+                      </p>
+                      {activeIssues.map((r) => (
+                        <div key={r.id} className="rounded-xl bg-red-50 border border-red-200 p-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm text-red-600">{r.issue}</p>
+                            {ownerMode && (
+                              <button
+                                onClick={() => { if (confirm('Delete this repair report?')) handleDeleteRepair(historyItem.id, r.id); }}
+                                className="p-1 rounded text-muted hover:text-red-600 hover:bg-red-100 transition-colors cursor-pointer shrink-0"
+                                title="Delete repair"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                          {r.photo && (
+                            <img
+                              src={r.photo}
+                              alt="Repair photo"
+                              className="mt-2 rounded-lg max-h-40 object-cover"
+                            />
+                          )}
+                          <p className="text-xs text-muted mt-2">
+                            Reported by {r.reportedBy} on {r.reportedDate}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 {/* Repair History */}
                 <div>

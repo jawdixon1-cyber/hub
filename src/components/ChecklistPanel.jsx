@@ -78,7 +78,7 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
     <div className="bg-card rounded-2xl shadow-sm border border-border-subtle">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between p-6 cursor-pointer"
+        className="w-full flex items-center justify-between p-4 sm:p-6 cursor-pointer"
       >
         <div className="flex items-center gap-3">
           <span className="font-bold text-primary text-lg">{title}</span>
@@ -92,7 +92,7 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
         />
       </button>
       {open && (
-        <div className="px-6 pb-6 space-y-2">
+        <div className="px-4 pb-4 sm:px-6 sm:pb-6 space-y-2">
           {normalized.map((item) => {
             if (item.type === 'header') {
               return (
