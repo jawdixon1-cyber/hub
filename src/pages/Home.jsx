@@ -102,8 +102,7 @@ export default function Home() {
         <ChecklistPanel title="End of Day" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
       </div>
 
-      <div className="flex-1 md:hidden" />
-      <div className="flex flex-col gap-2 sm:gap-3 pt-2 md:mt-6 md:pt-0">
+      <div className="flex flex-col gap-2 sm:gap-3 mt-3 md:mt-6">
         <a
           href="jobber://"
           target="_blank"
