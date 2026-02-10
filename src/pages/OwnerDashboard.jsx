@@ -121,19 +121,26 @@ export default function OwnerDashboard() {
     setSuggestions(suggestions.map((s) => (s.id === id ? { ...s, status } : s)));
   };
 
+  const getItemDate = (item) => {
+    if (item.kind === 'repair') return item.repair.reportedDate;
+    if (item.kind === 'pto') return item.data.requestedDate;
+    if (item.kind === 'idea') return item.data.date;
+    return '';
+  };
+  const parseUSDate = (str) => {
+    if (!str) return 0;
+    const parts = str.split('/');
+    if (parts.length === 3) return new Date(parts[2], parts[0] - 1, parts[1]).getTime();
+    return new Date(str).getTime() || 0;
+  };
+
   const actionItems = [];
   repairEquipment.forEach((eq) => {
-    getActiveRepairs(eq)
-      .filter((r) => r.urgency === 'critical')
-      .forEach((r) => actionItems.push({ kind: 'repair', data: eq, repair: r }));
+    getActiveRepairs(eq).forEach((r) => actionItems.push({ kind: 'repair', data: eq, repair: r }));
   });
   pendingPTO.forEach((req) => actionItems.push({ kind: 'pto', data: req }));
-  repairEquipment.forEach((eq) => {
-    getActiveRepairs(eq)
-      .filter((r) => r.urgency !== 'critical')
-      .forEach((r) => actionItems.push({ kind: 'repair', data: eq, repair: r }));
-  });
   newSuggestions.forEach((idea) => actionItems.push({ kind: 'idea', data: idea }));
+  actionItems.sort((a, b) => parseUSDate(getItemDate(b)) - parseUSDate(getItemDate(a)));
 
   return (
     <div className="space-y-8">

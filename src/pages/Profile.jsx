@@ -1,10 +1,21 @@
+import { useState } from 'react';
 import {
-  LogOut, Shield, Lightbulb, ArrowRight,
+  LogOut, Shield, Lightbulb, ArrowRight, ChevronDown, Trash2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { SettingsContent } from './Settings';
+
+const STATUS_STYLES = {
+  'New':         'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+  'Reviewing':   'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  'Approved':    'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+  'Implemented': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  'Rejected':    'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+};
+
+const STATUS_OPTIONS = ['New', 'Reviewing', 'Approved', 'Implemented', 'Rejected'];
 
 const PLAYBOOK_OPTIONS = [
   { key: 'service', label: 'Team Member', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
@@ -18,6 +29,135 @@ function getInitials(name) {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0][0].toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function OwnerIdeasPanel() {
+  const suggestions = useAppStore((s) => s.suggestions);
+  const setSuggestions = useAppStore((s) => s.setSuggestions);
+  const [open, setOpen] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('All');
+
+  const ideas = suggestions.filter((s) => s.type !== 'onboarding');
+  const filtered = statusFilter === 'All' ? ideas : ideas.filter((s) => s.status === statusFilter);
+
+  const counts = {};
+  ideas.forEach((s) => { counts[s.status] = (counts[s.status] || 0) + 1; });
+
+  const handleStatusChange = (id, newStatus) => {
+    setSuggestions(suggestions.map((s) => (s.id === id ? { ...s, status: newStatus } : s)));
+  };
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  const handleDelete = (id) => {
+    setSuggestions(suggestions.filter((s) => s.id !== id));
+    setConfirmDeleteId(null);
+  };
+
+  return (
+    <div className="bg-card rounded-2xl shadow-sm border border-border-subtle">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between p-5 cursor-pointer"
+      >
+        <div className="flex items-center gap-2">
+          <Lightbulb size={20} className="text-amber-500" />
+          <h2 className="text-lg font-bold text-primary">All Ideas</h2>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+            {ideas.length}
+          </span>
+        </div>
+        <ChevronDown size={20} className={`text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 space-y-4">
+          {/* Status filter pills */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={() => setStatusFilter('All')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                statusFilter === 'All' ? 'bg-surface-alt text-primary shadow-sm' : 'text-tertiary hover:text-secondary'
+              }`}
+            >
+              All ({ideas.length})
+            </button>
+            {STATUS_OPTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  statusFilter === s ? `${STATUS_STYLES[s]} shadow-sm` : 'text-tertiary hover:text-secondary'
+                }`}
+              >
+                {s} ({counts[s] || 0})
+              </button>
+            ))}
+          </div>
+
+          {filtered.length === 0 ? (
+            <p className="text-sm text-muted py-2">No ideas with this status.</p>
+          ) : (
+            <div className="space-y-2">
+              {filtered.map((idea) => (
+                <div key={idea.id} className="rounded-xl border border-border-subtle bg-surface p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-bold text-primary">{idea.title}</h3>
+                      <p className="text-xs text-tertiary mt-1 line-clamp-2">{idea.description}</p>
+                      <p className="text-xs text-muted mt-1.5">By {idea.submittedBy} &middot; {idea.date}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <select
+                        value={idea.status}
+                        onChange={(e) => handleStatusChange(idea.id, e.target.value)}
+                        className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border-none outline-none cursor-pointer ${STATUS_STYLES[idea.status] || 'bg-surface-alt text-secondary'}`}
+                      >
+                        {STATUS_OPTIONS.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => setConfirmDeleteId(idea.id)}
+                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
+                        title="Delete idea"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setConfirmDeleteId(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-primary mb-2">Delete Idea?</h3>
+            <p className="text-sm text-secondary mb-5">This will permanently remove this idea. This action cannot be undone.</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="px-4 py-2 rounded-lg border border-border-strong text-secondary text-sm font-medium hover:bg-surface transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDelete(confirmDeleteId)}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors cursor-pointer"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Profile() {
@@ -44,6 +184,7 @@ export default function Profile() {
             </div>
           </div>
         </div>
+        <OwnerIdeasPanel />
         <SettingsContent />
         <button
           onClick={handleSignOut}

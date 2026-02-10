@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Lightbulb, MessageSquare, Plus, X, Trash2 } from 'lucide-react';
+import { Lightbulb, MessageSquare, Plus, X, Trash2, CheckCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
@@ -26,6 +26,7 @@ export function IdeasFeedbackContent({ filterByUser, compact, autoSubmit }) {
   const [filter, setFilter] = useState('all');
   const [adding, setAdding] = useState(autoSubmit || false);
   const [form, setForm] = useState({ type: 'idea', title: '', description: '' });
+  const [successToast, setSuccessToast] = useState(null);
 
   const baseSuggestions = (filterByUser
     ? suggestions.filter((s) => s.submittedBy === filterByUser)
@@ -54,6 +55,8 @@ export function IdeasFeedbackContent({ filterByUser, compact, autoSubmit }) {
     ]);
     setForm({ type: 'idea', title: '', description: '' });
     setAdding(false);
+    setSuccessToast('Thanks for your submission! It\'s been sent to the owner.');
+    setTimeout(() => setSuccessToast(null), 3000);
   };
 
   const handleStatus = (id, newStatus) => {
@@ -267,6 +270,14 @@ export function IdeasFeedbackContent({ filterByUser, compact, autoSubmit }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Success toast */}
+      {successToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-[fadeIn_0.2s_ease-out]">
+          <CheckCircle size={18} />
+          <span className="text-sm font-medium">{successToast}</span>
         </div>
       )}
     </div>

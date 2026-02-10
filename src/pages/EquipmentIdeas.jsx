@@ -52,6 +52,7 @@ export default function EquipmentIdeas() {
   const [notesText, setNotesText] = useState('');
   const [editingEquipment, setEditingEquipment] = useState(null);
   const [editForm, setEditForm] = useState({});
+  const [successToast, setSuccessToast] = useState(null);
 
   const handleAddEquipment = (form) => {
     setEquipment([...equipment, { id: genId(), ...form }]);
@@ -87,6 +88,8 @@ export default function EquipmentIdeas() {
       })
     );
     setReportingRepair(false);
+    setSuccessToast('Repair reported! The owner has been notified.');
+    setTimeout(() => setSuccessToast(null), 3000);
   };
 
   const handleMarkRepaired = (id) => {
@@ -700,6 +703,14 @@ export default function EquipmentIdeas() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Success toast */}
+      {successToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-[fadeIn_0.2s_ease-out]">
+          <CheckCircle size={18} />
+          <span className="text-sm font-medium">{successToast}</span>
         </div>
       )}
     </div>
