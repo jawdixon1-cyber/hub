@@ -9,6 +9,7 @@ const categoryColors = {
   'Field Team': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   'Equipment & Maintenance': 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
   'Equipment Guide': 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
+  'Software': 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
   Sales: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
   Owner: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
   Strategy: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',

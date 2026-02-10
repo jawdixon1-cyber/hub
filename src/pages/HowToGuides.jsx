@@ -7,22 +7,26 @@ import AIPlaybookModal from '../components/AIPlaybookModal';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 
-const ALL_CATEGORIES = ['Field Team', 'Sales Team', 'General Manager'];
+const ALL_CATEGORIES = ['Services', 'Equipment', 'Software', 'Sales Team', 'General Manager'];
 
 const CATEGORY_TO_TYPE = {
-  'Field Team': 'field-team',
+  'Services': 'service',
+  'Equipment': 'equipment',
+  'Software': 'software',
   'Sales Team': 'sales',
   'General Manager': 'strategy',
   // Backward compat for existing saved guides
-  'Service': 'field-team',
+  'Field Team': 'service',
+  'Service': 'service',
   'Sales': 'sales',
   'Strategy': 'strategy',
 };
 
 const TYPE_TO_CATEGORY = {
-  'field-team': 'Field Team',
-  'service': 'Field Team',
-  'equipment': 'Field Team',
+  'field-team': 'Services',
+  'service': 'Services',
+  'equipment': 'Equipment',
+  'software': 'Software',
   'sales': 'Sales Team',
   'pme': 'Sales Team',
   'strategy': 'General Manager',
@@ -33,6 +37,12 @@ const ALL_TABS = [
   { key: 'field-team', label: 'Field Team', activeColor: 'text-brand-text-strong', playbookKey: 'service' },
   { key: 'sales', label: 'Sales Team', activeColor: 'text-purple-700 dark:text-purple-300', playbookKey: 'sales' },
   { key: 'strategy', label: 'General Manager', activeColor: 'text-blue-700 dark:text-blue-300', playbookKey: 'strategy' },
+];
+
+const FIELD_TEAM_SUBTABS = [
+  { key: 'service', label: 'Services' },
+  { key: 'equipment', label: 'Equipment' },
+  { key: 'software', label: 'Software' },
 ];
 
 export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
@@ -50,6 +60,7 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
     : ALL_TABS;
 
   const [filter, setFilter] = useState(() => visibleTabs[0]?.key || 'field-team');
+  const [subFilter, setSubFilter] = useState('service');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -59,19 +70,24 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
   }, [visibleTabs, filter]);
 
   const query = search.toLowerCase().trim();
+
+  const FIELD_TEAM_TYPES = ['service', 'equipment', 'software', 'field-team'];
+
   const typeMatch = (itemType) => {
+    if (filter === 'field-team') {
+      if (subFilter === 'service') return itemType === 'service' || itemType === 'field-team';
+      return itemType === subFilter;
+    }
     if (itemType === filter) return true;
-    if (filter === 'field-team') return itemType === 'service' || itemType === 'equipment';
     if (filter === 'sales') return itemType === 'pme';
     if (filter === 'strategy') return itemType === 'owner';
     return false;
   };
 
-  // Team members: show all allowed playbooks in a flat list (no category tabs)
   const allowedTypeMatch = (itemType) => {
     return visibleTabs.some((t) => {
+      if (t.key === 'field-team') return FIELD_TEAM_TYPES.includes(itemType);
       if (t.key === itemType) return true;
-      if (t.key === 'field-team') return itemType === 'service' || itemType === 'equipment';
       if (t.key === 'sales') return itemType === 'pme';
       if (t.key === 'strategy') return itemType === 'owner';
       return false;
@@ -80,8 +96,7 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
 
   const filtered = items.filter((i) => {
     if (query) return allowedTypeMatch(i.type) && (i.title?.toLowerCase().includes(query) || i.summary?.toLowerCase().includes(query));
-    if (ownerMode) return typeMatch(i.type);
-    return allowedTypeMatch(i.type);
+    return typeMatch(i.type);
   });
 
   const handleDelete = (item) => {
@@ -162,8 +177,8 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
         />
       </div>
 
-      {ownerMode && (
-        <div className="flex items-center gap-1 bg-surface-alt p-1 rounded-xl w-fit mb-6 overflow-x-auto">
+      {visibleTabs.length > 1 && (
+        <div className="flex items-center gap-1 bg-surface-alt p-1 rounded-xl w-fit mb-3 overflow-x-auto">
           {visibleTabs.map((tab) => (
             <button
               key={tab.key}
@@ -175,6 +190,24 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
               }`}
             >
               {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {filter === 'field-team' && (
+        <div className="flex items-center gap-1 bg-surface-alt/60 p-1 rounded-lg w-fit mb-6 overflow-x-auto">
+          {FIELD_TEAM_SUBTABS.map((sub) => (
+            <button
+              key={sub.key}
+              onClick={() => setSubFilter(sub.key)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                subFilter === sub.key
+                  ? 'bg-card text-brand-text-strong shadow-sm'
+                  : 'text-tertiary hover:text-secondary'
+              }`}
+            >
+              {sub.label}
             </button>
           ))}
         </div>
@@ -192,6 +225,7 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
               onEdit={setEditing}
               onDelete={handleDelete}
               ownerMode={ownerMode}
+              hideCategory
             />
           ))}
         </div>
