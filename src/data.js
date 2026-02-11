@@ -310,7 +310,7 @@ export const initialOwnerEndChecklist = [
   { id: 'ed-3', text: 'Open [Sales Pipeline](https://app.gohighlevel.com/v2/location/Umlo2UnfqbijiGqNU6g2/opportunities/list) and follow up', type: 'item', indent: 0, done: false },
   { id: 'ed-h2', text: 'Invoices, Payments, Mileage, Expenses', type: 'header', indent: 0, done: false },
   { id: 'ed-4', text: '[Send invoices](https://secure.getjobber.com/schedule/month/2026/1/25?unscheduled=off&map=hidden&nav_label=Schedule&nav_source=sidebar&displayMode=full&assignees=unassigned&assignees=MzY1MTY5MA%3D%3D&appointmentTypes=Visit)', type: 'item', indent: 0, done: false },
-  { id: 'ed-5', text: '[Track mileage](https://qbo.intuit.com/app/mileage?jobId=expenses)', type: 'item', indent: 0, done: false },
+  { id: 'ed-5', text: 'Track mileage', type: 'item', indent: 0, done: false, action: 'log-mileage' },
   { id: 'ed-6', text: 'Review [Account](https://qbo.intuit.com/app/banking?jobId=accounting) \u2014 All dates > This Year > Apply', type: 'item', indent: 0, done: false },
   { id: 'ed-h3', text: 'Highlevel', type: 'header', indent: 0, done: false },
   { id: 'ed-7', text: '[Check pipeline](https://app.gohighlevel.com/v2/location/Umlo2UnfqbijiGqNU6g2/opportunities/list) \u2014 Ensure everyone who needs to be scheduled is scheduled and won/lost', type: 'item', indent: 0, done: false },
@@ -336,6 +336,13 @@ export const initialTeamChecklist = [
   { id: 'tc-6', text: 'Check weather forecast and adjust plans if needed' },
   { id: 'tc-7', text: 'Team huddle — review priorities and safety reminders' },
 ];
+
+export const initialVehicles = [
+  { id: 'v1', name: 'Ford F-150 #1' },
+  { id: 'v2', name: 'Chevy Silverado #2' },
+];
+
+export const initialMileageLog = [];
 
 export const initialEquipmentRepairLog = [];
 

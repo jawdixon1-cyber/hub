@@ -2,6 +2,12 @@
   "functions": {
     "api/generate-playbook.js": {
       "maxDuration": 60
+    },
+    "api/qb-callback.js": {
+      "maxDuration": 15
+    },
+    "api/qb-mileage.js": {
+      "maxDuration": 15
     }
   }
 }

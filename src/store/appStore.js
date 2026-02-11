@@ -13,6 +13,8 @@ import {
   initialTimeOffRequests,
   initialOwnerStartChecklist,
   initialOwnerEndChecklist,
+  initialVehicles,
+  initialMileageLog,
   initialEquipmentRepairLog,
   initialTeamChecklist,
   initialTeamEndChecklist,
@@ -44,6 +46,8 @@ const STATE_KEYS = [
   { key: 'quests',              supaKey: 'greenteam-quests',              initial: initialQuests },
   { key: 'questCompletions',    supaKey: 'greenteam-questCompletions',    initial: [] },
   { key: 'userXP',              supaKey: 'greenteam-userXP',              initial: {} },
+  { key: 'vehicles',            supaKey: 'greenteam-vehicles',            initial: initialVehicles },
+  { key: 'mileageLog',          supaKey: 'greenteam-mileageLog',          initial: initialMileageLog },
 ];
 
 function resolveInitial(cloudValue, initial) {

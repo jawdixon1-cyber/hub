@@ -16,6 +16,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: {
         navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//],
       },
       manifest: {
         name: "Hey Jude's Lawn Care",

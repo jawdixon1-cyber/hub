@@ -4,7 +4,7 @@ import { genId } from '../data';
 import renderLinkedText from '../utils/renderLinkedText';
 import { getTodayInTimezone } from '../utils/timezone';
 
-export default function OwnerChecklist({ title, items, setItems, checklistType, checklistLog, setChecklistLog }) {
+export default function OwnerChecklist({ title, items, setItems, checklistType, checklistLog, setChecklistLog, footer }) {
   const [open, setOpen] = useState(false);
 
   const checkableItems = items.filter((i) => i.type !== 'header');
@@ -126,6 +126,7 @@ export default function OwnerChecklist({ title, items, setItems, checklistType, 
               </label>
             );
           })}
+          {footer}
         </div>
       )}
     </div>
