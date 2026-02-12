@@ -53,6 +53,8 @@ export default function EquipmentIdeas() {
   const [editingEquipment, setEditingEquipment] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [successToast, setSuccessToast] = useState(null);
+  const [fixingRepairId, setFixingRepairId] = useState(null);
+  const [fixDescription, setFixDescription] = useState('');
 
   const handleAddEquipment = (form) => {
     setEquipment([...equipment, { id: genId(), ...form }]);
@@ -92,41 +94,41 @@ export default function EquipmentIdeas() {
     setTimeout(() => setSuccessToast(null), 7000);
   };
 
-  const handleMarkRepaired = (id) => {
+  const handleMarkRepairFixed = (eqId, repairId, fixDesc) => {
     const today = new Date().toLocaleDateString('en-US');
-    const eq = equipment.find((e) => e.id === id);
-    if (eq) {
-      const repairs = getActiveRepairs(eq);
-      if (repairs.length > 0) {
-        const logEntries = repairs.map((r) => ({
-          id: genId(),
-          equipmentId: eq.id,
-          equipmentName: eq.name,
-          issue: r.issue,
-          reportedBy: r.reportedBy || 'Unknown',
-          reportedDate: r.reportedDate || today,
-          repairedDate: today,
-          urgency: r.urgency || 'maintenance',
-        }));
-        setEquipmentRepairLog((prev) => [...logEntries, ...prev]);
-      }
+    const eq = equipment.find((e) => e.id === eqId);
+    if (!eq) return;
+
+    const repairs = getActiveRepairs(eq);
+    const repair = repairs.find((r) => r.id === repairId);
+    if (repair) {
+      const logEntry = {
+        id: genId(),
+        equipmentId: eq.id,
+        equipmentName: eq.name,
+        issue: repair.issue,
+        fixDescription: fixDesc || '',
+        reportedBy: repair.reportedBy || 'Unknown',
+        reportedDate: repair.reportedDate || today,
+        repairedDate: today,
+        urgency: repair.urgency || 'maintenance',
+      };
+      setEquipmentRepairLog((prev) => [logEntry, ...prev]);
     }
-    setEquipment(
-      equipment.map((e) =>
-        e.id === id
-          ? {
-              ...e,
-              status: 'operational',
-              activeRepairs: [],
-              reportedIssue: undefined,
-              reportedBy: undefined,
-              reportedDate: undefined,
-              urgency: undefined,
-              photo: undefined,
-            }
-          : e
-      )
-    );
+
+    const remaining = repairs.filter((r) => r.id !== repairId);
+    const updated = {
+      ...eq,
+      activeRepairs: remaining,
+      status: remaining.length > 0 ? 'needs-repair' : 'operational',
+      reportedIssue: undefined,
+      reportedBy: undefined,
+      reportedDate: undefined,
+      urgency: undefined,
+      photo: undefined,
+    };
+    setEquipment(equipment.map((e) => (e.id === eqId ? updated : e)));
+    setHistoryItem((prev) => prev?.id === eqId ? updated : prev);
   };
 
   const handleDeleteRepair = (eqId, repairId) => {
@@ -481,17 +483,27 @@ export default function EquipmentIdeas() {
                         Active Issues ({activeIssues.length})
                       </p>
                       {activeIssues.map((r) => (
-                        <div key={r.id} className="rounded-xl bg-red-50 border border-red-200 p-4">
+                        <div key={r.id} className="rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 p-4">
                           <div className="flex items-start justify-between gap-2">
-                            <p className="text-sm text-red-600">{r.issue}</p>
+                            <p className="text-sm text-red-600 dark:text-red-400">{r.issue}</p>
                             {ownerMode && (
-                              <button
-                                onClick={() => { if (confirm('Delete this repair report?')) handleDeleteRepair(historyItem.id, r.id); }}
-                                className="p-1 rounded text-muted hover:text-red-600 hover:bg-red-100 transition-colors cursor-pointer shrink-0"
-                                title="Delete repair"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={() => { if (confirm('Delete this repair report?')) handleDeleteRepair(historyItem.id, r.id); }}
+                                  className="p-1 rounded text-muted hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
+                                  title="Delete repair"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                                {fixingRepairId !== r.id && (
+                                  <button
+                                    onClick={() => { setFixingRepairId(r.id); setFixDescription(''); }}
+                                    className="px-2.5 py-1 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
+                                  >
+                                    Mark Fixed
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
                           {r.photo && (
@@ -504,6 +516,38 @@ export default function EquipmentIdeas() {
                           <p className="text-xs text-muted mt-2">
                             Reported by {r.reportedBy} on {r.reportedDate}
                           </p>
+                          {fixingRepairId === r.id && (
+                            <div className="mt-3 pt-3 border-t border-red-200 dark:border-red-800 space-y-2">
+                              <label className="block text-xs font-semibold text-secondary">What was fixed?</label>
+                              <textarea
+                                value={fixDescription}
+                                onChange={(e) => setFixDescription(e.target.value)}
+                                placeholder="e.g. Replaced spark plug, cleaned carburetor..."
+                                rows={2}
+                                className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                                autoFocus
+                              />
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  onClick={() => setFixingRepairId(null)}
+                                  className="px-3 py-1.5 rounded-lg border border-border-strong text-secondary text-xs font-semibold hover:bg-surface transition-colors cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleMarkRepairFixed(historyItem.id, r.id, fixDescription);
+                                    setFixingRepairId(null);
+                                    setFixDescription('');
+                                  }}
+                                  disabled={!fixDescription.trim()}
+                                  className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  Save & Mark Fixed
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -528,9 +572,10 @@ export default function EquipmentIdeas() {
                           key={r.id}
                           className="rounded-lg border border-border-subtle p-3 bg-surface/50"
                         >
-                          <div>
-                            <p className="text-sm text-secondary">{r.issue}</p>
-                          </div>
+                          <p className="text-xs font-semibold text-red-600 dark:text-red-400">Issue: <span className="font-normal text-secondary">{r.issue}</span></p>
+                          {r.fixDescription && (
+                            <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-1">Fixed: <span className="font-normal text-secondary">{r.fixDescription}</span></p>
+                          )}
                           <div className="flex items-center justify-between mt-2">
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
                               <span>Reported: {r.reportedDate}</span>
@@ -544,7 +589,7 @@ export default function EquipmentIdeas() {
                                     setEquipmentRepairLog((prev) => prev.filter((entry) => entry.id !== r.id));
                                   }
                                 }}
-                                className="p-1 rounded text-muted hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer shrink-0"
+                                className="p-1 rounded text-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors cursor-pointer shrink-0"
                                 title="Delete record"
                               >
                                 <Trash2 size={13} />

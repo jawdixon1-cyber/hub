@@ -1,4 +1,4 @@
-// Fetches vehicles from QuickBooks Online
+// Fetches vehicles from QuickBooks Online mileage tracker
 import { createClient } from '@supabase/supabase-js';
 
 const QBO_BASE = 'https://quickbooks.api.intuit.com';
@@ -11,8 +11,8 @@ function getSupabase() {
 }
 
 async function refreshTokens(supabase, tokenData) {
-  const clientId = process.env.QB_CLIENT_ID;
-  const clientSecret = process.env.QB_CLIENT_SECRET;
+  const clientId = (process.env.QB_CLIENT_ID || '').trim();
+  const clientSecret = (process.env.QB_CLIENT_SECRET || '').trim();
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
   const res = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', {
@@ -62,19 +62,18 @@ async function getAccessToken(supabase) {
   return tokenData;
 }
 
-async function queryQBO(accessToken, realmId, query) {
-  const res = await fetch(
-    `${QBO_BASE}/v3/company/${realmId}/query?query=${encodeURIComponent(query)}`,
-    {
+async function tryFetch(accessToken, url) {
+  try {
+    const res = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Accept': 'application/json',
       },
-    }
-  );
-  if (!res.ok) return [];
-  const body = await res.json();
-  return body.QueryResponse;
+    });
+    return { ok: res.ok, status: res.status, data: res.ok ? await res.json() : await res.text() };
+  } catch (e) {
+    return { ok: false, status: 0, data: e.message };
+  }
 }
 
 export default async function handler(req, res) {
@@ -84,42 +83,41 @@ export default async function handler(req, res) {
     const { access_token, realm_id } = tokenData;
 
     const vehicles = [];
+    const debug = {};
 
-    // Strategy 1: Look for Fixed Asset accounts (vehicles are often tracked here)
-    const assetResult = await queryQBO(access_token, realm_id,
-      "SELECT * FROM Account WHERE AccountType = 'Fixed Asset' MAXRESULTS 50"
-    );
-    const assetAccounts = assetResult?.Account || [];
-    const vehicleKeywords = ['vehicle', 'truck', 'car', 'van', 'trailer', 'f-150', 'f150', 'silverado', 'chevy', 'ford', 'toyota', 'dodge', 'ram', 'auto'];
-    for (const acct of assetAccounts) {
-      const nameLower = acct.Name.toLowerCase();
-      if (vehicleKeywords.some((k) => nameLower.includes(k))) {
-        vehicles.push({ id: `asset-${acct.Id}`, name: acct.Name, source: 'asset' });
-      }
-    }
+    // Try multiple paths to find mileage tracker vehicles
+    const attempts = [
+      { key: 'vehicleQuery', url: `${QBO_BASE}/v3/company/${realm_id}/query?query=${encodeURIComponent("SELECT * FROM Vehicle MAXRESULTS 100")}` },
+      { key: 'vehicleEndpoint', url: `${QBO_BASE}/v3/company/${realm_id}/vehicle` },
+      { key: 'mileageActivity', url: `${QBO_BASE}/v3/company/${realm_id}/query?query=${encodeURIComponent("SELECT * FROM MileageActivity MAXRESULTS 10")}` },
+      { key: 'companyVehicles', url: `${QBO_BASE}/v3/company/${realm_id}/companyinfo/${realm_id}` },
+    ];
 
-    // Strategy 2: If no asset matches, check all fixed assets (they might just be named by plate/VIN)
-    if (vehicles.length === 0 && assetAccounts.length > 0) {
-      for (const acct of assetAccounts) {
-        vehicles.push({ id: `asset-${acct.Id}`, name: acct.Name, source: 'asset' });
-      }
-    }
+    for (const attempt of attempts) {
+      const result = await tryFetch(access_token, attempt.url);
+      debug[attempt.key] = { ok: result.ok, status: result.status, snippet: typeof result.data === 'string' ? result.data.slice(0, 300) : JSON.stringify(result.data).slice(0, 500) };
 
-    // Strategy 3: Look for Items of type Service or Other that might be vehicles
-    if (vehicles.length === 0) {
-      const itemResult = await queryQBO(access_token, realm_id,
-        "SELECT * FROM Item MAXRESULTS 100"
-      );
-      const items = itemResult?.Item || [];
-      for (const item of items) {
-        const nameLower = item.Name.toLowerCase();
-        if (vehicleKeywords.some((k) => nameLower.includes(k))) {
-          vehicles.push({ id: `item-${item.Id}`, name: item.Name, source: 'item' });
+      if (result.ok && result.data?.QueryResponse?.Vehicle) {
+        for (const v of result.data.QueryResponse.Vehicle) {
+          vehicles.push({ id: `qb-${v.Id}`, name: v.Name, source: 'vehicle-entity' });
         }
+        break;
+      }
+      if (result.ok && result.data?.QueryResponse?.MileageActivity) {
+        // Extract unique vehicle names from mileage activities
+        const seen = new Set();
+        for (const m of result.data.QueryResponse.MileageActivity) {
+          const vName = m.Vehicle?.Name || m.VehicleName;
+          if (vName && !seen.has(vName)) {
+            seen.add(vName);
+            vehicles.push({ id: `mileage-${m.Vehicle?.Id || seen.size}`, name: vName, source: 'mileage-activity' });
+          }
+        }
+        if (vehicles.length > 0) break;
       }
     }
 
-    return res.json({ vehicles });
+    return res.json({ vehicles, debug });
   } catch (err) {
     console.error('QB vehicles error:', err);
     return res.status(500).json({ error: err.message, vehicles: [] });

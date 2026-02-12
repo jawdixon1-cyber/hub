@@ -30,6 +30,7 @@ import TeamManagement from './pages/TeamManagement';
 import TeamMemberDetail from './pages/TeamMemberDetail';
 import QuestBoard from './pages/QuestBoard';
 import IdeasFeedback from './pages/IdeasFeedback';
+import MileageLog from './pages/MileageLog';
 import { isOnboardingComplete, isOnboardingEffectivelyComplete } from './pages/Training';
 
 
@@ -313,6 +314,7 @@ function AppShell() {
             <Route path="/team" element={<TeamManagement />} />
             <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/mileage" element={<MileageLog />} />
             <Route path="/ideas" element={<IdeasFeedback />} />
             <Route path="/settings" element={<Navigate to="/profile" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />

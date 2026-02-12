@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useEffect } from 'react';
 import {
-  LogOut, Shield, Lightbulb, ArrowRight, ChevronDown, Trash2, Gauge, Plus, X, Link2, Check, Unlink,
+  LogOut, Shield, Lightbulb, ArrowRight, ChevronDown, Trash2, Gauge, Link2, Check,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { SettingsContent } from './Settings';
-import { genId } from '../data';
+
 
 const STATUS_STYLES = {
   'New':         'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
@@ -162,196 +162,6 @@ function OwnerIdeasPanel() {
   );
 }
 
-function OwnerMileagePanel() {
-  const vehicles = useAppStore((s) => s.vehicles);
-  const setVehicles = useAppStore((s) => s.setVehicles);
-  const mileageLog = useAppStore((s) => s.mileageLog);
-  const setMileageLog = useAppStore((s) => s.setMileageLog);
-  const [open, setOpen] = useState(true);
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const [newVehicleName, setNewVehicleName] = useState('');
-  const [showManage, setShowManage] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState(null);
-
-  const handleSyncFromQB = async () => {
-    setSyncing(true);
-    setSyncMsg(null);
-    try {
-      const res = await fetch('/api/qb-vehicles');
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      const qbVehicles = data.vehicles || [];
-      if (qbVehicles.length === 0) {
-        setSyncMsg('No vehicles found in QuickBooks.');
-        return;
-      }
-      const existingNames = new Set(vehicles.map((v) => v.name.toLowerCase()));
-      const newOnes = qbVehicles.filter((v) => !existingNames.has(v.name.toLowerCase()));
-      if (newOnes.length === 0) {
-        setSyncMsg(`All ${qbVehicles.length} QB vehicle(s) already in your list.`);
-        return;
-      }
-      setVehicles([...vehicles, ...newOnes.map((v) => ({ id: v.id || genId(), name: v.name }))]);
-      setSyncMsg(`Synced ${newOnes.length} vehicle(s) from QuickBooks!`);
-    } catch (err) {
-      setSyncMsg('Sync failed: ' + err.message);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const sorted = [...mileageLog].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-
-  const handleDeleteEntry = (id) => {
-    setMileageLog(mileageLog.filter((e) => e.id !== id));
-    setConfirmDeleteId(null);
-  };
-
-  const handleAddVehicle = () => {
-    const name = newVehicleName.trim();
-    if (!name) return;
-    setVehicles([...vehicles, { id: genId(), name }]);
-    setNewVehicleName('');
-  };
-
-  const handleRemoveVehicle = (id) => {
-    setVehicles(vehicles.filter((v) => v.id !== id));
-  };
-
-  return (
-    <div className="bg-card rounded-2xl shadow-sm border border-border-subtle">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between p-5 cursor-pointer"
-      >
-        <div className="flex items-center gap-2">
-          <Gauge size={20} className="text-emerald-500" />
-          <h2 className="text-lg font-bold text-primary">Mileage Log</h2>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-            {mileageLog.length}
-          </span>
-        </div>
-        <ChevronDown size={20} className={`text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
-      </button>
-
-      {open && (
-        <div className="px-5 pb-5 space-y-4">
-          {/* Manage vehicles toggle */}
-          <button
-            onClick={() => setShowManage((v) => !v)}
-            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors cursor-pointer"
-          >
-            {showManage ? 'Hide' : 'Manage'} Vehicles
-          </button>
-
-          {showManage && (
-            <div className="rounded-xl border border-border-subtle bg-surface p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-primary">Vehicles</h3>
-                <button
-                  onClick={handleSyncFromQB}
-                  disabled={syncing}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2ca01c] text-white text-xs font-semibold hover:bg-[#238a17] transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  <Link2 size={12} />
-                  {syncing ? 'Syncing...' : 'Sync from QB'}
-                </button>
-              </div>
-              {syncMsg && (
-                <p className="text-xs text-secondary bg-surface-alt rounded-lg p-2">{syncMsg}</p>
-              )}
-              {vehicles.map((v) => (
-                <div key={v.id} className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-secondary">{v.name}</span>
-                  <button
-                    onClick={() => handleRemoveVehicle(v.id)}
-                    className="p-1 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
-                    title="Remove vehicle"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ))}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newVehicleName}
-                  onChange={(e) => setNewVehicleName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddVehicle()}
-                  placeholder="New vehicle name..."
-                  className="flex-1 rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <button
-                  onClick={handleAddVehicle}
-                  className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors cursor-pointer"
-                >
-                  <Plus size={16} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {sorted.length === 0 ? (
-            <p className="text-sm text-muted py-2">No mileage entries yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {sorted.map((entry) => (
-                <div key={entry.id} className="rounded-xl border border-border-subtle bg-surface p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-bold text-primary">{entry.vehicleName}</h3>
-                      <p className="text-xs text-secondary mt-1">
-                        Odometer: <span className="font-semibold">{Number(entry.odometer).toLocaleString()}</span>
-                      </p>
-                      {entry.notes && (
-                        <p className="text-xs text-tertiary mt-1 line-clamp-2">{entry.notes}</p>
-                      )}
-                      <p className="text-xs text-muted mt-1.5">
-                        {entry.date} &middot; Logged by {entry.loggedBy}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setConfirmDeleteId(entry.id)}
-                      className="p-1.5 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer shrink-0"
-                      title="Delete entry"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Delete confirmation */}
-      {confirmDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setConfirmDeleteId(null)}>
-          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-primary mb-2">Delete Entry?</h3>
-            <p className="text-sm text-secondary mb-5">This will permanently remove this mileage entry. This action cannot be undone.</p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setConfirmDeleteId(null)}
-                className="px-4 py-2 rounded-lg border border-border-strong text-secondary text-sm font-medium hover:bg-surface transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDeleteEntry(confirmDeleteId)}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors cursor-pointer"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function QBConnectionPanel() {
   const [status, setStatus] = useState(null);
@@ -445,7 +255,22 @@ export default function Profile() {
           </div>
         </div>
         <OwnerIdeasPanel />
-        <OwnerMileagePanel />
+
+        {/* Mileage Log link */}
+        <button
+          onClick={() => navigate('/mileage')}
+          className="w-full bg-card rounded-2xl shadow-sm border border-border-subtle p-4 flex items-center gap-3 cursor-pointer hover:shadow-md hover:border-border-strong transition-all"
+        >
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
+            <Gauge size={18} className="text-emerald-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-primary">Mileage Log</p>
+            <p className="text-xs text-tertiary">View entries, manage vehicles</p>
+          </div>
+          <ArrowRight size={16} className="text-muted shrink-0" />
+        </button>
+
         <QBConnectionPanel />
         <SettingsContent />
         <button
@@ -504,6 +329,21 @@ export default function Profile() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-primary">Ideas & Feedback</p>
           <p className="text-xs text-tertiary">Submit ideas or view your submissions</p>
+        </div>
+        <ArrowRight size={16} className="text-muted shrink-0" />
+      </button>
+
+      {/* ── Mileage Log link ── */}
+      <button
+        onClick={() => navigate('/mileage')}
+        className="w-full bg-card rounded-2xl shadow-sm border border-border-subtle p-4 flex items-center gap-3 cursor-pointer hover:shadow-md hover:border-border-strong transition-all"
+      >
+        <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
+          <Gauge size={18} className="text-emerald-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-primary">Mileage Log</p>
+          <p className="text-xs text-tertiary">View and log your mileage entries</p>
         </div>
         <ArrowRight size={16} className="text-muted shrink-0" />
       </button>

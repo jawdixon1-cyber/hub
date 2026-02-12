@@ -41,7 +41,8 @@ export default function OwnerDashboard() {
   const [showActionRequired, setShowActionRequired] = useState(hasActionItems);
   const [showManagement, setShowManagement] = useState(false);
   const [viewingRepair, setViewingRepair] = useState(null);
-  const [confirmFixId, setConfirmFixId] = useState(null);
+  const [fixingRepairId, setFixingRepairId] = useState(null);
+  const [fixDescription, setFixDescription] = useState('');
 
   const pendingPTO = timeOffRequests.filter((r) => r.status === 'pending');
   const repairEquipment = equipment.filter((e) => e.status === 'needs-repair');
@@ -55,7 +56,7 @@ export default function OwnerDashboard() {
     setTimeOffRequests(timeOffRequests.map((r) => (r.id === id ? { ...r, status: 'denied' } : r)));
   };
 
-  const handleMarkRepairFixed = (eqId, repairId) => {
+  const handleMarkRepairFixed = (eqId, repairId, fixDesc) => {
     const today = new Date().toLocaleDateString('en-US');
     const eq = equipment.find((e) => e.id === eqId);
     if (!eq) return;
@@ -68,6 +69,7 @@ export default function OwnerDashboard() {
         equipmentId: eq.id,
         equipmentName: eq.name,
         issue: repair.issue,
+        fixDescription: fixDesc || '',
         reportedBy: repair.reportedBy || 'Unknown',
         reportedDate: repair.reportedDate || today,
         repairedDate: today,
@@ -224,24 +226,9 @@ export default function OwnerDashboard() {
                         >
                           <Trash2 size={14} />
                         </button>
-                        {confirmFixId === r.id ? (
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => { handleMarkRepairFixed(eq.id, r.id); setConfirmFixId(null); }}
-                              className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
-                            >
-                              Confirm
-                            </button>
-                            <button
-                              onClick={() => setConfirmFixId(null)}
-                              className="px-3 py-1.5 rounded-lg border border-border-strong text-secondary text-xs font-semibold hover:bg-surface transition-colors cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
+                        {fixingRepairId !== r.id && (
                           <button
-                            onClick={() => setConfirmFixId(r.id)}
+                            onClick={() => { setFixingRepairId(r.id); setFixDescription(''); }}
                             className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
                           >
                             Mark Fixed
@@ -249,6 +236,38 @@ export default function OwnerDashboard() {
                         )}
                       </div>
                     </div>
+                    {fixingRepairId === r.id && (
+                      <div className="mt-3 pt-3 border-t border-red-200 dark:border-red-800 space-y-2">
+                        <label className="block text-xs font-semibold text-secondary">What was fixed?</label>
+                        <textarea
+                          value={fixDescription}
+                          onChange={(e) => setFixDescription(e.target.value)}
+                          placeholder="e.g. Replaced spark plug, cleaned carburetor..."
+                          rows={2}
+                          className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                          autoFocus
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => setFixingRepairId(null)}
+                            className="px-3 py-1.5 rounded-lg border border-border-strong text-secondary text-xs font-semibold hover:bg-surface transition-colors cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleMarkRepairFixed(eq.id, r.id, fixDescription);
+                              setFixingRepairId(null);
+                              setFixDescription('');
+                            }}
+                            disabled={!fixDescription.trim()}
+                            className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            Save & Mark Fixed
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               }
