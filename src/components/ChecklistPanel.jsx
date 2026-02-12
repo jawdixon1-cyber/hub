@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Gauge } from 'lucide-react';
 import { genId } from '../data';
 import renderLinkedText from '../utils/renderLinkedText';
 import { getTodayInTimezone } from '../utils/timezone';
 
-export default function ChecklistPanel({ title, items, checklistType, checklistLog, setChecklistLog }) {
+export default function ChecklistPanel({ title, items, checklistType, checklistLog, setChecklistLog, mileage }) {
   const normalized = items.map((item, i) =>
     typeof item === 'string' ? { id: `static-${i}`, text: item } : item
   );
@@ -123,8 +123,65 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
               </label>
             );
           })}
+          {mileage && <InlineMileageForm vehicles={mileage.vehicles} onSubmit={mileage.onSubmit} />}
         </div>
       )}
+    </div>
+  );
+}
+
+function InlineMileageForm({ vehicles, onSubmit }) {
+  const [vehicleId, setVehicleId] = useState('');
+  const [odometer, setOdometer] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmit = () => {
+    if (!vehicleId || !odometer) return;
+    onSubmit({ vehicleId, odometer });
+    setVehicleId('');
+    setOdometer('');
+    setSubmitted(true);
+    setTimeout(() => setSubmitted(false), 2000);
+  };
+
+  return (
+    <div className="mt-4 pt-4 border-t border-border-subtle">
+      <div className="flex items-center gap-2 mb-3">
+        <Gauge size={18} className="text-emerald-500" />
+        <span className="font-bold text-primary text-sm">Log Mileage</span>
+      </div>
+      <div className="space-y-2">
+        <select
+          value={vehicleId}
+          onChange={(e) => setVehicleId(e.target.value)}
+          className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-primary text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition"
+        >
+          <option value="">Select vehicle...</option>
+          {vehicles.map((v) => (
+            <option key={v.id} value={v.id}>{v.name}</option>
+          ))}
+        </select>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            min="0"
+            value={odometer}
+            onChange={(e) => setOdometer(e.target.value)}
+            placeholder="Odometer reading"
+            className="flex-1 rounded-lg border border-border-strong bg-card px-4 py-2.5 text-primary text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition"
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={!vehicleId || !odometer}
+            className="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Submit
+          </button>
+        </div>
+        {submitted && (
+          <p className="text-xs text-emerald-500 font-medium">Mileage logged!</p>
+        )}
+      </div>
     </div>
   );
 }

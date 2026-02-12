@@ -1,8 +1,6 @@
-import { useState } from 'react';
-import { Megaphone, ChevronRight, ClipboardCheck, AlertCircle, Lightbulb, Gauge, Check } from 'lucide-react';
+import { Megaphone, ChevronRight, ClipboardCheck, AlertCircle, Lightbulb, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ChecklistPanel from '../components/ChecklistPanel';
-import MileageModal from '../components/MileageModal';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 import { genId } from '../data';
@@ -13,8 +11,7 @@ export default function Home() {
   const { user, currentUser } = useAuth();
   const userEmail = user?.email;
 
-  const [showMileageModal, setShowMileageModal] = useState(false);
-  const [mileageSuccess, setMileageSuccess] = useState(false);
+
 
   const announcements = useAppStore((s) => s.announcements);
   const setAnnouncements = useAppStore((s) => s.setAnnouncements);
@@ -44,13 +41,14 @@ export default function Home() {
     );
   };
 
-  const handleMileageSubmit = (form) => {
-    const vehicle = vehicles.find((v) => v.id === form.vehicleId);
-    const odometerNum = Number(form.odometer);
+  const handleInlineMileage = ({ vehicleId, odometer }) => {
+    const vehicle = vehicles.find((v) => v.id === vehicleId);
+    const odometerNum = Number(odometer);
     const vehicleName = vehicle?.name || 'Unknown';
+    const today = new Date().toISOString().slice(0, 10);
 
     const prevEntry = [...mileageLog]
-      .filter((e) => e.vehicleId === form.vehicleId)
+      .filter((e) => e.vehicleId === vehicleId)
       .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
       [0];
 
@@ -58,12 +56,12 @@ export default function Home() {
       ...mileageLog,
       {
         id: genId(),
-        vehicleId: form.vehicleId,
+        vehicleId,
         vehicleName,
         odometer: odometerNum,
-        date: form.date,
-        notes: form.notes,
-        loggedBy: form.loggedBy,
+        date: today,
+        notes: '',
+        loggedBy: currentUser,
         createdAt: new Date().toISOString(),
       },
     ]);
@@ -75,16 +73,12 @@ export default function Home() {
       body: JSON.stringify({
         vehicleName,
         odometer: odometerNum,
-        date: form.date,
-        notes: form.notes,
-        loggedBy: form.loggedBy,
+        date: today,
+        notes: '',
+        loggedBy: currentUser,
         previousOdometer: prevEntry?.odometer || null,
       }),
     }).catch(() => {});
-
-    setShowMileageModal(false);
-    setMileageSuccess(true);
-    setTimeout(() => setMileageSuccess(false), 2000);
   };
 
   return (
@@ -151,7 +145,7 @@ export default function Home() {
 
       <div className="grid gap-2 sm:gap-4 md:grid-cols-2">
         <ChecklistPanel title="Start of Day" items={teamChecklist} checklistType="team-start" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
-        <ChecklistPanel title="End of Day" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
+        <ChecklistPanel title="End of Day" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} mileage={{ vehicles, onSubmit: handleInlineMileage }} />
       </div>
 
       <div className="flex flex-col gap-2 sm:gap-3 mt-3 md:mt-6">
@@ -178,16 +172,6 @@ export default function Home() {
           <AlertCircle size={22} className="shrink-0" />
         </button>
         <button
-          onClick={() => setShowMileageModal(true)}
-          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-3 sm:px-6 sm:py-4 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
-        >
-          <div>
-            <h3 className="text-base font-bold">Log Mileage</h3>
-            <p className="text-sm text-white/80">Record vehicle odometer reading</p>
-          </div>
-          <Gauge size={22} className="shrink-0" />
-        </button>
-        <button
           onClick={() => navigate('/ideas?submit=1')}
           className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-purple-500 to-purple-700 px-5 py-3 sm:px-6 sm:py-4 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
         >
@@ -199,26 +183,6 @@ export default function Home() {
         </button>
       </div>
 
-      {showMileageModal && (
-        <MileageModal
-          vehicles={vehicles}
-          currentUser={currentUser}
-          onSubmit={handleMileageSubmit}
-          onClose={() => setShowMileageModal(false)}
-        />
-      )}
-
-      {mileageSuccess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mx-auto mb-4">
-              <Check size={32} className="text-emerald-600" />
-            </div>
-            <h3 className="text-lg font-bold text-primary mb-1">Mileage Logged!</h3>
-            <p className="text-sm text-secondary">Your entry has been saved.</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

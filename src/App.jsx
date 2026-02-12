@@ -223,8 +223,9 @@ function AppShell() {
       <nav className="bg-card border-b border-border-default sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="Hey Jude's Lawn Care" className="h-10" />
+            <div className="flex items-center gap-3">
+              <img src="/favicon.png" alt="Lawn Care Hub" className="h-10 rounded-lg" />
+              <span className="font-bold text-primary text-lg hidden sm:inline">Hey Jude's Lawn Care</span>
             </div>
 
             {/* Desktop Tabs */}
