@@ -43,6 +43,9 @@ export default function ViewModal({ item, onClose, hideWhy }) {
 
     let html = item.content;
 
+    // Strip open attribute from toggle blocks so they start collapsed in view mode
+    html = html.replace(/<details open>/g, '<details>');
+
     if (showWhy) {
       // Show highlight marks with visible styling
       html = html.replace(/<mark([^>]*)>/g, '<mark$1 style="background:var(--why-bg);padding:1px 4px;border-radius:3px;">');
@@ -114,7 +117,7 @@ export default function ViewModal({ item, onClose, hideWhy }) {
           {item.content && item.content.includes('<') ? (
             <div
               style={{ '--why-bg': '#fef08a' }}
-              className="prose prose-sm prose-neutral dark:prose-invert max-w-none text-primary [&_p]:my-1 [&_p]:text-primary [&_h1]:mt-4 [&_h1]:mb-1 [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_li]:text-primary [&_img]:rounded-lg [&_img]:max-h-64 [&_img]:object-cover [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-800 dark:[&_a:hover]:text-blue-300 [&_.why-highlight]:bg-yellow-300 [&_.why-highlight]:text-yellow-900 dark:[&_.why-highlight]:bg-yellow-400/30 dark:[&_.why-highlight]:text-yellow-200 [&_.why-highlight]:px-1 [&_.why-highlight]:py-0.5 [&_.why-highlight]:rounded [&_.why-highlight]:font-semibold [&_mark]:bg-yellow-300 [&_mark]:text-yellow-900 [&_mark]:px-1 [&_mark]:py-0.5 [&_mark]:rounded [&_mark]:font-semibold dark:[&_mark]:!bg-yellow-400/30 dark:[&_mark]:!text-yellow-200"
+              className="playbook-view prose prose-sm prose-neutral dark:prose-invert max-w-none text-primary [&_p]:my-1 [&_p]:text-primary [&_h1]:mt-4 [&_h1]:mb-1 [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_li]:text-primary [&_img]:rounded-lg [&_img]:max-h-64 [&_img]:object-cover [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-800 dark:[&_a:hover]:text-blue-300 [&_.why-highlight]:bg-yellow-300 [&_.why-highlight]:text-yellow-900 dark:[&_.why-highlight]:bg-yellow-400/30 dark:[&_.why-highlight]:text-yellow-200 [&_.why-highlight]:px-1 [&_.why-highlight]:py-0.5 [&_.why-highlight]:rounded [&_.why-highlight]:font-semibold [&_mark]:bg-yellow-300 [&_mark]:text-yellow-900 [&_mark]:px-1 [&_mark]:py-0.5 [&_mark]:rounded [&_mark]:font-semibold dark:[&_mark]:!bg-yellow-400/30 dark:[&_mark]:!text-yellow-200"
               dangerouslySetInnerHTML={{ __html: processedContent }}
             />
           ) : (

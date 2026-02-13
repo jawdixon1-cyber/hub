@@ -38,7 +38,7 @@ export default function OwnerDashboard() {
   const allTypes = equipmentCategories?.length > 0 ? equipmentCategories : EQUIPMENT_TYPES;
 
   const hasActionItems = equipment.some((e) => e.status === 'needs-repair') || timeOffRequests.some((r) => r.status === 'pending') || suggestions.some((s) => s.status === 'New');
-  const [showActionRequired, setShowActionRequired] = useState(hasActionItems);
+  const [showActionRequired, setShowActionRequired] = useState(false);
   const [showManagement, setShowManagement] = useState(false);
   const [viewingRepair, setViewingRepair] = useState(null);
   const [fixingRepairId, setFixingRepairId] = useState(null);
@@ -123,26 +123,34 @@ export default function OwnerDashboard() {
     setSuggestions(suggestions.map((s) => (s.id === id ? { ...s, status } : s)));
   };
 
-  const getItemDate = (item) => {
-    if (item.kind === 'repair') return item.repair.reportedDate;
-    if (item.kind === 'pto') return item.data.requestedDate;
-    if (item.kind === 'idea') return item.data.date;
-    return '';
-  };
   const parseUSDate = (str) => {
     if (!str) return 0;
     const parts = str.split('/');
     if (parts.length === 3) return new Date(parts[2], parts[0] - 1, parts[1]).getTime();
     return new Date(str).getTime() || 0;
   };
+  const getItemDate = (item) => {
+    if (item.kind === 'repair') {
+      // Use the most recent repair date for sorting
+      return item.repairs.reduce((latest, r) => {
+        const d = parseUSDate(r.reportedDate);
+        return d > parseUSDate(latest) ? r.reportedDate : latest;
+      }, item.repairs[0]?.reportedDate || '');
+    }
+    if (item.kind === 'pto') return item.data.requestedDate;
+    if (item.kind === 'idea') return item.data.date;
+    return '';
+  };
 
   const actionItems = [];
   repairEquipment.forEach((eq) => {
-    getActiveRepairs(eq).forEach((r) => actionItems.push({ kind: 'repair', data: eq, repair: r }));
+    const repairs = getActiveRepairs(eq);
+    if (repairs.length > 0) actionItems.push({ kind: 'repair', data: eq, repairs });
   });
   pendingPTO.forEach((req) => actionItems.push({ kind: 'pto', data: req }));
   newSuggestions.forEach((idea) => actionItems.push({ kind: 'idea', data: idea }));
   actionItems.sort((a, b) => parseUSDate(getItemDate(b)) - parseUSDate(getItemDate(a)));
+  const totalActionCount = actionItems.reduce((n, item) => n + (item.kind === 'repair' ? item.repairs.length : 1), 0);
 
   return (
     <div className="space-y-8">
@@ -171,11 +179,11 @@ export default function OwnerDashboard() {
         className="flex items-center gap-3 pt-4 w-full cursor-pointer group"
       >
         <div className="flex items-center gap-2">
-          {actionItems.length > 0 ? <AlertTriangle size={20} className="text-amber-500" /> : <CircleCheck size={20} className="text-emerald-500" />}
+          {totalActionCount > 0 ? <AlertTriangle size={20} className="text-amber-500" /> : <CircleCheck size={20} className="text-emerald-500" />}
           <h2 className="text-xl font-bold text-primary">Action Required</h2>
-          {actionItems.length > 0 && (
+          {totalActionCount > 0 && (
             <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-              {actionItems.length}
+              {totalActionCount}
             </span>
           )}
         </div>
@@ -197,77 +205,90 @@ export default function OwnerDashboard() {
             {actionItems.map((item) => {
               if (item.kind === 'repair') {
                 const eq = item.data;
-                const r = item.repair;
+                const repairs = item.repairs;
                 const typeLabel = allTypes.find((t) => t.value === eq.type)?.label || eq.type;
                 return (
-                  <div key={`repair-${r.id}`} className="rounded-xl border-2 border-red-400 bg-red-50 dark:bg-red-950/40 dark:border-red-700 p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">Equipment Repair</span>
-                        </div>
-                        <h4 className="font-bold text-primary mt-1">{eq.name}</h4>
-                        <p className="text-sm text-secondary mt-0.5">{r.issue}</p>
-                        <p className="text-xs text-muted mt-1">Reported by {r.reportedBy} on {r.reportedDate}</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          onClick={() => setViewingRepair({ eq, repair: r })}
-                          className="px-3 py-1.5 rounded-lg border border-border-strong text-secondary text-xs font-semibold hover:bg-surface transition-colors cursor-pointer"
-                        >
-                          <Eye size={14} className="inline -mt-0.5 mr-1" />
-                          View
-                        </button>
-                        <button
-                          onClick={() => { if (confirm('Delete this repair report?')) handleDeleteRepair(eq.id, r.id); }}
-                          className="p-1.5 rounded-lg text-muted hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                          title="Delete repair"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                        {fixingRepairId !== r.id && (
-                          <button
-                            onClick={() => { setFixingRepairId(r.id); setFixDescription(''); }}
-                            className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
-                          >
-                            Mark Fixed
-                          </button>
-                        )}
-                      </div>
+                  <div key={`repair-eq-${eq.id}`} className="rounded-xl border-2 border-red-400 bg-red-50 dark:bg-red-950/40 dark:border-red-700 p-4">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">Equipment Repair</span>
+                      {repairs.length > 1 && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-200 text-red-700 dark:bg-red-800 dark:text-red-200">
+                          {repairs.length} issues
+                        </span>
+                      )}
                     </div>
-                    {fixingRepairId === r.id && (
-                      <div className="mt-3 pt-3 border-t border-red-200 dark:border-red-800 space-y-2">
-                        <label className="block text-xs font-semibold text-secondary">What was fixed?</label>
-                        <textarea
-                          value={fixDescription}
-                          onChange={(e) => setFixDescription(e.target.value)}
-                          placeholder="e.g. Replaced spark plug, cleaned carburetor..."
-                          rows={2}
-                          className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
-                          autoFocus
-                        />
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            onClick={() => setFixingRepairId(null)}
-                            className="px-3 py-1.5 rounded-lg border border-border-strong text-secondary text-xs font-semibold hover:bg-surface transition-colors cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => {
-                              handleMarkRepairFixed(eq.id, r.id, fixDescription);
-                              setFixingRepairId(null);
-                              setFixDescription('');
-                            }}
-                            disabled={!fixDescription.trim()}
-                            className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            Save & Mark Fixed
-                          </button>
+                    <h4 className="font-bold text-primary mt-1">{eq.name}</h4>
+                    <p className="text-xs text-muted">{typeLabel}</p>
+
+                    <div className={`mt-3 ${repairs.length > 1 ? 'space-y-3' : ''}`}>
+                      {repairs.map((r, ri) => (
+                        <div key={r.id} className={repairs.length > 1 ? 'pt-3 border-t border-red-200 dark:border-red-800' : ''}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-secondary">{r.issue}</p>
+                              <p className="text-xs text-muted mt-0.5">Reported by {r.reportedBy} on {r.reportedDate}</p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => setViewingRepair({ eq, repair: r })}
+                                className="px-3 py-1.5 rounded-lg border border-border-strong text-secondary text-xs font-semibold hover:bg-surface transition-colors cursor-pointer"
+                              >
+                                <Eye size={14} className="inline -mt-0.5 mr-1" />
+                                View
+                              </button>
+                              <button
+                                onClick={() => { if (confirm('Delete this repair report?')) handleDeleteRepair(eq.id, r.id); }}
+                                className="p-1.5 rounded-lg text-muted hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                                title="Delete repair"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                              {fixingRepairId !== r.id && (
+                                <button
+                                  onClick={() => { setFixingRepairId(r.id); setFixDescription(''); }}
+                                  className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
+                                >
+                                  Mark Fixed
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {fixingRepairId === r.id && (
+                            <div className="mt-3 pt-3 border-t border-red-200 dark:border-red-800 space-y-2">
+                              <label className="block text-xs font-semibold text-secondary">What was fixed?</label>
+                              <textarea
+                                value={fixDescription}
+                                onChange={(e) => setFixDescription(e.target.value)}
+                                placeholder="e.g. Replaced spark plug, cleaned carburetor..."
+                                rows={2}
+                                className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                                autoFocus
+                              />
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  onClick={() => setFixingRepairId(null)}
+                                  className="px-3 py-1.5 rounded-lg border border-border-strong text-secondary text-xs font-semibold hover:bg-surface transition-colors cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleMarkRepairFixed(eq.id, r.id, fixDescription);
+                                    setFixingRepairId(null);
+                                    setFixDescription('');
+                                  }}
+                                  disabled={!fixDescription.trim()}
+                                  className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  Save & Mark Fixed
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    )}
+                      ))}
+                    </div>
                   </div>
                 );
               }

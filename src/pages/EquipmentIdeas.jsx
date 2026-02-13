@@ -315,10 +315,19 @@ export default function EquipmentIdeas() {
                     const repairs = getActiveRepairs(item);
                     if (repairs.length === 0) return null;
                     return (
-                      <p className="text-xs text-red-600 mt-1 ml-5.5 line-clamp-2">
-                        {repairs.length > 1 && <span className="font-semibold">{repairs.length} issues: </span>}
-                        {repairs[0].issue}
-                      </p>
+                      <div className="mt-1.5 ml-5.5 space-y-1">
+                        {repairs.length > 1 && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-200 text-red-700 dark:bg-red-800 dark:text-red-200">
+                            {repairs.length} issues
+                          </span>
+                        )}
+                        {repairs.map((r) => (
+                          <p key={r.id} className="text-xs text-red-600 dark:text-red-400">
+                            {r.issue}
+                            <span className="text-muted ml-1">— {r.reportedBy}, {r.reportedDate}</span>
+                          </p>
+                        ))}
+                      </div>
                     );
                   })()}
                 </div>
