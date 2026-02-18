@@ -72,8 +72,10 @@ export default function OwnerChecklist({ title, items, setItems, checklistType, 
     };
   }, [completedCount, checklistType, setChecklistLog, checkableItems.length]);
 
-  const toggleDone = (id) => {
-    setItems(items.map((i) => (i.id === id ? { ...i, done: !i.done } : i)));
+  const allDone = checkableItems.length > 0 && completedCount === checkableItems.length;
+
+  const markAll = () => {
+    setItems(items.map((i) => (i.type === 'header' ? i : { ...i, done: !allDone })));
   };
 
   return (
@@ -84,9 +86,15 @@ export default function OwnerChecklist({ title, items, setItems, checklistType, 
       >
         <div className="flex items-center gap-3">
           <span className="font-bold text-primary text-lg">{title}</span>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-brand-light text-brand-text-strong">
-            {completedCount}/{checkableItems.length} completed
-          </span>
+          {allDone ? (
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-brand text-on-brand">
+              Completed
+            </span>
+          ) : (
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-brand-light text-brand-text-strong">
+              Not completed
+            </span>
+          )}
         </div>
         <ChevronDown
           size={20}
@@ -95,37 +103,45 @@ export default function OwnerChecklist({ title, items, setItems, checklistType, 
       </button>
 
       {open && (
-        <div className="px-6 pb-6 space-y-2">
-          {items.map((item) => {
-            if (item.type === 'header') {
-              return (
-                <h3 key={item.id} className="font-bold text-primary text-sm uppercase tracking-wide pt-3 first:pt-0 break-words overflow-hidden">
-                  {renderLinkedText(item.text)}
-                </h3>
-              );
-            }
+        <div className="px-6 pb-6">
+          <ul className="space-y-2 mb-4">
+            {items.map((item) => {
+              if (item.type === 'header') {
+                return (
+                  <h3 key={item.id} className="font-bold text-primary text-sm uppercase tracking-wide pt-3 first:pt-0 break-words overflow-hidden">
+                    {renderLinkedText(item.text)}
+                  </h3>
+                );
+              }
 
-            return (
-              <label
-                key={item.id}
-                className={`flex items-start gap-3 cursor-pointer ${item.indent ? 'ml-8' : ''}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={item.done}
-                  onChange={() => toggleDone(item.id)}
-                  className="w-5 h-5 mt-0.5 rounded accent-emerald-600 shrink-0 cursor-pointer"
-                />
-                <span
-                  className={`flex-1 min-w-0 text-sm break-words transition-colors duration-150 ${
-                    item.done ? 'line-through text-muted' : 'text-secondary'
-                  }`}
+              return (
+                <li
+                  key={item.id}
+                  className={`flex items-start gap-2 ${item.indent ? 'ml-8' : ''}`}
                 >
-                  {renderLinkedText(item.text)}
-                </span>
-              </label>
-            );
-          })}
+                  <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${allDone ? 'bg-brand' : 'bg-muted'}`} />
+                  <span
+                    className={`flex-1 min-w-0 text-sm break-words transition-colors duration-150 ${
+                      allDone ? 'line-through text-muted' : 'text-secondary'
+                    }`}
+                  >
+                    {renderLinkedText(item.text)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+
+          <button
+            onClick={markAll}
+            className={`w-full py-3 rounded-xl text-sm font-bold transition-colors cursor-pointer ${
+              allDone
+                ? 'bg-surface-alt text-secondary hover:bg-surface-strong'
+                : 'bg-brand text-on-brand hover:bg-brand-hover'
+            }`}
+          >
+            {allDone ? 'Undo Completion' : 'Mark All Complete'}
+          </button>
           {footer}
         </div>
       )}

@@ -25,6 +25,7 @@ export default function MileageLog() {
   const [perPage, setPerPage] = useState(20);
   const [page, setPage] = useState(1);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [trackFilter, setTrackFilter] = useState('all'); // 'all' | 'untracked' | 'tracked'
 
   // Vehicle management (owner only)
   const [showManage, setShowManage] = useState(false);
@@ -39,6 +40,8 @@ export default function MileageLog() {
 
   const filtered = visibleEntries.filter((entry) => {
     if (vehicleFilter !== 'all' && entry.vehicleId !== vehicleFilter) return false;
+    if (ownerMode && trackFilter === 'untracked' && entry.tracked) return false;
+    if (ownerMode && trackFilter === 'tracked' && !entry.tracked) return false;
     if (search) {
       const q = search.toLowerCase();
       const matchName = (entry.vehicleName || '').toLowerCase().includes(q);
@@ -48,6 +51,8 @@ export default function MileageLog() {
     }
     return true;
   });
+
+  const untrackedCount = visibleEntries.filter((e) => !e.tracked).length;
 
   const sorted = [...filtered].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
@@ -146,6 +151,10 @@ export default function MileageLog() {
     setConfirmDeleteId(null);
   };
 
+  const handleToggleTracked = (id) => {
+    setMileageLog(mileageLog.map((e) => e.id === id ? { ...e, tracked: !e.tracked } : e));
+  };
+
   // --- Page numbers to display ---
   const pageNumbers = [];
   const maxVisible = 5;
@@ -167,6 +176,11 @@ export default function MileageLog() {
             <p className="text-sm text-tertiary">
               {sorted.length} {sorted.length === 1 ? 'entry' : 'entries'}
               {!ownerMode && ' (yours)'}
+              {ownerMode && untrackedCount > 0 && (
+                <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 text-xs font-semibold">
+                  {untrackedCount} untracked
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -218,6 +232,28 @@ export default function MileageLog() {
         ))}
       </div>
 
+      {/* Tracked filter (owner only) */}
+      {ownerMode && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted mr-1">Status:</span>
+          {['all', 'untracked', 'tracked'].map((f) => (
+            <button
+              key={f}
+              onClick={() => { setTrackFilter(f); setPage(1); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                trackFilter === f
+                  ? f === 'untracked' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 shadow-sm'
+                  : f === 'tracked' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 shadow-sm'
+                  : 'bg-surface-alt text-primary shadow-sm'
+                  : 'text-tertiary hover:text-secondary hover:bg-surface-alt'
+              }`}
+            >
+              {f === 'all' ? 'All' : f === 'untracked' ? `Untracked (${untrackedCount})` : 'Tracked'}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Per-page selector */}
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted">Per page:</span>
@@ -253,7 +289,22 @@ export default function MileageLog() {
             <div key={entry.id} className="bg-card rounded-xl shadow-sm border border-border-subtle p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-bold text-primary">{entry.vehicleName}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-primary">{entry.vehicleName}</h3>
+                    {ownerMode && (
+                      <button
+                        onClick={() => handleToggleTracked(entry.id)}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-colors cursor-pointer ${
+                          entry.tracked
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                        }`}
+                        title={entry.tracked ? 'Click to mark untracked' : 'Click to mark tracked'}
+                      >
+                        {entry.tracked ? 'Tracked' : 'Untracked'}
+                      </button>
+                    )}
+                  </div>
                   <p className="text-xs text-secondary mt-1">
                     Odometer: <span className="font-semibold">{Number(entry.odometer).toLocaleString()}</span>
                   </p>

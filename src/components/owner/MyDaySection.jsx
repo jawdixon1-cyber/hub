@@ -1,132 +1,141 @@
 import { useState } from 'react';
-import { ClipboardCheck, Check, Gauge } from 'lucide-react';
-import OwnerChecklist from '../OwnerChecklist';
+import { Check, Circle } from 'lucide-react';
 import { useAppStore } from '../../store/AppStoreContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { genId } from '../../data';
+import { useEffect, useRef } from 'react';
+import { getTodayInTimezone } from '../../utils/timezone';
+import renderLinkedText from '../../utils/renderLinkedText';
+
+function useChecklistDay(items, setItems, checklistType) {
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  useEffect(() => {
+    const storageKey = `greenteam-checklist-date-${checklistType}`;
+    const resetIfNewDay = () => {
+      const saved = localStorage.getItem(storageKey);
+      const now = getTodayInTimezone();
+      if (saved !== now) {
+        const current = itemsRef.current;
+        if (current.some((i) => i.type !== 'header' && i.done)) {
+          setItems(current.map((i) => ({ ...i, done: false })));
+        }
+        localStorage.setItem(storageKey, now);
+      }
+    };
+    resetIfNewDay();
+    const onVis = () => { if (document.visibilityState === 'visible') resetIfNewDay(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [checklistType, setItems]);
+}
+
+function useChecklistLog(items, checklistType, checklistLog, setChecklistLog) {
+  const checkableItems = items.filter((i) => i.type !== 'header');
+  const completedCount = checkableItems.filter((i) => i.done).length;
+  const logDebounce = useRef(null);
+
+  useEffect(() => {
+    if (!checklistType || !setChecklistLog || checkableItems.length === 0) return;
+    if (logDebounce.current) clearTimeout(logDebounce.current);
+    logDebounce.current = setTimeout(() => {
+      const today = getTodayInTimezone();
+      setChecklistLog((prev) => {
+        const existing = prev.findIndex((e) => e.date === today && e.checklistType === checklistType);
+        const entry = {
+          id: existing >= 0 ? prev[existing].id : genId(),
+          date: today,
+          checklistType,
+          totalItems: checkableItems.length,
+          completedItems: completedCount,
+          updatedAt: new Date().toISOString(),
+        };
+        if (existing >= 0) {
+          const updated = [...prev];
+          updated[existing] = entry;
+          return updated;
+        }
+        return [...prev, entry];
+      });
+    }, 800);
+    return () => { if (logDebounce.current) clearTimeout(logDebounce.current); };
+  }, [completedCount, checklistType, setChecklistLog, checkableItems.length]);
+
+  return { checkableItems, completedCount };
+}
+
+function ChecklistRow({ label, items, setItems, checklistType, checklistLog, setChecklistLog }) {
+  useChecklistDay(items, setItems, checklistType);
+  const { checkableItems, completedCount } = useChecklistLog(items, checklistType, checklistLog, setChecklistLog);
+
+  const allDone = checkableItems.length > 0 && completedCount === checkableItems.length;
+
+  const markAll = () => {
+    setItems(items.map((i) => (i.type === 'header' ? i : { ...i, done: !allDone })));
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          {allDone ? (
+            <div className="w-5 h-5 rounded-full bg-brand flex items-center justify-center">
+              <Check size={12} className="text-on-brand" />
+            </div>
+          ) : (
+            <Circle size={18} className="text-border-strong" />
+          )}
+          <span className={`text-sm font-semibold ${allDone ? 'text-muted line-through' : 'text-primary'}`}>
+            {label}
+          </span>
+        </div>
+        <button
+          onClick={markAll}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+            allDone
+              ? 'text-muted hover:text-secondary'
+              : 'text-brand-text-strong hover:bg-brand-light'
+          }`}
+        >
+          {allDone ? 'Undo' : 'Complete'}
+        </button>
+      </div>
+      {!allDone && (
+        <div className="ml-7 space-y-1">
+          {items.map((item) => {
+            if (item.type === 'header') {
+              return (
+                <p key={item.id} className="text-xs font-bold uppercase tracking-wide text-primary pt-2 first:pt-0">
+                  {renderLinkedText(item.text)}
+                </p>
+              );
+            }
+            return (
+              <p key={item.id} className={`text-sm text-secondary ${item.indent ? 'ml-4' : ''}`}>
+                {renderLinkedText(item.text)}
+              </p>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function MyDaySection() {
-  const { currentUser } = useAuth();
   const ownerStartChecklist = useAppStore((s) => s.ownerStartChecklist);
   const setOwnerStartChecklist = useAppStore((s) => s.setOwnerStartChecklist);
   const ownerEndChecklist = useAppStore((s) => s.ownerEndChecklist);
   const setOwnerEndChecklist = useAppStore((s) => s.setOwnerEndChecklist);
   const checklistLog = useAppStore((s) => s.checklistLog);
   const setChecklistLog = useAppStore((s) => s.setChecklistLog);
-  const vehicles = useAppStore((s) => s.vehicles);
-  const mileageLog = useAppStore((s) => s.mileageLog);
-  const setMileageLog = useAppStore((s) => s.setMileageLog);
-
-  const today = new Date().toISOString().slice(0, 10);
-  const [vehicleId, setVehicleId] = useState('');
-  const [odometer, setOdometer] = useState('');
-  const [mileageSuccess, setMileageSuccess] = useState(false);
-
-  const handleMileageSubmit = (e) => {
-    e.preventDefault();
-    if (!vehicleId || !odometer) return;
-    const vehicle = vehicles.find((v) => v.id === vehicleId);
-    const odometerNum = Number(odometer);
-    const vehicleName = vehicle?.name || 'Unknown';
-
-    // Find previous odometer reading for this vehicle
-    const prevEntry = [...mileageLog]
-      .filter((e) => e.vehicleId === vehicleId)
-      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
-      [0];
-
-    setMileageLog([
-      ...mileageLog,
-      {
-        id: genId(),
-        vehicleId,
-        vehicleName,
-        odometer: odometerNum,
-        date: today,
-        notes: '',
-        loggedBy: currentUser,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-
-    // Push to QuickBooks (fire and forget — don't block the UI)
-    fetch('/api/qb-mileage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        vehicleName,
-        odometer: odometerNum,
-        date: today,
-        notes: '',
-        loggedBy: currentUser,
-        previousOdometer: prevEntry?.odometer || null,
-      }),
-    }).catch(() => {}); // silently fail if QB not connected
-
-    setVehicleId('');
-    setOdometer('');
-    setMileageSuccess(true);
-    setTimeout(() => setMileageSuccess(false), 2500);
-  };
-
-  const mileageFooter = (
-    <div className="mt-4 pt-4 border-t border-border-subtle">
-      <div className="flex items-center gap-2 mb-3">
-        <Gauge size={16} className="text-emerald-500" />
-        <span className="text-sm font-bold text-primary">Log Mileage</span>
-      </div>
-      <form onSubmit={handleMileageSubmit}>
-        {mileageSuccess ? (
-          <div className="flex items-center gap-2 py-1">
-            <Check size={16} className="text-emerald-600" />
-            <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">Mileage logged!</span>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <select
-              required
-              value={vehicleId}
-              onChange={(e) => setVehicleId(e.target.value)}
-              className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              <option value="">Select vehicle...</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>{v.name}</option>
-              ))}
-            </select>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                required
-                min="0"
-                value={odometer}
-                onChange={(e) => setOdometer(e.target.value)}
-                placeholder="Odometer reading"
-                className="flex-1 rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors cursor-pointer shrink-0"
-              >
-                Submit
-              </button>
-            </div>
-          </div>
-        )}
-      </form>
-    </div>
-  );
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 mb-4">
-        <ClipboardCheck size={20} className="text-brand-text" />
-        <h2 className="text-lg font-bold text-primary">Daily Checklists</h2>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <OwnerChecklist title="Start of Day" items={ownerStartChecklist} setItems={setOwnerStartChecklist} checklistType="owner-start" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
-        <OwnerChecklist title="End of Day" items={ownerEndChecklist} setItems={setOwnerEndChecklist} checklistType="owner-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} footer={mileageFooter} />
-      </div>
+    <div className="space-y-3">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted">Daily Checklists</p>
+      <ChecklistRow label="Start of Day" items={ownerStartChecklist} setItems={setOwnerStartChecklist} checklistType="owner-start" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
+      <ChecklistRow label="End of Day" items={ownerEndChecklist} setItems={setOwnerEndChecklist} checklistType="owner-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
     </div>
   );
 }

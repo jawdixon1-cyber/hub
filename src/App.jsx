@@ -4,12 +4,22 @@ import {
   Home as HomeIcon,
   BookOpen,
   Users,
-  Swords,
   LogOut,
   RefreshCw,
   Lock,
   Unlock,
   Wrench,
+  Calculator,
+  Menu,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Gauge,
+  Lightbulb,
+  UserCog,
+  ClipboardCheck,
+  LayoutGrid,
+  ChevronDown,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -31,15 +41,37 @@ import TeamMemberDetail from './pages/TeamMemberDetail';
 import QuestBoard from './pages/QuestBoard';
 import IdeasFeedback from './pages/IdeasFeedback';
 import MileageLog from './pages/MileageLog';
+import ChecklistTrackerPage from './pages/ChecklistTrackerPage';
+import Quoting from './pages/Quoting';
 import { isOnboardingComplete, isOnboardingEffectivelyComplete } from './pages/Training';
 
-
-const TABS = [
+const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
+];
+
+const SECONDARY_ITEMS = [
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
+  { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
+  { id: 'ideas', path: '/ideas', label: 'Ideas', icon: Lightbulb },
   { id: 'hr', path: '/hr', label: 'HR', icon: Users },
-  // { id: 'quests', path: '/quests', label: 'Quests', icon: Swords },  // v2 — uncomment to enable
+];
+
+const OWNER_ITEMS = [
+  { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
+  { id: 'checklist-tracker', path: '/checklist-tracker', label: 'Checklists', icon: ClipboardCheck },
+  { id: 'team', path: '/team', label: 'Team', icon: UserCog },
+];
+
+const EXTERNAL_APPS = [
+  { name: 'Jobber', url: 'https://getjobber.com', bg: 'bg-[#1a3a3a]', icon: 'J', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://getjobber.com&size=128' },
+  { name: 'GoHighLevel', url: 'https://app.gohighlevel.com', bg: 'bg-[#1a2332]', icon: 'G', logo: '/logos/ghl-icon.jpg' },
+  { name: 'QuickBooks', url: 'https://quickbooks.intuit.com', bg: 'bg-[#2ca01c]', icon: 'QB', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://quickbooks.intuit.com&size=128' },
+  { name: 'ADP', url: 'https://my.adp.com', bg: 'bg-[#d0271d]', icon: 'ADP', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://adp.com&size=128' },
+  { name: 'Canva', url: 'https://www.canva.com', bg: 'bg-[#00c4cc]', icon: 'C', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://canva.com&size=128' },
+  { name: 'ChatGPT', url: 'https://chat.openai.com', bg: 'bg-[#10a37f]', icon: 'AI', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://chat.openai.com&size=128' },
+  { name: 'Gemini', url: 'https://gemini.google.com', bg: 'bg-white', icon: 'Ge', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://gemini.google.com&size=128' },
+  { name: 'Claude', url: 'https://claude.ai', bg: 'bg-[#d97757]', icon: 'Cl', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://claude.ai&size=128' },
 ];
 
 /* ─── App (outer) — auth gate + data loading ─── */
@@ -161,7 +193,7 @@ function App() {
   );
 }
 
-/* ─── AppShell (inner) — the main app ─── */
+/* ─── AppShell (inner) — sidebar + main content ─── */
 
 function getInitials(name) {
   if (!name) return '?';
@@ -185,7 +217,22 @@ function AppShell() {
 
   const needsOnboarding = !ownerMode && !isOnboardingEffectivelyComplete(suggestions, currentUser, userEmail, trainingConfig, permissions);
 
-  // Unlock animation: detect when onboarding transitions from incomplete → complete (once only)
+  // Sidebar state
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
+  });
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [appsExpanded, setAppsExpanded] = useState(false);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem('sidebar-collapsed', String(next)); } catch {}
+      return next;
+    });
+  };
+
+  // Unlock animation
   const [showUnlockAnimation, setShowUnlockAnimation] = useState(false);
   const [unlockPhase, setUnlockPhase] = useState('idle');
   const prevNeedsOnboarding = useRef(needsOnboarding);
@@ -208,77 +255,202 @@ function AppShell() {
     prevNeedsOnboarding.current = needsOnboarding;
   }, [needsOnboarding, ownerMode, navigate]);
 
-  const visibleTabs = TABS;
+  // Close mobile sidebar on navigation
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [location.pathname]);
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
     return location.pathname.startsWith(path);
   };
 
+  const handleNav = (path) => {
+    if (!needsOnboarding) navigate(path);
+  };
+
   const isProfileActive = location.pathname === '/profile';
+
+  // Sidebar nav renderer (shared between desktop & mobile)
+  const renderSidebarNav = (collapsed) => (
+    <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
+      {NAV_ITEMS.map((item) => {
+        const Icon = needsOnboarding ? Lock : item.icon;
+        const active = isActive(item.path);
+        return (
+          <button
+            key={item.id}
+            onClick={() => handleNav(item.path)}
+            title={collapsed ? item.label : undefined}
+            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              needsOnboarding
+                ? 'opacity-40 cursor-not-allowed text-muted'
+                : active
+                  ? 'bg-brand-light text-brand-text-strong'
+                  : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+            }`}
+          >
+            <Icon size={20} className="shrink-0" />
+            {!collapsed && <span className="truncate">{item.label}</span>}
+          </button>
+        );
+      })}
+
+      <div className="h-px bg-border-subtle my-3 mx-2" />
+
+      {SECONDARY_ITEMS.map((item) => {
+        const Icon = needsOnboarding ? Lock : item.icon;
+        const active = isActive(item.path);
+        return (
+          <button
+            key={item.id}
+            onClick={() => handleNav(item.path)}
+            title={collapsed ? item.label : undefined}
+            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              needsOnboarding
+                ? 'opacity-40 cursor-not-allowed text-muted'
+                : active
+                  ? 'bg-brand-light text-brand-text-strong'
+                  : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+            }`}
+          >
+            <Icon size={20} className="shrink-0" />
+            {!collapsed && <span className="truncate">{item.label}</span>}
+          </button>
+        );
+      })}
+
+      {ownerMode && OWNER_ITEMS.map((item) => {
+        const Icon = item.icon;
+        const active = isActive(item.path);
+        return (
+          <button
+            key={item.id}
+            onClick={() => navigate(item.path)}
+            title={collapsed ? item.label : undefined}
+            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              active
+                ? 'bg-brand-light text-brand-text-strong'
+                : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+            }`}
+          >
+            <Icon size={20} className="shrink-0" />
+            {!collapsed && <span className="truncate">{item.label}</span>}
+          </button>
+        );
+      })}
+
+      {ownerMode && !needsOnboarding && (
+        <>
+          <div className="h-px bg-border-subtle my-3 mx-2" />
+          <button
+            onClick={() => setAppsExpanded((v) => !v)}
+            title={collapsed ? 'Apps' : undefined}
+            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium text-secondary hover:bg-surface-alt hover:text-primary transition-colors cursor-pointer`}
+          >
+            <LayoutGrid size={20} className="shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="truncate flex-1 text-left">Apps</span>
+                <ChevronDown size={16} className={`text-muted transition-transform duration-200 ${appsExpanded ? '' : '-rotate-90'}`} />
+              </>
+            )}
+          </button>
+          {appsExpanded && EXTERNAL_APPS.map((app) => (
+            <a
+              key={app.name}
+              href={app.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={collapsed ? app.name : undefined}
+              className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'pl-6 pr-3'} py-2 rounded-xl text-sm font-medium text-secondary hover:bg-surface-alt hover:text-primary transition-colors cursor-pointer`}
+            >
+              <div className={`w-6 h-6 rounded-md ${app.bg} flex items-center justify-center shrink-0 overflow-hidden`}>
+                <img src={app.logo} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = ''; }} />
+                <span className="text-white text-[9px] font-bold" style={{ display: 'none' }}>{app.icon}</span>
+              </div>
+              {!collapsed && <span className="truncate">{app.name}</span>}
+            </a>
+          ))}
+        </>
+      )}
+    </nav>
+  );
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Top Nav */}
-      <nav className="bg-card border-b border-border-default sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <img src="/favicon.png" alt="Lawn Care Hub" className="h-10 rounded-lg" />
-              <span className="font-bold text-primary text-lg hidden sm:inline">Hey Jude's Lawn Care</span>
-            </div>
-
-            {/* Desktop Tabs */}
-            <div className="hidden md:flex items-center gap-1">
-              {visibleTabs.map((t) => {
-                const Icon = needsOnboarding ? Lock : t.icon;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => !needsOnboarding && navigate(t.path)}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      needsOnboarding
-                        ? 'opacity-50 cursor-not-allowed text-muted'
-                        : isActive(t.path)
-                          ? 'bg-brand-light text-brand-text-strong'
-                          : 'text-tertiary hover:text-secondary hover:bg-surface'
-                    }`}
-                  >
-                    <Icon size={18} />
-                    {t.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Profile Avatar */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-tertiary hidden sm:inline">{currentUser}</span>
-              <button
-                onClick={() => !needsOnboarding && navigate('/profile')}
-                className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
-                  needsOnboarding
-                    ? 'opacity-50 cursor-not-allowed bg-brand-light text-brand-text-strong'
-                    : isProfileActive
-                      ? 'bg-brand text-on-brand ring-2 ring-brand ring-offset-2 ring-offset-card'
-                      : 'bg-brand-light text-brand-text-strong hover:bg-brand hover:text-on-brand'
-                }`}
-                title={needsOnboarding ? 'Complete onboarding first' : 'Profile'}
-              >
-                {needsOnboarding ? <Lock size={14} /> : getInitials(currentUser)}
-              </button>
-            </div>
-          </div>
+      {/* ─── Desktop Sidebar ─── */}
+      <aside className={`hidden lg:flex fixed left-0 top-0 h-full ${sidebarCollapsed ? 'w-16' : 'w-60'} bg-card border-r border-border-subtle z-40 flex-col transition-all duration-200`}>
+        {/* Logo */}
+        <div className={`h-16 flex items-center ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'} border-b border-border-subtle shrink-0`}>
+          <img src="/favicon.png" alt="Hey Jude's Lawn Care" className="h-9 w-9 rounded-lg shrink-0" />
+          {!sidebarCollapsed && <span className="ml-3 font-bold text-primary text-lg truncate">Hey Jude's</span>}
         </div>
 
-        {/* Mobile Tabs */}
-        <div className="md:hidden flex border-t border-border-subtle overflow-x-auto">
-          {visibleTabs.map((t) => {
+        {renderSidebarNav(sidebarCollapsed)}
+
+        {/* Profile */}
+        <div className="border-t border-border-subtle p-2 shrink-0">
+          <button
+            onClick={() => !needsOnboarding && navigate('/profile')}
+            title={sidebarCollapsed ? currentUser : undefined}
+            className={`w-full flex items-center gap-3 ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              needsOnboarding
+                ? 'opacity-40 cursor-not-allowed'
+                : isProfileActive
+                  ? 'bg-brand-light text-brand-text-strong'
+                  : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+            }`}
+          >
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+              isProfileActive ? 'bg-brand text-on-brand' : 'bg-brand-light text-brand-text-strong'
+            }`}>
+              {needsOnboarding ? <Lock size={14} /> : getInitials(currentUser)}
+            </div>
+            {!sidebarCollapsed && <span className="truncate">{currentUser}</span>}
+          </button>
+        </div>
+
+        {/* Collapse toggle */}
+        <button
+          onClick={toggleSidebar}
+          className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-card border border-border-subtle shadow-sm flex items-center justify-center text-muted hover:text-primary transition-colors cursor-pointer"
+        >
+          {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
+      </aside>
+
+      {/* ─── Mobile Header ─── */}
+      <nav className="lg:hidden bg-card border-b border-border-default sticky top-0 z-40">
+        <div className="flex items-center justify-between h-14 px-4">
+          <button onClick={() => setMobileSidebarOpen(true)} className="p-1.5 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
+            <Menu size={22} className="text-secondary" />
+          </button>
+          <div className="flex items-center gap-2">
+            <img src="/favicon.png" alt="" className="h-8 rounded-lg" />
+            <span className="font-bold text-primary text-sm">Hey Jude's</span>
+          </div>
+          <button
+            onClick={() => !needsOnboarding && navigate('/profile')}
+            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+              needsOnboarding
+                ? 'opacity-40 cursor-not-allowed bg-brand-light text-brand-text-strong'
+                : isProfileActive
+                  ? 'bg-brand text-on-brand ring-2 ring-brand ring-offset-2 ring-offset-card'
+                  : 'bg-brand-light text-brand-text-strong'
+            }`}
+          >
+            {needsOnboarding ? <Lock size={12} /> : getInitials(currentUser)}
+          </button>
+        </div>
+        {/* Mobile tabs */}
+        <div className="flex border-t border-border-subtle overflow-x-auto">
+          {NAV_ITEMS.map((t) => {
             const Icon = needsOnboarding ? Lock : t.icon;
             return (
               <button
                 key={t.id}
-                onClick={() => !needsOnboarding && navigate(t.path)}
+                onClick={() => handleNav(t.path)}
                 className={`flex-1 flex flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors min-w-[64px] ${
                   needsOnboarding
                     ? 'opacity-50 cursor-not-allowed text-muted'
@@ -295,32 +467,72 @@ function AppShell() {
         </div>
       </nav>
 
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8">
-        {needsOnboarding ? (
-          <Routes>
-            <Route path="/training/onboard/:stepId" element={<OnboardingStep />} />
-            <Route path="*" element={<OnboardingHub />} />
-          </Routes>
-        ) : (
-          <Routes>
-            <Route path="/" element={ownerMode ? <OwnerDashboard /> : <Home />} />
-            <Route path="/guides" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
-            <Route path="/equipment" element={<EquipmentIdeas />} />
-            <Route path="/hr" element={<HRPolicies />} />
-            {/* <Route path="/quests" element={<QuestBoard />} /> */}
-            {/* <Route path="/training" element={<Training />} /> */}
-            {/* <Route path="/training/onboard/:stepId" element={<OnboardingStep />} /> */}
-            {/* <Route path="/training/:moduleId" element={<TrainingModule />} /> */}
-            <Route path="/team" element={<TeamManagement />} />
-            <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/mileage" element={<MileageLog />} />
-            <Route path="/ideas" element={<IdeasFeedback />} />
-            <Route path="/settings" element={<Navigate to="/profile" replace />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        )}
+      {/* ─── Mobile Sidebar Overlay ─── */}
+      <div className={`lg:hidden fixed inset-0 z-50 ${mobileSidebarOpen ? '' : 'pointer-events-none'}`}>
+        <div
+          className={`absolute inset-0 bg-black/50 transition-opacity duration-200 ${mobileSidebarOpen ? 'opacity-100' : 'opacity-0'}`}
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+        <aside className={`absolute left-0 top-0 h-full w-72 bg-card shadow-2xl flex flex-col transition-transform duration-200 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          <button
+            onClick={() => setMobileSidebarOpen(false)}
+            className="absolute top-4 right-4 p-1 text-muted hover:text-primary cursor-pointer z-10"
+          >
+            <X size={20} />
+          </button>
+          <div className="h-16 flex items-center px-4 border-b border-border-subtle shrink-0">
+            <img src="/favicon.png" alt="" className="h-9 w-9 rounded-lg shrink-0" />
+            <span className="ml-3 font-bold text-primary text-lg truncate">Hey Jude's</span>
+          </div>
+          {renderSidebarNav(false)}
+          <div className="border-t border-border-subtle p-2 shrink-0">
+            <button
+              onClick={() => { if (!needsOnboarding) navigate('/profile'); }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                needsOnboarding
+                  ? 'opacity-40 cursor-not-allowed'
+                  : isProfileActive
+                    ? 'bg-brand-light text-brand-text-strong'
+                    : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+              }`}
+            >
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                isProfileActive ? 'bg-brand text-on-brand' : 'bg-brand-light text-brand-text-strong'
+              }`}>
+                {needsOnboarding ? <Lock size={14} /> : getInitials(currentUser)}
+              </div>
+              <span className="truncate">{currentUser}</span>
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      {/* ─── Main Content ─── */}
+      <main className={`${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60'} transition-all duration-200`}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8">
+          {needsOnboarding ? (
+            <Routes>
+              <Route path="/training/onboard/:stepId" element={<OnboardingStep />} />
+              <Route path="*" element={<OnboardingHub />} />
+            </Routes>
+          ) : (
+            <Routes>
+              <Route path="/" element={ownerMode ? <OwnerDashboard /> : <Home />} />
+              <Route path="/guides" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
+              <Route path="/equipment" element={<EquipmentIdeas />} />
+              <Route path="/hr" element={<HRPolicies />} />
+              <Route path="/quoting" element={<Quoting />} />
+              <Route path="/team" element={<TeamManagement />} />
+              <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/mileage" element={<MileageLog />} />
+              <Route path="/ideas" element={<IdeasFeedback />} />
+              <Route path="/checklist-tracker" element={<ChecklistTrackerPage />} />
+              <Route path="/settings" element={<Navigate to="/profile" replace />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          )}
+        </div>
       </main>
 
       {/* Unlock Animation Overlay */}
@@ -330,15 +542,12 @@ function AppShell() {
             unlockPhase === 'fading' ? 'unlock-overlay-out' : 'unlock-overlay-in'
           }`}
         >
-          {/* Expanding rings */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-24 h-24 rounded-full border-4 border-emerald-400/40 unlock-ring-1 opacity-0" />
           </div>
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-24 h-24 rounded-full border-4 border-emerald-300/30 unlock-ring-2 opacity-0" />
           </div>
-
-          {/* Particles */}
           {[...Array(8)].map((_, i) => {
             const angle = (i / 8) * 360;
             const rad = (angle * Math.PI) / 180;
@@ -360,8 +569,6 @@ function AppShell() {
               />
             );
           })}
-
-          {/* Lock icon — shakes then bursts into unlock */}
           <div className="relative">
             <div className="unlock-icon-shake">
               <div className="unlock-icon-burst">
@@ -369,8 +576,6 @@ function AppShell() {
               </div>
             </div>
           </div>
-
-          {/* Text */}
           <p className="unlock-text text-2xl font-bold text-white mt-8 tracking-wide">
             Welcome to the team!
           </p>

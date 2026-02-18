@@ -8,6 +8,10 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:3001',
     },
+    watch: {
+      usePolling: true,
+      interval: 500,
+    },
   },
   plugins: [
     react(),

@@ -20,6 +20,8 @@ import {
   initialTeamEndChecklist,
   initialChecklistLog,
   initialQuests,
+  initialQuotes,
+  initialQuotingSettings,
 } from '../data';
 
 const DATA_CACHE_KEY = 'greenteam-data-cache';
@@ -48,6 +50,8 @@ const STATE_KEYS = [
   { key: 'userXP',              supaKey: 'greenteam-userXP',              initial: {} },
   { key: 'vehicles',            supaKey: 'greenteam-vehicles',            initial: initialVehicles },
   { key: 'mileageLog',          supaKey: 'greenteam-mileageLog',          initial: initialMileageLog },
+  { key: 'quotes',              supaKey: 'greenteam-quotes',              initial: initialQuotes },
+  { key: 'quotingSettings',     supaKey: 'greenteam-quotingSettings',     initial: initialQuotingSettings },
 ];
 
 function resolveInitial(cloudValue, initial) {

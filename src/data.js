@@ -344,6 +344,35 @@ export const initialVehicles = [
 
 export const initialMileageLog = [];
 
+export const initialQuotes = [];
+
+export const initialQuotingSettings = {
+  mulchTypes: [
+    { label: 'Hardwood', pricePerYd: 36 },
+    { label: 'Black', pricePerYd: 42 },
+    { label: 'Brown', pricePerYd: 40 },
+    { label: 'Red', pricePerYd: 42 },
+    { label: 'Cedar', pricePerYd: 50 },
+  ],
+  rockTypes: [
+    { label: 'Pea Gravel', pricePerYd: 55 },
+    { label: 'River Rock (1-3")', pricePerYd: 75 },
+    { label: 'Crushed Granite', pricePerYd: 60 },
+    { label: 'Lava Rock', pricePerYd: 110 },
+    { label: 'Mexican Beach Pebble', pricePerYd: 300 },
+    { label: 'Marble Chips', pricePerYd: 120 },
+  ],
+  volumeTiers: [
+    { minYards: 0, discountPct: 0 },
+    { minYards: 5, discountPct: 8 },
+    { minYards: 10, discountPct: 15 },
+    { minYards: 20, discountPct: 25 },
+  ],
+  materialMarkupPct: 100,
+  laborPerYard: 35,
+  baseDeliveryFee: 75,
+};
+
 export const initialEquipmentRepairLog = [];
 
 export const initialTeamEndChecklist = [

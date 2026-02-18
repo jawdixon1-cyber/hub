@@ -9,51 +9,51 @@
   --color-surface-alt: #f3f4f6;   /* gray-100 */
   --color-surface-strong: #e5e7eb; /* gray-200 */
 
-  --color-primary: #111827;        /* gray-900 */
-  --color-secondary: #374151;      /* gray-700 */
-  --color-tertiary: #6b7280;       /* gray-500 */
-  --color-muted: #9ca3af;          /* gray-400 */
-  --color-on-brand: #ffffff;
+  --color-primary: #000000;        /* hj-black */
+  --color-secondary: #1a1a1a;      /* near-black */
+  --color-tertiary: #525252;       /* neutral-600 */
+  --color-muted: #737373;          /* neutral-500 */
+  --color-on-brand: #000000;       /* black on lime */
 
   --color-border-subtle: #f3f4f6;  /* gray-100 */
   --color-border-default: #e5e7eb; /* gray-200 */
   --color-border-strong: #d1d5db;  /* gray-300 */
 
-  --color-brand-light: #ecfdf5;    /* emerald-50 */
-  --color-brand: #059669;          /* emerald-600 */
-  --color-brand-hover: #047857;    /* emerald-700 */
-  --color-brand-text: #059669;     /* emerald-600 */
-  --color-brand-text-strong: #047857; /* emerald-700 */
-  --color-border-brand: #059669;   /* emerald-600 */
-  --color-ring-brand: #10b981;     /* emerald-500 */
+  --color-brand-light: #f0ffe0;    /* light lime tint */
+  --color-brand: #B0FF03;          /* hj-green */
+  --color-brand-hover: #9ae600;    /* darker lime */
+  --color-brand-text: #4d7a00;     /* readable lime on white */
+  --color-brand-text-strong: #3d6200; /* darker readable lime */
+  --color-border-brand: #B0FF03;   /* hj-green */
+  --color-ring-brand: #B0FF03;     /* hj-green */
   --color-placeholder-muted: #9ca3af; /* gray-400 */
 }
 
 /* ─── Dark mode ─── */
 .dark {
-  --color-surface: #0f172a;        /* slate-900 */
-  --color-card: #1e293b;           /* slate-800 */
-  --color-surface-alt: #334155;    /* slate-700 */
-  --color-surface-strong: #475569; /* slate-600 */
+  --color-surface: #0a0a0a;        /* near-black */
+  --color-card: #141414;           /* dark card */
+  --color-surface-alt: #1f1f1f;    /* neutral-900 */
+  --color-surface-strong: #2e2e2e; /* neutral-800 */
 
-  --color-primary: #f8fafc;        /* slate-50 */
-  --color-secondary: #cbd5e1;      /* slate-300 */
-  --color-tertiary: #94a3b8;       /* slate-400 */
-  --color-muted: #64748b;          /* slate-500 */
-  --color-on-brand: #ffffff;
+  --color-primary: #ffffff;        /* hj-white */
+  --color-secondary: #e5e5e5;      /* neutral-200 */
+  --color-tertiary: #a3a3a3;       /* neutral-400 */
+  --color-muted: #737373;          /* neutral-500 */
+  --color-on-brand: #000000;       /* black on lime */
 
-  --color-border-subtle: #334155;  /* slate-700 */
-  --color-border-default: #475569; /* slate-600 */
-  --color-border-strong: #64748b;  /* slate-500 */
+  --color-border-subtle: #1f1f1f;  /* neutral-900 */
+  --color-border-default: #2e2e2e; /* neutral-800 */
+  --color-border-strong: #404040;  /* neutral-700 */
 
-  --color-brand-light: #064e3b;    /* emerald-900 */
-  --color-brand: #10b981;          /* emerald-500 */
-  --color-brand-hover: #059669;    /* emerald-600 */
-  --color-brand-text: #34d399;     /* emerald-400 */
-  --color-brand-text-strong: #10b981; /* emerald-500 */
-  --color-border-brand: #10b981;   /* emerald-500 */
-  --color-ring-brand: #34d399;     /* emerald-400 */
-  --color-placeholder-muted: #64748b; /* slate-500 */
+  --color-brand-light: #1a2e00;    /* dark lime tint */
+  --color-brand: #B0FF03;          /* hj-green */
+  --color-brand-hover: #9ae600;    /* darker lime */
+  --color-brand-text: #B0FF03;     /* hj-green */
+  --color-brand-text-strong: #c4ff3d; /* lighter lime */
+  --color-border-brand: #B0FF03;   /* hj-green */
+  --color-ring-brand: #B0FF03;     /* hj-green */
+  --color-placeholder-muted: #525252; /* neutral-600 */
 }
 
 /* ─── Register tokens with Tailwind v4 ─── */

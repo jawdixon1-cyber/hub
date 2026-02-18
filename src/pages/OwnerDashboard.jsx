@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
   ClipboardList,
@@ -8,9 +9,17 @@ import {
   X,
   ExternalLink,
   Trash2,
+  Plus,
+  Calculator,
+  Calendar,
+  Gauge,
+  Lightbulb,
+  UserCog,
+  Megaphone,
 } from 'lucide-react';
 import { EQUIPMENT_TYPES, genId, getActiveRepairs } from '../data';
 import ManagementSection from '../components/owner/ManagementSection';
+import AnnouncementEditorModal from '../components/AnnouncementEditorModal';
 import MyDaySection from '../components/owner/MyDaySection';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,8 +31,14 @@ function getGreeting() {
   return 'Good evening';
 }
 
+function parseMMDDYYYY(str) {
+  const parts = str.split('/');
+  return new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
+}
+
 export default function OwnerDashboard() {
   const { currentUser } = useAuth();
+  const navigate = useNavigate();
 
   const timeOffRequests = useAppStore((s) => s.timeOffRequests);
   const setTimeOffRequests = useAppStore((s) => s.setTimeOffRequests);
@@ -33,21 +48,69 @@ export default function OwnerDashboard() {
   const setSuggestions = useAppStore((s) => s.setSuggestions);
   const equipmentRepairLog = useAppStore((s) => s.equipmentRepairLog);
   const setEquipmentRepairLog = useAppStore((s) => s.setEquipmentRepairLog);
+  const quotes = useAppStore((s) => s.quotes) || [];
+  const permissions = useAppStore((s) => s.permissions);
+  const announcements = useAppStore((s) => s.announcements);
+  const setAnnouncements = useAppStore((s) => s.setAnnouncements);
+  const archivedAnnouncements = useAppStore((s) => s.archivedAnnouncements);
+  const setArchivedAnnouncements = useAppStore((s) => s.setArchivedAnnouncements);
 
   const equipmentCategories = useAppStore((s) => s.equipmentCategories);
   const allTypes = equipmentCategories?.length > 0 ? equipmentCategories : EQUIPMENT_TYPES;
-
-  const hasActionItems = equipment.some((e) => e.status === 'needs-repair') || timeOffRequests.some((r) => r.status === 'pending') || suggestions.some((s) => s.status === 'New');
-  const [showActionRequired, setShowActionRequired] = useState(false);
-  const [showManagement, setShowManagement] = useState(false);
-  const [viewingRepair, setViewingRepair] = useState(null);
-  const [fixingRepairId, setFixingRepairId] = useState(null);
-  const [fixDescription, setFixDescription] = useState('');
 
   const pendingPTO = timeOffRequests.filter((r) => r.status === 'pending');
   const repairEquipment = equipment.filter((e) => e.status === 'needs-repair');
   const newSuggestions = suggestions.filter((s) => s.status === 'New' && s.type !== 'onboarding');
 
+  const hasActionItems = repairEquipment.length > 0 || pendingPTO.length > 0 || newSuggestions.length > 0;
+  const [showActionRequired, setShowActionRequired] = useState(false);
+  const [showManagement, setShowManagement] = useState(false);
+  const [viewingRepair, setViewingRepair] = useState(null);
+  const [fixingRepairId, setFixingRepairId] = useState(null);
+  const [fixDescription, setFixDescription] = useState('');
+  const [showAnnouncementEditor, setShowAnnouncementEditor] = useState(false);
+
+  // ─── Greeting ───
+  const firstName = currentUser?.split(' ')[0] || 'Boss';
+  const formattedDate = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+  // ─── Team out today ───
+  const today = new Date();
+  const teamOutToday = timeOffRequests.filter((r) => {
+    if (r.status !== 'approved') return false;
+    const start = parseMMDDYYYY(r.startDate);
+    const end = parseMMDDYYYY(r.endDate);
+    return start <= today && end >= today;
+  });
+
+  // ─── Team availability (this week / next week) ───
+  const getWeekBounds = (weekOffset) => {
+    const now = new Date();
+    const day = now.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset + weekOffset * 7);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return { start, end };
+  };
+
+  const getApprovedPTOForWeek = (weekOffset) => {
+    const { start, end } = getWeekBounds(weekOffset);
+    return timeOffRequests.filter((r) => {
+      if (r.status !== 'approved') return false;
+      const ptoStart = parseMMDDYYYY(r.startDate);
+      const ptoEnd = parseMMDDYYYY(r.endDate);
+      return ptoStart <= end && ptoEnd >= start;
+    });
+  };
+
+  const formatWeekRange = (weekOffset) => {
+    const { start, end } = getWeekBounds(weekOffset);
+    const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+    return `${fmt(start)} - ${fmt(end)}`;
+  };
+
+  // ─── Action items ───
   const handleApprove = (id) => {
     setTimeOffRequests(timeOffRequests.map((r) => (r.id === id ? { ...r, status: 'approved' } : r)));
   };
@@ -131,7 +194,6 @@ export default function OwnerDashboard() {
   };
   const getItemDate = (item) => {
     if (item.kind === 'repair') {
-      // Use the most recent repair date for sorting
       return item.repairs.reduce((latest, r) => {
         const d = parseUSDate(r.reportedDate);
         return d > parseUSDate(latest) ? r.reportedDate : latest;
@@ -152,31 +214,49 @@ export default function OwnerDashboard() {
   actionItems.sort((a, b) => parseUSDate(getItemDate(b)) - parseUSDate(getItemDate(a)));
   const totalActionCount = actionItems.reduce((n, item) => n + (item.kind === 'repair' ? item.repairs.length : 1), 0);
 
+  // ─── Recent quotes ───
+  const recentQuotes = quotes.slice(0, 3);
+  const fmtDollar = (n) => (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   return (
     <div className="space-y-8">
-      {/* Stats */}
-      <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-4 sm:p-6">
-        <h2 className="text-lg font-bold text-primary mb-3">Business Health</h2>
-        <div className="grid grid-cols-3 gap-3 sm:gap-4">
-          <div className="bg-surface rounded-xl p-3 sm:p-4">
-            <p className="text-xs sm:text-sm text-tertiary font-medium">Labor Efficiency</p>
-            <p className="text-xl sm:text-3xl font-bold text-primary mt-1">40%</p>
-          </div>
-          <div className="bg-surface rounded-xl p-3 sm:p-4">
-            <p className="text-xs sm:text-sm text-tertiary font-medium">Sales Efficiency</p>
-            <p className="text-xl sm:text-3xl font-bold text-primary mt-1">60%</p>
-          </div>
-          <div className="bg-surface rounded-xl p-3 sm:p-4">
-            <p className="text-xs sm:text-sm text-tertiary font-medium truncate">Revenue / Man-Hr</p>
-            <p className="text-xl sm:text-3xl font-bold text-primary mt-1">$70/hr</p>
-          </div>
+      {/* ─── Greeting ─── */}
+      <div>
+        <h1 className="text-2xl font-bold text-primary">{getGreeting()}, {firstName}</h1>
+        <p className="text-sm text-muted">{formattedDate}</p>
+      </div>
+
+      {/* ─── Daily Checklists ─── */}
+      <MyDaySection />
+
+      {/* ─── Quick Actions ─── */}
+      <div className="flex gap-3">
+        <button onClick={() => setShowAnnouncementEditor(true)} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border-default text-sm font-semibold text-secondary hover:bg-surface-alt transition-colors cursor-pointer">
+          <Megaphone size={16} />
+          Announcement
+        </button>
+        <button onClick={() => navigate('/quoting')} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border-default text-sm font-semibold text-secondary hover:bg-surface-alt transition-colors cursor-pointer">
+          <Plus size={16} />
+          New Quote
+        </button>
+      </div>
+
+      {/* ─── At a Glance ─── */}
+      <div className="flex gap-6">
+        <div>
+          <p className="text-xs text-muted">Actions</p>
+          <p className={`text-lg font-bold ${totalActionCount > 0 ? 'text-amber-600' : 'text-muted'}`}>{totalActionCount}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted">Equipment Down</p>
+          <p className={`text-lg font-bold ${repairEquipment.length > 0 ? 'text-red-600' : 'text-muted'}`}>{repairEquipment.length}</p>
         </div>
       </div>
 
-      {/* Action Required */}
+      {/* ─── Action Required (auto-expanded when items exist) ─── */}
       <button
         onClick={() => setShowActionRequired((v) => !v)}
-        className="flex items-center gap-3 pt-4 w-full cursor-pointer group"
+        className="flex items-center gap-3 pt-2 w-full cursor-pointer group"
       >
         <div className="flex items-center gap-2">
           {totalActionCount > 0 ? <AlertTriangle size={20} className="text-amber-500" /> : <CircleCheck size={20} className="text-emerald-500" />}
@@ -222,7 +302,7 @@ export default function OwnerDashboard() {
                     <p className="text-xs text-muted">{typeLabel}</p>
 
                     <div className={`mt-3 ${repairs.length > 1 ? 'space-y-3' : ''}`}>
-                      {repairs.map((r, ri) => (
+                      {repairs.map((r) => (
                         <div key={r.id} className={repairs.length > 1 ? 'pt-3 border-t border-red-200 dark:border-red-800' : ''}>
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
@@ -355,64 +435,30 @@ export default function OwnerDashboard() {
         )
       )}
 
-      {/* Apps dock — fixed to right edge on desktop */}
-      <div className="hidden lg:flex fixed right-4 top-1/2 -translate-y-1/2 z-30 flex-col items-center gap-3 bg-card/90 backdrop-blur-sm rounded-2xl border border-border-subtle shadow-lg p-3">
-        {[
-          { name: 'Jobber', url: 'https://getjobber.com', bg: 'bg-[#1a3a3a]', icon: 'J', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://getjobber.com&size=128' },
-          { name: 'GoHighLevel', url: 'https://app.gohighlevel.com', bg: 'bg-[#1a2332]', icon: 'G', logo: '/logos/ghl-icon.jpg' },
-          { name: 'QuickBooks', url: 'https://quickbooks.intuit.com', bg: 'bg-[#2ca01c]', icon: 'QB', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://quickbooks.intuit.com&size=128' },
-          { name: 'ADP', url: 'https://my.adp.com', bg: 'bg-[#d0271d]', icon: 'ADP', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://adp.com&size=128' },
-          { name: 'Canva', url: 'https://www.canva.com', bg: 'bg-[#00c4cc]', icon: 'C', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://canva.com&size=128' },
-          { name: 'ChatGPT', url: 'https://chat.openai.com', bg: 'bg-[#10a37f]', icon: 'AI', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://chat.openai.com&size=128' },
-          { name: 'Gemini', url: 'https://gemini.google.com', bg: 'bg-white', icon: 'Ge', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://gemini.google.com&size=128' },
-          { name: 'Claude', url: 'https://claude.ai', bg: 'bg-[#d97757]', icon: 'Cl', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://claude.ai&size=128' },
-        ].map((app) => (
-          <a
-            key={app.name}
-            href={app.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={app.name}
-            className="group relative"
-          >
-            <div className={`w-10 h-10 rounded-xl ${app.bg} flex items-center justify-center text-white font-bold text-xs shadow-sm hover:scale-110 transition-transform overflow-hidden`}>
-              <img
-                src={app.logo}
-                alt={app.name}
-                className="w-full h-full object-cover"
-                onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = ''; }}
-              />
-              <span style={{ display: 'none' }}>{app.icon}</span>
-            </div>
-            <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-lg bg-gray-900 dark:bg-gray-700 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-              {app.name}
-            </span>
-          </a>
-        ))}
-      </div>
-
-      {/* Management */}
-      <button
-        onClick={() => setShowManagement((v) => !v)}
-        className="flex items-center gap-3 pt-4 w-full cursor-pointer group"
-      >
-        <div className="flex items-center gap-2">
-          <ClipboardList size={20} className="text-brand-text" />
-          <h2 className="text-xl font-bold text-primary">Management</h2>
+      {/* ─── Recent Quotes ─── */}
+      {recentQuotes.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">Recent Quotes</p>
+            <button onClick={() => navigate('/quoting')} className="text-xs font-medium text-brand-text-strong hover:underline cursor-pointer">
+              View all
+            </button>
+          </div>
+          <div className="space-y-2">
+            {recentQuotes.map((q) => (
+              <div key={q.id} className="flex items-center justify-between py-1.5">
+                <div>
+                  <p className="text-sm font-medium text-primary">{q.clientName}</p>
+                  <p className="text-xs text-muted">{q.date}</p>
+                </div>
+                <p className="text-sm font-semibold text-primary">${fmtDollar(q.total)}</p>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex-1 h-px bg-border-default" />
-        <ChevronDown
-          size={20}
-          className={`text-muted group-hover:text-secondary transition-transform duration-200 ${showManagement ? '' : '-rotate-90'}`}
-        />
-      </button>
+      )}
 
-      {showManagement && <ManagementSection />}
-
-      {/* Daily Checklists */}
-      <MyDaySection />
-
-      {/* View Repair Equipment Modal */}
+      {/* ─── View Repair Equipment Modal ─── */}
       {viewingRepair && (() => {
         const eq = viewingRepair.eq;
         const repair = viewingRepair.repair;
@@ -501,6 +547,18 @@ export default function OwnerDashboard() {
         );
       })()}
 
+      {/* ─── Announcement Editor Modal ─── */}
+      {showAnnouncementEditor && (
+        <AnnouncementEditorModal
+          onClose={() => setShowAnnouncementEditor(false)}
+          announcements={announcements}
+          setAnnouncements={setAnnouncements}
+          archivedAnnouncements={archivedAnnouncements}
+          setArchivedAnnouncements={setArchivedAnnouncements}
+          currentUser={currentUser}
+          permissions={permissions}
+        />
+      )}
     </div>
   );
 }
