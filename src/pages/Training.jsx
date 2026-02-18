@@ -72,7 +72,12 @@ const DEFAULT_ACTION_ITEMS = {
  * "Effectively complete" — step 1 must be owner-approved (hiring decision),
  * but steps 2-4 auto-complete when the team member finishes all action items.
  */
+const ONBOARDING_BYPASS = ['ethan@judeslawncare.com', 'ethan@heyjudeslawncare.com', 'ethanm.brant@gmail.com'];
+
 export function isOnboardingEffectivelyComplete(suggestions, currentUser, userEmail, trainingConfig, permissions) {
+  // Bypass onboarding for specific users
+  if (ONBOARDING_BYPASS.includes(userEmail)) return true;
+
   // Already fully approved the normal way
   if (isOnboardingComplete(suggestions, currentUser, userEmail)) return true;
 

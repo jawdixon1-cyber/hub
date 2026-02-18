@@ -166,7 +166,8 @@ function App() {
   // Access gate: non-owner users must be in the permissions map
   const permissions = cloudData['greenteam-permissions'] || {};
   const userEmail = user?.email?.toLowerCase();
-  if (!ownerMode && userEmail && !permissions[userEmail]) {
+  const accessBypass = ['ethanm.brant@gmail.com'];
+  if (!ownerMode && userEmail && !permissions[userEmail] && !accessBypass.includes(userEmail)) {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center p-4">
         <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-8 max-w-sm w-full text-center">
