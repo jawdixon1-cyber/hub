@@ -28,12 +28,60 @@ function normalizeItems(items) {
   return items.map(normalizeItem);
 }
 
+// Parse markdown text into { plainText, links[] } where links have { label, url, placeholder }
+function parseMarkdownLinks(text) {
+  const links = [];
+  let i = 0;
+  const plainText = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
+    const placeholder = `{{link${i}}}`;
+    links.push({ label, url, placeholder, index: i });
+    i++;
+    return label;
+  });
+  return { plainText, links };
+}
+
+// Rebuild markdown from plain text + links array
+function rebuildMarkdown(plainText, links) {
+  // We need to find each link label in the plain text and wrap it back in markdown
+  let result = plainText;
+  // Process in reverse order so indices don't shift
+  for (let i = links.length - 1; i >= 0; i--) {
+    const link = links[i];
+    // Find the label in the text — use the position relative to other labels
+    const idx = findNthOccurrence(result, link.label, countPriorSameLabels(links, i) + 1);
+    if (idx >= 0) {
+      result = result.substring(0, idx) + `[${link.label}](${link.url})` + result.substring(idx + link.label.length);
+    }
+  }
+  return result;
+}
+
+function findNthOccurrence(str, substr, n) {
+  let idx = -1;
+  for (let i = 0; i < n; i++) {
+    idx = str.indexOf(substr, idx + 1);
+    if (idx === -1) return -1;
+  }
+  return idx;
+}
+
+function countPriorSameLabels(links, currentIndex) {
+  let count = 0;
+  for (let i = 0; i < currentIndex; i++) {
+    if (links[i].label === links[currentIndex].label) count++;
+  }
+  return count;
+}
+
 function ChecklistSection({ title, items, setItems }) {
   const [editingId, setEditingId] = useState(null);
-  const [editText, setEditText] = useState('');
+  const [editText, setEditText] = useState('');  // plain text (no markdown URLs)
+  const [editLinks, setEditLinks] = useState([]); // extracted links
   const [addText, setAddText] = useState('');
   const [addType, setAddType] = useState('item');
   const [selectedId, setSelectedId] = useState(null);
+  const [editingLinkIdx, setEditingLinkIdx] = useState(null);
   const dragItem = useRef(null);
   const dragOverItem = useRef(null);
   const editInputRef = useRef(null);
@@ -69,17 +117,23 @@ function ChecklistSection({ title, items, setItems }) {
   };
 
   const startEdit = (item) => {
+    const { plainText, links } = parseMarkdownLinks(item.text);
     setEditingId(item.id);
-    setEditText(item.text);
+    setEditText(plainText);
+    setEditLinks(links);
+    setEditingLinkIdx(null);
     setSelectedId(null);
   };
 
   const saveEdit = () => {
-    if (editText.trim()) {
-      setItems(normalized.map((i) => (i.id === editingId ? { ...i, text: editText.trim() } : i)));
+    const rebuilt = rebuildMarkdown(editText.trim(), editLinks);
+    if (rebuilt.trim()) {
+      setItems(normalized.map((i) => (i.id === editingId ? { ...i, text: rebuilt.trim() } : i)));
     }
     setEditingId(null);
     setEditText('');
+    setEditLinks([]);
+    setEditingLinkIdx(null);
   };
 
   const deleteItem = (id) => {
@@ -115,14 +169,36 @@ function ChecklistSection({ title, items, setItems }) {
     const url = prompt('Enter URL:', 'https://');
     if (!url) return;
     const linkText = selected || prompt('Enter link text:', '') || url;
-    const markdown = `[${linkText}](${url})`;
-    const newText = editText.substring(0, start) + markdown + editText.substring(end);
+    // Insert link text into the plain text and add to links array
+    const newText = editText.substring(0, start) + linkText + editText.substring(end);
     setEditText(newText);
+    setEditLinks((prev) => [...prev, { label: linkText, url, index: prev.length }]);
     setTimeout(() => {
       input.focus();
-      const cursor = start + markdown.length;
+      const cursor = start + linkText.length;
       input.setSelectionRange(cursor, cursor);
     }, 0);
+  };
+
+  const updateLink = (idx, field, value) => {
+    setEditLinks((prev) => prev.map((l, i) => {
+      if (i !== idx) return l;
+      if (field === 'label') {
+        // Also update the plain text
+        const oldLabel = l.label;
+        const occurrence = countPriorSameLabels(prev, i) + 1;
+        const pos = findNthOccurrence(editText, oldLabel, occurrence);
+        if (pos >= 0) {
+          setEditText((t) => t.substring(0, pos) + value + t.substring(pos + oldLabel.length));
+        }
+      }
+      return { ...l, [field]: value };
+    }));
+  };
+
+  const removeLink = (idx) => {
+    setEditLinks((prev) => prev.filter((_, i) => i !== idx));
+    setEditingLinkIdx(null);
   };
 
   return (
@@ -143,7 +219,7 @@ function ChecklistSection({ title, items, setItems }) {
           >
             {editingId === item.id ? (
               /* ── Edit mode ── */
-              <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-2 space-y-2">
+              <div className="rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 p-2 space-y-2">
                 <input
                   ref={editInputRef}
                   type="text"
@@ -151,18 +227,60 @@ function ChecklistSection({ title, items, setItems }) {
                   onChange={(e) => setEditText(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') saveEdit();
-                    if (e.key === 'Escape') { setEditingId(null); setEditText(''); }
+                    if (e.key === 'Escape') { setEditingId(null); setEditText(''); setEditLinks([]); }
                   }}
-                  className="w-full rounded border border-border-default px-2 py-1.5 text-sm text-primary outline-none focus:ring-1 focus:ring-emerald-400"
+                  className="w-full rounded border border-border-default bg-card px-2 py-1.5 text-sm text-primary outline-none focus:ring-1 focus:ring-emerald-400"
                   autoFocus
                 />
+                {/* Link chips */}
+                {editLinks.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {editLinks.map((link, idx) => (
+                      <div key={idx}>
+                        {editingLinkIdx === idx ? (
+                          <div className="flex items-center gap-1 bg-card border border-border-default rounded-lg p-1.5">
+                            <input
+                              type="text"
+                              value={link.label}
+                              onChange={(e) => updateLink(idx, 'label', e.target.value)}
+                              placeholder="Label"
+                              className="w-20 rounded border border-border-default bg-surface-alt px-1.5 py-0.5 text-xs text-primary outline-none focus:ring-1 focus:ring-blue-400"
+                            />
+                            <input
+                              type="text"
+                              value={link.url}
+                              onChange={(e) => updateLink(idx, 'url', e.target.value)}
+                              placeholder="URL"
+                              className="w-32 rounded border border-border-default bg-surface-alt px-1.5 py-0.5 text-xs text-primary outline-none focus:ring-1 focus:ring-blue-400"
+                            />
+                            <button onClick={() => setEditingLinkIdx(null)} className="p-0.5 text-muted hover:text-primary cursor-pointer">
+                              <Check size={12} />
+                            </button>
+                            <button onClick={() => removeLink(idx)} className="p-0.5 text-muted hover:text-red-500 cursor-pointer">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setEditingLinkIdx(idx)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors cursor-pointer"
+                            title={link.url}
+                          >
+                            <Link size={10} />
+                            {link.label}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
-                  <button onClick={insertLink} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted hover:text-blue-500 hover:bg-blue-50 cursor-pointer" title="Add link">
+                  <button onClick={insertLink} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer" title="Add link">
                     <Link size={12} />
                     Link
                   </button>
                   <div className="flex gap-1">
-                    <button onClick={() => { setEditingId(null); setEditText(''); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted hover:bg-surface-alt cursor-pointer">
+                    <button onClick={() => { setEditingId(null); setEditText(''); setEditLinks([]); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted hover:bg-surface-alt cursor-pointer">
                       Cancel
                     </button>
                     <button onClick={saveEdit} className="px-2.5 py-1 rounded text-xs font-medium bg-brand text-on-brand hover:bg-brand-hover cursor-pointer">

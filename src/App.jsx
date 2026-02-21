@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import {
   Home as HomeIcon,
@@ -18,6 +18,7 @@ import {
   Lightbulb,
   UserCog,
   ClipboardCheck,
+  CalendarCheck,
   LayoutGrid,
   ChevronDown,
 } from 'lucide-react';
@@ -26,24 +27,24 @@ import { supabase } from './lib/supabase';
 import { useAuth } from './contexts/AuthContext';
 import { AppStoreProvider, useAppStore } from './store/AppStoreContext';
 import LoginForm from './components/LoginForm';
-import Home from './pages/Home';
-import HowToGuides from './pages/HowToGuides';
-import EquipmentIdeas from './pages/EquipmentIdeas';
-import HRPolicies from './pages/HRPolicies';
-import Profile from './pages/Profile';
-import Training from './pages/Training';
-import TrainingModule from './pages/TrainingModule';
-import OnboardingStep from './pages/OnboardingStep';
-import OnboardingHub from './pages/OnboardingHub';
-import OwnerDashboard from './pages/OwnerDashboard';
-import TeamManagement from './pages/TeamManagement';
-import TeamMemberDetail from './pages/TeamMemberDetail';
-import QuestBoard from './pages/QuestBoard';
-import IdeasFeedback from './pages/IdeasFeedback';
-import MileageLog from './pages/MileageLog';
-import ChecklistTrackerPage from './pages/ChecklistTrackerPage';
-import Quoting from './pages/Quoting';
-import { isOnboardingComplete, isOnboardingEffectivelyComplete } from './pages/Training';
+import { isOnboardingComplete, isOnboardingEffectivelyComplete } from './utils/onboarding';
+
+/* ─── Lazy-loaded pages (code-split per route) ─── */
+const Home = lazy(() => import('./pages/Home'));
+const HowToGuides = lazy(() => import('./pages/HowToGuides'));
+const EquipmentIdeas = lazy(() => import('./pages/EquipmentIdeas'));
+const HRPolicies = lazy(() => import('./pages/HRPolicies'));
+const Profile = lazy(() => import('./pages/Profile'));
+const OnboardingStep = lazy(() => import('./pages/OnboardingStep'));
+const OnboardingHub = lazy(() => import('./pages/OnboardingHub'));
+const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'));
+const TeamManagement = lazy(() => import('./pages/TeamManagement'));
+const TeamMemberDetail = lazy(() => import('./pages/TeamMemberDetail'));
+const IdeasFeedback = lazy(() => import('./pages/IdeasFeedback'));
+const MileageLog = lazy(() => import('./pages/MileageLog'));
+const ChecklistTrackerPage = lazy(() => import('./pages/ChecklistTrackerPage'));
+const Quoting = lazy(() => import('./pages/Quoting'));
+const DailyChecklist = lazy(() => import('./pages/DailyChecklist'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -58,6 +59,7 @@ const SECONDARY_ITEMS = [
 ];
 
 const OWNER_ITEMS = [
+  { id: 'daily-checklist', path: '/daily-checklist', label: 'My Day', icon: CalendarCheck },
   { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
   { id: 'checklist-tracker', path: '/checklist-tracker', label: 'Checklists', icon: ClipboardCheck },
   { id: 'team', path: '/team', label: 'Team', icon: UserCog },
@@ -511,28 +513,35 @@ function AppShell() {
       {/* ─── Main Content ─── */}
       <main className={`${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60'} transition-all duration-200`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8">
-          {needsOnboarding ? (
-            <Routes>
-              <Route path="/training/onboard/:stepId" element={<OnboardingStep />} />
-              <Route path="*" element={<OnboardingHub />} />
-            </Routes>
-          ) : (
-            <Routes>
-              <Route path="/" element={ownerMode ? <OwnerDashboard /> : <Home />} />
-              <Route path="/guides" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
-              <Route path="/equipment" element={<EquipmentIdeas />} />
-              <Route path="/hr" element={<HRPolicies />} />
-              <Route path="/quoting" element={<Quoting />} />
-              <Route path="/team" element={<TeamManagement />} />
-              <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/mileage" element={<MileageLog />} />
-              <Route path="/ideas" element={<IdeasFeedback />} />
-              <Route path="/checklist-tracker" element={<ChecklistTrackerPage />} />
-              <Route path="/settings" element={<Navigate to="/profile" replace />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          )}
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-20">
+              <div className="w-8 h-8 border-4 border-brand-light border-t-brand rounded-full animate-spin" />
+            </div>
+          }>
+            {needsOnboarding ? (
+              <Routes>
+                <Route path="/training/onboard/:stepId" element={<OnboardingStep />} />
+                <Route path="*" element={<OnboardingHub />} />
+              </Routes>
+            ) : (
+              <Routes>
+                <Route path="/" element={ownerMode ? <OwnerDashboard /> : <Home />} />
+                <Route path="/guides" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
+                <Route path="/equipment" element={<EquipmentIdeas />} />
+                <Route path="/hr" element={<HRPolicies />} />
+                <Route path="/quoting" element={<Quoting />} />
+                <Route path="/team" element={<TeamManagement />} />
+                <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/mileage" element={<MileageLog />} />
+                <Route path="/ideas" element={<IdeasFeedback />} />
+                <Route path="/daily-checklist" element={<DailyChecklist />} />
+                <Route path="/checklist-tracker" element={<ChecklistTrackerPage />} />
+                <Route path="/settings" element={<Navigate to="/profile" replace />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            )}
+          </Suspense>
         </div>
       </main>
 

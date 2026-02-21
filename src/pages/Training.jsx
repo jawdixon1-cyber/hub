@@ -10,6 +10,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 
 /* ─── Onboarding steps (prerequisite before training modules) ─── */
+/* Core completion-check logic lives in ../utils/onboarding.js for lightweight imports */
+
+export { isOnboardingComplete, isStepApproved, isOnboardingEffectivelyComplete } from '../utils/onboarding';
 
 export const ONBOARDING_STEPS = [
   { id: 'onboard-1', title: 'Test Day Prep', icon: ClipboardCheck, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/40', borderColor: 'border-orange-200 dark:border-orange-800', gradient: 'from-orange-500 to-amber-600' },
@@ -17,85 +20,6 @@ export const ONBOARDING_STEPS = [
   { id: 'onboard-3', title: 'Company Policies', icon: Shield, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-950/40', borderColor: 'border-purple-200 dark:border-purple-800', gradient: 'from-purple-500 to-violet-600' },
   { id: 'onboard-4', title: 'Playbook Review', icon: BookOpen, color: 'text-teal-500', bg: 'bg-teal-50 dark:bg-teal-950/40', borderColor: 'border-teal-200 dark:border-teal-800', gradient: 'from-teal-500 to-emerald-600' },
 ];
-
-/**
- * Check whether the current user has completed onboarding.
- * Requires ALL onboarding steps to have an approved submission.
- * Matches by email (reliable) with name fallback for old data.
- */
-export function isOnboardingComplete(suggestions, currentUser, userEmail) {
-  const nameLower = currentUser?.toLowerCase();
-  return ONBOARDING_STEPS.every((step) =>
-    suggestions.some(
-      (s) =>
-        s.type === 'onboarding' &&
-        s.stepId === step.id &&
-        (s.submittedByEmail === userEmail || s.submittedBy?.toLowerCase() === nameLower) &&
-        s.status === 'Approved'
-    )
-  );
-}
-
-/**
- * Check whether a specific onboarding step is approved for the current user.
- */
-export function isStepApproved(suggestions, currentUser, userEmail, stepId) {
-  const nameLower = currentUser?.toLowerCase();
-  return suggestions.some(
-    (s) =>
-      s.type === 'onboarding' &&
-      s.stepId === stepId &&
-      (s.submittedByEmail === userEmail || s.submittedBy?.toLowerCase() === nameLower) &&
-      s.status === 'Approved'
-  );
-}
-
-/** Default action items per onboarding step */
-const DEFAULT_ACTION_ITEMS = {
-  'onboard-1': [
-    { id: 'ai1-hr' }, { id: 'ai1-safety' }, { id: 'ai1-app-cert' },
-    { id: 'ai1-schedule' }, { id: 'ai1-docs' },
-  ],
-  'onboard-2': [
-    { id: 'ai2-adp' }, { id: 'ai2-adp-walk' }, { id: 'ai2-dro' },
-    { id: 'ai2-dro-walk' }, { id: 'ai2-confirm' },
-  ],
-  'onboard-3': [
-    { id: 'ai3-timeoff' }, { id: 'ai3-conduct' }, { id: 'ai3-newhire' },
-  ],
-  'onboard-4': [
-    { id: 'ai4-playbook' },
-  ],
-};
-
-/**
- * "Effectively complete" — step 1 must be owner-approved (hiring decision),
- * but steps 2-4 auto-complete when the team member finishes all action items.
- */
-const ONBOARDING_BYPASS = ['ethan@judeslawncare.com', 'ethan@heyjudeslawncare.com', 'ethanm.brant@gmail.com'];
-
-export function isOnboardingEffectivelyComplete(suggestions, currentUser, userEmail, trainingConfig, permissions) {
-  // Bypass onboarding for specific users
-  if (ONBOARDING_BYPASS.includes(userEmail)) return true;
-
-  // Already fully approved the normal way
-  if (isOnboardingComplete(suggestions, currentUser, userEmail)) return true;
-
-  // Step 1 (hiring decision) must still be owner-approved
-  if (!isStepApproved(suggestions, currentUser, userEmail, 'onboard-1')) return false;
-
-  // For steps 2-4, check if all action items are completed
-  const myPlaybooks = permissions?.[userEmail]?.playbooks || [];
-  const primaryTeam = myPlaybooks[0] || 'service';
-  const autoSteps = ['onboard-2', 'onboard-3', 'onboard-4'];
-
-  return autoSteps.every((stepId) => {
-    const saved = trainingConfig?.onboardingSteps?.[primaryTeam]?.[stepId]?.actionItems;
-    const items = saved || DEFAULT_ACTION_ITEMS[stepId] || [];
-    const completions = trainingConfig?.actionCompletions?.[userEmail]?.[stepId] || {};
-    return items.length > 0 && items.every((i) => completions[i.id]?.completed);
-  });
-}
 
 /* ─── Module metadata (exported for Settings editor) ─── */
 

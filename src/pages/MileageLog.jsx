@@ -25,7 +25,7 @@ export default function MileageLog() {
   const [perPage, setPerPage] = useState(20);
   const [page, setPage] = useState(1);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const [trackFilter, setTrackFilter] = useState('all'); // 'all' | 'untracked' | 'tracked'
+  const [trackFilter, setTrackFilter] = useState(ownerMode ? 'untracked' : 'all'); // 'untracked' | 'tracked' | 'all'
 
   // Vehicle management (owner only)
   const [showManage, setShowManage] = useState(false);
@@ -155,6 +155,10 @@ export default function MileageLog() {
     setMileageLog(mileageLog.map((e) => e.id === id ? { ...e, tracked: !e.tracked } : e));
   };
 
+  const handleMarkAllTracked = () => {
+    setMileageLog(mileageLog.map((e) => e.tracked ? e : { ...e, tracked: true }));
+  };
+
   // --- Page numbers to display ---
   const pageNumbers = [];
   const maxVisible = 5;
@@ -184,13 +188,24 @@ export default function MileageLog() {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer"
-        >
-          <Plus size={16} />
-          Log Mileage
-        </button>
+        <div className="flex items-center gap-2">
+          {ownerMode && untrackedCount > 0 && (
+            <button
+              onClick={handleMarkAllTracked}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-600 font-semibold text-sm hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors cursor-pointer"
+            >
+              <Check size={16} />
+              Mark All Tracked
+            </button>
+          )}
+          <button
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer"
+          >
+            <Plus size={16} />
+            Log Mileage
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -236,7 +251,7 @@ export default function MileageLog() {
       {ownerMode && (
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted mr-1">Status:</span>
-          {['all', 'untracked', 'tracked'].map((f) => (
+          {['untracked', 'tracked', 'all'].map((f) => (
             <button
               key={f}
               onClick={() => { setTrackFilter(f); setPage(1); }}

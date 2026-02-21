@@ -13,6 +13,18 @@ export default defineConfig({
       interval: 500,
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-dnd': ['@dnd-kit/core'],
+          'vendor-zustand': ['zustand'],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -25,16 +37,16 @@ export default defineConfig({
       manifest: {
         name: "Hey Jude's Lawn Care",
         short_name: 'LawnCare',
-        theme_color: '#059669',
-        background_color: '#f9fafb',
+        theme_color: '#000000',
+        background_color: '#000000',
         icons: [
           {
-            src: '/logo.png',
+            src: '/app-icon-192.png',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: '/logo.png',
+            src: '/app-icon-512.png',
             sizes: '512x512',
             type: 'image/png',
           },
