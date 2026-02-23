@@ -724,8 +724,7 @@ export default function ExecutionDashboard() {
       {/* ─── Header ─── */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-primary">{getGreeting()}, {firstName}</h1>
-          <p className="text-sm text-muted mt-0.5">{formatDisplayDate(dash.date)}</p>
+          <h1 className="text-2xl font-bold text-primary">{formatDisplayDate(dash.date)}</h1>
         </div>
         <div className="flex gap-2">
           <button
@@ -760,14 +759,14 @@ export default function ExecutionDashboard() {
             <div className="flex justify-end gap-2 mt-2">
               <button
                 type="button"
-                onPointerDown={(e) => { e.preventDefault(); setNotesDraft(ownerNotes || ''); setEditingNotes(false); }}
+                onClick={() => { setNotesDraft(ownerNotes || ''); setEditingNotes(false); }}
                 className="text-xs text-muted hover:text-secondary px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onPointerDown={(e) => { e.preventDefault(); setOwnerNotes(notesDraft); setEditingNotes(false); }}
+                onClick={() => { setOwnerNotes(notesDraft); setEditingNotes(false); }}
                 className="text-xs font-semibold bg-brand text-on-brand px-3 py-1.5 rounded-lg hover:bg-brand-hover transition-colors cursor-pointer"
               >
                 Save
@@ -891,8 +890,11 @@ export default function ExecutionDashboard() {
           })}
           {/* Ops — static info block */}
           <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 p-4">
-            <span className="text-sm font-bold text-orange-600 dark:text-orange-400">Ops</span>
-            <p className="text-xs text-muted mt-1">Time for sending quotes, accounting, routing, communicating, etc.</p>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-bold text-orange-600 dark:text-orange-400">Ops</span>
+              <span className="text-xs text-muted">4p–6p</span>
+            </div>
+            <p className="text-sm text-muted">End of day checklist, editing vids, sending quotes, etc.</p>
           </div>
         </div>
       </section>
