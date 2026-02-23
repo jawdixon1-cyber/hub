@@ -1,16 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Gauge } from 'lucide-react';
+import { ChevronDown, Gauge, Check } from 'lucide-react';
 import { genId } from '../data';
 import renderLinkedText from '../utils/renderLinkedText';
 import { getTodayInTimezone } from '../utils/timezone';
 
-export default function ChecklistPanel({ title, items, checklistType, checklistLog, setChecklistLog, mileage }) {
+export default function ChecklistPanel({ title, items, checklistType, checklistLog, setChecklistLog, mileage, defaultOpen = false }) {
   const normalized = items.map((item, i) =>
     typeof item === 'string' ? { id: `static-${i}`, text: item } : item
   );
 
   const [checked, setChecked] = useState(() => new Set());
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const logDebounce = useRef(null);
   const dateRef = useRef(getTodayInTimezone());
 
@@ -65,13 +65,14 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
     };
   }, [checked, checklistType, setChecklistLog, checkableItems.length]);
 
-  const toggle = (id) => {
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const allChecked = checkableItems.length > 0 && completedCount === checkableItems.length;
+
+  const toggleAll = () => {
+    if (allChecked) {
+      setChecked(new Set());
+    } else {
+      setChecked(new Set(checkableItems.map((i) => i.id)));
+    }
   };
 
   return (
@@ -82,48 +83,56 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
       >
         <div className="flex items-center gap-3">
           <span className="font-bold text-primary text-lg">{title}</span>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-brand-light text-brand-text-strong">
-            {completedCount}/{checkableItems.length} completed
-          </span>
+          {allChecked ? (
+            <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+              <Check size={12} />
+              Done
+            </span>
+          ) : (
+            <ChevronDown
+              size={20}
+              className={`text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            />
+          )}
         </div>
-        <ChevronDown
-          size={20}
-          className={`text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-        />
       </button>
       {open && (
-        <div className="px-4 pb-4 sm:px-6 sm:pb-6 space-y-2">
-          {normalized.map((item) => {
-            if (item.type === 'header') {
+        <div className="px-4 pb-4 sm:px-6 sm:pb-6">
+          {/* Read-only checklist items */}
+          <div className="space-y-1 mb-4">
+            {normalized.map((item) => {
+              if (item.type === 'header') {
+                return (
+                  <h3 key={item.id} className="font-bold text-primary text-sm uppercase tracking-wide pt-3 first:pt-0 break-words overflow-hidden">
+                    {renderLinkedText(item.text)}
+                  </h3>
+                );
+              }
               return (
-                <h3 key={item.id} className="font-bold text-primary text-sm uppercase tracking-wide pt-3 first:pt-0 break-words overflow-hidden">
-                  {renderLinkedText(item.text)}
-                </h3>
-              );
-            }
-            return (
-              <label
-                key={item.id}
-                className="flex items-center gap-3 cursor-pointer group"
-                style={item.indent ? { marginLeft: `${item.indent * 24}px` } : undefined}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked.has(item.id)}
-                  onChange={() => toggle(item.id)}
-                  className="w-5 h-5 rounded accent-emerald-600 shrink-0"
-                />
-                <span
-                  className={`flex-1 min-w-0 text-sm break-words transition-colors duration-150 ${
-                    checked.has(item.id) ? 'line-through text-muted' : 'text-secondary'
-                  }`}
+                <p
+                  key={item.id}
+                  className="text-sm text-secondary py-0.5"
+                  style={item.indent ? { marginLeft: `${item.indent * 24}px` } : undefined}
                 >
                   {renderLinkedText(item.text)}
-                </span>
-              </label>
-            );
-          })}
+                </p>
+              );
+            })}
+          </div>
+
           {mileage && <InlineMileageForm vehicles={mileage.vehicles} onSubmit={mileage.onSubmit} />}
+
+          {/* Complete All / Undo button at bottom */}
+          <button
+            onClick={toggleAll}
+            className={`w-full py-3 rounded-xl text-sm font-semibold transition-colors cursor-pointer ${
+              allChecked
+                ? 'bg-surface-alt text-secondary border border-border-subtle hover:bg-surface'
+                : 'bg-brand text-on-brand hover:bg-brand-hover'
+            }`}
+          >
+            {allChecked ? 'Undo' : 'Complete All'}
+          </button>
         </div>
       )}
     </div>

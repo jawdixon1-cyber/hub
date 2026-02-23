@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
   ClipboardList,
@@ -20,7 +20,6 @@ import {
 import { EQUIPMENT_TYPES, genId, getActiveRepairs } from '../data';
 import ManagementSection from '../components/owner/ManagementSection';
 import AnnouncementEditorModal from '../components/AnnouncementEditorModal';
-import MyDaySection from '../components/owner/MyDaySection';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -68,7 +67,16 @@ export default function OwnerDashboard() {
   const [viewingRepair, setViewingRepair] = useState(null);
   const [fixingRepairId, setFixingRepairId] = useState(null);
   const [fixDescription, setFixDescription] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showAnnouncementEditor, setShowAnnouncementEditor] = useState(false);
+
+  // Auto-open announcement editor from query param
+  useEffect(() => {
+    if (searchParams.get('announce') === '1') {
+      setShowAnnouncementEditor(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // ─── Greeting ───
   const firstName = currentUser?.split(' ')[0] || 'Boss';
@@ -220,14 +228,11 @@ export default function OwnerDashboard() {
 
   return (
     <div className="space-y-8">
-      {/* ─── Greeting ─── */}
+      {/* ─── Header ─── */}
       <div>
-        <h1 className="text-2xl font-bold text-primary">{getGreeting()}, {firstName}</h1>
+        <h1 className="text-2xl font-bold text-primary">Manage</h1>
         <p className="text-sm text-muted">{formattedDate}</p>
       </div>
-
-      {/* ─── Daily Checklists ─── */}
-      <MyDaySection />
 
       {/* ─── Quick Actions ─── */}
       <div className="flex gap-3">

@@ -7,7 +7,7 @@ import { useEffect, useRef } from 'react';
 import { getTodayInTimezone } from '../../utils/timezone';
 import renderLinkedText from '../../utils/renderLinkedText';
 
-function useChecklistDay(items, setItems, checklistType) {
+export function useChecklistDay(items, setItems, checklistType) {
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
@@ -31,7 +31,7 @@ function useChecklistDay(items, setItems, checklistType) {
   }, [checklistType, setItems]);
 }
 
-function useChecklistLog(items, checklistType, checklistLog, setChecklistLog) {
+export function useChecklistLog(items, checklistType, checklistLog, setChecklistLog) {
   const checkableItems = items.filter((i) => i.type !== 'header');
   const completedCount = checkableItems.filter((i) => i.done).length;
   const logDebounce = useRef(null);

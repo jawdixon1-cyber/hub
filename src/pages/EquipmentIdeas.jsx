@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import {
   Wrench,
   AlertCircle,
+  Check,
   CheckCircle,
   Plus,
   X,
   Trash2,
   Search,
   ExternalLink,
-  AlertTriangle,
   ClipboardList,
   Pencil,
   Eye,
@@ -45,7 +45,7 @@ export default function EquipmentIdeas() {
   }, [searchParams, setSearchParams]);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmDeleteText, setConfirmDeleteText] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('needs-repair');
   const [search, setSearch] = useState('');
   const [historyItem, setHistoryItem] = useState(null);
   const [editingNotes, setEditingNotes] = useState(false);
@@ -197,13 +197,6 @@ export default function EquipmentIdeas() {
     return true;
   }).sort((a, b) => (a.status === 'needs-repair' ? -1 : 1) - (b.status === 'needs-repair' ? -1 : 1));
 
-  // Recurring issues
-  const repairCounts = {};
-  equipmentRepairLog.forEach((e) => {
-    repairCounts[e.equipmentName] = (repairCounts[e.equipmentName] || 0) + 1;
-  });
-  const recurring = Object.entries(repairCounts).filter(([, c]) => c >= 2);
-
   // Get repair history for a specific equipment
   const getRepairHistory = (eq) =>
     equipmentRepairLog.filter(
@@ -214,7 +207,7 @@ export default function EquipmentIdeas() {
     <div>
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-primary">Equipment Log</h1>
-        <p className="text-tertiary mt-1">Equipment tracking and maintenance history</p>
+        <p className="text-tertiary mt-1">Repairs, fixes, and maintenance history</p>
       </div>
 
       {/* Filter & Actions */}
@@ -263,88 +256,75 @@ export default function EquipmentIdeas() {
         />
       </div>
 
-      {/* Recurring Issues Warning */}
-      {recurring.length > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle size={18} className="text-amber-600" />
-            <h3 className="font-bold text-amber-800">Recurring Issues</h3>
-          </div>
-          <ul className="space-y-1.5">
-            {recurring.map(([name, count]) => (
-              <li key={name} className="text-sm text-amber-700 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-amber-400" />
-                {name} — {count} repairs logged
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {/* Equipment List */}
-      <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6">
-        <h2 className="text-xl font-bold text-primary mb-6">
-          Equipment Log
-          <span className="text-sm font-normal text-muted ml-2">
-            {filtered.length} of {equipment.length}
-          </span>
-        </h2>
-
+      {filtered.length === 0 ? (
+        <p className="text-muted text-sm">
+          {typeFilter === 'needs-repair' ? "Everything's operational :D" : 'No equipment matches your filters'}
+        </p>
+      ) : (
         <div className="space-y-2">
-          {filtered.length === 0 && (
-            <p className="text-muted text-sm py-4 text-center">No equipment matches your filters</p>
-          )}
           {filtered.map((item) => {
             const needsRepair = item.status === 'needs-repair';
 
             return (
               <div
                 key={item.id}
-                className={`rounded-xl border-l-4 px-5 py-3.5 flex items-center justify-between ${
+                className={`rounded-xl border-l-4 px-4 py-3 ${
                   needsRepair
-                    ? 'border-l-red-500 bg-red-50/50 border border-red-200'
+                    ? 'border-l-red-500 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800'
                     : 'border-l-emerald-500 bg-card border border-border-subtle'
                 }`}
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3">
-                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${needsRepair ? 'bg-red-500' : 'bg-emerald-500'}`} />
-                    <h3 className="text-sm font-semibold text-primary truncate">{item.name}</h3>
-                  </div>
-                  {needsRepair && (() => {
-                    const repairs = getActiveRepairs(item);
-                    if (repairs.length === 0) return null;
-                    return (
-                      <div className="mt-1.5 ml-5.5 space-y-1">
-                        {repairs.length > 1 && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-200 text-red-700 dark:bg-red-800 dark:text-red-200">
-                            {repairs.length} issues
-                          </span>
-                        )}
-                        {repairs.map((r) => (
-                          <p key={r.id} className="text-xs text-red-600 dark:text-red-400">
-                            {r.issue}
-                            <span className="text-muted ml-1">— {r.reportedBy}, {r.reportedDate}</span>
-                          </p>
-                        ))}
-                      </div>
-                    );
-                  })()}
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${needsRepair ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                  <h3 className="text-sm font-semibold text-primary">{item.name}</h3>
                 </div>
-                <div className="flex items-center gap-2 shrink-0 ml-3">
+                {needsRepair && (() => {
+                  const repairs = getActiveRepairs(item);
+                  if (repairs.length === 0) return null;
+                  return (
+                    <div className="ml-4 mb-2 space-y-0.5">
+                      {repairs.map((r) => (
+                        <p key={r.id} className="text-xs text-red-700 dark:text-red-300">
+                          {r.issue}
+                          <span className="text-muted ml-1">— {r.reportedBy}, {r.reportedDate}</span>
+                        </p>
+                      ))}
+                    </div>
+                  );
+                })()}
+                <div className="flex items-center gap-2 ml-4">
                   <button
                     onClick={() => { setHistoryItem(item); setEditingNotes(false); setNotesText(item.notes || ''); }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-semibold hover:bg-surface-strong transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-alt text-secondary text-xs font-semibold hover:bg-surface-strong transition-colors cursor-pointer"
                   >
-                    <Eye size={14} />
+                    <Eye size={12} />
                     View
                   </button>
+                  {needsRepair && (
+                    <button
+                      onClick={() => {
+                        const repairs = getActiveRepairs(item);
+                        if (repairs.length > 0) {
+                          setHistoryItem(item);
+                          setEditingNotes(false);
+                          setNotesText(item.notes || '');
+                          setFixingRepairId(repairs[0].id);
+                          setFixDescription('');
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
+                    >
+                      <Check size={12} />
+                      Fixed
+                    </button>
+                  )}
                   {ownerMode && (
                     <button
                       onClick={() => openEditModal(item)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-light text-brand-text-strong text-xs font-semibold hover:bg-brand-light/80 transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-light text-brand-text-strong text-xs font-semibold hover:bg-brand-light/80 transition-colors cursor-pointer"
                     >
-                      <Pencil size={14} />
+                      <Pencil size={12} />
                       Edit
                     </button>
                   )}
@@ -353,7 +333,7 @@ export default function EquipmentIdeas() {
             );
           })}
         </div>
-      </div>
+      )}
 
       {addingEquipment && (
         <AddEquipmentModal
@@ -488,15 +468,15 @@ export default function EquipmentIdeas() {
                   if (activeIssues.length === 0) return null;
                   return (
                     <div className="space-y-2">
-                      <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
+                      <p className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase tracking-wide">
                         Active Issues ({activeIssues.length})
                       </p>
                       {activeIssues.map((r) => (
                         <div key={r.id} className="rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 p-4">
                           <div className="flex items-start justify-between gap-2">
                             <p className="text-sm text-red-600 dark:text-red-400">{r.issue}</p>
-                            {ownerMode && (
-                              <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {ownerMode && (
                                 <button
                                   onClick={() => { if (confirm('Delete this repair report?')) handleDeleteRepair(historyItem.id, r.id); }}
                                   className="p-1 rounded text-muted hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
@@ -504,16 +484,16 @@ export default function EquipmentIdeas() {
                                 >
                                   <Trash2 size={13} />
                                 </button>
-                                {fixingRepairId !== r.id && (
-                                  <button
-                                    onClick={() => { setFixingRepairId(r.id); setFixDescription(''); }}
-                                    className="px-2.5 py-1 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
-                                  >
-                                    Mark Fixed
-                                  </button>
-                                )}
-                              </div>
-                            )}
+                              )}
+                              {fixingRepairId !== r.id && (
+                                <button
+                                  onClick={() => { setFixingRepairId(r.id); setFixDescription(''); }}
+                                  className="px-2.5 py-1 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
+                                >
+                                  Mark Fixed
+                                </button>
+                              )}
+                            </div>
                           </div>
                           {r.photo && (
                             <img

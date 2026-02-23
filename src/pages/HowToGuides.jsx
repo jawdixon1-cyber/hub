@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, Plus, Search, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Search, Sparkles } from 'lucide-react';
 import Card from '../components/Card';
-import ViewModal from '../components/ViewModal';
 import EditModal from '../components/EditModal';
 import AIPlaybookModal from '../components/AIPlaybookModal';
 import { genId } from '../data';
@@ -46,10 +46,10 @@ const FIELD_TEAM_SUBTABS = [
 ];
 
 export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
+  const navigate = useNavigate();
   const items = useAppStore((s) => s.guides);
   const setItems = useAppStore((s) => s.setGuides);
 
-  const [viewing, setViewing] = useState(null);
   const [editing, setEditing] = useState(null);
   const [adding, setAdding] = useState(false);
   const [showAIGenerator, setShowAIGenerator] = useState(false);
@@ -142,11 +142,8 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <div className="flex items-center gap-2">
-            <BookOpen size={22} className="text-brand-text" />
-            <h2 className="text-2xl font-bold text-primary">Playbooks</h2>
-          </div>
-          <p className="text-tertiary mt-1">Step-by-step procedures</p>
+          <h1 className="text-3xl font-bold text-primary">Playbooks</h1>
+          <p className="text-tertiary mt-1">Our standards for every job — and the best way to do them</p>
         </div>
         {ownerMode && (
           <div className="flex items-center gap-2">
@@ -164,17 +161,6 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
             </button>
           </div>
         )}
-      </div>
-
-      <div className="relative mb-4">
-        <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search playbooks..."
-          className="w-full rounded-xl border border-border-default bg-card pl-10 pr-4 py-2.5 text-sm text-primary placeholder-placeholder-muted focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
-        />
       </div>
 
       {visibleTabs.length > 1 && (
@@ -196,22 +182,29 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
       )}
 
       {filter === 'field-team' && (
-        <div className="flex items-center gap-1 bg-surface-alt/60 p-1 rounded-lg w-fit mb-6 overflow-x-auto">
-          {FIELD_TEAM_SUBTABS.map((sub) => (
-            <button
-              key={sub.key}
-              onClick={() => setSubFilter(sub.key)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                subFilter === sub.key
-                  ? 'bg-card text-brand-text-strong shadow-sm'
-                  : 'text-tertiary hover:text-secondary'
-              }`}
-            >
-              {sub.label}
-            </button>
-          ))}
+        <div className="mb-3">
+          <select
+            value={subFilter}
+            onChange={(e) => setSubFilter(e.target.value)}
+            className="rounded-xl border border-border-default px-4 py-2.5 text-sm font-semibold text-primary bg-card focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition cursor-pointer"
+          >
+            {FIELD_TEAM_SUBTABS.map((sub) => (
+              <option key={sub.key} value={sub.key}>{sub.label}</option>
+            ))}
+          </select>
         </div>
       )}
+
+      <div className="relative mb-4">
+        <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search playbooks..."
+          className="w-full rounded-xl border border-border-default bg-card pl-10 pr-4 py-2.5 text-sm text-primary placeholder-placeholder-muted focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
+        />
+      </div>
 
       {filtered.length === 0 ? (
         <p className="text-muted text-sm">{query ? 'No playbooks match your search.' : ownerMode ? 'No playbooks in this category yet.' : 'No playbooks available yet.'}</p>
@@ -221,17 +214,16 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
             <Card
               key={item.id}
               item={item}
-              onClick={setViewing}
+              onClick={() => navigate(`/guides/${item.id}`)}
               onEdit={setEditing}
               onDelete={handleDelete}
               ownerMode={ownerMode}
-              hideCategory
+              themed
             />
           ))}
         </div>
       )}
 
-      {viewing && <ViewModal item={viewing} onClose={() => setViewing(null)} />}
       {(editing || adding) && (
         <EditModal
           item={editing ? { ...editing, category: TYPE_TO_CATEGORY[editing.type] || ALL_CATEGORIES[0] } : null}

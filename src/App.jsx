@@ -18,6 +18,7 @@ import {
   Lightbulb,
   UserCog,
   ClipboardCheck,
+  ClipboardList,
   CalendarCheck,
   LayoutGrid,
   ChevronDown,
@@ -45,20 +46,23 @@ const MileageLog = lazy(() => import('./pages/MileageLog'));
 const ChecklistTrackerPage = lazy(() => import('./pages/ChecklistTrackerPage'));
 const Quoting = lazy(() => import('./pages/Quoting'));
 const DailyChecklist = lazy(() => import('./pages/DailyChecklist'));
+const ExecutionDashboard = lazy(() => import('./pages/ExecutionDashboard'));
+const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
+  { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
 ];
 
 const SECONDARY_ITEMS = [
-  { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
   { id: 'ideas', path: '/ideas', label: 'Ideas', icon: Lightbulb },
   { id: 'hr', path: '/hr', label: 'HR', icon: Users },
 ];
 
 const OWNER_ITEMS = [
+  { id: 'manage', path: '/owner-dashboard', label: 'Manage', icon: ClipboardList },
   { id: 'daily-checklist', path: '/daily-checklist', label: 'My Day', icon: CalendarCheck },
   { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
   { id: 'checklist-tracker', path: '/checklist-tracker', label: 'Checklists', icon: ClipboardCheck },
@@ -429,10 +433,7 @@ function AppShell() {
           <button onClick={() => setMobileSidebarOpen(true)} className="p-1.5 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
             <Menu size={22} className="text-secondary" />
           </button>
-          <div className="flex items-center gap-2">
-            <img src="/favicon.png" alt="" className="h-8 rounded-lg" />
-            <span className="font-bold text-primary text-sm">Hey Jude's</span>
-          </div>
+          <span className="font-bold text-primary text-sm">Hey Jude's Lawn Care</span>
           <button
             onClick={() => !needsOnboarding && navigate('/profile')}
             className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
@@ -525,8 +526,9 @@ function AppShell() {
               </Routes>
             ) : (
               <Routes>
-                <Route path="/" element={ownerMode ? <OwnerDashboard /> : <Home />} />
+                <Route path="/" element={ownerMode ? <ExecutionDashboard /> : <Home />} />
                 <Route path="/guides" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
+                <Route path="/guides/:id" element={<PlaybookDetail ownerMode={ownerMode} />} />
                 <Route path="/equipment" element={<EquipmentIdeas />} />
                 <Route path="/hr" element={<HRPolicies />} />
                 <Route path="/quoting" element={<Quoting />} />
@@ -537,6 +539,7 @@ function AppShell() {
                 <Route path="/ideas" element={<IdeasFeedback />} />
                 <Route path="/daily-checklist" element={<DailyChecklist />} />
                 <Route path="/checklist-tracker" element={<ChecklistTrackerPage />} />
+                <Route path="/owner-dashboard" element={<OwnerDashboard />} />
                 <Route path="/settings" element={<Navigate to="/profile" replace />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

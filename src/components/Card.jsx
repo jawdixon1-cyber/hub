@@ -5,19 +5,17 @@ const categoryColors = {
   Safety: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
   Conduct: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
   Professionalism: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  'Service Work': 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-  'Field Team': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-  'Equipment & Maintenance': 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
-  'Equipment Guide': 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
-  'Software': 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
-  Sales: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
-  Owner: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  Strategy: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  'Business Idea': 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
-  Hiring: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
-  Training: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
-  Compensation: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  'Time Off': 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300',
+};
+
+const typeGradients = {
+  service: 'from-emerald-500 to-green-700',
+  'field-team': 'from-emerald-500 to-green-700',
+  equipment: 'from-orange-400 to-amber-700',
+  software: 'from-blue-500 to-indigo-700',
+  sales: 'from-purple-500 to-purple-700',
+  pme: 'from-purple-500 to-purple-700',
+  strategy: 'from-slate-500 to-blue-700',
+  owner: 'from-slate-500 to-blue-700',
 };
 
 function getPreviewText(content) {
@@ -26,7 +24,38 @@ function getPreviewText(content) {
   return stripped.length > 200 ? stripped.slice(0, 200) + '...' : stripped;
 }
 
-export default function Card({ item, onClick, onEdit, onDelete, ownerMode, hideCategory }) {
+export default function Card({ item, onClick, onEdit, onDelete, ownerMode, themed }) {
+  // Themed mode: gradient bg + title only (for playbooks)
+  if (themed) {
+    const gradient = typeGradients[item.type] || 'from-gray-500 to-gray-700';
+    return (
+      <div
+        className={`group relative bg-gradient-to-br ${gradient} rounded-2xl shadow-sm cursor-pointer overflow-hidden
+                   hover:shadow-lg hover:scale-[1.02] transition-all duration-200 min-h-[120px] flex items-end p-6`}
+        onClick={() => onClick(item)}
+      >
+        {ownerMode && (
+          <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(item); }}
+              className="p-1.5 rounded-lg bg-white/20 text-white hover:bg-white/30 transition-colors"
+            >
+              <Pencil size={16} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(item); }}
+              className="p-1.5 rounded-lg bg-white/20 text-white hover:bg-white/30 transition-colors"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        )}
+        <h3 className="text-lg font-bold text-white drop-shadow-sm">{item.title}</h3>
+      </div>
+    );
+  }
+
+  // Classic mode: white card with category badge + preview text
   const colorClass = categoryColors[item.category] || 'bg-surface-alt text-secondary';
 
   return (
@@ -51,14 +80,11 @@ export default function Card({ item, onClick, onEdit, onDelete, ownerMode, hideC
           </button>
         </div>
       )}
-      {!hideCategory && (
-        <span className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full ${colorClass}`}>
-          {item.category}
-        </span>
-      )}
-      <h3 className={`${hideCategory ? '' : 'mt-3 '}text-lg font-bold text-primary`}>{item.title}</h3>
+      <span className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full ${colorClass}`}>
+        {item.category}
+      </span>
+      <h3 className="mt-3 text-lg font-bold text-primary">{item.title}</h3>
       <p className="mt-2 text-sm text-tertiary line-clamp-3">{getPreviewText(item.content)}</p>
-      <p className="mt-2 text-[10px] text-muted">{(JSON.stringify(item).length / 1024).toFixed(1)} KB</p>
     </div>
   );
 }
