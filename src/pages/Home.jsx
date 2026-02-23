@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Megaphone, ChevronRight, AlertCircle, Lightbulb, Check, BookOpen, ClipboardCheck, FlagTriangleRight, PartyPopper, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ChecklistPanel from '../components/ChecklistPanel';
@@ -43,6 +43,20 @@ export default function Home() {
   } else {
     flowState = 'working';
   }
+
+  const containerRef = useRef(null);
+
+  // Scroll to top on flow state changes
+  useEffect(() => {
+    // Immediate + delayed to handle mobile Safari quirks
+    const scrollTop = () => {
+      if (containerRef.current) containerRef.current.scrollTop = 0;
+      window.scrollTo(0, 0);
+    };
+    scrollTop();
+    const t = setTimeout(scrollTop, 50);
+    return () => clearTimeout(t);
+  }, [flowState, startedDay, closingMode]);
 
   const firstName = currentUser?.split(' ')[0] || 'Team Member';
 
@@ -212,7 +226,7 @@ export default function Home() {
   );
 
   return (
-    <div className="flex flex-col h-[calc(100svh-9rem)] overflow-y-auto md:h-auto md:overflow-visible">
+    <div ref={containerRef} className="flex flex-col h-[calc(100svh-9rem)] overflow-y-auto md:h-auto md:overflow-visible">
       {/* Blocking announcement modal */}
       {unacknowledged.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
@@ -265,6 +279,34 @@ export default function Home() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Day progress bar — hidden on initial splash and done state */}
+      {!(flowState === 'needs-opening' && !startedDay) && (
+        <div className="flex items-center gap-1.5 mb-4">
+          {[
+            { label: 'Opening', done: openingDone, active: flowState === 'needs-opening' },
+            { label: 'Working', done: flowState === 'needs-closing' || closingDone, active: flowState === 'working' },
+            { label: 'Wrap Up', done: closingDone, active: flowState === 'needs-closing' },
+          ].map((step, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+              <div className={`w-full h-1.5 rounded-full transition-colors ${
+                step.done
+                  ? 'bg-brand'
+                  : step.active
+                    ? 'bg-brand/50'
+                    : 'bg-border-subtle'
+              }`} />
+              <span className={`text-[10px] font-semibold transition-colors ${
+                step.done
+                  ? 'text-brand-text'
+                  : step.active
+                    ? 'text-primary'
+                    : 'text-muted'
+              }`}>{step.label}</span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -336,7 +378,6 @@ export default function Home() {
           <div className="flex flex-col items-center text-center py-6 sm:py-10 mb-4 sm:mb-6">
             <PartyPopper size={48} className="text-amber-500 mb-3" />
             <h2 className="text-2xl sm:text-3xl font-bold text-primary mb-2">Great work today!</h2>
-            <p className="text-secondary text-sm">Opening and closing checklists completed.</p>
             <p className="text-xs text-secondary italic leading-relaxed mt-3">"{weeklyQuote.text}" <span className="not-italic text-muted">— {weeklyQuote.ref}</span></p>
           </div>
           {quickLinks}

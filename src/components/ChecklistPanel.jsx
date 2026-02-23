@@ -280,37 +280,51 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
 
       {/* All checklist items in one card */}
       <div className="bg-card rounded-2xl border border-border-subtle overflow-hidden shadow-sm">
-        {groups.map((group, gi) => (
-          <div key={gi}>
-            {group.header && (
-              <div className={`px-4 py-3 border-b border-border-subtle ${gi > 0 ? 'border-t' : ''}`}>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
-                  {renderLinkedText(group.header)}
-                </h3>
-              </div>
-            )}
-            <div className="p-2 space-y-1">
-              {group.items.map((item) => (
-                <ChecklistItem
-                  key={item.id}
-                  item={item}
-                  checked={checked.has(item.id)}
-                  onToggle={toggleItem}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
+        {groups.map((group, gi) => {
+          const isLastGroup = gi === groups.length - 1;
+          // Insert mileage row before the last item in the last group
+          const insertMileageBefore = hasMileage && isLastGroup && group.items.length > 0
+            ? group.items.length - 1
+            : null;
 
-        {/* Mileage as last checklist row */}
-        {hasMileage && (
-          <div className="border-t border-border-subtle p-2">
-            <MileageRow
-              vehicles={mileage.vehicles}
-              onSubmit={handleMileageSubmit}
-            />
-          </div>
-        )}
+          return (
+            <div key={gi}>
+              {group.header && (
+                <div className={`px-4 py-3 border-b border-border-subtle ${gi > 0 ? 'border-t' : ''}`}>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
+                    {renderLinkedText(group.header)}
+                  </h3>
+                </div>
+              )}
+              <div className="p-2 space-y-1">
+                {group.items.map((item, ii) => (
+                  <div key={item.id}>
+                    {insertMileageBefore === ii && (
+                      <div className="mb-1">
+                        <MileageRow
+                          vehicles={mileage.vehicles}
+                          onSubmit={handleMileageSubmit}
+                        />
+                      </div>
+                    )}
+                    <ChecklistItem
+                      item={item}
+                      checked={checked.has(item.id)}
+                      onToggle={toggleItem}
+                    />
+                  </div>
+                ))}
+                {/* Fallback: if no items in last group, show mileage at the end */}
+                {hasMileage && isLastGroup && group.items.length === 0 && (
+                  <MileageRow
+                    vehicles={mileage.vehicles}
+                    onSubmit={handleMileageSubmit}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Complete All / Undo */}
