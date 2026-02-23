@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Megaphone, ChevronRight, AlertCircle, Lightbulb, Check, BookOpen, ClipboardCheck, FlagTriangleRight, PartyPopper, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ChecklistPanel from '../components/ChecklistPanel';
@@ -45,6 +45,42 @@ export default function Home() {
   }
 
   const firstName = currentUser?.split(' ')[0] || 'Team Member';
+
+  const weeklyQuote = useMemo(() => {
+    const quotes = [
+      { text: 'Whatever you do, work at it with all your heart.', ref: 'Colossians 3:23' },
+      { text: 'Commit to the Lord whatever you do, and he will establish your plans.', ref: 'Proverbs 16:3' },
+      { text: 'The hand of the diligent will rule, while the slothful will be put to forced labor.', ref: 'Proverbs 12:24' },
+      { text: 'Do everything in love.', ref: '1 Corinthians 16:14' },
+      { text: 'Be strong and courageous. Do not be afraid; do not be discouraged.', ref: 'Joshua 1:9' },
+      { text: 'Let us not become weary in doing good, for at the proper time we will reap a harvest.', ref: 'Galatians 6:9' },
+      { text: 'Iron sharpens iron, and one man sharpens another.', ref: 'Proverbs 27:17' },
+      { text: 'I can do all things through him who strengthens me.', ref: 'Philippians 4:13' },
+      { text: 'The plans of the diligent lead surely to abundance.', ref: 'Proverbs 21:5' },
+      { text: 'Two are better than one, because they have a good reward for their toil.', ref: 'Ecclesiastes 4:9' },
+      { text: 'Whatever your hand finds to do, do it with all your might.', ref: 'Ecclesiastes 9:10' },
+      { text: 'He who gathers in summer is a prudent son.', ref: 'Proverbs 10:5' },
+      { text: 'As each has received a gift, use it to serve one another.', ref: '1 Peter 4:10' },
+      { text: 'Diligent hands will rule, but laziness ends in forced labor.', ref: 'Proverbs 12:24' },
+      { text: 'Well done, good and faithful servant. You have been faithful over a little; I will set you over much.', ref: 'Matthew 25:21' },
+      { text: 'For we are his workmanship, created for good works.', ref: 'Ephesians 2:10' },
+      { text: 'Do not be slothful in zeal, be fervent in spirit, serve the Lord.', ref: 'Romans 12:11' },
+      { text: 'In all toil there is profit, but mere talk tends only to poverty.', ref: 'Proverbs 14:23' },
+      { text: 'He gives power to the faint, and to him who has no might he increases strength.', ref: 'Isaiah 40:29' },
+      { text: 'The Lord will fight for you; you need only to be still.', ref: 'Exodus 14:14' },
+      { text: 'Great things are done by a series of small things brought together.', ref: 'Vincent van Gogh' },
+      { text: 'The secret of getting ahead is getting started.', ref: 'Mark Twain' },
+      { text: 'A generous person will prosper; whoever refreshes others will be refreshed.', ref: 'Proverbs 11:25' },
+      { text: 'Let your light shine before others, that they may see your good deeds.', ref: 'Matthew 5:16' },
+      { text: 'Trust in the Lord with all your heart and lean not on your own understanding.', ref: 'Proverbs 3:5' },
+      { text: 'And let us consider how to stir up one another to love and good works.', ref: 'Hebrews 10:24' },
+    ];
+    // Pick based on week number of the year
+    const now = new Date();
+    const start = new Date(now.getFullYear(), 0, 1);
+    const weekNum = Math.floor(((now - start) / 86400000 + start.getDay()) / 7);
+    return quotes[weekNum % quotes.length];
+  }, []);
 
   const unacknowledged = announcements.filter((a) => !a.acknowledgedBy?.[userEmail]);
 
@@ -103,56 +139,76 @@ export default function Home() {
     }).catch(() => {});
   };
 
-  const dailyOps = (
-    <>
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted mb-2">Daily Ops</h3>
-      <div className="flex flex-col gap-2">
-        <a
-          href="jobber://"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-3 sm:px-6 sm:py-4 text-white hover:opacity-90 transition-opacity"
-        >
-          <div>
-            <h3 className="text-base font-bold">Open Jobber</h3>
-            <p className="text-sm text-white/80">View today's schedule and jobs</p>
-          </div>
-          <ChevronRight size={22} className="shrink-0" />
-        </a>
-        <button
-          onClick={() => navigate('/guides')}
-          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-5 py-3 sm:px-6 sm:py-4 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
-        >
-          <div>
-            <h3 className="text-base font-bold">Playbooks</h3>
-            <p className="text-sm text-white/80">Follow the standards for every job</p>
-          </div>
-          <BookOpen size={22} className="shrink-0" />
-        </button>
+  const quickLinks = (
+    <div className="space-y-3">
+      {/* Daily Ops card */}
+      <div className="bg-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border-subtle">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted">Daily Ops</h3>
+        </div>
+        <div className="p-2 space-y-1">
+          <a
+            href="jobber://"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-surface-alt transition-colors"
+          >
+            <div className="w-9 h-9 rounded-lg bg-blue-500/15 flex items-center justify-center shrink-0">
+              <ChevronRight size={18} className="text-blue-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-primary">Open Jobber</p>
+              <p className="text-xs text-muted">View today's schedule and jobs</p>
+            </div>
+          </a>
+          <button
+            onClick={() => navigate('/guides')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
+          >
+            <div className="w-9 h-9 rounded-lg bg-emerald-500/15 flex items-center justify-center shrink-0">
+              <BookOpen size={18} className="text-emerald-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-primary">Playbooks</p>
+              <p className="text-xs text-muted">Follow the standards for every job</p>
+            </div>
+          </button>
+        </div>
       </div>
-    </>
-  );
 
-  const reportLinks = (
-    <>
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted mb-2">Report Something</h3>
-      <div className="flex gap-2">
-        <button
-          onClick={() => navigate('/equipment?report=1')}
-          className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-red-500 px-4 py-3 sm:px-5 sm:py-4 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
-        >
-          <AlertCircle size={18} className="shrink-0" />
-          <span className="font-bold text-sm">Report Repair</span>
-        </button>
-        <button
-          onClick={() => navigate('/ideas?submit=1')}
-          className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-purple-500 to-purple-700 px-4 py-3 sm:px-5 sm:py-4 text-white text-left hover:opacity-90 transition-opacity cursor-pointer"
-        >
-          <Lightbulb size={18} className="shrink-0" />
-          <span className="font-bold text-sm">Submit Idea</span>
-        </button>
+      {/* Report Something card */}
+      <div className="bg-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border-subtle">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted">Report Something</h3>
+        </div>
+        <div className="p-2 space-y-1">
+          <button
+            onClick={() => navigate('/equipment?report=1')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
+          >
+            <div className="w-9 h-9 rounded-lg bg-orange-500/15 flex items-center justify-center shrink-0">
+              <AlertCircle size={18} className="text-orange-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-primary">Report Repair</p>
+              <p className="text-xs text-muted">Equipment needs repair</p>
+            </div>
+          </button>
+          <button
+            onClick={() => navigate('/ideas?submit=1')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
+          >
+            <div className="w-9 h-9 rounded-lg bg-purple-500/15 flex items-center justify-center shrink-0">
+              <Lightbulb size={18} className="text-purple-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-primary">Submit Idea</p>
+              <p className="text-xs text-muted">Suggest an improvement</p>
+            </div>
+          </button>
+        </div>
       </div>
-    </>
+    </div>
   );
 
   return (
@@ -217,10 +273,11 @@ export default function Home() {
         <div className="flex flex-col items-center justify-center text-center flex-1 py-12 sm:py-20">
           <ClipboardCheck size={56} className="text-brand-text mb-4" />
           <h2 className="text-2xl sm:text-3xl font-bold text-primary mb-2">Good morning, {firstName}!</h2>
-          <p className="text-secondary text-sm mb-8">Ready to get started?</p>
+          <p className="text-secondary text-sm italic mb-1">"{weeklyQuote.text}"</p>
+          <p className="text-xs text-muted mb-8">— {weeklyQuote.ref}</p>
           <button
             onClick={() => setStartedDay(true)}
-            className="px-10 py-4 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-white font-bold text-lg hover:opacity-90 transition-opacity cursor-pointer shadow-lg"
+            className="px-10 py-4 rounded-2xl bg-brand text-on-brand font-bold text-lg hover:bg-brand-hover transition-colors cursor-pointer shadow-lg"
           >
             Start My Day
           </button>
@@ -230,46 +287,34 @@ export default function Home() {
       {/* Flow State: needs-opening — checklist */}
       {flowState === 'needs-opening' && startedDay && (
         <>
-          <div className="flex items-center gap-3 mb-4 sm:mb-6">
-            <ClipboardCheck size={24} className="text-brand-text" />
-            <h2 className="text-xl sm:text-2xl font-bold text-primary">Opening Checklist</h2>
-          </div>
-          <ChecklistPanel title="Opening" items={teamChecklist} checklistType="team-start" checklistLog={checklistLog} setChecklistLog={setChecklistLog} defaultOpen />
+          <p className="text-xs text-secondary italic leading-relaxed mb-3">"{weeklyQuote.text}" <span className="not-italic text-muted">— {weeklyQuote.ref}</span></p>
+          <ChecklistPanel title="Opening" items={teamChecklist} checklistType="team-start" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
         </>
       )}
 
       {/* Flow State: working */}
       {flowState === 'working' && (
         <>
-          <div className="flex items-center justify-between mb-5 sm:mb-6">
-            <h2 className="text-xl sm:text-2xl font-bold text-primary">Have a great day, {firstName}</h2>
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
-              <Check size={14} />
-              Opening
+          <p className="text-xs text-secondary italic leading-relaxed mb-3">"{weeklyQuote.text}" <span className="not-italic text-muted">— {weeklyQuote.ref}</span></p>
+          {quickLinks}
+
+          <button
+            onClick={() => setClosingMode(true)}
+            className="mt-4 flex items-center justify-center gap-2 w-full py-4 rounded-2xl bg-brand-light text-brand-text font-bold text-base hover:bg-brand-light/80 transition-colors cursor-pointer border border-brand/20 shadow-sm"
+          >
+            <FlagTriangleRight size={18} />
+            <span className="flex flex-col items-start leading-tight">
+              <span>Done for the day? Wrap Up</span>
+              <span className="text-xs font-normal opacity-70">Complete your closing checklist</span>
             </span>
-          </div>
-
-          {dailyOps}
-
-          <div className="mt-4 sm:mt-5">
-            {reportLinks}
-          </div>
-
-          <div className="mt-5 sm:mt-6 pt-5 sm:pt-6 border-t border-border-subtle">
-            <button
-              onClick={() => setClosingMode(true)}
-              className="flex items-center justify-center gap-2 w-full rounded-2xl bg-gradient-to-r from-indigo-500 to-violet-600 px-6 py-4 text-white font-bold text-base hover:opacity-90 transition-opacity cursor-pointer"
-            >
-              <FlagTriangleRight size={20} />
-              Wrap Up
-            </button>
-          </div>
+          </button>
         </>
       )}
 
       {/* Flow State: needs-closing */}
       {flowState === 'needs-closing' && (
         <>
+          <p className="text-xs text-secondary italic leading-relaxed mb-3">"{weeklyQuote.text}" <span className="not-italic text-muted">— {weeklyQuote.ref}</span></p>
           <div className="flex items-center gap-3 mb-4 sm:mb-6">
             <FlagTriangleRight size={24} className="text-indigo-500" />
             <h2 className="text-xl sm:text-2xl font-bold text-primary">Closing Checklist</h2>
@@ -281,7 +326,7 @@ export default function Home() {
             <ArrowLeft size={16} />
             Back to dashboard
           </button>
-          <ChecklistPanel title="Closing" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} mileage={{ vehicles, onSubmit: handleInlineMileage }} defaultOpen />
+          <ChecklistPanel title="Closing" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} mileage={{ vehicles, onSubmit: handleInlineMileage }} />
         </>
       )}
 
@@ -292,21 +337,9 @@ export default function Home() {
             <PartyPopper size={48} className="text-amber-500 mb-3" />
             <h2 className="text-2xl sm:text-3xl font-bold text-primary mb-2">Great work today!</h2>
             <p className="text-secondary text-sm">Opening and closing checklists completed.</p>
-            <div className="flex items-center gap-3 mt-4">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
-                <Check size={14} />
-                Opening
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
-                <Check size={14} />
-                Closing
-              </span>
-            </div>
+            <p className="text-xs text-secondary italic leading-relaxed mt-3">"{weeklyQuote.text}" <span className="not-italic text-muted">— {weeklyQuote.ref}</span></p>
           </div>
-          {dailyOps}
-          <div className="mt-4 sm:mt-5">
-            {reportLinks}
-          </div>
+          {quickLinks}
         </>
       )}
 

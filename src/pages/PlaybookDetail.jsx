@@ -116,37 +116,33 @@ export default function PlaybookDetail({ ownerMode }) {
         Back to Playbooks
       </button>
 
-      {/* Gradient header */}
-      <div className={`bg-gradient-to-r ${gradient} rounded-2xl px-8 py-6 relative`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="inline-block text-xs font-semibold px-2.5 py-1 rounded-full bg-white/20 text-white">
-              {item.category}
-            </span>
-            <h1 className="mt-3 text-2xl font-bold text-white">{item.title}</h1>
-          </div>
-          <div className="flex items-center gap-2">
+      {/* Title + controls */}
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-1">{item.category}</p>
+          <h1 className="text-2xl font-bold text-primary">{item.title}</h1>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 mt-1">
+          <button
+            onClick={toggleWhy}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+              showWhy
+                ? 'bg-yellow-400 text-yellow-900'
+                : 'bg-surface-alt text-secondary hover:bg-surface'
+            }`}
+          >
+            <Lightbulb size={16} />
+            {showWhy ? 'Why: ON' : 'Why: OFF'}
+          </button>
+          {ownerMode && (
             <button
-              onClick={toggleWhy}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                showWhy
-                  ? 'bg-yellow-400 text-yellow-900'
-                  : 'bg-white/20 text-white hover:bg-white/30'
-              }`}
+              onClick={() => setEditing(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-alt text-secondary hover:bg-surface transition-colors cursor-pointer"
             >
-              <Lightbulb size={16} />
-              {showWhy ? 'Why: ON' : 'Why: OFF'}
+              <Pencil size={16} />
+              Edit
             </button>
-            {ownerMode && (
-              <button
-                onClick={() => setEditing(true)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-white/20 text-white hover:bg-white/30 transition-colors"
-              >
-                <Pencil size={16} />
-                Edit
-              </button>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
