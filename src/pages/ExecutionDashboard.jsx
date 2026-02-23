@@ -624,10 +624,13 @@ export default function ExecutionDashboard() {
   const [notesDraft, setNotesDraft] = useState(ownerNotes || '');
   const notesRef = useRef(null);
 
-  // Checklist completion status
+  // Checklist completion status — use checklistLog (persisted) so refresh doesn't reset gate
   const startCheckable = ownerStartChecklist.filter((i) => i.type !== 'header');
   const startDone = startCheckable.filter((i) => i.done).length;
-  const morningComplete = startCheckable.length > 0 && startDone === startCheckable.length;
+  const morningItemsComplete = startCheckable.length > 0 && startDone === startCheckable.length;
+  const morningLogEntry = checklistLog.find((e) => e.date === today && e.checklistType === 'owner-start');
+  const morningLogComplete = morningLogEntry && morningLogEntry.completedItems === morningLogEntry.totalItems;
+  const morningComplete = morningItemsComplete || morningLogComplete;
 
   // Initialize or load dashboard
   const getDashboard = useCallback(() => {
