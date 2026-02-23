@@ -7,17 +7,18 @@ import AIPlaybookModal from '../components/AIPlaybookModal';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 
-const ALL_CATEGORIES = ['Services', 'Equipment', 'Software', 'Sales Team', 'General Manager'];
+const ALL_CATEGORIES = ['Services', 'Equipment', 'Software', 'Executive Assistant', 'General Manager'];
 
 const CATEGORY_TO_TYPE = {
   'Services': 'service',
   'Equipment': 'equipment',
   'Software': 'software',
-  'Sales Team': 'sales',
+  'Executive Assistant': 'sales',
   'General Manager': 'strategy',
   // Backward compat for existing saved guides
   'Field Team': 'service',
   'Service': 'service',
+  'Sales Team': 'sales',
   'Sales': 'sales',
   'Strategy': 'strategy',
 };
@@ -27,15 +28,15 @@ const TYPE_TO_CATEGORY = {
   'service': 'Services',
   'equipment': 'Equipment',
   'software': 'Software',
-  'sales': 'Sales Team',
-  'pme': 'Sales Team',
+  'sales': 'Executive Assistant',
+  'pme': 'Executive Assistant',
   'strategy': 'General Manager',
   'owner': 'General Manager',
 };
 
 const ALL_TABS = [
   { key: 'field-team', label: 'Field Team', activeColor: 'text-brand-text-strong', playbookKey: 'service' },
-  { key: 'sales', label: 'Sales Team', activeColor: 'text-purple-700 dark:text-purple-300', playbookKey: 'sales' },
+  { key: 'sales', label: 'Exec Assistant', activeColor: 'text-purple-700 dark:text-purple-300', playbookKey: 'sales' },
   { key: 'strategy', label: 'General Manager', activeColor: 'text-blue-700 dark:text-blue-300', playbookKey: 'strategy' },
 ];
 

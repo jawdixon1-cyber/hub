@@ -151,9 +151,21 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
       typeof item === 'string' ? { id: `static-${i}`, text: item } : item
     ), [items]);
 
-  const [checked, setChecked] = useState(() => new Set());
+  // Initialize checked from log if already completed today
+  const [checked, setChecked] = useState(() => {
+    if (!checklistType || !checklistLog) return new Set();
+    const today = getTodayInTimezone();
+    const log = checklistLog.find((e) => e.date === today && e.checklistType === checklistType);
+    if (log && log.completedItems === log.totalItems) {
+      return new Set(items.filter((item) => typeof item === 'string' || item.type !== 'header').map((item, i) =>
+        typeof item === 'string' ? `static-${i}` : item.id
+      ));
+    }
+    return new Set();
+  });
   const [mileageSubmitted, setMileageSubmitted] = useState(false);
   const logDebounce = useRef(null);
+  const initializedRef = useRef(false);
   const dateRef = useRef(getTodayInTimezone());
 
   // Reset checks on new day
@@ -182,9 +194,14 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
   const completedSteps = regularCheckedCount + (hasMileage && mileageSubmitted ? 1 : 0);
   const allChecked = totalSteps > 0 && completedSteps === totalSteps;
 
-  // Log completion to cloud
+  // Log completion to cloud — never downgrade an already-complete entry on initial render
   useEffect(() => {
     if (!checklistType || !setChecklistLog || totalSteps === 0) return;
+    // Skip the first render to avoid overwriting with empty checked set
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      if (completedSteps === 0) return;
+    }
     if (logDebounce.current) clearTimeout(logDebounce.current);
     logDebounce.current = setTimeout(() => {
       const today = getTodayInTimezone();
@@ -192,6 +209,10 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
         const existing = prev.findIndex(
           (e) => e.date === today && e.checklistType === checklistType
         );
+        // Don't downgrade a completed entry
+        if (existing >= 0 && prev[existing].completedItems === prev[existing].totalItems && completedSteps < prev[existing].completedItems) {
+          return prev;
+        }
         const entry = {
           id: existing >= 0 ? prev[existing].id : genId(),
           date: today,

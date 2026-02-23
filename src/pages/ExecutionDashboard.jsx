@@ -36,7 +36,7 @@ const DEFAULT_TIME_BLOCKS = {
 
 /* ─── Helpers ─── */
 
-function createFreshDay(date, keepOutcomes, keepTimeBlocks) {
+function createFreshDay(date, keepOutcomes, keepTimeBlocks, keepWins) {
   return {
     date,
     weeklyOutcomes: keepOutcomes || [
@@ -44,7 +44,7 @@ function createFreshDay(date, keepOutcomes, keepTimeBlocks) {
       { id: genId(), title: '', note: '', done: false },
       { id: genId(), title: '', note: '', done: false },
     ],
-    todaysWins: {
+    todaysWins: keepWins || {
       sales: { text: '', done: false },
       build: { text: '', done: false },
       delegate: { text: '', done: false },
@@ -672,7 +672,8 @@ export default function ExecutionDashboard() {
           ? executionDashboard.weeklyOutcomes
           : null;
       const keepTimeBlocks = executionDashboard?.timeBlocks || null;
-      const fresh = createFreshDay(today, keepOutcomes, keepTimeBlocks);
+      const keepWins = executionDashboard?.todaysWins || null;
+      const fresh = createFreshDay(today, keepOutcomes, keepTimeBlocks, keepWins);
       setExecutionDashboard(fresh);
       return fresh;
     }
@@ -707,12 +708,7 @@ export default function ExecutionDashboard() {
 
     const keepOutcomes = isSameWeek(dash.date, tomorrowStr) ? dash.weeklyOutcomes : null;
 
-    const newDay = createFreshDay(tomorrowStr, keepOutcomes, dash.timeBlocks);
-
-    // Pre-fill tomorrow's goals from wrap-up
-    if (tomorrowWins) {
-      newDay.todaysWins = tomorrowWins;
-    }
+    const newDay = createFreshDay(tomorrowStr, keepOutcomes, dash.timeBlocks, tomorrowWins || dash.todaysWins);
 
     setExecutionDashboard(newDay);
     setWrappingUp(false);
@@ -987,7 +983,7 @@ export default function ExecutionDashboard() {
           if (!confirm('Reset everything for today? (checklists, goals, parking lot)')) return;
           setOwnerStartChecklist((prev) => prev.map((i) => ({ ...i, done: false })));
           setOwnerEndChecklist((prev) => prev.map((i) => ({ ...i, done: false })));
-          setExecutionDashboard(createFreshDay(today, dash.weeklyOutcomes, dash.timeBlocks));
+          setExecutionDashboard(createFreshDay(today, dash.weeklyOutcomes, dash.timeBlocks, dash.todaysWins));
           setMorningDismissed(false);
         }}
         className="w-full text-center text-[11px] text-muted/50 hover:text-red-400 transition-colors cursor-pointer py-2"

@@ -52,10 +52,11 @@ const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
-  { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
+  { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
 ];
 
 const SECONDARY_ITEMS = [
+  { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
   { id: 'ideas', path: '/ideas', label: 'Ideas', icon: Lightbulb },
   { id: 'hr', path: '/hr', label: 'HR', icon: Users },
@@ -63,8 +64,6 @@ const SECONDARY_ITEMS = [
 
 const OWNER_ITEMS = [
   { id: 'manage', path: '/owner-dashboard', label: 'Manage', icon: ClipboardList },
-  { id: 'daily-checklist', path: '/daily-checklist', label: 'My Day', icon: CalendarCheck },
-  { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
   { id: 'checklist-tracker', path: '/checklist-tracker', label: 'Checklists', icon: ClipboardCheck },
   { id: 'team', path: '/team', label: 'Team', icon: UserCog },
 ];

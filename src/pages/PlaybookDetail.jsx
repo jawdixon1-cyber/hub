@@ -28,8 +28,8 @@ const TYPE_TO_CATEGORY = {
   'service': 'Services',
   'equipment': 'Equipment',
   'software': 'Software',
-  'sales': 'Sales Team',
-  'pme': 'Sales Team',
+  'sales': 'Executive Assistant',
+  'pme': 'Executive Assistant',
   'strategy': 'General Manager',
   'owner': 'General Manager',
 };
@@ -38,11 +38,11 @@ const CATEGORY_TO_TYPE = {
   'Services': 'service',
   'Equipment': 'equipment',
   'Software': 'software',
-  'Sales Team': 'sales',
+  'Executive Assistant': 'sales',
   'General Manager': 'strategy',
 };
 
-const ALL_CATEGORIES = ['Services', 'Equipment', 'Software', 'Sales Team', 'General Manager'];
+const ALL_CATEGORIES = ['Services', 'Equipment', 'Software', 'Executive Assistant', 'General Manager'];
 
 export default function PlaybookDetail({ ownerMode }) {
   const { id } = useParams();
