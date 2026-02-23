@@ -390,7 +390,7 @@ function AppShell() {
       <aside className={`hidden lg:flex fixed left-0 top-0 h-full ${sidebarCollapsed ? 'w-16' : 'w-60'} bg-card border-r border-border-subtle z-40 flex-col transition-all duration-200`}>
         {/* Logo */}
         <div className={`h-16 flex items-center ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'} border-b border-border-subtle shrink-0`}>
-          <img src="/favicon.png" alt="Hey Jude's Lawn Care" className="h-9 w-9 rounded-lg shrink-0" />
+          <img src="/logo.png" alt="Hey Jude's Lawn Care" className="h-10 w-10 shrink-0" />
           {!sidebarCollapsed && <span className="ml-3 font-bold text-primary text-lg truncate">Hey Jude's</span>}
         </div>
 
@@ -485,7 +485,7 @@ function AppShell() {
             <X size={20} />
           </button>
           <div className="h-16 flex items-center px-4 border-b border-border-subtle shrink-0">
-            <img src="/favicon.png" alt="" className="h-9 w-9 rounded-lg shrink-0" />
+            <img src="/logo.png" alt="" className="h-10 w-10 shrink-0" />
             <span className="ml-3 font-bold text-primary text-lg truncate">Hey Jude's</span>
           </div>
           {renderSidebarNav(false)}
