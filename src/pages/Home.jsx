@@ -283,7 +283,7 @@ export default function Home() {
       )}
 
       {/* Day progress bar — hidden on initial splash and done state */}
-      {!(flowState === 'needs-opening' && !startedDay) && (
+      {!(flowState === 'needs-opening' && !startedDay) && flowState !== 'done' && (
         <div className="flex items-center gap-1.5 mb-4">
           {[
             { label: 'Opening', done: openingDone, active: flowState === 'needs-opening' },
