@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Check,
+  CheckCircle2,
   Circle,
   Plus,
   Trash2,
@@ -13,6 +14,7 @@ import {
   Moon,
   Settings,
   Pencil,
+  X,
 } from 'lucide-react';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
@@ -696,6 +698,14 @@ export default function ExecutionDashboard() {
     setNewParkingItem('');
   };
 
+  const removeParkingItem = (id) => {
+    update({ parkingLot: dash.parkingLot.filter((item) => item.id !== id) });
+  };
+
+  const toggleParkingDone = (id) => {
+    update({ parkingLot: dash.parkingLot.map((item) => item.id === id ? { ...item, done: !item.done } : item) });
+  };
+
   // Roll to Tomorrow
   const handleRollToTomorrow = (journal, tomorrowWins) => {
     // Save journal to endOfDay before archiving
@@ -916,6 +926,16 @@ export default function ExecutionDashboard() {
                     win.done ? 'line-through text-muted' : ''
                   }`}
                 />
+                {cat.key === 'sales' && (
+                  <a
+                    href="https://secure.getjobber.com/home"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 mt-2 text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                  >
+                    Jobber Dashboard &rarr;
+                  </a>
+                )}
               </div>
             );
           })}
@@ -960,8 +980,16 @@ export default function ExecutionDashboard() {
         {dash.parkingLot.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {dash.parkingLot.map((item) => (
-              <span key={item.id} className="inline-flex items-center gap-1 text-xs bg-surface-alt border border-border-subtle rounded-lg px-2.5 py-1 text-secondary">
+              <span key={item.id} className={`inline-flex items-center gap-1.5 text-xs border rounded-lg px-2.5 py-1 ${item.done ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700 text-emerald-600 line-through' : 'bg-surface-alt border-border-subtle text-secondary'}`}>
+                <button onClick={() => toggleParkingDone(item.id)} className="hover:opacity-70 cursor-pointer shrink-0" title={item.done ? 'Undo' : 'Mark done'}>
+                  {item.done
+                    ? <CheckCircle2 size={13} className="text-emerald-500" />
+                    : <Circle size={13} className="text-muted" />}
+                </button>
                 {item.text}
+                <button onClick={() => removeParkingItem(item.id)} className="hover:text-red-500 cursor-pointer shrink-0 ml-0.5" title="Remove">
+                  <X size={12} />
+                </button>
               </span>
             ))}
           </div>

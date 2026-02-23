@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Calculator, Trash2, ChevronDown, ChevronUp, Save,
   Settings, Plus, X, ArrowLeft, ArrowRight, Trees, Mountain,
-  Ruler, TreePine, Shrub, Sprout, Fence,
+  Ruler, TreePine, Shrub, Sprout, Fence, Scissors,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
@@ -14,15 +14,33 @@ const CREW_HOUR_RATE = 160;
 
 // ─── Service definitions ───
 
-const SERVICE_OPTIONS = [
-  { id: 'mulch', label: 'Mulch', icon: Trees, color: 'emerald' },
-  { id: 'rock', label: 'Rock', icon: Mountain, color: 'slate' },
-  { id: 'edging', label: 'Edging', icon: Ruler, color: 'blue' },
-  { id: 'pine', label: 'Pine Needles', icon: TreePine, color: 'amber' },
-  { id: 'weeds', label: 'Weeds', icon: Sprout, color: 'lime' },
-  { id: 'bushes', label: 'Bushes', icon: Shrub, color: 'green' },
-  { id: 'overgrown', label: 'Overgrown Area', icon: Fence, color: 'orange' },
+const SERVICE_SECTIONS = [
+  {
+    label: 'MAINTENANCE',
+    services: [
+      { id: 'lawn', label: 'Lawn Care', icon: Scissors, color: 'green' },
+    ],
+  },
+  {
+    label: 'CLEANUP',
+    services: [
+      { id: 'weeds', label: 'Weeds', icon: Sprout, color: 'lime' },
+      { id: 'bushes', label: 'Bushes', icon: Shrub, color: 'green' },
+      { id: 'overgrown', label: 'Overgrown Area', icon: Fence, color: 'orange' },
+    ],
+  },
+  {
+    label: 'LANDSCAPING',
+    services: [
+      { id: 'mulch', label: 'Mulch', icon: Trees, color: 'emerald' },
+      { id: 'rock', label: 'Rock', icon: Mountain, color: 'slate' },
+      { id: 'edging', label: 'Edging', icon: Ruler, color: 'blue' },
+      { id: 'pine', label: 'Pine Needles', icon: TreePine, color: 'amber' },
+    ],
+  },
 ];
+
+const SERVICE_OPTIONS = SERVICE_SECTIONS.flatMap((s) => s.services);
 
 // ─── Utility ───
 
@@ -132,6 +150,46 @@ function calcEdging(e) {
   const serviceTotal = linearFt * servicePerFt;
   const quote = materialSubtotal + materialTax + serviceTotal + delivery;
   return { linearFt, unitsNeeded, materialSubtotal, materialTax, materialCostTotal, serviceTotal, material: materialSubtotal, tax: materialTax, labor: serviceTotal, equipment: 0, quote, delivery };
+}
+
+const DEFAULT_LAWN_TIERS = [
+  { maxSqft: 8000, price: 55 },
+  { maxSqft: 10000, price: 60 },
+  { maxSqft: 15000, price: 70 },
+  { maxSqft: 21000, price: 80 },
+  { maxSqft: 30000, price: 90 },
+  { maxSqft: 43000, price: 95 },
+  { maxSqft: Infinity, price: 100 },
+];
+
+const DEFAULT_EOW_MULTIPLIER = 1.4;
+const DEFAULT_LAWN_WEEKLY_MIN = 55;
+const DEFAULT_LAWN_BIWEEKLY_MIN = 70;
+
+function calcLawn(l, settings) {
+  const sqft = num(l.sqft);
+  if (sqft <= 0) return { weekly: 0, biweekly: 0, quote: 0, material: 0, delivery: 0, equipment: 0, tax: 0, labor: 0 };
+
+  const tiers = settings?.lawnTiers || DEFAULT_LAWN_TIERS;
+  const eowMult = num(settings?.lawnEowMultiplier) || DEFAULT_EOW_MULTIPLIER;
+  const weeklyMin = num(settings?.lawnWeeklyMin) || DEFAULT_LAWN_WEEKLY_MIN;
+  const biweeklyMin = num(settings?.lawnBiweeklyMin) || DEFAULT_LAWN_BIWEEKLY_MIN;
+  const difficultyMult = { easy: 1.0, moderate: 1.15, hard: 1.3 }[l.difficulty] || 1.0;
+
+  // Find the matching tier
+  const sorted = [...tiers].sort((a, b) => a.maxSqft - b.maxSqft);
+  let tierPrice = sorted[sorted.length - 1].price;
+  for (const tier of sorted) {
+    if (sqft <= tier.maxSqft) { tierPrice = tier.price; break; }
+  }
+
+  const weeklyRaw = Math.max(tierPrice * difficultyMult, weeklyMin);
+  const weekly = Math.round(weeklyRaw);
+  const biweeklyRaw = Math.max(weekly * eowMult, biweeklyMin);
+  const biweekly = Math.round(biweeklyRaw);
+
+  const quote = biweekly;
+  return { weekly, biweekly, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote };
 }
 
 function calcSummary(sections) {
@@ -251,6 +309,34 @@ function PricingSettings({ settings, onUpdate, ownerMode }) {
             <button onClick={() => { const last = s.volumeTiers[s.volumeTiers.length - 1]; onUpdate({ ...s, volumeTiers: [...s.volumeTiers, { minYards: (last?.minYards || 0) + 10, discountPct: 0 }] }); }} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-text-strong hover:underline cursor-pointer"><Plus size={12} /> Add tier</button>
           </div>
 
+          {/* Lawn Care */}
+          <div>
+            <h3 className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Lawn Care Pricing Tiers</h3>
+            <p className="text-xs text-muted mb-3">Weekly price per lot size tier (Rock Hill / Charlotte market rates).</p>
+            <div className="space-y-2">
+              {(s.lawnTiers || DEFAULT_LAWN_TIERS).map((tier, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-xs text-muted w-8">Up to</span>
+                  <div className="relative w-24"><input type="text" inputMode="decimal" value={tier.maxSqft === Infinity ? '∞' : tier.maxSqft} onChange={(e) => { const tiers = [...(s.lawnTiers || DEFAULT_LAWN_TIERS)]; tiers[i] = { ...tiers[i], maxSqft: e.target.value === '∞' ? Infinity : num(e.target.value) }; onUpdate({ ...s, lawnTiers: tiers }); }} className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" /></div>
+                  <span className="text-xs text-muted">sqft</span>
+                  <span className="text-xs text-muted mx-1">&rarr;</span>
+                  <div className="relative w-20">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span>
+                    <input type="text" inputMode="decimal" value={tier.price} onChange={(e) => { const tiers = [...(s.lawnTiers || DEFAULT_LAWN_TIERS)]; tiers[i] = { ...tiers[i], price: num(e.target.value) }; onUpdate({ ...s, lawnTiers: tiers }); }} className="w-full rounded-lg border border-border-strong bg-card pl-6 pr-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" />
+                  </div>
+                  <span className="text-xs text-muted">/cut</span>
+                  <button onClick={() => { const tiers = [...(s.lawnTiers || DEFAULT_LAWN_TIERS)].filter((_, j) => j !== i); onUpdate({ ...s, lawnTiers: tiers }); }} className="p-1 text-red-400 hover:text-red-600 cursor-pointer"><X size={14} /></button>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => { const tiers = [...(s.lawnTiers || DEFAULT_LAWN_TIERS)]; const last = tiers[tiers.length - 1]; onUpdate({ ...s, lawnTiers: [...tiers, { maxSqft: (last?.maxSqft === Infinity ? 50000 : (last?.maxSqft || 0)) + 10000, price: (last?.price || 50) + 10 }] }); }} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-text-strong hover:underline cursor-pointer"><Plus size={12} /> Add tier</button>
+            <div className="grid grid-cols-3 gap-3 mt-4">
+              <div><label className="block text-xs font-medium text-secondary mb-1">EOW Multiplier</label><input type="text" inputMode="decimal" value={s.lawnEowMultiplier ?? 1.4} onChange={(e) => onUpdate({ ...s, lawnEowMultiplier: num(e.target.value) })} className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" /></div>
+              <div><label className="block text-xs font-medium text-secondary mb-1">Weekly Min</label><div className="relative"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span><input type="text" inputMode="decimal" value={s.lawnWeeklyMin ?? 55} onChange={(e) => onUpdate({ ...s, lawnWeeklyMin: num(e.target.value) })} className="w-full rounded-lg border border-border-strong bg-card pl-6 pr-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" /></div></div>
+              <div><label className="block text-xs font-medium text-secondary mb-1">EOW Min</label><div className="relative"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span><input type="text" inputMode="decimal" value={s.lawnBiweeklyMin ?? 70} onChange={(e) => onUpdate({ ...s, lawnBiweeklyMin: num(e.target.value) })} className="w-full rounded-lg border border-border-strong bg-card pl-6 pr-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" /></div></div>
+            </div>
+          </div>
+
           {/* Defaults */}
           <div>
             <h3 className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Defaults</h3>
@@ -277,6 +363,7 @@ export default function Quoting() {
   const defaultMulchType = mulchTypes[0] || { label: 'Hardwood', pricePerYd: 36 };
 
   const makeDefaults = () => ({
+    lawn: { sqft: '', difficulty: 'moderate' },
     mulch: { sqft: '', depth: '', materialCostPerYd: String(defaultMulchType.pricePerYd), chargePerYd: '', delivery: '', mulchType: defaultMulchType.label },
     rock: { sqft: '', depth: '3', pricePerYd: '', chargePerYd: '', equipmentCost: '', delivery: '', includeFabric: false, fabricCoverage: '', fabricCostPerRoll: '' },
     edging: { linearFeet: '', unitLength: '20', costPerUnit: '', servicePerFoot: '', delivery: '' },
@@ -313,6 +400,7 @@ export default function Quoting() {
 
 
   // Calculations (only for selected services)
+  const lawnCalc = has('lawn') ? calcLawn(data.lawn, settings) : ZERO_CALC;
   const mulchCalc = has('mulch') ? calcMulch(data.mulch) : ZERO_CALC;
   const rockCalc = has('rock') ? calcRock(data.rock) : ZERO_CALC;
   const edgingCalc = has('edging') ? calcEdging(data.edging) : ZERO_CALC;
@@ -321,7 +409,7 @@ export default function Quoting() {
     quote: (has('weeds') ? num(data.other.weeds) : 0) + (has('bushes') ? num(data.other.bushes) : 0) + (has('overgrown') ? num(data.other.overgrown) : 0),
     materialCostTotal: 0, delivery: 0,
   };
-  const summary = calcSummary([mulchCalc, rockCalc, edgingCalc, pineCalc, otherCalcs]);
+  const summary = calcSummary([lawnCalc, mulchCalc, rockCalc, edgingCalc, pineCalc, otherCalcs]);
 
 
   // ─── Actions ───
@@ -340,6 +428,7 @@ export default function Quoting() {
       clientName: clientName.trim(),
       date: new Date().toISOString().slice(0, 10),
       services: [...selectedServices],
+      lawn: has('lawn') ? { ...data.lawn } : null,
       mulch: has('mulch') ? { ...data.mulch } : null,
       rock: has('rock') ? { ...data.rock } : null,
       edging: has('edging') ? { ...data.edging } : null,
@@ -362,6 +451,7 @@ export default function Quoting() {
     const svcs = new Set(q.services || []);
     // Backward compat: detect services from data if services array missing
     if (svcs.size === 0) {
+      if (q.lawn && num(q.lawn.sqft)) svcs.add('lawn');
       if (q.mulch && (num(q.mulch.sqft) || num(q.mulch.area))) svcs.add('mulch');
       if (q.rock && (num(q.rock.sqft) || num(q.rock.area))) svcs.add('rock');
       if (q.edging && num(q.edging.linearFeet)) svcs.add('edging');
@@ -373,6 +463,7 @@ export default function Quoting() {
     setSelectedServices(svcs);
     const defs = makeDefaults();
     setData({
+      lawn: { ...defs.lawn, ...q.lawn },
       mulch: { ...defs.mulch, ...q.mulch },
       rock: { ...defs.rock, ...q.rock },
       edging: { ...defs.edging, ...q.edging },
@@ -480,30 +571,37 @@ export default function Quoting() {
 
           <div>
             <label className="block text-sm font-semibold text-primary mb-3">What services does this quote include?</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {SERVICE_OPTIONS.map((svc) => {
-                const Icon = svc.icon;
-                const active = selectedServices.has(svc.id);
-                return (
-                  <button
-                    key={svc.id}
-                    onClick={() => toggleService(svc.id)}
-                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                      active
-                        ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 shadow-sm'
-                        : 'border-border-subtle hover:border-border-strong hover:bg-surface-alt'
-                    }`}
-                  >
-                    <Icon size={24} className={active ? 'text-emerald-600' : 'text-muted'} />
-                    <span className={`text-sm font-medium ${active ? 'text-emerald-700 dark:text-emerald-300' : 'text-secondary'}`}>{svc.label}</span>
-                    {active && (
-                      <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
+            <div className="space-y-5">
+              {SERVICE_SECTIONS.map((section) => (
+                <div key={section.label}>
+                  <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">{section.label}</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {section.services.map((svc) => {
+                      const Icon = svc.icon;
+                      const active = selectedServices.has(svc.id);
+                      return (
+                        <button
+                          key={svc.id}
+                          onClick={() => toggleService(svc.id)}
+                          className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                            active
+                              ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 shadow-sm'
+                              : 'border-border-subtle hover:border-border-strong hover:bg-surface-alt'
+                          }`}
+                        >
+                          <Icon size={24} className={active ? 'text-emerald-600' : 'text-muted'} />
+                          <span className={`text-sm font-medium ${active ? 'text-emerald-700 dark:text-emerald-300' : 'text-secondary'}`}>{svc.label}</span>
+                          {active && (
+                            <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -537,6 +635,33 @@ export default function Quoting() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Only selected calculators */}
         <div className="lg:col-span-2 space-y-6">
+
+          {/* ── Lawn Care ── */}
+          {has('lawn') && (
+            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+              <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Scissors size={20} className="text-green-600" /> Lawn Care</h2>
+              <div className="grid grid-cols-2 gap-3">
+                <InputField label="Mowable Sq Ft" value={data.lawn.sqft} onChange={(v) => update('lawn', 'sqft', v)} placeholder="0" />
+                <div>
+                  <label className="block text-xs font-medium text-secondary mb-1">Difficulty</label>
+                  <select value={data.lawn.difficulty} onChange={(e) => update('lawn', 'difficulty', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                    <option value="easy">Easy (1.0x)</option>
+                    <option value="moderate">Moderate (1.15x)</option>
+                    <option value="hard">Hard (1.3x)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="border-t border-border-subtle pt-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <ReadonlyField label="Weekly Price" value={`$${fmt(lawnCalc.weekly)}`} />
+                  <ReadonlyField label="Every Other Week Price" value={`$${fmt(lawnCalc.biweekly)}`} />
+                </div>
+                {(lawnCalc.weekly <= (num(settings.lawnWeeklyMin) || 55)) && num(data.lawn.sqft) > 0 && (
+                  <p className="text-[10px] text-muted mt-2">Minimum applied ($${fmt(num(settings.lawnWeeklyMin) || 55)} weekly / $${fmt(num(settings.lawnBiweeklyMin) || 70)} EOW)</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ── Mulch ── */}
           {has('mulch') && (
@@ -698,6 +823,17 @@ export default function Quoting() {
             </div>
 
             {/* Per-service breakdowns */}
+            {has('lawn') && lawnCalc.quote > 0 && (
+              <div>
+                <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Lawn Care</p>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs"><span className="text-secondary">Difficulty</span><span className="text-primary capitalize">{data.lawn.difficulty}</span></div>
+                  <div className="flex justify-between text-xs"><span className="text-secondary">Weekly</span><span className="text-primary">${fmt(lawnCalc.weekly)}</span></div>
+                  <div className="flex justify-between text-sm font-semibold border-t border-border-subtle pt-1 mt-1"><span className="text-primary">Every Other Week</span><span className="text-emerald-600">${fmt(lawnCalc.biweekly)}</span></div>
+                </div>
+              </div>
+            )}
+
             {has('mulch') && mulchCalc.quote > 0 && (
               <div>
                 <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Mulch</p>
