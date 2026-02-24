@@ -1178,14 +1178,24 @@ export default function ExecutionDashboard() {
                     <span className={`text-sm font-bold ${cat.color}`}>{cat.label}</span>
                     <span className="text-xs text-muted">{formatTime(sched.start)}–{formatTime(sched.end)}</span>
                     {cat.key === 'sales' && (
-                      <a
-                        href="https://secure.getjobber.com/home"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium"
-                      >
-                        Jobber &rarr;
-                      </a>
+                      <>
+                        <a
+                          href="https://secure.getjobber.com/home"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                        >
+                          Send Quotes... &rarr;
+                        </a>
+                        <a
+                          href="https://secure.getjobber.com/sales"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                        >
+                          Follow-Ups &rarr;
+                        </a>
+                      </>
                     )}
                   </div>
                   <button
