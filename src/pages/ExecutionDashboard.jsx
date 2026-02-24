@@ -15,6 +15,9 @@ import {
   Settings,
   Pencil,
   X,
+  Flame,
+  Lightbulb,
+  ArrowRight,
 } from 'lucide-react';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
@@ -38,6 +41,13 @@ const DEFAULT_TIME_BLOCKS = {
 
 /* ─── Helpers ─── */
 
+// Normalize legacy flat-array parkingLot → { urgent, niceToHave }
+function normalizeParkingLot(pl) {
+  if (!pl) return { urgent: [], niceToHave: [] };
+  if (Array.isArray(pl)) return { urgent: pl, niceToHave: [] };
+  return { urgent: pl.urgent || [], niceToHave: pl.niceToHave || [] };
+}
+
 function createFreshDay(date, keepOutcomes, keepTimeBlocks, keepWins) {
   return {
     date,
@@ -59,7 +69,7 @@ function createFreshDay(date, keepOutcomes, keepTimeBlocks, keepWins) {
       { id: genId(), text: '', done: false },
       { id: genId(), text: '', done: false },
     ],
-    parkingLot: [],
+    parkingLot: { urgent: [], niceToHave: [] },
     endOfDay: {
       doneToday: '',
       movedToTomorrow: '',
@@ -251,7 +261,10 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
   const [step, setStep] = useState('checklist');
 
   // Parking lot items — local copy so user can remove/move during wrap-up
-  const [parkingItems, setParkingItems] = useState(() => [...(dash.parkingLot || [])]);
+  const [parkingItems, setParkingItems] = useState(() => {
+    const pl = normalizeParkingLot(dash.parkingLot);
+    return { urgent: [...pl.urgent], niceToHave: [...pl.niceToHave] };
+  });
 
   // Tomorrow's goals — pre-filled from today, user can keep/edit/clear
   const [tomorrowGoals, setTomorrowGoals] = useState(() => {
@@ -311,18 +324,20 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
     onRoll(journal, tomorrowWins);
   };
 
-  const removeParkingItemLocal = (id) => {
-    setParkingItems((prev) => prev.filter((i) => i.id !== id));
+  const removeParkingItemLocal = (lane, id) => {
+    setParkingItems((prev) => ({ ...prev, [lane]: prev[lane].filter((i) => i.id !== id) }));
   };
 
-  const moveParkingToGoal = (item, catKey) => {
+  const moveParkingToGoal = (lane, item, catKey) => {
     // Append parking item text to that category's tomorrow goal
     setTomorrowGoals((prev) => ({
       ...prev,
       [catKey]: { text: prev[catKey].text ? `${prev[catKey].text}; ${item.text}` : item.text, keep: true },
     }));
-    setParkingItems((prev) => prev.filter((i) => i.id !== item.id));
+    setParkingItems((prev) => ({ ...prev, [lane]: prev[lane].filter((i) => i.id !== item.id) }));
   };
+
+  const allParkingItems = [...parkingItems.urgent, ...parkingItems.niceToHave];
 
   const stepLabels = ['Checklist', 'Parking Lot', 'Tomorrow', 'Journal'];
   const stepKeys = ['checklist', 'parking', 'tomorrow', 'journal'];
@@ -430,36 +445,82 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
             <p className="text-sm text-muted mt-1">Clear items, move them to tomorrow's goals, or leave them</p>
           </div>
 
-          {parkingItems.length === 0 ? (
+          {allParkingItems.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-sm text-muted">No parking lot items — nice and clean!</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {parkingItems.map((item) => (
-                <div key={item.id} className="flex items-start gap-3 bg-card border border-border-subtle rounded-xl px-4 py-3">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-2" />
-                  <span className="flex-1 text-sm text-primary">{item.text}</span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {CATEGORIES.map((cat) => (
-                      <button
-                        key={cat.key}
-                        onClick={() => moveParkingToGoal(item, cat.key)}
-                        title={`Move to ${cat.label}`}
-                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cat.bg} ${cat.color} ${cat.border} border hover:opacity-80 transition-colors cursor-pointer`}
-                      >
-                        {cat.label[0]}
-                      </button>
+            <div className="space-y-4">
+              {/* Urgent items */}
+              {parkingItems.urgent.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Flame size={14} className="text-red-500" />
+                    <span className="text-xs font-bold text-red-600 dark:text-red-400 uppercase">Deep Work</span>
+                  </div>
+                  <div className="space-y-2">
+                    {parkingItems.urgent.map((item) => (
+                      <div key={item.id} className="flex items-start gap-3 bg-card border border-red-200 dark:border-red-800/50 rounded-xl px-4 py-3">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0 mt-2" />
+                        <span className="flex-1 text-sm text-primary">{item.text}</span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {CATEGORIES.map((cat) => (
+                            <button
+                              key={cat.key}
+                              onClick={() => moveParkingToGoal('urgent', item, cat.key)}
+                              title={`Move to ${cat.label}`}
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cat.bg} ${cat.color} ${cat.border} border hover:opacity-80 transition-colors cursor-pointer`}
+                            >
+                              {cat.label[0]}
+                            </button>
+                          ))}
+                          <button
+                            onClick={() => removeParkingItemLocal('urgent', item.id)}
+                            className="p-1 text-muted hover:text-red-500 transition-colors cursor-pointer ml-1"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
                     ))}
-                    <button
-                      onClick={() => removeParkingItemLocal(item.id)}
-                      className="p-1 text-muted hover:text-red-500 transition-colors cursor-pointer ml-1"
-                    >
-                      <Trash2 size={14} />
-                    </button>
                   </div>
                 </div>
-              ))}
+              )}
+              {/* Nice to Have items */}
+              {parkingItems.niceToHave.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Lightbulb size={14} className="text-amber-500" />
+                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase">Light Work</span>
+                  </div>
+                  <div className="space-y-2">
+                    {parkingItems.niceToHave.map((item) => (
+                      <div key={item.id} className="flex items-start gap-3 bg-card border border-amber-200 dark:border-amber-800/50 rounded-xl px-4 py-3">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-2" />
+                        <span className="flex-1 text-sm text-primary">{item.text}</span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {CATEGORIES.map((cat) => (
+                            <button
+                              key={cat.key}
+                              onClick={() => moveParkingToGoal('niceToHave', item, cat.key)}
+                              title={`Move to ${cat.label}`}
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cat.bg} ${cat.color} ${cat.border} border hover:opacity-80 transition-colors cursor-pointer`}
+                            >
+                              {cat.label[0]}
+                            </button>
+                          ))}
+                          <button
+                            onClick={() => removeParkingItemLocal('niceToHave', item.id)}
+                            className="p-1 text-muted hover:text-red-500 transition-colors cursor-pointer ml-1"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -688,22 +749,172 @@ export default function ExecutionDashboard() {
     setExecutionDashboard({ ...dash, ...patch });
   };
 
-  // Parking Lot
-  const [newParkingItem, setNewParkingItem] = useState('');
+  // Parking Lot (two lanes: urgent / nice-to-have)
+  const parking = normalizeParkingLot(dash.parkingLot);
+  const [newUrgentItem, setNewUrgentItem] = useState('');
+  const [newNiceItem, setNewNiceItem] = useState('');
 
-  const addParkingItem = () => {
-    const text = newParkingItem.trim();
+  const addParkingItem = (lane) => {
+    const text = lane === 'urgent' ? newUrgentItem.trim() : newNiceItem.trim();
     if (!text) return;
-    update({ parkingLot: [...dash.parkingLot, { id: genId(), text }] });
-    setNewParkingItem('');
+    const updated = { ...parking, [lane]: [...parking[lane], { id: genId(), text }] };
+    update({ parkingLot: updated });
+    lane === 'urgent' ? setNewUrgentItem('') : setNewNiceItem('');
   };
 
-  const removeParkingItem = (id) => {
-    update({ parkingLot: dash.parkingLot.filter((item) => item.id !== id) });
+  const removeParkingItem = (lane, id) => {
+    update({ parkingLot: { ...parking, [lane]: parking[lane].filter((item) => item.id !== id) } });
   };
 
-  const toggleParkingDone = (id) => {
-    update({ parkingLot: dash.parkingLot.map((item) => item.id === id ? { ...item, done: !item.done } : item) });
+  const toggleParkingDone = (lane, id) => {
+    update({ parkingLot: { ...parking, [lane]: parking[lane].map((item) => item.id === id ? { ...item, done: !item.done } : item) } });
+  };
+
+  const moveParkingLane = (fromLane, toLane, id) => {
+    const item = parking[fromLane].find((i) => i.id === id);
+    if (!item) return;
+    update({ parkingLot: {
+      ...parking,
+      [fromLane]: parking[fromLane].filter((i) => i.id !== id),
+      [toLane]: [...parking[toLane], item],
+    }});
+  };
+
+  const totalParkingCount = parking.urgent.length + parking.niceToHave.length;
+
+  // Drag-and-drop: reorder within lane + move between lanes
+  const [dragItem, setDragItem] = useState(null); // { lane, id }
+  const [dragOverLane, setDragOverLane] = useState(null);
+  const [dragOverItemId, setDragOverItemId] = useState(null);
+
+  const dragItemRef = useRef(null);
+  const handleDragStart = (lane, id) => (e) => {
+    const d = { lane, id };
+    setDragItem(d);
+    dragItemRef.current = d;
+    e.dataTransfer.effectAllowed = 'all';
+    e.dataTransfer.setData('text/plain', id);
+  };
+  const handleDragOver = (lane) => (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverLane(lane);
+  };
+  const handleDragLeave = () => { setDragOverLane(null); setDragOverItemId(null); };
+  const handleItemDragOver = (lane, itemId) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverLane(lane);
+    setDragOverItemId(itemId);
+  };
+  const handleDrop = (targetLane) => (e) => {
+    e.preventDefault();
+    setDragOverLane(null);
+    const targetItemId = dragOverItemId;
+    setDragOverItemId(null);
+    if (!dragItem) return;
+
+    const { lane: srcLane, id: srcId } = dragItem;
+    if (srcLane === targetLane) {
+      // Reorder within same lane
+      const items = [...parking[targetLane]];
+      const fromIdx = items.findIndex((i) => i.id === srcId);
+      let toIdx = targetItemId ? items.findIndex((i) => i.id === targetItemId) : items.length;
+      if (fromIdx === -1 || fromIdx === toIdx) { setDragItem(null); return; }
+      const [moved] = items.splice(fromIdx, 1);
+      if (toIdx > fromIdx) toIdx--;
+      items.splice(toIdx, 0, moved);
+      update({ parkingLot: { ...parking, [targetLane]: items } });
+    } else {
+      // Move between lanes, insert at drop position
+      const item = parking[srcLane].find((i) => i.id === srcId);
+      if (!item) { setDragItem(null); return; }
+      const destItems = [...parking[targetLane]];
+      const insertIdx = targetItemId ? destItems.findIndex((i) => i.id === targetItemId) : destItems.length;
+      destItems.splice(insertIdx === -1 ? destItems.length : insertIdx, 0, item);
+      update({ parkingLot: {
+        ...parking,
+        [srcLane]: parking[srcLane].filter((i) => i.id !== srcId),
+        [targetLane]: destItems,
+      }});
+    }
+    setDragItem(null);
+  };
+  const handleDragEnd = () => { setDragItem(null); dragItemRef.current = null; setDragOverLane(null); setDragOverItemId(null); setDragOverFocus(null); };
+
+  // Drop onto Today's Focus blocks
+  const [dragOverFocus, setDragOverFocus] = useState(null);
+  const handleFocusDragOver = (catKey) => (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverFocus(catKey);
+  };
+  const handleFocusDragLeave = () => setDragOverFocus(null);
+  const handleFocusDrop = (catKey) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverFocus(null);
+    // Use ref for reliable access — state may be stale in drag handlers
+    const di = dragItemRef.current;
+    if (!di) return;
+    const { lane, id } = di;
+    const currentParking = normalizeParkingLot(dash.parkingLot);
+    const item = currentParking[lane].find((i) => i.id === id);
+    if (!item) { setDragItem(null); dragItemRef.current = null; return; }
+    // Append text to the focus block goal
+    const win = dash.todaysWins[catKey];
+    // Add as a focus item (list), not appended to text
+    const focusItems = [...(win.focusItems || []), { id: item.id, text: item.text, fromLane: lane }];
+    // Remove from parking lot
+    const updatedParking = { ...currentParking, [lane]: currentParking[lane].filter((i) => i.id !== id) };
+    update({
+      todaysWins: { ...dash.todaysWins, [catKey]: { ...win, focusItems } },
+      parkingLot: updatedParking,
+    });
+    setDragItem(null);
+    dragItemRef.current = null;
+  };
+
+  // Drag focus items back to parking lot
+  const handleFocusItemDragStart = (catKey, item) => (e) => {
+    const d = { lane: '__focus', id: item.id, catKey, fromLane: item.fromLane || 'urgent' };
+    setDragItem(d);
+    dragItemRef.current = d;
+    e.dataTransfer.effectAllowed = 'all';
+    e.dataTransfer.setData('text/plain', item.id);
+  };
+
+  const removeFocusItem = (catKey, itemId) => {
+    const win = dash.todaysWins[catKey];
+    update({
+      todaysWins: { ...dash.todaysWins, [catKey]: { ...win, focusItems: (win.focusItems || []).filter((i) => i.id !== itemId) } },
+    });
+  };
+
+  // Override parking drop to also accept focus items being dragged back
+  const origHandleDrop = handleDrop;
+  const handleParkingDrop = (targetLane) => (e) => {
+    const di = dragItemRef.current;
+    if (di && di.lane === '__focus') {
+      e.preventDefault();
+      setDragOverLane(null);
+      setDragOverItemId(null);
+      // Move focus item back to parking lane
+      const { catKey, id } = di;
+      const win = dash.todaysWins[catKey];
+      const item = (win.focusItems || []).find((i) => i.id === id);
+      if (!item) { setDragItem(null); dragItemRef.current = null; return; }
+      const currentParking = normalizeParkingLot(dash.parkingLot);
+      update({
+        todaysWins: { ...dash.todaysWins, [catKey]: { ...win, focusItems: win.focusItems.filter((i) => i.id !== id) } },
+        parkingLot: { ...currentParking, [targetLane]: [...currentParking[targetLane], { id: item.id, text: item.text }] },
+      });
+      setDragItem(null);
+      dragItemRef.current = null;
+      return;
+    }
+    origHandleDrop(targetLane)(e);
   };
 
   // Roll to Tomorrow
@@ -726,7 +937,7 @@ export default function ExecutionDashboard() {
 
   // Progress
   const blocksTouched = CATEGORIES.filter(
-    (c) => dash.todaysWins[c.key]?.text || dash.todaysWins[c.key]?.done
+    (c) => dash.todaysWins[c.key]?.text || dash.todaysWins[c.key]?.done || (dash.todaysWins[c.key]?.focusItems?.length > 0)
   ).length;
 
   // ─── Wrap Up gate ───
@@ -740,7 +951,7 @@ export default function ExecutionDashboard() {
         setChecklistLog={setChecklistLog}
         onRoll={handleRollToTomorrow}
         onClose={() => setWrappingUp(false)}
-        onUpdateParking={(items) => update({ parkingLot: items })}
+        onUpdateParking={(parkingLot) => update({ parkingLot })}
       />
     );
   }
@@ -884,7 +1095,12 @@ export default function ExecutionDashboard() {
             const win = dash.todaysWins[cat.key];
             const sched = ownerSchedule[cat.key] || DEFAULT_TIME_BLOCKS[cat.key];
             return (
-              <div key={cat.key} className={`rounded-xl border ${cat.border} ${cat.bg} p-4`}>
+              <div
+                key={cat.key}
+                onDragOver={handleFocusDragOver(cat.key)}
+                onDragLeave={handleFocusDragLeave}
+                onDrop={handleFocusDrop(cat.key)}
+                className={`rounded-xl border p-4 transition-all ${dragOverFocus === cat.key ? `${cat.border} ${cat.bg} ring-2 ring-offset-1 ring-brand scale-[1.02]` : `${cat.border} ${cat.bg}`}`}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <span className={`text-sm font-bold ${cat.color}`}>{cat.label}</span>
@@ -926,6 +1142,30 @@ export default function ExecutionDashboard() {
                     win.done ? 'line-through text-muted' : ''
                   }`}
                 />
+                {/* Focus items dragged in from parking lot */}
+                {win.focusItems?.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {win.focusItems.map((fi) => (
+                      <div
+                        key={fi.id}
+                        draggable
+                        onDragStart={handleFocusItemDragStart(cat.key, fi)}
+                        onDragEnd={handleDragEnd}
+                        className="flex items-center gap-2 text-xs bg-white/60 dark:bg-white/5 border border-border-subtle rounded-lg px-2.5 py-1.5 cursor-grab active:cursor-grabbing group"
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${fi.fromLane === 'urgent' ? 'bg-red-400' : 'bg-amber-400'}`} />
+                        <span className="flex-1 text-primary truncate">{fi.text}</span>
+                        <button
+                          onClick={() => removeFocusItem(cat.key, fi.id)}
+                          className="shrink-0 text-muted hover:text-red-500 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
+                          title="Remove"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {cat.key === 'sales' && (
                   <a
                     href="https://secure.getjobber.com/home"
@@ -950,50 +1190,132 @@ export default function ExecutionDashboard() {
         </div>
       </section>
 
-      {/* ─── Parking Lot (quick add — full review at wrap-up) ─── */}
+      {/* ─── Parking Lot (two lanes: Deep Work / Light Work) ─── */}
       <section>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">
           Parking Lot
-          {dash.parkingLot.length > 0 && (
+          {totalParkingCount > 0 && (
             <span className="ml-2 text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full font-bold">
-              {dash.parkingLot.length}
+              {totalParkingCount}
             </span>
           )}
         </h2>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newParkingItem}
-            onChange={(e) => setNewParkingItem(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addParkingItem()}
-            placeholder="Jot something down for later..."
-            className="flex-1 bg-card border border-border-subtle rounded-xl px-4 py-2.5 text-sm text-primary outline-none placeholder:text-muted focus:ring-1 focus:ring-brand"
-          />
-          <button
-            onClick={addParkingItem}
-            disabled={!newParkingItem.trim()}
-            className="px-3 py-2.5 rounded-xl bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Plus size={14} />
-          </button>
-        </div>
-        {dash.parkingLot.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {dash.parkingLot.map((item) => (
-              <span key={item.id} className={`inline-flex items-center gap-1.5 text-xs border rounded-lg px-2.5 py-1 ${item.done ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700 text-emerald-600 line-through' : 'bg-surface-alt border-border-subtle text-secondary'}`}>
-                <button onClick={() => toggleParkingDone(item.id)} className="hover:opacity-70 cursor-pointer shrink-0" title={item.done ? 'Undo' : 'Mark done'}>
-                  {item.done
-                    ? <CheckCircle2 size={13} className="text-emerald-500" />
-                    : <Circle size={13} className="text-muted" />}
-                </button>
-                {item.text}
-                <button onClick={() => removeParkingItem(item.id)} className="hover:text-red-500 cursor-pointer shrink-0 ml-0.5" title="Remove">
-                  <X size={12} />
-                </button>
-              </span>
-            ))}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* ── Urgent ── */}
+          <div
+            onDragOver={handleDragOver('urgent')}
+            onDragLeave={handleDragLeave}
+            onDrop={handleParkingDrop('urgent')}
+            className={`bg-card border rounded-xl p-3 transition-colors ${dragOverLane === 'urgent' ? 'border-red-400 dark:border-red-500 bg-red-50/50 dark:bg-red-950/30' : 'border-red-200 dark:border-red-800/50'}`}>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Flame size={14} className="text-red-500" />
+              <span className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider">Deep Work</span>
+              {parking.urgent.length > 0 && (
+                <span className="text-[10px] bg-red-100 dark:bg-red-900/30 text-red-500 px-1.5 py-0.5 rounded-full font-bold">{parking.urgent.length}</span>
+              )}
+            </div>
+            <div className="flex gap-1.5 mb-2">
+              <input
+                type="text"
+                value={newUrgentItem}
+                onChange={(e) => setNewUrgentItem(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addParkingItem('urgent')}
+                placeholder="Deep work task..."
+                className="flex-1 bg-surface border border-border-subtle rounded-lg px-3 py-2 text-xs text-primary outline-none placeholder:text-muted focus:ring-1 focus:ring-red-400"
+              />
+              <button
+                onClick={() => addParkingItem('urgent')}
+                disabled={!newUrgentItem.trim()}
+                className="px-2.5 py-2 rounded-lg bg-red-500 text-white text-xs font-semibold hover:bg-red-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus size={12} />
+              </button>
+            </div>
+            {parking.urgent.length > 0 && (
+              <div className="space-y-1">
+                {parking.urgent.map((item, idx) => (
+                  <div
+                    key={item.id}
+                    draggable
+                    onDragStart={handleDragStart('urgent', item.id)}
+                    onDragOver={handleItemDragOver('urgent', item.id)}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-1 text-xs border rounded-lg px-2 py-1.5 cursor-grab active:cursor-grabbing transition-all ${dragOverItemId === item.id && dragItem?.id !== item.id ? 'border-t-2 border-t-red-400' : ''} ${dragItem?.id === item.id ? 'opacity-40' : ''} ${item.done ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700 text-emerald-600 line-through' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800/50 text-secondary'}`}>
+                    <span className="text-[10px] text-muted/50 w-3 text-center shrink-0 select-none">{idx + 1}</span>
+                    <button onClick={() => toggleParkingDone('urgent', item.id)} className="hover:opacity-70 cursor-pointer shrink-0" title={item.done ? 'Undo' : 'Mark done'}>
+                      {item.done ? <CheckCircle2 size={12} className="text-emerald-500" /> : <Circle size={12} className="text-muted" />}
+                    </button>
+                    <span className="flex-1 truncate">{item.text}</span>
+                    <button onClick={() => moveParkingLane('urgent', 'niceToHave', item.id)} className="hover:text-amber-500 cursor-pointer shrink-0" title="Move to Light Work">
+                      <ArrowRight size={11} />
+                    </button>
+                    <button onClick={() => removeParkingItem('urgent', item.id)} className="hover:text-red-500 cursor-pointer shrink-0" title="Remove">
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+
+          {/* ── Nice to Have ── */}
+          <div
+            onDragOver={handleDragOver('niceToHave')}
+            onDragLeave={handleDragLeave}
+            onDrop={handleParkingDrop('niceToHave')}
+            className={`bg-card border rounded-xl p-3 transition-colors ${dragOverLane === 'niceToHave' ? 'border-amber-400 dark:border-amber-500 bg-amber-50/50 dark:bg-amber-950/30' : 'border-amber-200 dark:border-amber-800/50'}`}>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Lightbulb size={14} className="text-amber-500" />
+              <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Light Work</span>
+              {parking.niceToHave.length > 0 && (
+                <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-500 px-1.5 py-0.5 rounded-full font-bold">{parking.niceToHave.length}</span>
+              )}
+            </div>
+            <div className="flex gap-1.5 mb-2">
+              <input
+                type="text"
+                value={newNiceItem}
+                onChange={(e) => setNewNiceItem(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addParkingItem('niceToHave')}
+                placeholder="Light work task..."
+                className="flex-1 bg-surface border border-border-subtle rounded-lg px-3 py-2 text-xs text-primary outline-none placeholder:text-muted focus:ring-1 focus:ring-amber-400"
+              />
+              <button
+                onClick={() => addParkingItem('niceToHave')}
+                disabled={!newNiceItem.trim()}
+                className="px-2.5 py-2 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus size={12} />
+              </button>
+            </div>
+            {parking.niceToHave.length > 0 && (
+              <div className="space-y-1">
+                {parking.niceToHave.map((item, idx) => (
+                  <div
+                    key={item.id}
+                    draggable
+                    onDragStart={handleDragStart('niceToHave', item.id)}
+                    onDragOver={handleItemDragOver('niceToHave', item.id)}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-1 text-xs border rounded-lg px-2 py-1.5 cursor-grab active:cursor-grabbing transition-all ${dragOverItemId === item.id && dragItem?.id !== item.id ? 'border-t-2 border-t-amber-400' : ''} ${dragItem?.id === item.id ? 'opacity-40' : ''} ${item.done ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700 text-emerald-600 line-through' : 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/50 text-secondary'}`}>
+                    <span className="text-[10px] text-muted/50 w-3 text-center shrink-0 select-none">{idx + 1}</span>
+                    <button onClick={() => toggleParkingDone('niceToHave', item.id)} className="hover:opacity-70 cursor-pointer shrink-0" title={item.done ? 'Undo' : 'Mark done'}>
+                      {item.done ? <CheckCircle2 size={12} className="text-emerald-500" /> : <Circle size={12} className="text-muted" />}
+                    </button>
+                    <span className="flex-1 truncate">{item.text}</span>
+                    <button onClick={() => moveParkingLane('niceToHave', 'urgent', item.id)} className="hover:text-red-500 cursor-pointer shrink-0" title="Move to Deep Work">
+                      <Flame size={11} />
+                    </button>
+                    <button onClick={() => removeParkingItem('niceToHave', item.id)} className="hover:text-red-500 cursor-pointer shrink-0" title="Remove">
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </section>
 
       {/* ─── Wrap Up Day Button ─── */}
