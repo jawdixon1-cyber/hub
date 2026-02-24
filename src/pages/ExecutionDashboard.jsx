@@ -28,15 +28,13 @@ import renderLinkedText from '../utils/renderLinkedText';
 /* ─── Constants ─── */
 
 const CATEGORIES = [
-  { key: 'build', label: 'Build', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-emerald-200 dark:border-emerald-800' },
-  { key: 'delegate', label: 'Delegate', color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-950/30', border: 'border-purple-200 dark:border-purple-800' },
+  { key: 'build', label: 'Build & Delegate', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-emerald-200 dark:border-emerald-800' },
   { key: 'sales', label: 'Sales', color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-blue-200 dark:border-blue-800' },
 ];
 
 const DEFAULT_TIME_BLOCKS = {
   sales: { start: '07:00', end: '09:00' },
-  build: { start: '09:00', end: '11:00' },
-  delegate: { start: '11:00', end: '12:00' },
+  build: { start: '09:00', end: '12:00' },
 };
 
 /* ─── Helpers ─── */
@@ -59,7 +57,7 @@ function createFreshDay(date, keepOutcomes, keepTimeBlocks, keepWins) {
     todaysWins: keepWins || {
       sales: { text: '', done: false },
       build: { text: '', done: false },
-      delegate: { text: '', done: false },
+      ops: { done: false, focusItems: [] },
     },
     timeBlocks: keepTimeBlocks || { ...DEFAULT_TIME_BLOCKS },
     doNow: [
@@ -752,7 +750,7 @@ export default function ExecutionDashboard() {
   // Parking Lot (two lanes: urgent / nice-to-have)
   const parking = normalizeParkingLot(dash.parkingLot);
   const [newUrgentItem, setNewUrgentItem] = useState('');
-  const [newNiceItem, setNewNiceItem] = useState('');
+  const [newNiceItem, setNewNiceItem] = useState(''); // kept for potential direct add to light work
 
   const addParkingItem = (lane) => {
     const text = lane === 'urgent' ? newUrgentItem.trim() : newNiceItem.trim();
@@ -781,6 +779,41 @@ export default function ExecutionDashboard() {
   };
 
   const totalParkingCount = parking.urgent.length + parking.niceToHave.length;
+
+  // Inline editing for parking lot items
+  const [editingParkingId, setEditingParkingId] = useState(null);
+  const [editingParkingText, setEditingParkingText] = useState('');
+  const editInputRef = useRef(null);
+
+  const startEditParking = (lane, item) => {
+    setEditingParkingId(`${lane}:${item.id}`);
+    setEditingParkingText(item.text);
+    setTimeout(() => editInputRef.current?.focus(), 0);
+  };
+  const commitEditParking = (lane, id) => {
+    const text = editingParkingText.trim();
+    if (!text) { setEditingParkingId(null); return; }
+    update({ parkingLot: { ...parking, [lane]: parking[lane].map((i) => i.id === id ? { ...i, text } : i) } });
+    setEditingParkingId(null);
+  };
+
+  // Inline editing for focus items
+  const [editingFocusId, setEditingFocusId] = useState(null);
+  const [editingFocusText, setEditingFocusText] = useState('');
+  const editFocusRef = useRef(null);
+
+  const startEditFocus = (catKey, item) => {
+    setEditingFocusId(`${catKey}:${item.id}`);
+    setEditingFocusText(item.text);
+    setTimeout(() => editFocusRef.current?.focus(), 0);
+  };
+  const commitEditFocus = (catKey, id) => {
+    const text = editingFocusText.trim();
+    if (!text) { setEditingFocusId(null); return; }
+    const win = dash.todaysWins[catKey] || { done: false, focusItems: [] };
+    update({ todaysWins: { ...dash.todaysWins, [catKey]: { ...win, focusItems: (win.focusItems || []).map((i) => i.id === id ? { ...i, text } : i) } } });
+    setEditingFocusId(null);
+  };
 
   // Drag-and-drop: reorder within lane + move between lanes
   const [dragItem, setDragItem] = useState(null); // { lane, id }
@@ -820,7 +853,7 @@ export default function ExecutionDashboard() {
       // Reorder within same lane
       const items = [...parking[targetLane]];
       const fromIdx = items.findIndex((i) => i.id === srcId);
-      let toIdx = targetItemId ? items.findIndex((i) => i.id === targetItemId) : items.length;
+      let toIdx = (targetItemId && targetItemId !== '__bottom') ? items.findIndex((i) => i.id === targetItemId) : items.length;
       if (fromIdx === -1 || fromIdx === toIdx) { setDragItem(null); return; }
       const [moved] = items.splice(fromIdx, 1);
       if (toIdx > fromIdx) toIdx--;
@@ -831,7 +864,7 @@ export default function ExecutionDashboard() {
       const item = parking[srcLane].find((i) => i.id === srcId);
       if (!item) { setDragItem(null); return; }
       const destItems = [...parking[targetLane]];
-      const insertIdx = targetItemId ? destItems.findIndex((i) => i.id === targetItemId) : destItems.length;
+      const insertIdx = (targetItemId && targetItemId !== '__bottom') ? destItems.findIndex((i) => i.id === targetItemId) : destItems.length;
       destItems.splice(insertIdx === -1 ? destItems.length : insertIdx, 0, item);
       update({ parkingLot: {
         ...parking,
@@ -841,7 +874,7 @@ export default function ExecutionDashboard() {
     }
     setDragItem(null);
   };
-  const handleDragEnd = () => { setDragItem(null); dragItemRef.current = null; setDragOverLane(null); setDragOverItemId(null); setDragOverFocus(null); };
+  const handleDragEnd = () => { setDragItem(null); dragItemRef.current = null; setDragOverLane(null); setDragOverItemId(null); setDragOverFocus(null); setDragOverFocusItemId(null); };
 
   // Drop onto Today's Focus blocks
   const [dragOverFocus, setDragOverFocus] = useState(null);
@@ -863,7 +896,7 @@ export default function ExecutionDashboard() {
     const item = currentParking[lane].find((i) => i.id === id);
     if (!item) { setDragItem(null); dragItemRef.current = null; return; }
     // Append text to the focus block goal
-    const win = dash.todaysWins[catKey];
+    const win = dash.todaysWins[catKey] || { done: false, focusItems: [] };
     // Add as a focus item (list), not appended to text
     const focusItems = [...(win.focusItems || []), { id: item.id, text: item.text, fromLane: lane }];
     // Remove from parking lot
@@ -876,7 +909,9 @@ export default function ExecutionDashboard() {
     dragItemRef.current = null;
   };
 
-  // Drag focus items back to parking lot
+  // Drag focus items — reorder within block or drag back to parking lot
+  const [dragOverFocusItemId, setDragOverFocusItemId] = useState(null);
+
   const handleFocusItemDragStart = (catKey, item) => (e) => {
     const d = { lane: '__focus', id: item.id, catKey, fromLane: item.fromLane || 'urgent' };
     setDragItem(d);
@@ -885,8 +920,45 @@ export default function ExecutionDashboard() {
     e.dataTransfer.setData('text/plain', item.id);
   };
 
+  const handleFocusItemDragOver = (catKey, itemId) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverFocus(catKey);
+    setDragOverFocusItemId(itemId);
+  };
+
+  const handleFocusItemDrop = (catKey) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const di = dragItemRef.current;
+    const targetItemId = dragOverFocusItemId;
+    setDragOverFocusItemId(null);
+    setDragOverFocus(null);
+    if (!di) return;
+
+    // Reorder within same focus block
+    if (di.lane === '__focus' && di.catKey === catKey) {
+      const win = dash.todaysWins[catKey] || { done: false, focusItems: [] };
+      const items = [...(win.focusItems || [])];
+      const fromIdx = items.findIndex((i) => i.id === di.id);
+      let toIdx = (targetItemId && targetItemId !== '__bottom') ? items.findIndex((i) => i.id === targetItemId) : items.length;
+      if (fromIdx === -1 || fromIdx === toIdx) { setDragItem(null); dragItemRef.current = null; return; }
+      const [moved] = items.splice(fromIdx, 1);
+      if (toIdx > fromIdx) toIdx--;
+      items.splice(toIdx, 0, moved);
+      update({ todaysWins: { ...dash.todaysWins, [catKey]: { ...win, focusItems: items } } });
+      setDragItem(null);
+      dragItemRef.current = null;
+      return;
+    }
+
+    // Otherwise fall through to normal focus drop (from parking lot or another block)
+    handleFocusDrop(catKey)(e);
+  };
+
   const removeFocusItem = (catKey, itemId) => {
-    const win = dash.todaysWins[catKey];
+    const win = dash.todaysWins[catKey] || { done: false, focusItems: [] };
     update({
       todaysWins: { ...dash.todaysWins, [catKey]: { ...win, focusItems: (win.focusItems || []).filter((i) => i.id !== itemId) } },
     });
@@ -902,7 +974,7 @@ export default function ExecutionDashboard() {
       setDragOverItemId(null);
       // Move focus item back to parking lane
       const { catKey, id } = di;
-      const win = dash.todaysWins[catKey];
+      const win = dash.todaysWins[catKey] || { done: false, focusItems: [] };
       const item = (win.focusItems || []).find((i) => i.id === id);
       if (!item) { setDragItem(null); dragItemRef.current = null; return; }
       const currentParking = normalizeParkingLot(dash.parkingLot);
@@ -1105,6 +1177,16 @@ export default function ExecutionDashboard() {
                   <div className="flex items-center gap-2">
                     <span className={`text-sm font-bold ${cat.color}`}>{cat.label}</span>
                     <span className="text-xs text-muted">{formatTime(sched.start)}–{formatTime(sched.end)}</span>
+                    {cat.key === 'sales' && (
+                      <a
+                        href="https://secure.getjobber.com/home"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                      >
+                        Jobber &rarr;
+                      </a>
+                    )}
                   </div>
                   <button
                     onClick={() => {
@@ -1126,71 +1208,117 @@ export default function ExecutionDashboard() {
                     )}
                   </button>
                 </div>
-                <input
-                  type="text"
-                  value={win.text}
-                  onChange={(e) => {
-                    update({
-                      todaysWins: {
-                        ...dash.todaysWins,
-                        [cat.key]: { ...win, text: e.target.value },
-                      },
-                    });
-                  }}
-                  placeholder={`Today's ${cat.label.toLowerCase()} goal...`}
-                  className={`w-full bg-transparent text-sm outline-none text-primary placeholder:text-muted ${
-                    win.done ? 'line-through text-muted' : ''
-                  }`}
-                />
                 {/* Focus items dragged in from parking lot */}
                 {win.focusItems?.length > 0 && (
-                  <div className="mt-2 space-y-1">
+                  <div
+                    className="mt-2.5 space-y-1 border-t border-border-subtle/50 pt-2"
+                    onDragOver={(e) => { e.preventDefault(); setDragOverFocus(cat.key); }}
+                    onDrop={handleFocusItemDrop(cat.key)}
+                  >
                     {win.focusItems.map((fi) => (
                       <div
                         key={fi.id}
-                        draggable
+                        draggable={editingFocusId !== `${cat.key}:${fi.id}`}
                         onDragStart={handleFocusItemDragStart(cat.key, fi)}
+                        onDragOver={handleFocusItemDragOver(cat.key, fi.id)}
                         onDragEnd={handleDragEnd}
-                        className="flex items-center gap-2 text-xs bg-white/60 dark:bg-white/5 border border-border-subtle rounded-lg px-2.5 py-1.5 cursor-grab active:cursor-grabbing group"
+                        className={`group flex items-center gap-2 text-xs rounded-md px-2 py-1.5 transition-all ${dragOverFocusItemId === fi.id && dragItem?.id !== fi.id ? 'border-t-2 border-brand' : 'border-t-2 border-transparent'} ${dragItem?.id === fi.id ? 'opacity-30' : ''} ${editingFocusId === `${cat.key}:${fi.id}` ? '' : 'cursor-grab active:cursor-grabbing'} hover:bg-white/40 dark:hover:bg-white/5`}
                       >
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${fi.fromLane === 'urgent' ? 'bg-red-400' : 'bg-amber-400'}`} />
-                        <span className="flex-1 text-primary truncate">{fi.text}</span>
-                        <button
-                          onClick={() => removeFocusItem(cat.key, fi.id)}
-                          className="shrink-0 text-muted hover:text-red-500 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
-                          title="Remove"
-                        >
-                          <X size={11} />
-                        </button>
+                        <span className={`w-1 h-1 rounded-full shrink-0 ${fi.fromLane === 'urgent' ? 'bg-red-400' : 'bg-amber-400'}`} />
+                        {editingFocusId === `${cat.key}:${fi.id}` ? (
+                          <input
+                            ref={editFocusRef}
+                            type="text"
+                            value={editingFocusText}
+                            onChange={(e) => setEditingFocusText(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') commitEditFocus(cat.key, fi.id); if (e.key === 'Escape') setEditingFocusId(null); }}
+                            onBlur={() => commitEditFocus(cat.key, fi.id)}
+                            className="flex-1 bg-transparent outline-none text-xs text-primary py-0"
+                          />
+                        ) : (
+                          <span className="flex-1 text-primary/80 truncate" onDoubleClick={() => startEditFocus(cat.key, fi)}>{fi.text}</span>
+                        )}
+                        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => startEditFocus(cat.key, fi)} className="p-0.5 text-muted hover:text-primary cursor-pointer" title="Edit"><Pencil size={10} /></button>
+                          <button onClick={() => removeFocusItem(cat.key, fi.id)} className="p-0.5 text-muted hover:text-red-500 cursor-pointer" title="Remove"><X size={10} /></button>
+                        </div>
                       </div>
                     ))}
+                    {/* Bottom drop zone */}
+                    <div
+                      onDragOver={handleFocusItemDragOver(cat.key, '__bottom')}
+                      onDrop={handleFocusItemDrop(cat.key)}
+                      className={`h-3 rounded transition-all ${dragOverFocusItemId === '__bottom' && dragOverFocus === cat.key ? 'border-t-2 border-brand' : ''}`}
+                    />
                   </div>
-                )}
-                {cat.key === 'sales' && (
-                  <a
-                    href="https://secure.getjobber.com/home"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 mt-2 text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium"
-                  >
-                    Jobber Dashboard &rarr;
-                  </a>
                 )}
               </div>
             );
           })}
-          {/* Ops — static info block */}
-          <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-sm font-bold text-orange-600 dark:text-orange-400">Ops</span>
-              <span className="text-xs text-muted">4p–6p</span>
-            </div>
-            <p className="text-sm text-muted">End of day checklist, editing vids, sending quotes, etc.</p>
-          </div>
+          {/* Ops — drop target block */}
+          {(() => {
+            const opsWin = dash.todaysWins.ops || { done: false, focusItems: [] };
+            return (
+              <div
+                onDragOver={handleFocusDragOver('ops')}
+                onDragLeave={handleFocusDragLeave}
+                onDrop={handleFocusDrop('ops')}
+                className={`rounded-xl border p-4 transition-all ${dragOverFocus === 'ops' ? 'border-orange-400 dark:border-orange-500 bg-orange-50 dark:bg-orange-950/30 ring-2 ring-offset-1 ring-brand scale-[1.02]' : 'border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30'}`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm font-bold text-orange-600 dark:text-orange-400">Ops</span>
+                  <span className="text-xs text-muted">4p–6p</span>
+                </div>
+                {opsWin.focusItems?.length > 0 && (
+                  <div
+                    className="mt-2 space-y-1 border-t border-border-subtle/50 pt-2"
+                    onDragOver={(e) => { e.preventDefault(); setDragOverFocus('ops'); }}
+                    onDrop={handleFocusItemDrop('ops')}
+                  >
+                    {opsWin.focusItems.map((fi) => (
+                      <div
+                        key={fi.id}
+                        draggable={editingFocusId !== `ops:${fi.id}`}
+                        onDragStart={handleFocusItemDragStart('ops', fi)}
+                        onDragOver={handleFocusItemDragOver('ops', fi.id)}
+                        onDragEnd={handleDragEnd}
+                        className={`group flex items-center gap-2 text-xs rounded-md px-2 py-1.5 transition-all ${dragOverFocusItemId === fi.id && dragItem?.id !== fi.id ? 'border-t-2 border-brand' : 'border-t-2 border-transparent'} ${dragItem?.id === fi.id ? 'opacity-30' : ''} ${editingFocusId === `ops:${fi.id}` ? '' : 'cursor-grab active:cursor-grabbing'} hover:bg-white/40 dark:hover:bg-white/5`}
+                      >
+                        <span className={`w-1 h-1 rounded-full shrink-0 ${fi.fromLane === 'urgent' ? 'bg-red-400' : 'bg-amber-400'}`} />
+                        {editingFocusId === `ops:${fi.id}` ? (
+                          <input
+                            ref={editFocusRef}
+                            type="text"
+                            value={editingFocusText}
+                            onChange={(e) => setEditingFocusText(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') commitEditFocus('ops', fi.id); if (e.key === 'Escape') setEditingFocusId(null); }}
+                            onBlur={() => commitEditFocus('ops', fi.id)}
+                            className="flex-1 bg-transparent outline-none text-xs text-primary py-0"
+                          />
+                        ) : (
+                          <span className="flex-1 text-primary/80 truncate" onDoubleClick={() => startEditFocus('ops', fi)}>{fi.text}</span>
+                        )}
+                        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => startEditFocus('ops', fi)} className="p-0.5 text-muted hover:text-primary cursor-pointer" title="Edit"><Pencil size={10} /></button>
+                          <button onClick={() => removeFocusItem('ops', fi.id)} className="p-0.5 text-muted hover:text-red-500 cursor-pointer" title="Remove"><X size={10} /></button>
+                        </div>
+                      </div>
+                    ))}
+                    {/* Bottom drop zone */}
+                    <div
+                      onDragOver={handleFocusItemDragOver('ops', '__bottom')}
+                      onDrop={handleFocusItemDrop('ops')}
+                      className={`h-3 rounded transition-all ${dragOverFocusItemId === '__bottom' && dragOverFocus === 'ops' ? 'border-t-2 border-brand' : ''}`}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </section>
 
-      {/* ─── Parking Lot (two lanes: Deep Work / Light Work) ─── */}
+      {/* ─── Parking Lot ─── */}
       <section>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">
           Parking Lot
@@ -1201,117 +1329,135 @@ export default function ExecutionDashboard() {
           )}
         </h2>
 
+        {/* Single add input */}
+        <div className="flex gap-2 mb-3">
+          <input
+            type="text"
+            value={newUrgentItem}
+            onChange={(e) => setNewUrgentItem(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addParkingItem('urgent')}
+            placeholder="Add a task..."
+            className="flex-1 bg-card border border-border-subtle rounded-xl px-4 py-2.5 text-sm text-primary outline-none placeholder:text-muted focus:ring-1 focus:ring-brand"
+          />
+          <button
+            onClick={() => addParkingItem('urgent')}
+            disabled={!newUrgentItem.trim()}
+            className="px-4 py-2.5 rounded-xl bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Adds to Deep Work — drag to Light Work if needed"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* ── Urgent ── */}
+          {/* ── Deep Work ── */}
           <div
             onDragOver={handleDragOver('urgent')}
             onDragLeave={handleDragLeave}
             onDrop={handleParkingDrop('urgent')}
-            className={`bg-card border rounded-xl p-3 transition-colors ${dragOverLane === 'urgent' ? 'border-red-400 dark:border-red-500 bg-red-50/50 dark:bg-red-950/30' : 'border-red-200 dark:border-red-800/50'}`}>
-            <div className="flex items-center gap-1.5 mb-2">
-              <Flame size={14} className="text-red-500" />
-              <span className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider">Deep Work</span>
+            className={`rounded-xl p-3 min-h-[80px] transition-all ${dragOverLane === 'urgent' ? 'bg-red-50 dark:bg-red-950/30 ring-2 ring-red-300 dark:ring-red-700' : 'bg-surface-alt'}`}>
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <Flame size={13} className="text-red-500" />
+              <span className="text-[11px] font-semibold text-red-600 dark:text-red-400">Deep Work</span>
               {parking.urgent.length > 0 && (
-                <span className="text-[10px] bg-red-100 dark:bg-red-900/30 text-red-500 px-1.5 py-0.5 rounded-full font-bold">{parking.urgent.length}</span>
+                <span className="text-[10px] text-muted ml-auto">{parking.urgent.length}</span>
               )}
-            </div>
-            <div className="flex gap-1.5 mb-2">
-              <input
-                type="text"
-                value={newUrgentItem}
-                onChange={(e) => setNewUrgentItem(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addParkingItem('urgent')}
-                placeholder="Deep work task..."
-                className="flex-1 bg-surface border border-border-subtle rounded-lg px-3 py-2 text-xs text-primary outline-none placeholder:text-muted focus:ring-1 focus:ring-red-400"
-              />
-              <button
-                onClick={() => addParkingItem('urgent')}
-                disabled={!newUrgentItem.trim()}
-                className="px-2.5 py-2 rounded-lg bg-red-500 text-white text-xs font-semibold hover:bg-red-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Plus size={12} />
-              </button>
             </div>
             {parking.urgent.length > 0 && (
               <div className="space-y-1">
                 {parking.urgent.map((item, idx) => (
                   <div
                     key={item.id}
-                    draggable
+                    draggable={editingParkingId !== `urgent:${item.id}`}
                     onDragStart={handleDragStart('urgent', item.id)}
                     onDragOver={handleItemDragOver('urgent', item.id)}
                     onDragEnd={handleDragEnd}
-                    className={`flex items-center gap-1 text-xs border rounded-lg px-2 py-1.5 cursor-grab active:cursor-grabbing transition-all ${dragOverItemId === item.id && dragItem?.id !== item.id ? 'border-t-2 border-t-red-400' : ''} ${dragItem?.id === item.id ? 'opacity-40' : ''} ${item.done ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700 text-emerald-600 line-through' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800/50 text-secondary'}`}>
-                    <span className="text-[10px] text-muted/50 w-3 text-center shrink-0 select-none">{idx + 1}</span>
-                    <button onClick={() => toggleParkingDone('urgent', item.id)} className="hover:opacity-70 cursor-pointer shrink-0" title={item.done ? 'Undo' : 'Mark done'}>
-                      {item.done ? <CheckCircle2 size={12} className="text-emerald-500" /> : <Circle size={12} className="text-muted" />}
+                    className={`group flex items-center gap-2 text-xs rounded-lg px-2.5 py-2 transition-all ${dragOverItemId === item.id && dragItem?.id !== item.id ? 'border-t-2 border-red-300' : 'border-t-2 border-transparent'} ${dragItem?.id === item.id ? 'opacity-30' : ''} ${editingParkingId === `urgent:${item.id}` ? '' : 'cursor-grab active:cursor-grabbing'} ${item.done ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : 'bg-card hover:bg-card/80'}`}>
+                    <button onClick={() => toggleParkingDone('urgent', item.id)} className="shrink-0 cursor-pointer" title={item.done ? 'Undo' : 'Done'}>
+                      {item.done ? <CheckCircle2 size={14} className="text-emerald-500" /> : <Circle size={14} className="text-muted/40" />}
                     </button>
-                    <span className="flex-1 truncate">{item.text}</span>
-                    <button onClick={() => moveParkingLane('urgent', 'niceToHave', item.id)} className="hover:text-amber-500 cursor-pointer shrink-0" title="Move to Light Work">
-                      <ArrowRight size={11} />
-                    </button>
-                    <button onClick={() => removeParkingItem('urgent', item.id)} className="hover:text-red-500 cursor-pointer shrink-0" title="Remove">
-                      <X size={11} />
-                    </button>
+                    {editingParkingId === `urgent:${item.id}` ? (
+                      <input
+                        ref={editInputRef}
+                        type="text"
+                        value={editingParkingText}
+                        onChange={(e) => setEditingParkingText(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') commitEditParking('urgent', item.id); if (e.key === 'Escape') setEditingParkingId(null); }}
+                        onBlur={() => commitEditParking('urgent', item.id)}
+                        className="flex-1 bg-transparent outline-none text-xs text-primary py-0"
+                      />
+                    ) : (
+                      <span
+                        className={`flex-1 truncate ${item.done ? 'line-through text-muted' : 'text-primary'}`}
+                        onDoubleClick={() => startEditParking('urgent', item)}
+                      >{item.text}</span>
+                    )}
+                    <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => startEditParking('urgent', item)} className="p-0.5 text-muted hover:text-primary cursor-pointer" title="Edit"><Pencil size={11} /></button>
+                      <button onClick={() => removeParkingItem('urgent', item.id)} className="p-0.5 text-muted hover:text-red-500 cursor-pointer" title="Remove"><X size={11} /></button>
+                    </div>
                   </div>
                 ))}
+                <div
+                  onDragOver={handleItemDragOver('urgent', '__bottom')}
+                  className={`h-3 rounded transition-all ${dragOverItemId === '__bottom' && dragOverLane === 'urgent' ? 'border-t-2 border-red-300' : ''}`}
+                />
               </div>
             )}
           </div>
 
-          {/* ── Nice to Have ── */}
+          {/* ── Light Work ── */}
           <div
             onDragOver={handleDragOver('niceToHave')}
             onDragLeave={handleDragLeave}
             onDrop={handleParkingDrop('niceToHave')}
-            className={`bg-card border rounded-xl p-3 transition-colors ${dragOverLane === 'niceToHave' ? 'border-amber-400 dark:border-amber-500 bg-amber-50/50 dark:bg-amber-950/30' : 'border-amber-200 dark:border-amber-800/50'}`}>
-            <div className="flex items-center gap-1.5 mb-2">
-              <Lightbulb size={14} className="text-amber-500" />
-              <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Light Work</span>
+            className={`rounded-xl p-3 min-h-[80px] transition-all ${dragOverLane === 'niceToHave' ? 'bg-amber-50 dark:bg-amber-950/30 ring-2 ring-amber-300 dark:ring-amber-700' : 'bg-surface-alt'}`}>
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <Lightbulb size={13} className="text-amber-500" />
+              <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">Light Work</span>
               {parking.niceToHave.length > 0 && (
-                <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-500 px-1.5 py-0.5 rounded-full font-bold">{parking.niceToHave.length}</span>
+                <span className="text-[10px] text-muted ml-auto">{parking.niceToHave.length}</span>
               )}
-            </div>
-            <div className="flex gap-1.5 mb-2">
-              <input
-                type="text"
-                value={newNiceItem}
-                onChange={(e) => setNewNiceItem(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addParkingItem('niceToHave')}
-                placeholder="Light work task..."
-                className="flex-1 bg-surface border border-border-subtle rounded-lg px-3 py-2 text-xs text-primary outline-none placeholder:text-muted focus:ring-1 focus:ring-amber-400"
-              />
-              <button
-                onClick={() => addParkingItem('niceToHave')}
-                disabled={!newNiceItem.trim()}
-                className="px-2.5 py-2 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Plus size={12} />
-              </button>
             </div>
             {parking.niceToHave.length > 0 && (
               <div className="space-y-1">
                 {parking.niceToHave.map((item, idx) => (
                   <div
                     key={item.id}
-                    draggable
+                    draggable={editingParkingId !== `niceToHave:${item.id}`}
                     onDragStart={handleDragStart('niceToHave', item.id)}
                     onDragOver={handleItemDragOver('niceToHave', item.id)}
                     onDragEnd={handleDragEnd}
-                    className={`flex items-center gap-1 text-xs border rounded-lg px-2 py-1.5 cursor-grab active:cursor-grabbing transition-all ${dragOverItemId === item.id && dragItem?.id !== item.id ? 'border-t-2 border-t-amber-400' : ''} ${dragItem?.id === item.id ? 'opacity-40' : ''} ${item.done ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700 text-emerald-600 line-through' : 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/50 text-secondary'}`}>
-                    <span className="text-[10px] text-muted/50 w-3 text-center shrink-0 select-none">{idx + 1}</span>
-                    <button onClick={() => toggleParkingDone('niceToHave', item.id)} className="hover:opacity-70 cursor-pointer shrink-0" title={item.done ? 'Undo' : 'Mark done'}>
-                      {item.done ? <CheckCircle2 size={12} className="text-emerald-500" /> : <Circle size={12} className="text-muted" />}
+                    className={`group flex items-center gap-2 text-xs rounded-lg px-2.5 py-2 transition-all ${dragOverItemId === item.id && dragItem?.id !== item.id ? 'border-t-2 border-amber-300' : 'border-t-2 border-transparent'} ${dragItem?.id === item.id ? 'opacity-30' : ''} ${editingParkingId === `niceToHave:${item.id}` ? '' : 'cursor-grab active:cursor-grabbing'} ${item.done ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : 'bg-card hover:bg-card/80'}`}>
+                    <button onClick={() => toggleParkingDone('niceToHave', item.id)} className="shrink-0 cursor-pointer" title={item.done ? 'Undo' : 'Done'}>
+                      {item.done ? <CheckCircle2 size={14} className="text-emerald-500" /> : <Circle size={14} className="text-muted/40" />}
                     </button>
-                    <span className="flex-1 truncate">{item.text}</span>
-                    <button onClick={() => moveParkingLane('niceToHave', 'urgent', item.id)} className="hover:text-red-500 cursor-pointer shrink-0" title="Move to Deep Work">
-                      <Flame size={11} />
-                    </button>
-                    <button onClick={() => removeParkingItem('niceToHave', item.id)} className="hover:text-red-500 cursor-pointer shrink-0" title="Remove">
-                      <X size={11} />
-                    </button>
+                    {editingParkingId === `niceToHave:${item.id}` ? (
+                      <input
+                        ref={editInputRef}
+                        type="text"
+                        value={editingParkingText}
+                        onChange={(e) => setEditingParkingText(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') commitEditParking('niceToHave', item.id); if (e.key === 'Escape') setEditingParkingId(null); }}
+                        onBlur={() => commitEditParking('niceToHave', item.id)}
+                        className="flex-1 bg-transparent outline-none text-xs text-primary py-0"
+                      />
+                    ) : (
+                      <span
+                        className={`flex-1 truncate ${item.done ? 'line-through text-muted' : 'text-primary'}`}
+                        onDoubleClick={() => startEditParking('niceToHave', item)}
+                      >{item.text}</span>
+                    )}
+                    <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => startEditParking('niceToHave', item)} className="p-0.5 text-muted hover:text-primary cursor-pointer" title="Edit"><Pencil size={11} /></button>
+                      <button onClick={() => removeParkingItem('niceToHave', item.id)} className="p-0.5 text-muted hover:text-red-500 cursor-pointer" title="Remove"><X size={11} /></button>
+                    </div>
                   </div>
                 ))}
+                <div
+                  onDragOver={handleItemDragOver('niceToHave', '__bottom')}
+                  className={`h-3 rounded transition-all ${dragOverItemId === '__bottom' && dragOverLane === 'niceToHave' ? 'border-t-2 border-amber-300' : ''}`}
+                />
               </div>
             )}
           </div>
