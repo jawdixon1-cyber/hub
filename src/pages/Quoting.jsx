@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Calculator, Trash2, ChevronDown, ChevronUp, Save,
   Settings, Plus, X, ArrowLeft, ArrowRight, Trees, Mountain,
-  Ruler, TreePine, Shrub, Sprout, Fence, Scissors,
+  Ruler, TreePine, Shrub, Fence, Scissors, Leaf,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
@@ -24,9 +24,9 @@ const SERVICE_SECTIONS = [
   {
     label: 'CLEANUP',
     services: [
-      { id: 'weeds', label: 'Weeds', icon: Sprout, color: 'lime' },
       { id: 'bushes', label: 'Bushes', icon: Shrub, color: 'green' },
       { id: 'overgrown', label: 'Overgrown Area', icon: Fence, color: 'orange' },
+      { id: 'leafCleanup', label: 'Leaf Cleanup', icon: Leaf, color: 'amber' },
     ],
   },
   {
@@ -190,6 +190,39 @@ function calcLawn(l, settings) {
 
   const quote = biweekly;
   return { weekly, biweekly, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote };
+}
+
+function calcLeafCleanup(lc) {
+  // Rock Hill / Charlotte metro pricing — anchored on pro/business-owner data:
+  // GreenPal pros (South): $200-$300 standard cleanup, leaf = 3x mow rate
+  // LawnSite forums: $65-$90/man-hr, $150-$180 min on small lots
+  // Clean Cut Landscaping CLT: $200-$1,000 published range
+  // ECHO Means Business: $40+/man-hr floor for profitability
+  // Mow rate ~$55-$70 mid yard → 3x = $165-$210 light cleanup
+  const BASE_PRICE = {
+    S:  { LIGHT: 150, MED: 200, HEAVY: 300, EXTREME: 425 },
+    M:  { LIGHT: 200, MED: 300, HEAVY: 450, EXTREME: 650 },
+    L:  { LIGHT: 300, MED: 450, HEAVY: 650, EXTREME: 925 },
+    XL: { LIGHT: 425, MED: 625, HEAVY: 950, EXTREME: 1350 },
+  };
+  const FENCE_ADD = { NONE: 0, EASY_GATE: 25, TIGHT_GATE: 75 };
+  const HAUL_LOAD_PRICE = 75;
+  const HAUL_MIN_FEE = 50;
+  const DIFFICULTY_MULT = { NORMAL: 1.0, HARD: 1.25 };
+  const MIN_JOB_PRICE = 150;
+  const ROUND_TO = 5;
+
+  const base = (BASE_PRICE[lc.yardSize] || BASE_PRICE.M)[lc.leafVolume] || 350;
+  const fenceFee = FENCE_ADD[lc.fenceAccess] || 0;
+  const haulFee = lc.haulOff ? Math.max(num(lc.haulLoads) * HAUL_LOAD_PRICE, HAUL_MIN_FEE) : 0;
+  const subtotal = base + fenceFee + haulFee;
+  const multiplier = DIFFICULTY_MULT[lc.difficulty] || 1.0;
+  const adjusted = subtotal * multiplier;
+  const minApplied = adjusted < MIN_JOB_PRICE;
+  const raw = Math.max(adjusted, MIN_JOB_PRICE);
+  const quote = Math.ceil(raw / ROUND_TO) * ROUND_TO;
+
+  return { quote, base, fenceFee, haulFee, multiplier, minApplied, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote };
 }
 
 function calcSummary(sections) {
@@ -368,7 +401,8 @@ export default function Quoting() {
     rock: { sqft: '', depth: '3', pricePerYd: '', chargePerYd: '', equipmentCost: '', delivery: '', includeFabric: false, fabricCoverage: '', fabricCostPerRoll: '' },
     edging: { linearFeet: '', unitLength: '20', costPerUnit: '', servicePerFoot: '', delivery: '' },
     pine: { bales: '', balePrice: '', serviceCostPerBale: '', delivery: '' },
-    other: { weeds: '', bushes: '', overgrown: '' },
+    leafCleanup: { yardSize: 'M', leafVolume: 'MED', fenceAccess: 'NONE', haulOff: false, haulLoads: '1', difficulty: 'NORMAL' },
+    other: { bushes: '', overgrown: '' },
   });
 
   // ─── Step state: 'list' | 'setup' | 'calculator' ───
@@ -405,11 +439,12 @@ export default function Quoting() {
   const rockCalc = has('rock') ? calcRock(data.rock) : ZERO_CALC;
   const edgingCalc = has('edging') ? calcEdging(data.edging) : ZERO_CALC;
   const pineCalc = has('pine') ? calcPine(data.pine) : ZERO_CALC;
+  const leafCleanupCalc = has('leafCleanup') ? calcLeafCleanup(data.leafCleanup) : ZERO_CALC;
   const otherCalcs = {
-    quote: (has('weeds') ? num(data.other.weeds) : 0) + (has('bushes') ? num(data.other.bushes) : 0) + (has('overgrown') ? num(data.other.overgrown) : 0),
+    quote: (has('bushes') ? num(data.other.bushes) : 0) + (has('overgrown') ? num(data.other.overgrown) : 0),
     materialCostTotal: 0, delivery: 0,
   };
-  const summary = calcSummary([lawnCalc, mulchCalc, rockCalc, edgingCalc, pineCalc, otherCalcs]);
+  const summary = calcSummary([lawnCalc, mulchCalc, rockCalc, edgingCalc, pineCalc, leafCleanupCalc, otherCalcs]);
 
 
   // ─── Actions ───
@@ -433,6 +468,7 @@ export default function Quoting() {
       rock: has('rock') ? { ...data.rock } : null,
       edging: has('edging') ? { ...data.edging } : null,
       pineNeedles: has('pine') ? { ...data.pine } : null,
+      leafCleanup: has('leafCleanup') ? { ...data.leafCleanup } : null,
       otherServices: { ...data.other },
       total: summary.totalQuote,
       createdBy: currentUser,
@@ -456,7 +492,7 @@ export default function Quoting() {
       if (q.rock && (num(q.rock.sqft) || num(q.rock.area))) svcs.add('rock');
       if (q.edging && num(q.edging.linearFeet)) svcs.add('edging');
       if (q.pineNeedles && num(q.pineNeedles.bales)) svcs.add('pine');
-      if (num(q.otherServices?.weeds)) svcs.add('weeds');
+      if (q.leafCleanup) svcs.add('leafCleanup');
       if (num(q.otherServices?.bushes)) svcs.add('bushes');
       if (num(q.otherServices?.overgrown)) svcs.add('overgrown');
     }
@@ -468,6 +504,7 @@ export default function Quoting() {
       rock: { ...defs.rock, ...q.rock },
       edging: { ...defs.edging, ...q.edging },
       pine: { ...defs.pine, ...q.pineNeedles },
+      leafCleanup: { ...defs.leafCleanup, ...q.leafCleanup },
       other: { ...defs.other, ...q.otherServices },
     });
     setStep('calculator');
@@ -798,12 +835,94 @@ export default function Quoting() {
             </div>
           )}
 
+          {/* ── Leaf Cleanup ── */}
+          {has('leafCleanup') && (
+            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+              <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Leaf size={20} className="text-amber-600" /> Leaf Cleanup</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-secondary mb-1">Yard Size</label>
+                  <select value={data.leafCleanup.yardSize} onChange={(e) => update('leafCleanup', 'yardSize', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                    <option value="S">Small</option>
+                    <option value="M">Medium</option>
+                    <option value="L">Large</option>
+                    <option value="XL">Extra Large</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-secondary mb-1">Leaf Volume</label>
+                  <select value={data.leafCleanup.leafVolume} onChange={(e) => update('leafCleanup', 'leafVolume', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                    <option value="LIGHT">Light</option>
+                    <option value="MED">Medium</option>
+                    <option value="HEAVY">Heavy</option>
+                    <option value="EXTREME">Extreme</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-secondary mb-1">Fence Access</label>
+                  <select value={data.leafCleanup.fenceAccess} onChange={(e) => update('leafCleanup', 'fenceAccess', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                    <option value="NONE">None</option>
+                    <option value="EASY_GATE">Easy Gate (+$25)</option>
+                    <option value="TIGHT_GATE">Tight Gate (+$75)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-secondary mb-1">Difficulty</label>
+                  <select value={data.leafCleanup.difficulty} onChange={(e) => update('leafCleanup', 'difficulty', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                    <option value="NORMAL">Normal (1.0x)</option>
+                    <option value="HARD">Hard (1.25x)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Haul-Off Toggle */}
+              <div className="border-t border-border-subtle pt-4 space-y-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div className={`relative w-10 h-5 rounded-full transition-colors ${data.leafCleanup.haulOff ? 'bg-emerald-500' : 'bg-gray-600'}`}
+                    onClick={() => setData(prev => ({ ...prev, leafCleanup: { ...prev.leafCleanup, haulOff: !prev.leafCleanup.haulOff } }))}>
+                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${data.leafCleanup.haulOff ? 'translate-x-5' : ''}`} />
+                  </div>
+                  <span className="text-sm font-semibold text-primary">Haul-Off</span>
+                </label>
+                {data.leafCleanup.haulOff && (
+                  <div className="max-w-[200px]">
+                    <label className="block text-xs font-medium text-secondary mb-1">Loads ($75/load, $50 min)</label>
+                    <select value={data.leafCleanup.haulLoads} onChange={(e) => update('leafCleanup', 'haulLoads', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                      <option value="0.5">0.5</option>
+                      <option value="1">1</option>
+                      <option value="1.5">1.5</option>
+                      <option value="2">2</option>
+                      <option value="2.5">2.5</option>
+                      <option value="3">3</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Calculated results */}
+              <div className="border-t border-border-subtle pt-4 space-y-3">
+                <p className="text-xs font-bold text-secondary uppercase tracking-wide">Calculated</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <ReadonlyField label="Base Price" value={`$${fmt(leafCleanupCalc.base)}`} />
+                  <ReadonlyField label="Fence Fee" value={`$${fmt(leafCleanupCalc.fenceFee)}`} />
+                  <ReadonlyField label="Haul Fee" value={`$${fmt(leafCleanupCalc.haulFee)}`} />
+                </div>
+                {leafCleanupCalc.multiplier > 1 && (
+                  <p className="text-[10px] text-muted">Hard difficulty: {leafCleanupCalc.multiplier}x multiplier applied</p>
+                )}
+                {leafCleanupCalc.minApplied && (
+                  <p className="text-[10px] text-muted">Minimum job price ($150) applied</p>
+                )}
+                <ReadonlyField label="Leaf Cleanup Quote" value={`$${fmt(leafCleanupCalc.quote)}`} className="max-w-[200px]" />
+              </div>
+            </div>
+          )}
+
           {/* ── Other services (flat $) ── */}
-          {(has('weeds') || has('bushes') || has('overgrown')) && (
+          {(has('bushes') || has('overgrown')) && (
             <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
               <h2 className="text-lg font-bold text-primary">Other Services</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {has('weeds') && <InputField label="Weeds" value={data.other.weeds} onChange={(v) => update('other', 'weeds', v)} prefix="$" placeholder="0" />}
                 {has('bushes') && <InputField label="Bushes" value={data.other.bushes} onChange={(v) => update('other', 'bushes', v)} prefix="$" placeholder="0" />}
                 {has('overgrown') && <InputField label="Overgrown Area" value={data.other.overgrown} onChange={(v) => update('other', 'overgrown', v)} prefix="$" placeholder="0" />}
               </div>
@@ -887,11 +1006,24 @@ export default function Quoting() {
               </div>
             )}
 
+            {has('leafCleanup') && leafCleanupCalc.quote > 0 && (
+              <div>
+                <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Leaf Cleanup</p>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs"><span className="text-secondary">Base</span><span className="text-primary">${fmt(leafCleanupCalc.base)}</span></div>
+                  {leafCleanupCalc.fenceFee > 0 && <div className="flex justify-between text-xs"><span className="text-secondary">Fence Fee</span><span className="text-primary">${fmt(leafCleanupCalc.fenceFee)}</span></div>}
+                  {leafCleanupCalc.haulFee > 0 && <div className="flex justify-between text-xs"><span className="text-secondary">Haul Fee</span><span className="text-primary">${fmt(leafCleanupCalc.haulFee)}</span></div>}
+                  {leafCleanupCalc.multiplier > 1 && <div className="flex justify-between text-xs"><span className="text-secondary">Difficulty</span><span className="text-primary">{leafCleanupCalc.multiplier}x (Hard)</span></div>}
+                  {leafCleanupCalc.minApplied && <div className="flex justify-between text-xs"><span className="text-secondary">Note</span><span className="text-primary">Min applied</span></div>}
+                  <div className="flex justify-between text-sm font-semibold border-t border-border-subtle pt-1 mt-1"><span className="text-primary">Leaf Cleanup Quote</span><span className="text-emerald-600">${fmt(leafCleanupCalc.quote)}</span></div>
+                </div>
+              </div>
+            )}
+
             {otherCalcs.quote > 0 && (
               <div>
                 <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Other Services</p>
                 <div className="space-y-1">
-                  {has('weeds') && num(data.other.weeds) > 0 && <div className="flex justify-between text-xs"><span className="text-secondary">Weeds</span><span className="text-primary">${fmt(num(data.other.weeds))}</span></div>}
                   {has('bushes') && num(data.other.bushes) > 0 && <div className="flex justify-between text-xs"><span className="text-secondary">Bushes</span><span className="text-primary">${fmt(num(data.other.bushes))}</span></div>}
                   {has('overgrown') && num(data.other.overgrown) > 0 && <div className="flex justify-between text-xs"><span className="text-secondary">Overgrown</span><span className="text-primary">${fmt(num(data.other.overgrown))}</span></div>}
                   <div className="flex justify-between text-sm font-semibold border-t border-border-subtle pt-1 mt-1"><span className="text-primary">Other Quote</span><span className="text-emerald-600">${fmt(otherCalcs.quote)}</span></div>
