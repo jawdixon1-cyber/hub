@@ -746,7 +746,7 @@ export default function ExecutionDashboard() {
   const dash = getDashboard();
 
   const update = (patch) => {
-    setExecutionDashboard({ ...dash, ...patch });
+    setExecutionDashboard((prev) => ({ ...prev, ...patch }));
   };
 
   // Parking Lot (two lanes: urgent / nice-to-have)
