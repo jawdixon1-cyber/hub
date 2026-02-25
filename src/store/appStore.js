@@ -112,15 +112,25 @@ export function createAppStore(cloudData) {
             localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(cached));
           } catch {}
 
-          // Persist to Supabase
+          // Persist to Supabase (retry once on failure)
           for (const sk of keysToSync) {
             const entry = STATE_KEYS.find((e) => e.supaKey === sk);
             if (entry) {
+              const payload = { key: sk, value: state[entry.key] };
               supabase
                 .from('app_state')
-                .upsert({ key: sk, value: state[entry.key] }, { onConflict: 'key' })
-                .then(() => {})
-                .catch(() => {});
+                .upsert(payload, { onConflict: 'key' })
+                .then(({ error }) => {
+                  if (error) {
+                    console.warn('[appStore] Supabase sync failed for', sk, '— retrying…', error.message);
+                    setTimeout(() => {
+                      supabase.from('app_state').upsert(payload, { onConflict: 'key' }).catch(() => {});
+                    }, 2000);
+                  }
+                })
+                .catch((err) => {
+                  console.warn('[appStore] Supabase sync error for', sk, err);
+                });
             }
           }
         }, 500);

@@ -40,8 +40,9 @@ const DEFAULT_TIME_BLOCKS = {
 /* ─── Helpers ─── */
 
 // Normalize legacy flat-array parkingLot → { urgent, niceToHave }
-function normalizeParkingLot(pl) {
-  if (!pl) return { urgent: [], niceToHave: [] };
+// Returns null if input is empty/missing (preserves "no data" vs "empty list" distinction)
+function normalizeParkingLot(pl, { allowNull = false } = {}) {
+  if (!pl) return allowNull ? null : { urgent: [], niceToHave: [] };
   if (Array.isArray(pl)) return { urgent: pl, niceToHave: [] };
   return { urgent: pl.urgent || [], niceToHave: pl.niceToHave || [] };
 }
@@ -735,7 +736,8 @@ export default function ExecutionDashboard() {
           : null;
       const keepTimeBlocks = executionDashboard?.timeBlocks || null;
       const keepWins = executionDashboard?.todaysWins || null;
-      const keepParkingLot = normalizeParkingLot(executionDashboard?.parkingLot);
+      // Always carry parking lot forward — only reset if there truly was no prior data
+      const keepParkingLot = normalizeParkingLot(executionDashboard?.parkingLot, { allowNull: true });
       const fresh = createFreshDay(today, keepOutcomes, keepTimeBlocks, keepWins, keepParkingLot);
       setExecutionDashboard(fresh);
       return fresh;
