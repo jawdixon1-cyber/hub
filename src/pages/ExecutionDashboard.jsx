@@ -46,7 +46,7 @@ function normalizeParkingLot(pl) {
   return { urgent: pl.urgent || [], niceToHave: pl.niceToHave || [] };
 }
 
-function createFreshDay(date, keepOutcomes, keepTimeBlocks, keepWins) {
+function createFreshDay(date, keepOutcomes, keepTimeBlocks, keepWins, keepParkingLot) {
   return {
     date,
     weeklyOutcomes: keepOutcomes || [
@@ -67,7 +67,7 @@ function createFreshDay(date, keepOutcomes, keepTimeBlocks, keepWins) {
       { id: genId(), text: '', done: false },
       { id: genId(), text: '', done: false },
     ],
-    parkingLot: { urgent: [], niceToHave: [] },
+    parkingLot: keepParkingLot || { urgent: [], niceToHave: [] },
     endOfDay: {
       doneToday: '',
       movedToTomorrow: '',
@@ -317,7 +317,8 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
     const tomorrowWins = {};
     for (const cat of CATEGORIES) {
       const g = tomorrowGoals[cat.key];
-      tomorrowWins[cat.key] = { text: g.keep ? g.text : '', done: false };
+      const existingFocusItems = dash.todaysWins[cat.key]?.focusItems || [];
+      tomorrowWins[cat.key] = { text: g.keep ? g.text : '', done: false, focusItems: g.keep ? existingFocusItems : [] };
     }
     onRoll(journal, tomorrowWins);
   };
@@ -734,7 +735,8 @@ export default function ExecutionDashboard() {
           : null;
       const keepTimeBlocks = executionDashboard?.timeBlocks || null;
       const keepWins = executionDashboard?.todaysWins || null;
-      const fresh = createFreshDay(today, keepOutcomes, keepTimeBlocks, keepWins);
+      const keepParkingLot = normalizeParkingLot(executionDashboard?.parkingLot);
+      const fresh = createFreshDay(today, keepOutcomes, keepTimeBlocks, keepWins, keepParkingLot);
       setExecutionDashboard(fresh);
       return fresh;
     }
@@ -1001,7 +1003,8 @@ export default function ExecutionDashboard() {
 
     const keepOutcomes = isSameWeek(dash.date, tomorrowStr) ? dash.weeklyOutcomes : null;
 
-    const newDay = createFreshDay(tomorrowStr, keepOutcomes, dash.timeBlocks, tomorrowWins || dash.todaysWins);
+    const keepParkingLot = normalizeParkingLot(dash.parkingLot);
+    const newDay = createFreshDay(tomorrowStr, keepOutcomes, dash.timeBlocks, tomorrowWins || dash.todaysWins, keepParkingLot);
 
     setExecutionDashboard(newDay);
     setWrappingUp(false);
