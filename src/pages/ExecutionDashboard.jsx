@@ -957,7 +957,28 @@ export default function ExecutionDashboard() {
       return;
     }
 
-    // Otherwise fall through to normal focus drop (from parking lot or another block)
+    // Cross-block move: focus item dragged from one block to another
+    if (di.lane === '__focus' && di.catKey !== catKey) {
+      const srcWin = dash.todaysWins[di.catKey] || { done: false, focusItems: [] };
+      const item = (srcWin.focusItems || []).find((i) => i.id === di.id);
+      if (!item) { setDragItem(null); dragItemRef.current = null; return; }
+      const destWin = dash.todaysWins[catKey] || { done: false, focusItems: [] };
+      const destItems = [...(destWin.focusItems || [])];
+      const insertIdx = (targetItemId && targetItemId !== '__bottom') ? destItems.findIndex((i) => i.id === targetItemId) : destItems.length;
+      destItems.splice(insertIdx === -1 ? destItems.length : insertIdx, 0, item);
+      update({
+        todaysWins: {
+          ...dash.todaysWins,
+          [di.catKey]: { ...srcWin, focusItems: srcWin.focusItems.filter((i) => i.id !== di.id) },
+          [catKey]: { ...destWin, focusItems: destItems },
+        },
+      });
+      setDragItem(null);
+      dragItemRef.current = null;
+      return;
+    }
+
+    // Otherwise fall through to normal focus drop (from parking lot)
     handleFocusDrop(catKey)(e);
   };
 
