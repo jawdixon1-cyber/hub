@@ -738,11 +738,15 @@ export default function ExecutionDashboard() {
 
   const dash = getDashboard();
 
-  // ─── One-time restore: recover items lost from past wrap-ups ───
-  const [restored, setRestored] = useState(false);
+  // ─── One-time restore: recover items lost from past wrap-ups (runs once EVER, not every session) ───
+  const RESTORE_FLAG = 'greenteam-history-restored';
+  const alreadyRestored = useRef(false);
   useEffect(() => {
-    if (restored || !executionHistory || executionHistory.length === 0 || !dash) return;
-    setRestored(true);
+    if (alreadyRestored.current) return;
+    try { if (localStorage.getItem(RESTORE_FLAG)) { alreadyRestored.current = true; return; } } catch {}
+    if (!executionHistory || executionHistory.length === 0 || !dash) return;
+    alreadyRestored.current = true;
+    try { localStorage.setItem(RESTORE_FLAG, '1'); } catch {}
 
     const currentIds = new Set();
     // Collect IDs already in the current dashboard
@@ -837,7 +841,7 @@ export default function ExecutionDashboard() {
       }
       return merged;
     });
-  }, [restored, executionHistory, dash, setExecutionDashboard]);
+  }, [executionHistory, dash, setExecutionDashboard]);
 
   const update = (patch) => {
     setExecutionDashboard((prev) => ({ ...prev, ...patch }));
