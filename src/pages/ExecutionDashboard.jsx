@@ -727,20 +727,19 @@ export default function ExecutionDashboard() {
   const morningLogComplete = morningLogEntry && morningLogEntry.completedItems === morningLogEntry.totalItems;
   const morningComplete = morningItemsComplete || morningLogComplete;
 
-  // Initialize or load dashboard
+  // Initialize or load dashboard — carry forward everything on date change
   const getDashboard = useCallback(() => {
-    if (!executionDashboard || executionDashboard.date !== today) {
-      const keepOutcomes =
-        executionDashboard && isSameWeek(executionDashboard.date, today)
-          ? executionDashboard.weeklyOutcomes
-          : null;
-      const keepTimeBlocks = executionDashboard?.timeBlocks || null;
-      const keepWins = executionDashboard?.todaysWins || null;
-      // Always carry parking lot forward — only reset if there truly was no prior data
-      const keepParkingLot = normalizeParkingLot(executionDashboard?.parkingLot, { allowNull: true });
-      const fresh = createFreshDay(today, keepOutcomes, keepTimeBlocks, keepWins, keepParkingLot);
+    if (!executionDashboard) {
+      // First time ever — create a blank dashboard
+      const fresh = createFreshDay(today, null, null, null, null);
       setExecutionDashboard(fresh);
       return fresh;
+    }
+    if (executionDashboard.date !== today) {
+      // Date changed — keep all items, just update the date
+      const updated = { ...executionDashboard, date: today };
+      setExecutionDashboard(updated);
+      return updated;
     }
     return executionDashboard;
   }, [executionDashboard, today, setExecutionDashboard]);
@@ -1014,7 +1013,7 @@ export default function ExecutionDashboard() {
     origHandleDrop(targetLane)(e);
   };
 
-  // Roll to Tomorrow
+  // Roll to Tomorrow — archive today but keep everything intact
   const handleRollToTomorrow = (journal, tomorrowWins) => {
     // Save journal to endOfDay before archiving
     const archived = { ...dash, endOfDay: { ...dash.endOfDay, doneToday: journal || '' } };
@@ -1024,12 +1023,13 @@ export default function ExecutionDashboard() {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
-    const keepOutcomes = isSameWeek(dash.date, tomorrowStr) ? dash.weeklyOutcomes : null;
-
-    const keepParkingLot = normalizeParkingLot(dash.parkingLot);
-    const newDay = createFreshDay(tomorrowStr, keepOutcomes, dash.timeBlocks, tomorrowWins || dash.todaysWins, keepParkingLot);
-
-    setExecutionDashboard(newDay);
+    // Carry forward EVERYTHING — only update the date and clear the journal
+    setExecutionDashboard({
+      ...dash,
+      date: tomorrowStr,
+      todaysWins: tomorrowWins || dash.todaysWins,
+      endOfDay: { doneToday: '', movedToTomorrow: '', firstTaskTomorrow: '' },
+    });
     setWrappingUp(false);
   };
 
