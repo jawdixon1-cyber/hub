@@ -1501,18 +1501,17 @@ export default function ExecutionDashboard() {
         Wrap Up My Day
       </button>
 
-      {/* ─── Reset Day (testing) ─── */}
+      {/* ─── Reset Day ─── */}
       <button
         onClick={() => {
-          if (!confirm('Reset everything for today? (checklists, goals, parking lot)')) return;
+          if (!confirm('Reset checklists for today? (Your goals, parking lot & focus items stay)')) return;
           setOwnerStartChecklist((prev) => prev.map((i) => ({ ...i, done: false })));
           setOwnerEndChecklist((prev) => prev.map((i) => ({ ...i, done: false })));
-          setExecutionDashboard(createFreshDay(today, dash.weeklyOutcomes, dash.timeBlocks, dash.todaysWins));
           setMorningDismissed(false);
         }}
         className="w-full text-center text-[11px] text-muted/50 hover:text-red-400 transition-colors cursor-pointer py-2"
       >
-        Reset Day (testing)
+        Reset Day
       </button>
     </div>
   );
