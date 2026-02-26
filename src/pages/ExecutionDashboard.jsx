@@ -255,7 +255,7 @@ function StartMyDayGate({ greeting, date, items, setItems, checklistLog, setChec
 
 /* ─── Wrap Up Day (full-screen, multi-step) ─── */
 
-function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog, setChecklistLog, onRoll, onClose, onUpdateParking }) {
+function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog, setChecklistLog, onRoll, onClose }) {
   // Steps: checklist → parking → tomorrow → journal
   const [step, setStep] = useState('checklist');
 
@@ -312,16 +312,8 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
   }, [checklistItems]);
 
   const handleFinish = () => {
-    // Sync parking lot changes back to dashboard
-    onUpdateParking(parkingItems);
-    // Build tomorrow's wins from kept goals
-    const tomorrowWins = {};
-    for (const cat of CATEGORIES) {
-      const g = tomorrowGoals[cat.key];
-      const existingFocusItems = dash.todaysWins[cat.key]?.focusItems || [];
-      tomorrowWins[cat.key] = { text: g.keep ? g.text : '', done: false, focusItems: g.keep ? existingFocusItems : [] };
-    }
-    onRoll(journal, tomorrowWins);
+    // Just archive and roll — everything stays as-is
+    onRoll(journal);
   };
 
   const removeParkingItemLocal = (lane, id) => {
@@ -1013,22 +1005,23 @@ export default function ExecutionDashboard() {
     origHandleDrop(targetLane)(e);
   };
 
-  // Roll to Tomorrow — archive today but keep everything intact
-  const handleRollToTomorrow = (journal, tomorrowWins) => {
-    // Save journal to endOfDay before archiving
-    const archived = { ...dash, endOfDay: { ...dash.endOfDay, doneToday: journal || '' } };
-    setExecutionHistory([...(executionHistory || []), archived]);
+  // Roll to Tomorrow — archive today, keep EVERYTHING intact (nothing resets unless user deletes it)
+  const handleRollToTomorrow = (journal) => {
+    setExecutionDashboard((current) => {
+      // Archive today's snapshot
+      const archived = { ...current, endOfDay: { ...current.endOfDay, doneToday: journal || '' } };
+      setExecutionHistory([...(executionHistory || []), archived]);
 
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
-    // Carry forward EVERYTHING — only update the date and clear the journal
-    setExecutionDashboard({
-      ...dash,
-      date: tomorrowStr,
-      todaysWins: tomorrowWins || dash.todaysWins,
-      endOfDay: { doneToday: '', movedToTomorrow: '', firstTaskTomorrow: '' },
+      // Only change date and clear journal — everything else stays
+      return {
+        ...current,
+        date: tomorrowStr,
+        endOfDay: { doneToday: '', movedToTomorrow: '', firstTaskTomorrow: '' },
+      };
     });
     setWrappingUp(false);
   };
@@ -1049,7 +1042,6 @@ export default function ExecutionDashboard() {
         setChecklistLog={setChecklistLog}
         onRoll={handleRollToTomorrow}
         onClose={() => setWrappingUp(false)}
-        onUpdateParking={(parkingLot) => update({ parkingLot })}
       />
     );
   }
