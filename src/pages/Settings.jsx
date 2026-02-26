@@ -29,6 +29,7 @@ export function SettingsContent() {
   const [timezone, setTimezone] = useState(() => localStorage.getItem(TZ_STORAGE_KEY) || '');
   const [showChecklistEditor, setShowChecklistEditor] = useState(false);
   const [showPrefs, setShowPrefs] = useState(false);
+  const [showOwnerSettings, setShowOwnerSettings] = useState(false);
   const [showTraining, setShowTraining] = useState(false);
 
   const equipmentCategories = useAppStore((s) => s.equipmentCategories);
@@ -244,8 +245,29 @@ export function SettingsContent() {
         </div>
       </div>
 
-      {/* ── Edit Checklists (owner only) ── */}
+      {/* ── Owner Settings (toggle) ── */}
       {ownerMode && (
+        <div>
+          <div className="bg-card rounded-2xl shadow-lg border border-border-subtle overflow-hidden">
+            <button
+              onClick={() => setShowOwnerSettings(!showOwnerSettings)}
+              className="w-full flex items-center justify-between p-6 cursor-pointer hover:bg-surface-alt/50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Wrench size={18} className="text-muted" />
+                <div className="text-left">
+                  <p className="text-sm font-medium text-primary">Owner Settings</p>
+                  <p className="text-xs text-tertiary">Checklists, training, equipment, and team management</p>
+                </div>
+              </div>
+              <ChevronDown size={16} className={`text-muted shrink-0 transition-transform duration-200 ${showOwnerSettings ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Checklists (owner only) ── */}
+      {ownerMode && showOwnerSettings && (
         <div>
           <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-6">
             <div className="flex items-center justify-between">
@@ -285,7 +307,7 @@ export function SettingsContent() {
       )}
 
       {/* ── Team Learning (owner only) ── */}
-      {ownerMode && (
+      {ownerMode && showOwnerSettings && (
         <div>
           <div className="bg-card rounded-2xl shadow-lg border border-border-subtle overflow-hidden">
             <button
@@ -499,7 +521,7 @@ export function SettingsContent() {
       )}
 
       {/* ── Equipment Categories (owner only) ── */}
-      {ownerMode && (
+      {ownerMode && showOwnerSettings && (
         <div>
           <div className="bg-card rounded-2xl shadow-lg border border-border-subtle overflow-hidden">
             <button
@@ -580,7 +602,7 @@ export function SettingsContent() {
       )}
 
       {/* ── Employee Management (owner only) ── */}
-      {ownerMode && (
+      {ownerMode && showOwnerSettings && (
         <div>
           <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-6">
             <button

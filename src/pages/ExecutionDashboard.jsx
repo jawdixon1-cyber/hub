@@ -24,6 +24,7 @@ import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useChecklistDay, useChecklistLog } from '../components/owner/MyDaySection';
 import renderLinkedText from '../utils/renderLinkedText';
+import { ChecklistSection } from '../components/ChecklistEditorModal';
 
 /* ─── Constants ─── */
 
@@ -256,24 +257,9 @@ function StartMyDayGate({ greeting, date, items, setItems, checklistLog, setChec
 /* ─── Wrap Up Day (full-screen, multi-step) ─── */
 
 function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog, setChecklistLog, onRoll, onClose }) {
-  // Steps: checklist → parking → tomorrow → journal
+  // Steps: checklist → journal
   const [step, setStep] = useState('checklist');
-
-  // Parking lot items — local copy so user can remove/move during wrap-up
-  const [parkingItems, setParkingItems] = useState(() => {
-    const pl = normalizeParkingLot(dash.parkingLot);
-    return { urgent: [...pl.urgent], niceToHave: [...pl.niceToHave] };
-  });
-
-  // Tomorrow's goals — pre-filled from today, user can keep/edit/clear
-  const [tomorrowGoals, setTomorrowGoals] = useState(() => {
-    const goals = {};
-    for (const cat of CATEGORIES) {
-      const todayWin = dash.todaysWins[cat.key];
-      goals[cat.key] = { text: todayWin?.text || '', keep: !!todayWin?.text };
-    }
-    return goals;
-  });
+  const [editMode, setEditMode] = useState(false);
 
   const [journal, setJournal] = useState(dash.endOfDay.doneToday || '');
 
@@ -316,23 +302,8 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
     onRoll(journal);
   };
 
-  const removeParkingItemLocal = (lane, id) => {
-    setParkingItems((prev) => ({ ...prev, [lane]: prev[lane].filter((i) => i.id !== id) }));
-  };
-
-  const moveParkingToGoal = (lane, item, catKey) => {
-    // Append parking item text to that category's tomorrow goal
-    setTomorrowGoals((prev) => ({
-      ...prev,
-      [catKey]: { text: prev[catKey].text ? `${prev[catKey].text}; ${item.text}` : item.text, keep: true },
-    }));
-    setParkingItems((prev) => ({ ...prev, [lane]: prev[lane].filter((i) => i.id !== item.id) }));
-  };
-
-  const allParkingItems = [...parkingItems.urgent, ...parkingItems.niceToHave];
-
-  const stepLabels = ['Checklist', 'Parking Lot', 'Tomorrow', 'Journal'];
-  const stepKeys = ['checklist', 'parking', 'tomorrow', 'journal'];
+  const stepLabels = ['Checklist', 'Journal'];
+  const stepKeys = ['checklist', 'journal'];
   const currentStepIndex = stepKeys.indexOf(step);
 
   return (
@@ -369,41 +340,61 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
                 style={{ width: `${percent}%` }}
               />
             </div>
+            <button
+              onClick={() => setEditMode(!editMode)}
+              className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                editMode
+                  ? 'bg-brand text-on-brand'
+                  : 'bg-surface-alt text-secondary border border-border-subtle hover:bg-surface'
+              }`}
+            >
+              <Pencil size={12} />
+              {editMode ? 'Done Editing' : 'Edit Checklist'}
+            </button>
           </div>
 
-          <div className="space-y-2">
-            {groups.map((group, gi) => (
-              <div key={gi}>
-                {group.header && (
-                  <div className="px-2 pt-4 pb-1">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
-                      {renderLinkedText(group.header)}
-                    </h3>
-                  </div>
-                )}
-                {group.items.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => handleToggle(item.id)}
-                    className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl transition-all cursor-pointer ${
-                      item.done
-                        ? 'bg-brand-light/50'
-                        : 'bg-card border border-border-subtle hover:bg-surface-alt active:scale-[0.98]'
-                    } ${item.indent ? 'ml-4' : ''}`}
-                  >
-                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                      item.done ? 'bg-brand border-brand' : 'border-border-strong'
-                    }`}>
-                      {item.done && <Check size={14} className="text-on-brand" />}
+          {editMode ? (
+            <div className="bg-card border border-border-subtle rounded-2xl p-5 min-h-[300px] flex flex-col">
+              <ChecklistSection
+                items={checklistItems}
+                setItems={setChecklistItems}
+              />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {groups.map((group, gi) => (
+                <div key={gi}>
+                  {group.header && (
+                    <div className="px-2 pt-4 pb-1">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
+                        {renderLinkedText(group.header)}
+                      </h3>
                     </div>
-                    <span className={`text-sm transition-all ${item.done ? 'text-muted line-through' : 'text-primary'}`}>
-                      {renderLinkedText(item.text)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
+                  )}
+                  {group.items.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleToggle(item.id)}
+                      className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl transition-all cursor-pointer ${
+                        item.done
+                          ? 'bg-brand-light/50'
+                          : 'bg-card border border-border-subtle hover:bg-surface-alt active:scale-[0.98]'
+                      } ${item.indent ? 'ml-4' : ''}`}
+                    >
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                        item.done ? 'bg-brand border-brand' : 'border-border-strong'
+                      }`}>
+                        {item.done && <Check size={14} className="text-on-brand" />}
+                      </div>
+                      <span className={`text-sm transition-all ${item.done ? 'text-muted line-through' : 'text-primary'}`}>
+                        {renderLinkedText(item.text)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="mt-6 flex gap-3">
             <button
@@ -413,7 +404,7 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
               {allDone ? 'Undo All' : 'Complete All'}
             </button>
             <button
-              onClick={() => setStep('parking')}
+              onClick={() => setStep('journal')}
               className="flex-1 py-3 rounded-xl bg-brand text-on-brand text-sm font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
             >
               Next
@@ -428,184 +419,7 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
         </>
       )}
 
-      {/* ─── Step 2: Parking Lot Review ─── */}
-      {step === 'parking' && (
-        <>
-          <div className="text-center mb-6">
-            <ClipboardList size={36} className="text-amber-500 mx-auto mb-2" />
-            <h1 className="text-xl font-bold text-primary">Review Parking Lot</h1>
-            <p className="text-sm text-muted mt-1">Clear items, move them to tomorrow's goals, or leave them</p>
-          </div>
-
-          {allParkingItems.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-sm text-muted">No parking lot items — nice and clean!</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Urgent items */}
-              {parkingItems.urgent.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Flame size={14} className="text-red-500" />
-                    <span className="text-xs font-bold text-red-600 dark:text-red-400 uppercase">Deep Work</span>
-                  </div>
-                  <div className="space-y-2">
-                    {parkingItems.urgent.map((item) => (
-                      <div key={item.id} className="flex items-start gap-3 bg-card border border-red-200 dark:border-red-800/50 rounded-xl px-4 py-3">
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0 mt-2" />
-                        <span className="flex-1 text-sm text-primary">{item.text}</span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {CATEGORIES.map((cat) => (
-                            <button
-                              key={cat.key}
-                              onClick={() => moveParkingToGoal('urgent', item, cat.key)}
-                              title={`Move to ${cat.label}`}
-                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cat.bg} ${cat.color} ${cat.border} border hover:opacity-80 transition-colors cursor-pointer`}
-                            >
-                              {cat.label[0]}
-                            </button>
-                          ))}
-                          <button
-                            onClick={() => removeParkingItemLocal('urgent', item.id)}
-                            className="p-1 text-muted hover:text-red-500 transition-colors cursor-pointer ml-1"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {/* Nice to Have items */}
-              {parkingItems.niceToHave.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Lightbulb size={14} className="text-amber-500" />
-                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase">Light Work</span>
-                  </div>
-                  <div className="space-y-2">
-                    {parkingItems.niceToHave.map((item) => (
-                      <div key={item.id} className="flex items-start gap-3 bg-card border border-amber-200 dark:border-amber-800/50 rounded-xl px-4 py-3">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-2" />
-                        <span className="flex-1 text-sm text-primary">{item.text}</span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {CATEGORIES.map((cat) => (
-                            <button
-                              key={cat.key}
-                              onClick={() => moveParkingToGoal('niceToHave', item, cat.key)}
-                              title={`Move to ${cat.label}`}
-                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cat.bg} ${cat.color} ${cat.border} border hover:opacity-80 transition-colors cursor-pointer`}
-                            >
-                              {cat.label[0]}
-                            </button>
-                          ))}
-                          <button
-                            onClick={() => removeParkingItemLocal('niceToHave', item.id)}
-                            className="p-1 text-muted hover:text-red-500 transition-colors cursor-pointer ml-1"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="mt-6 flex gap-3">
-            <button
-              onClick={() => setStep('checklist')}
-              className="flex-1 py-3 rounded-xl bg-surface-alt text-secondary border border-border-subtle text-sm font-semibold hover:bg-surface transition-colors cursor-pointer"
-            >
-              Back
-            </button>
-            <button
-              onClick={() => setStep('tomorrow')}
-              className="flex-1 py-3 rounded-xl bg-brand text-on-brand text-sm font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
-            >
-              Next
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* ─── Step 3: Tomorrow's Goals ─── */}
-      {step === 'tomorrow' && (
-        <>
-          <div className="text-center mb-6">
-            <Target size={36} className="text-brand mx-auto mb-2" />
-            <h1 className="text-xl font-bold text-primary">Set Up Tomorrow</h1>
-            <p className="text-sm text-muted mt-1">Keep today's goals or set new ones</p>
-          </div>
-
-          <div className="space-y-3">
-            {CATEGORIES.map((cat) => {
-              const g = tomorrowGoals[cat.key];
-              const todayText = dash.todaysWins[cat.key]?.text;
-              return (
-                <div key={cat.key} className={`rounded-xl border ${cat.border} ${cat.bg} p-4`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`text-sm font-bold ${cat.color}`}>{cat.label}</span>
-                    {todayText && (
-                      <button
-                        onClick={() => {
-                          setTomorrowGoals((prev) => ({
-                            ...prev,
-                            [cat.key]: { ...prev[cat.key], keep: !prev[cat.key].keep, text: prev[cat.key].keep ? '' : todayText },
-                          }));
-                        }}
-                        className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                          g.keep
-                            ? 'bg-brand text-on-brand'
-                            : 'bg-surface-alt text-muted hover:text-secondary'
-                        }`}
-                      >
-                        {g.keep ? 'Keeping' : 'Keep'}
-                      </button>
-                    )}
-                  </div>
-                  {todayText && (
-                    <p className="text-xs text-muted mb-2">Today: {todayText}</p>
-                  )}
-                  <input
-                    type="text"
-                    value={g.text}
-                    onChange={(e) => {
-                      setTomorrowGoals((prev) => ({
-                        ...prev,
-                        [cat.key]: { text: e.target.value, keep: true },
-                      }));
-                    }}
-                    placeholder={`Tomorrow's ${cat.label.toLowerCase()} goal...`}
-                    className="w-full bg-card/60 border border-border-subtle rounded-lg px-3 py-2 text-sm text-primary outline-none placeholder:text-muted focus:ring-1 focus:ring-brand"
-                  />
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="mt-6 flex gap-3">
-            <button
-              onClick={() => setStep('parking')}
-              className="flex-1 py-3 rounded-xl bg-surface-alt text-secondary border border-border-subtle text-sm font-semibold hover:bg-surface transition-colors cursor-pointer"
-            >
-              Back
-            </button>
-            <button
-              onClick={() => setStep('journal')}
-              className="flex-1 py-3 rounded-xl bg-brand text-on-brand text-sm font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
-            >
-              Next
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* ─── Step 4: Journal ─── */}
+      {/* ─── Step 2: Journal ─── */}
       {step === 'journal' && (
         <>
           <div className="text-center mb-6">
@@ -624,7 +438,7 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
 
           <div className="mt-6 flex gap-3">
             <button
-              onClick={() => setStep('tomorrow')}
+              onClick={() => setStep('checklist')}
               className="flex-1 py-3 rounded-xl bg-surface-alt text-secondary border border-border-subtle text-sm font-semibold hover:bg-surface transition-colors cursor-pointer"
             >
               Back

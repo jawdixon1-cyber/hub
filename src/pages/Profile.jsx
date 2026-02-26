@@ -254,24 +254,6 @@ export default function Profile() {
             </div>
           </div>
         </div>
-        <OwnerIdeasPanel />
-
-        {/* Mileage Log link */}
-        <button
-          onClick={() => navigate('/mileage')}
-          className="w-full bg-card rounded-2xl shadow-sm border border-border-subtle p-4 flex items-center gap-3 cursor-pointer hover:shadow-md hover:border-border-strong transition-all"
-        >
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
-            <Gauge size={18} className="text-emerald-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-primary">Mileage Log</p>
-            <p className="text-xs text-tertiary">View entries, manage vehicles</p>
-          </div>
-          <ArrowRight size={16} className="text-muted shrink-0" />
-        </button>
-
-        <QBConnectionPanel />
         <SettingsContent />
         <button
           onClick={handleSignOut}
