@@ -738,6 +738,107 @@ export default function ExecutionDashboard() {
 
   const dash = getDashboard();
 
+  // ─── One-time restore: recover items lost from past wrap-ups ───
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    if (restored || !executionHistory || executionHistory.length === 0 || !dash) return;
+    setRestored(true);
+
+    const currentIds = new Set();
+    // Collect IDs already in the current dashboard
+    (dash.doNow || []).forEach((i) => { if (i.id) currentIds.add(i.id); });
+    const cp = normalizeParkingLot(dash.parkingLot);
+    (cp.urgent || []).forEach((i) => { if (i.id) currentIds.add(i.id); });
+    (cp.niceToHave || []).forEach((i) => { if (i.id) currentIds.add(i.id); });
+    for (const cat of CATEGORIES) {
+      (dash.todaysWins?.[cat.key]?.focusItems || []).forEach((i) => { if (i.id) currentIds.add(i.id); });
+    }
+    (dash.weeklyOutcomes || []).forEach((i) => { if (i.id) currentIds.add(i.id); });
+
+    // Scan all archived days and collect lost items
+    const lostDoNow = [];
+    const lostUrgent = [];
+    const lostNice = [];
+    const lostFocus = {};
+    const lostOutcomes = [];
+    for (const cat of CATEGORIES) lostFocus[cat.key] = [];
+
+    for (const archived of executionHistory) {
+      // doNow items with actual text
+      (archived.doNow || []).forEach((i) => {
+        if (i.text && i.text.trim() && i.id && !currentIds.has(i.id)) {
+          currentIds.add(i.id);
+          lostDoNow.push(i);
+        }
+      });
+      // Parking lot
+      const ap = normalizeParkingLot(archived.parkingLot);
+      (ap.urgent || []).forEach((i) => {
+        if (i.text && i.id && !currentIds.has(i.id)) {
+          currentIds.add(i.id);
+          lostUrgent.push(i);
+        }
+      });
+      (ap.niceToHave || []).forEach((i) => {
+        if (i.text && i.id && !currentIds.has(i.id)) {
+          currentIds.add(i.id);
+          lostNice.push(i);
+        }
+      });
+      // Focus items under each category
+      for (const cat of CATEGORIES) {
+        (archived.todaysWins?.[cat.key]?.focusItems || []).forEach((i) => {
+          if (i.text && i.id && !currentIds.has(i.id)) {
+            currentIds.add(i.id);
+            lostFocus[cat.key].push(i);
+          }
+        });
+      }
+      // Weekly outcomes with actual titles
+      (archived.weeklyOutcomes || []).forEach((i) => {
+        if (i.title && i.title.trim() && i.id && !currentIds.has(i.id)) {
+          currentIds.add(i.id);
+          lostOutcomes.push(i);
+        }
+      });
+    }
+
+    const hasLost = lostDoNow.length || lostUrgent.length || lostNice.length || lostOutcomes.length ||
+      CATEGORIES.some((c) => lostFocus[c.key].length);
+
+    if (!hasLost) return;
+
+    setExecutionDashboard((prev) => {
+      const merged = { ...prev };
+      // Restore doNow
+      if (lostDoNow.length) {
+        merged.doNow = [...(prev.doNow || []), ...lostDoNow];
+      }
+      // Restore parking lot
+      if (lostUrgent.length || lostNice.length) {
+        const pp = normalizeParkingLot(prev.parkingLot);
+        merged.parkingLot = {
+          urgent: [...pp.urgent, ...lostUrgent],
+          niceToHave: [...pp.niceToHave, ...lostNice],
+        };
+      }
+      // Restore focus items
+      const newWins = { ...prev.todaysWins };
+      for (const cat of CATEGORIES) {
+        if (lostFocus[cat.key].length) {
+          const existing = newWins[cat.key] || {};
+          newWins[cat.key] = { ...existing, focusItems: [...(existing.focusItems || []), ...lostFocus[cat.key]] };
+        }
+      }
+      merged.todaysWins = newWins;
+      // Restore weekly outcomes
+      if (lostOutcomes.length) {
+        merged.weeklyOutcomes = [...(prev.weeklyOutcomes || []), ...lostOutcomes];
+      }
+      return merged;
+    });
+  }, [restored, executionHistory, dash, setExecutionDashboard]);
+
   const update = (patch) => {
     setExecutionDashboard((prev) => ({ ...prev, ...patch }));
   };
