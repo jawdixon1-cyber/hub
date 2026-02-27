@@ -54,7 +54,7 @@ const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
-  { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
+  { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator, ownerOnly: true },
 ];
 
 const TOOLS_ITEMS = [
@@ -286,7 +286,7 @@ function AppShell() {
   // Sidebar nav renderer (shared between desktop & mobile)
   const renderSidebarNav = (collapsed) => (
     <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
-      {NAV_ITEMS.map((item) => {
+      {NAV_ITEMS.filter((item) => !item.ownerOnly || ownerMode).map((item) => {
         const Icon = needsOnboarding ? Lock : item.icon;
         const active = isActive(item.path);
         return (
@@ -486,7 +486,7 @@ function AppShell() {
         </div>
         {/* Mobile tabs */}
         <div className="flex border-t border-border-subtle overflow-x-auto">
-          {NAV_ITEMS.map((t) => {
+          {NAV_ITEMS.filter((t) => !t.ownerOnly || ownerMode).map((t) => {
             const Icon = needsOnboarding ? Lock : t.icon;
             return (
               <button
