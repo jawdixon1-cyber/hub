@@ -140,5 +140,26 @@ export function createAppStore(cloudData) {
     );
   }
 
+  // Hydrate from fresh cloud data (called when Supabase fetch completes)
+  store.hydrateFromCloud = (cloudData) => {
+    const state = store.getState();
+    const updates = {};
+    for (const { key, supaKey, initial } of STATE_KEYS) {
+      const cloudValue = cloudData[supaKey];
+      if (cloudValue !== undefined && cloudValue !== null) {
+        // Only overwrite if the store still has the initial/cached value
+        // (i.e., user hasn't made local edits since load)
+        const currentJSON = JSON.stringify(state[key]);
+        const cloudJSON = JSON.stringify(cloudValue);
+        if (currentJSON !== cloudJSON) {
+          updates[key] = cloudValue;
+        }
+      }
+    }
+    if (Object.keys(updates).length > 0) {
+      store.setState(updates);
+    }
+  };
+
   return store;
 }
