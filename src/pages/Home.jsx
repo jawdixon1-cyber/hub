@@ -160,24 +160,30 @@ export default function Home() {
         <div className="px-4 py-2.5 border-b border-border-subtle">
           <h3 className="text-xs font-bold uppercase tracking-wider text-muted">Our Values</h3>
         </div>
-        <div className="p-4 grid grid-cols-3 gap-3">
+        <div className="p-4 grid grid-cols-4 gap-2">
           <div className="text-center">
             <div className="w-10 h-10 rounded-xl bg-rose-500/15 flex items-center justify-center mx-auto mb-1.5">
               <span className="text-lg">🔥</span>
             </div>
-            <p className="text-xs font-bold text-primary leading-tight">Give a Damn</p>
+            <p className="text-[11px] font-bold text-primary leading-tight">Give a Damn</p>
           </div>
           <div className="text-center">
             <div className="w-10 h-10 rounded-xl bg-sky-500/15 flex items-center justify-center mx-auto mb-1.5">
               <span className="text-lg">✨</span>
             </div>
-            <p className="text-xs font-bold text-primary leading-tight">Keep It Clean, Keep It Tight</p>
+            <p className="text-[11px] font-bold text-primary leading-tight">Clean Finish, Clean Reset</p>
           </div>
           <div className="text-center">
             <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center mx-auto mb-1.5">
               <span className="text-lg">📈</span>
             </div>
-            <p className="text-xs font-bold text-primary leading-tight">Raise the Standard</p>
+            <p className="text-[11px] font-bold text-primary leading-tight">Raise the Standard</p>
+          </div>
+          <div className="text-center">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center mx-auto mb-1.5">
+              <span className="text-lg">🏆</span>
+            </div>
+            <p className="text-[11px] font-bold text-primary leading-tight">Go the Extra Mile</p>
           </div>
         </div>
       </div>
