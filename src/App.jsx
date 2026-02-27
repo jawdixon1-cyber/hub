@@ -392,7 +392,7 @@ function AppShell() {
       <aside className={`hidden lg:flex fixed left-0 top-0 h-full ${sidebarCollapsed ? 'w-16' : 'w-60'} bg-card border-r border-border-subtle z-40 flex-col transition-all duration-200`}>
         {/* Logo */}
         <div className={`h-16 flex items-center ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'} border-b border-border-subtle shrink-0`}>
-          <img src="/logo.png" alt="Hey Jude's Lawn Care" className={`shrink-0 ${sidebarCollapsed ? 'h-10 w-10' : 'h-10'}`} />
+          <img src={sidebarCollapsed ? 'https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/697e5cbef7a8776caab6e3c7.png' : '/logo.png'} alt="Hey Jude's Lawn Care" className={`shrink-0 ${sidebarCollapsed ? 'h-10 w-10 object-contain' : 'h-10'}`} />
         </div>
 
         {renderSidebarNav(sidebarCollapsed)}
