@@ -6,6 +6,7 @@ import {
   initialAnnouncements,
   initialGuides,
   initialFieldOpsGuides,
+  initialGMGuides,
   initialPMEGuides,
   initialEquipment,
   initialIdeas,
@@ -23,6 +24,7 @@ import {
   initialQuotes,
   initialQuotingSettings,
   initialReceiptLog,
+  initialQuizLog,
 } from '../data';
 
 const DATA_CACHE_KEY = 'greenteam-data-cache';
@@ -33,7 +35,7 @@ const STATE_KEYS = [
   { key: 'ownerTodos',            supaKey: 'greenteam-ownerTodos',            initial: [] },
   { key: 'ownerStartChecklist',   supaKey: 'greenteam-ownerStartChecklist',   initial: initialOwnerStartChecklist },
   { key: 'ownerEndChecklist',     supaKey: 'greenteam-ownerEndChecklist',     initial: initialOwnerEndChecklist },
-  { key: 'guides',                supaKey: 'greenteam-guides',                initial: [...initialGuides, ...initialFieldOpsGuides, ...initialPMEGuides] },
+  { key: 'guides',                supaKey: 'greenteam-guides',                initial: [...initialGuides, ...initialFieldOpsGuides, ...initialPMEGuides, ...initialGMGuides] },
   { key: 'equipment',             supaKey: 'greenteam-equipment',             initial: initialEquipment },
   { key: 'policies',              supaKey: 'greenteam-policies',              initial: initialPolicies },
   { key: 'timeOffRequests',       supaKey: 'greenteam-timeOffRequests',       initial: initialTimeOffRequests },
@@ -58,6 +60,7 @@ const STATE_KEYS = [
   { key: 'ownerSchedule',       supaKey: 'greenteam-ownerSchedule',       initial: { sales: { start: '07:00', end: '09:00' }, build: { start: '09:00', end: '11:00' }, delegate: { start: '11:00', end: '12:00' } } },
   { key: 'executionDashboard',  supaKey: 'greenteam-executionDashboard',  initial: null },
   { key: 'executionHistory',    supaKey: 'greenteam-executionHistory',    initial: [] },
+  { key: 'quizLog',             supaKey: 'greenteam-quizLog',             initial: initialQuizLog },
 ];
 
 function resolveInitial(cloudValue, initial) {
@@ -67,10 +70,25 @@ function resolveInitial(cloudValue, initial) {
   return initial;
 }
 
+// IDs of guides that should always be seeded into existing data
+const SEED_GUIDE_IDS = ['gm-expectations-playbook', 'gm-weekly-team-meeting', 'gm-onboarding-new-hire', 'gm-hard-conversations', 'gm-morning-routine', 'gm-weekly-closeout', 'gm-sales-door-approach', 'gm-sales-on-site-closing', 'gm-sales-psychology'];
+
+function seedMissingGuides(guides, allInitialGuides) {
+  const existingIds = new Set(guides.map((g) => g.id));
+  const missing = allInitialGuides.filter((g) => SEED_GUIDE_IDS.includes(g.id) && !existingIds.has(g.id));
+  return missing.length > 0 ? [...guides, ...missing] : guides;
+}
+
 export function createAppStore(cloudData) {
+  const allInitialGuides = [...initialGuides, ...initialFieldOpsGuides, ...initialPMEGuides, ...initialGMGuides];
   const initialState = {};
   for (const { key, supaKey, initial } of STATE_KEYS) {
-    initialState[key] = resolveInitial(cloudData[supaKey], initial);
+    let value = resolveInitial(cloudData[supaKey], initial);
+    // Seed any new default guides into existing cloud data
+    if (key === 'guides' && Array.isArray(value)) {
+      value = seedMissingGuides(value, allInitialGuides);
+    }
+    initialState[key] = value;
   }
 
   const store = createStore(
@@ -145,8 +163,12 @@ export function createAppStore(cloudData) {
     const state = store.getState();
     const updates = {};
     for (const { key, supaKey, initial } of STATE_KEYS) {
-      const cloudValue = cloudData[supaKey];
+      let cloudValue = cloudData[supaKey];
       if (cloudValue !== undefined && cloudValue !== null) {
+        // Seed any new default guides into cloud data
+        if (key === 'guides' && Array.isArray(cloudValue)) {
+          cloudValue = seedMissingGuides(cloudValue, allInitialGuides);
+        }
         // Only overwrite if the store still has the initial/cached value
         // (i.e., user hasn't made local edits since load)
         const currentJSON = JSON.stringify(state[key]);

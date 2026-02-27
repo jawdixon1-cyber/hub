@@ -23,6 +23,7 @@ import {
   CalendarCheck,
   LayoutGrid,
   ChevronDown,
+  ShieldCheck,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -50,10 +51,12 @@ const DailyChecklist = lazy(() => import('./pages/DailyChecklist'));
 const ExecutionDashboard = lazy(() => import('./pages/ExecutionDashboard'));
 const ReceiptTracker = lazy(() => import('./pages/ReceiptTracker'));
 const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
+const Expectations = lazy(() => import('./pages/Expectations'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
+  { id: 'expectations', path: '/expectations', label: 'Expectations', icon: ShieldCheck },
   { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator, ownerOnly: true },
 ];
 
@@ -573,6 +576,7 @@ function AppShell() {
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/mileage" element={<MileageLog />} />
                 <Route path="/receipts" element={<ReceiptTracker />} />
+                <Route path="/expectations" element={<Expectations />} />
                 <Route path="/ideas" element={<IdeasFeedback />} />
                 <Route path="/daily-checklist" element={<DailyChecklist />} />
                 <Route path="/checklist-tracker" element={<ChecklistTrackerPage />} />

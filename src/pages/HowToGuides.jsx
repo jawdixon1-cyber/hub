@@ -32,6 +32,9 @@ const TYPE_TO_CATEGORY = {
   'pme': 'Executive Assistant',
   'strategy': 'General Manager',
   'owner': 'General Manager',
+  'gm-rhythm': 'General Manager',
+  'gm-people': 'General Manager',
+  'gm-sales': 'General Manager',
 };
 
 const ALL_TABS = [
@@ -46,7 +49,14 @@ const FIELD_TEAM_SUBTABS = [
   { key: 'software', label: 'Software' },
 ];
 
+const GM_SUBTABS = [
+  { key: 'gm-rhythm', label: 'Rhythm' },
+  { key: 'gm-people', label: 'People' },
+  { key: 'gm-sales', label: 'Sales' },
+];
+
 export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
+  const defaultTab = ownerMode ? 'strategy' : 'field-team';
   const navigate = useNavigate();
   const items = useAppStore((s) => s.guides);
   const setItems = useAppStore((s) => s.setGuides);
@@ -60,8 +70,9 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
     ? ALL_TABS.filter((t) => allowedPlaybooks.includes(t.playbookKey))
     : ALL_TABS;
 
-  const [filter, setFilter] = useState(() => visibleTabs[0]?.key || 'field-team');
+  const [filter, setFilter] = useState(() => visibleTabs.some((t) => t.key === defaultTab) ? defaultTab : (visibleTabs[0]?.key || 'field-team'));
   const [subFilter, setSubFilter] = useState('service');
+  const [gmSubFilter, setGmSubFilter] = useState('gm-rhythm');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -79,9 +90,13 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
       if (subFilter === 'service') return itemType === 'service' || itemType === 'field-team';
       return itemType === subFilter;
     }
+    if (filter === 'strategy') {
+      // Existing guides with type 'strategy' or 'owner' show in both sub-tabs
+      if (itemType === 'strategy' || itemType === 'owner') return true;
+      return itemType === gmSubFilter;
+    }
     if (itemType === filter) return true;
     if (filter === 'sales') return itemType === 'pme';
-    if (filter === 'strategy') return itemType === 'owner';
     return false;
   };
 
@@ -90,7 +105,7 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
       if (t.key === 'field-team') return FIELD_TEAM_TYPES.includes(itemType);
       if (t.key === itemType) return true;
       if (t.key === 'sales') return itemType === 'pme';
-      if (t.key === 'strategy') return itemType === 'owner';
+      if (t.key === 'strategy') return itemType === 'owner' || itemType === 'gm-rhythm' || itemType === 'gm-people' || itemType === 'gm-sales';
       return false;
     });
   };
@@ -190,6 +205,20 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
             className="rounded-xl border border-border-default px-4 py-2.5 text-sm font-semibold text-primary bg-card focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition cursor-pointer"
           >
             {FIELD_TEAM_SUBTABS.map((sub) => (
+              <option key={sub.key} value={sub.key}>{sub.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {filter === 'strategy' && (
+        <div className="mb-3">
+          <select
+            value={gmSubFilter}
+            onChange={(e) => setGmSubFilter(e.target.value)}
+            className="rounded-xl border border-border-default px-4 py-2.5 text-sm font-semibold text-primary bg-card focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition cursor-pointer"
+          >
+            {GM_SUBTABS.map((sub) => (
               <option key={sub.key} value={sub.key}>{sub.label}</option>
             ))}
           </select>

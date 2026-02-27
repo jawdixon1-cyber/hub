@@ -143,6 +143,258 @@ export const initialFieldOpsGuides = [
   },
 ];
 
+export const initialGMGuides = [
+  {
+    id: 'gm-expectations-playbook',
+    title: 'Making Expectations Stick',
+    category: 'General Manager',
+    type: 'gm-people',
+    content: '<h2>How to make expectations more than words on a screen</h2><p>Having an Expectations page in the app is step one. Making your crew actually live those values and responsibilities is the real work. This playbook is your system for turning expectations into culture.</p>' +
+      '<h2>Make It Part of the Routine</h2><ol>' +
+      '<li><strong>Day-one walkthrough:</strong> Every new hire sits down and reads the Expectations page together with you on their first day. Don\'t just hand them a phone — walk through each value and each responsibility. Explain <em>why</em> each one matters. <mark>Why: If they don\'t hear it from you directly, it\'s just another screen they\'ll forget.</mark></li>' +
+      '<li><strong>Reference by number:</strong> When giving feedback, tie it to a specific responsibility. "Hey, that\'s number 5 — communicate issues immediately." Using the number system makes it fast and clear. <mark>Why: A shared shorthand builds accountability without long lectures.</mark></li>' +
+      '<li><strong>Weekly meeting review:</strong> Pick one value or responsibility each week and spend 2 minutes discussing it in your team meeting. Ask: "Who has an example of this from the past week?" <mark>Why: Repetition is how values move from a page into people\'s heads.</mark></li>' +
+      '</ol>' +
+      '<h2>Tie It to Accountability</h2><ol>' +
+      '<li><strong>Use it in corrections:</strong> When someone misses a checklist or doesn\'t log mileage, don\'t make it personal — point to the Expectations page. "This is the standard for the seat. It\'s not a surprise." <mark>Why: Making expectations black and white removes emotion from accountability conversations.</mark></li>' +
+      '<li><strong>Performance check-ins:</strong> In one-on-ones, go through all 5 responsibilities: "How are you doing on each of these?" Let them self-assess first, then share your view. <mark>Why: Self-assessment builds ownership. If they know the standard, they can hold themselves to it.</mark></li>' +
+      '<li><strong>Track what you can:</strong> Checklist completion rates, mileage logs, receipt submissions — these are measurable. Review them weekly. If someone is at 60% checklist completion, the conversation is easy: the expectation is 100%. <mark>Why: Data removes opinion from performance conversations.</mark></li>' +
+      '</ol>' +
+      '<h2>Lead with the Values</h2><ol>' +
+      '<li><strong>Catch people doing it right:</strong> When someone goes the extra mile, call it out publicly. "That right there — that\'s Go the Extra Mile. That\'s what we\'re about." <mark>Why: Public recognition of values in action is the strongest culture-building tool you have.</mark></li>' +
+      '<li><strong>Correct through values, not frustration:</strong> When someone cuts corners, tie it back: "That\'s not Give a Damn. We don\'t leave a property looking like that." <mark>Why: Values-based correction feels like coaching, not criticism. It\'s about the standard, not the person.</mark></li>' +
+      '<li><strong>Model it yourself:</strong> If you expect Clean Finish Clean Reset but your truck is a mess, you\'ve lost credibility. Live the values louder than you preach them. <mark>Why: Your crew watches what you do, not what you say.</mark></li>' +
+      '</ol>' +
+      '<h2>The Repetition Rule</h2><p><strong>Say the values and responsibilities so often that your crew can recite them without looking at the app.</strong> That\'s the benchmark. If you ask a crew member "What are our 3 values?" and they hesitate, you haven\'t said it enough yet.</p>' +
+      '<p>Culture isn\'t built in a meeting — it\'s built in the 100 small moments every week where you either reinforce the standard or let it slide. The Expectations page gives you the tool. This playbook is how you use it.</p>',
+  },
+  {
+    id: 'gm-weekly-team-meeting',
+    title: 'End-of-Week Team Meeting',
+    category: 'General Manager',
+    type: 'gm-rhythm',
+    content: '<h2>A Friday team meeting that closes the week and sets up the next one</h2><p>Friday afternoon, after the last route. 20–30 minutes. The crew is together, the week is fresh, and you can address everything while it\'s still real — not Monday when everyone\'s forgotten. Do your closeout first (see End-of-Week Closeout playbook), then run this meeting with the numbers in hand.</p>' +
+      '<h2>Before the Meeting (2 min prep)</h2><ol>' +
+      '<li><strong>Have your closeout done:</strong> You should already have the week\'s scorecard numbers, issues list, and next week\'s schedule from your Friday closeout. Don\'t prep during the meeting. <mark>Why: Walking in prepared shows the team you respect their time. It also keeps the meeting tight.</mark></li>' +
+      '<li><strong>Review last week\'s to-dos:</strong> Did people do what they said they\'d do? Yes or no. <mark>Why: Accountability starts with follow-through. If to-dos slide, the meeting loses credibility.</mark></li>' +
+      '</ol>' +
+      '<h2>The Meeting (20–30 min)</h2><ol>' +
+      '<li><strong>Wins (3 min):</strong> Start with what went well. Client compliment? Great quality check? Someone go the extra mile? Call it out by name. <mark>Why: Ending the week on wins builds momentum. People want to hear they did good work.</mark></li>' +
+      '<li><strong>Scorecard review (5 min):</strong> Hit the numbers from your closeout. Checklist completion, mileage logged, receipts submitted, on-time rate, jobs completed. Just read them — if something\'s off, drop it to the issues list. <mark>Why: Numbers don\'t lie. Reviewing them every Friday makes accountability automatic and gives people a chance to fix it next week.</mark></li>' +
+      '<li><strong>To-do review (3 min):</strong> Go through last week\'s to-dos. Done or not done. No stories, no excuses. If it\'s not done, it rolls forward or becomes an issue. <mark>Why: This is where trust is built. People learn that when they say they\'ll do something, it gets checked.</mark></li>' +
+      '<li><strong>Issues — IDS (10–15 min):</strong> This is the meat. List every issue from the week, then prioritize: what\'s the #1 issue? <strong>Identify</strong> the root cause, <strong>Discuss</strong> solutions, <strong>Solve</strong> it with a clear to-do and owner. Move to #2. Repeat until time\'s up. <mark>Why: Most meetings waste time on easy stuff. IDS forces you to tackle the hard problems first.</mark></li>' +
+      '<li><strong>Next week preview (2 min):</strong> Any schedule changes? Anyone out? Big jobs coming? Give the crew a heads-up so they\'re not surprised Monday morning. <mark>Why: People perform better when they know what\'s coming. No one likes Monday surprises.</mark></li>' +
+      '<li><strong>Wrap up (2 min):</strong> Recap new to-dos. Each to-do has an owner and a deadline. "Have a good weekend — see you Monday." End on time. <mark>Why: It\'s Friday. Respect people\'s time. A meeting that runs over on a Friday kills morale fast.</mark></li>' +
+      '</ol>' +
+      '<h2>Rules</h2><ul>' +
+      '<li><strong>Same time every Friday.</strong> Right after the last route comes in. The rhythm is the point — never skip, never move it.</li>' +
+      '<li><strong>Start on time.</strong> Don\'t wait for stragglers. They\'ll learn.</li>' +
+      '<li><strong>Phones away.</strong> 20 minutes of focus isn\'t too much to ask.</li>' +
+      '<li><strong>No tangents.</strong> If it\'s not the #1 issue, drop it to the list for next week.</li>' +
+      '<li><strong>End with energy.</strong> This is the last thing your crew hears before the weekend. Make it count.</li>' +
+      '</ul>',
+  },
+  {
+    id: 'gm-onboarding-new-hire',
+    title: 'Onboarding a New Hire (First 90 Days)',
+    category: 'General Manager',
+    type: 'gm-people',
+    content: '<h2>How to set a new hire up to succeed — or know when to cut</h2><p>The first 90 days determine whether someone becomes a great crew member or a constant problem. Don\'t wing it. Follow the system.</p>' +
+      '<h2>Before Day 1</h2><ol>' +
+      '<li><strong>Prep their login:</strong> Create their account in the app, set their permissions, and make sure they can access everything they need. <mark>Why: Nothing says "we don\'t have our act together" like fumbling with logins on someone\'s first day.</mark></li>' +
+      '<li><strong>Assign a buddy:</strong> Pair them with your best crew member for the first two weeks. Not your most available — your best. <mark>Why: New hires model whoever they work with first. Put them next to your standard-setter.</mark></li>' +
+      '<li><strong>Prep the truck:</strong> Uniform ready, gear assigned, truck stocked. They should feel expected, not like an afterthought.</li>' +
+      '</ol>' +
+      '<h2>Day 1</h2><ol>' +
+      '<li><strong>Expectations walkthrough:</strong> Sit down together and go through the Expectations page in the app. Read every value and every responsibility out loud. Ask them what each one means to them. <mark>Why: This is the most important conversation you\'ll have with them. It sets the tone for everything.</mark></li>' +
+      '<li><strong>App tour:</strong> Walk them through the app — checklists, playbooks, mileage, receipts. Show them what they\'ll use every day. Have them complete their first opening checklist with you watching.</li>' +
+      '<li><strong>Shadow the buddy:</strong> They ride with their buddy all day. Watch, ask questions, learn the route. No solo work on day one.</li>' +
+      '</ol>' +
+      '<h2>Week 1</h2><ol>' +
+      '<li><strong>Daily check-ins:</strong> 5 minutes at the end of each day. "What went well? What confused you? What do you need?" <mark>Why: Small problems on day 2 become bad habits by week 3 if you don\'t catch them early.</mark></li>' +
+      '<li><strong>Playbook training:</strong> Walk through the service playbooks for every service they\'ll perform. Have them do each task while you watch and coach.</li>' +
+      '<li><strong>First solo tasks:</strong> By day 3–4, let them handle simple tasks independently while the buddy supervises. Blow-off, trimming, basic mowing.</li>' +
+      '</ol>' +
+      '<h2>30-Day Check-In</h2><ol>' +
+      '<li><strong>Scorecard review:</strong> Pull their checklist completion rate, mileage logging, receipt submissions. Are they hitting the basics? <mark>Why: If someone can\'t consistently do the 5 responsibilities after 30 days, that\'s a red flag — not a training issue.</mark></li>' +
+      '<li><strong>Values check:</strong> Go through each core value. Give them a specific example of when they lived it — and if applicable, when they didn\'t. Be direct.</li>' +
+      '<li><strong>Ask them:</strong> "Is this what you expected? Are you in?" Their answer tells you a lot. <mark>Why: Some people realize lawn care isn\'t for them. Better to know at 30 days than 90.</mark></li>' +
+      '</ol>' +
+      '<h2>60-Day Check-In</h2><ol>' +
+      '<li><strong>Independence assessment:</strong> Can they run a route stop solo at quality? If not, what\'s missing? Create a specific plan to close the gap.</li>' +
+      '<li><strong>Peer feedback:</strong> Ask their buddy and other crew members: "Would you want this person on your truck?" <mark>Why: Your crew knows. If they\'re hesitant, listen.</mark></li>' +
+      '</ol>' +
+      '<h2>90-Day Decision</h2><ol>' +
+      '<li><strong>Right person, right seat?</strong> Do they share your core values (right person)? Can they do the job at the level you need (right seat)? If both answers aren\'t yes, it\'s time to part ways. <mark>Why: Keeping someone who isn\'t a fit past 90 days hurts them, the team, and your business. The kindest thing is honesty.</mark></li>' +
+      '<li><strong>If yes:</strong> Celebrate it. Tell them they made it. "You\'re officially part of the team — here\'s what I\'ve seen from you that\'s great, and here\'s where I want to see you grow next."</li>' +
+      '<li><strong>If no:</strong> Have the conversation directly. See the "Having Hard Conversations" playbook.</li>' +
+      '</ol>',
+  },
+  {
+    id: 'gm-hard-conversations',
+    title: 'Having Hard Conversations',
+    category: 'General Manager',
+    type: 'gm-people',
+    content: '<h2>How to give direct feedback, correct underperformance, and let someone go</h2><p>Hard conversations are the price of leadership. Avoiding them doesn\'t make problems go away — it makes them worse and poisons the team. This playbook gives you a framework so you can be direct without being cruel.</p>' +
+      '<h2>The 3 Strikes Framework</h2><p>Before you fire anyone, they should have had 3 clear conversations. Not hints. Not passive-aggressive comments. Direct, documented conversations.</p><ol>' +
+      '<li><strong>Strike 1 — The coaching conversation:</strong> Pull them aside, same day as the issue. "Hey, I noticed [specific behavior]. The expectation is [specific standard — reference the number]. What happened?" Listen. Then: "Here\'s what I need to see going forward. Can you do that?" <mark>Why: Most people will correct course when the expectation is made clear. Give them the chance.</mark></li>' +
+      '<li><strong>Strike 2 — The formal conversation:</strong> If the behavior repeats, this is a sit-down. "We talked about this on [date]. The expectation hasn\'t changed, but the behavior has. This is serious. If it happens again, we\'ll need to part ways. I don\'t want that — do you?" Document this conversation with the date and what was said. <mark>Why: Strike 2 removes all ambiguity. They know exactly where they stand.</mark></li>' +
+      '<li><strong>Strike 3 — The exit conversation:</strong> "We\'ve had this conversation twice. The standard hasn\'t been met. Today is your last day." Keep it short, keep it factual, keep it respectful. <mark>Why: By strike 3, both of you know this is coming. Don\'t drag it out.</mark></li>' +
+      '</ol>' +
+      '<h2>How to Actually Say It</h2><ol>' +
+      '<li><strong>Be specific, not general:</strong> "You\'ve been late 3 times this month" — not "You have an attendance problem." <mark>Why: Specific = actionable. General = defensive.</mark></li>' +
+      '<li><strong>Use the Expectations page:</strong> "Responsibility #4 is show up on time, in uniform, ready to work. That\'s the standard for the seat." <mark>Why: It\'s not your opinion — it\'s the documented expectation. This removes emotion from the conversation.</mark></li>' +
+      '<li><strong>Ask, don\'t assume:</strong> "What happened?" before "Here\'s what you did wrong." Sometimes there\'s context you don\'t have. <mark>Why: Asking first shows respect and sometimes reveals a real problem you can help solve.</mark></li>' +
+      '<li><strong>End with clarity:</strong> "So we\'re aligned — what are you going to do differently starting tomorrow?" Get them to say it back. <mark>Why: If they can\'t articulate the change, they won\'t make it.</mark></li>' +
+      '</ol>' +
+      '<h2>When to Skip Straight to Firing</h2><ul>' +
+      '<li>Theft — gone immediately</li>' +
+      '<li>Safety violations that endanger someone — gone immediately</li>' +
+      '<li>Dishonesty — lying about work completed, falsifying mileage or receipts — gone immediately</li>' +
+      '<li>No-call no-show — one chance, then gone</li>' +
+      '</ul>' +
+      '<p><mark>Why: Some things aren\'t coachable. Protecting the team\'s trust matters more than giving someone a fourth chance.</mark></p>' +
+      '<h2>After a Firing</h2><ol>' +
+      '<li><strong>Tell the team the same day.</strong> Keep it simple: "[Name] is no longer with us. I wish them well. Here\'s how we\'re covering their route this week." <mark>Why: If you don\'t address it, the team fills the silence with rumors.</mark></li>' +
+      '<li><strong>Don\'t trash them.</strong> Even if they deserved it. Your team is watching how you treat people on the way out — that tells them how you\'ll treat them.</li>' +
+      '<li><strong>Reflect:</strong> Did you hire wrong? Did you train enough? Did you have the coaching conversations early enough? Every firing is a lesson for next time.</li>' +
+      '</ol>',
+  },
+  {
+    id: 'gm-morning-routine',
+    title: 'Morning Execution Routine',
+    category: 'General Manager',
+    type: 'gm-rhythm',
+    content: '<h2>Your daily 30-minute routine to keep operations tight</h2><p>The first 30 minutes of your day set the tone for everything. This isn\'t optional — it\'s the most important half hour in your business. Do it before you check email, before you take calls, before you get pulled into fires.</p>' +
+      '<h2>The Routine (30 min)</h2><ol>' +
+      '<li><strong>Weather check (2 min):</strong> Check the forecast for today and tomorrow. If rain is likely, decide NOW whether you\'re running routes or making the rain call. Don\'t wait until crews are already rolling. <mark>Why: Late rain calls waste fuel, frustrate crews, and make you look indecisive.</mark></li>' +
+      '<li><strong>Review today\'s schedule (5 min):</strong> Open Jobber. Look at every route and every crew assignment. Does the schedule make sense? Any gaps? Any overloaded routes? Any client notes or special requests flagged? <mark>Why: Catching a scheduling problem at 6:30 AM is easy. Catching it at 10 AM when a crew is already behind is chaos.</mark></li>' +
+      '<li><strong>Check crew readiness (5 min):</strong> Are all crews accounted for? Anyone call out? If someone\'s out, rework the routes now — not after the remaining crews are already on the road. <mark>Why: One missing crew member can cascade into missed jobs all day if you don\'t adjust immediately.</mark></li>' +
+      '<li><strong>Yesterday\'s checklist review (5 min):</strong> Pull up yesterday\'s checklist completion in the app. Who completed opening and closing? Who didn\'t? If someone skipped, send a quick text now: "Hey, noticed your closing checklist wasn\'t completed yesterday. What happened?" <mark>Why: Same-day follow-up sends a clear message: the checklists aren\'t optional. Waiting until the weekly meeting is too late.</mark></li>' +
+      '<li><strong>Mileage & receipts check (3 min):</strong> Did yesterday\'s crews log mileage and scan receipts? If not, same thing — quick text. <mark>Why: The longer receipts sit in someone\'s pocket, the more likely they disappear. Same-day accountability keeps the books clean.</mark></li>' +
+      '<li><strong>Issues from yesterday (5 min):</strong> Check the app for any flagged issues — equipment problems, client complaints, crew concerns. Prioritize: what needs to be handled before crews roll out today? <mark>Why: Unresolved issues from yesterday become bigger issues today. Kill problems while they\'re small.</mark></li>' +
+      '<li><strong>Set your top 3 (5 min):</strong> Write down the 3 most important things you need to accomplish today. Not 10 things — three. If you get these three done, today was a win. <mark>Why: As a GM, everyone will pull at your time. Your top 3 keeps you focused on what actually moves the business forward.</mark></li>' +
+      '</ol>' +
+      '<h2>Non-Negotiables</h2><ul>' +
+      '<li>Do this BEFORE your first phone call or email</li>' +
+      '<li>Do it every single day — weekends too during peak season</li>' +
+      '<li>If something\'s wrong, handle it NOW. Don\'t add it to a list for later.</li>' +
+      '</ul>',
+  },
+  {
+    id: 'gm-weekly-closeout',
+    title: 'End-of-Week Closeout',
+    category: 'General Manager',
+    type: 'gm-rhythm',
+    content: '<h2>Your Friday review that feeds Monday\'s meeting</h2><p>The end-of-week closeout is where you turn a week of work into data you can act on. Do this Friday afternoon so you walk into Monday\'s team meeting with clarity, not chaos.</p>' +
+      '<h2>The Closeout (30–45 min)</h2><ol>' +
+      '<li><strong>Scorecard numbers (10 min):</strong> Pull the week\'s metrics:<ul>' +
+      '<li>Checklist completion rate (opening + closing) — target: 100%</li>' +
+      '<li>Mileage logged on time — target: 100%</li>' +
+      '<li>Receipts scanned same day — target: 100%</li>' +
+      '<li>On-time arrival rate — target: 95%+</li>' +
+      '<li>Jobs completed vs. scheduled — target: 98%+</li>' +
+      '</ul> Write these down. These are the numbers you\'ll review in Monday\'s meeting. <mark>Why: You can\'t manage what you don\'t measure. The scorecard makes performance visible and removes opinion from the conversation.</mark></li>' +
+      '<li><strong>Who\'s off track? (5 min):</strong> Look at individual performance. Anyone consistently below standard on checklists, mileage, or receipts? Note their names and the specific numbers. <mark>Why: This is your coaching list for next week. Don\'t wait for it to become a pattern — address it early.</mark></li>' +
+      '<li><strong>Issues list (10 min):</strong> Review every issue flagged this week — equipment problems, client complaints, crew conflicts, missed jobs. For each one: Is it resolved? If not, it goes on Monday\'s IDS list. <mark>Why: Unresolved issues stack up. The weekly closeout prevents things from falling through the cracks.</mark></li>' +
+      '<li><strong>Client feedback (5 min):</strong> Any complaints or compliments this week? Log them. Complaints become issues. Compliments get shared with the team Monday morning — name the crew member specifically. <mark>Why: Sharing positive client feedback is the easiest way to reinforce good work. Don\'t waste it.</mark></li>' +
+      '<li><strong>Cash & receipts reconciliation (5 min):</strong> Do the receipt totals in the app match what was actually spent? Any missing receipts? Any unexplained charges? Flag anything that doesn\'t add up. <mark>Why: Small discrepancies become big problems over time. Friday is when you catch them.</mark></li>' +
+      '<li><strong>Next week preview (5 min):</strong> Look at next week\'s schedule. Any unusual jobs? Any crew members out? Any equipment in the shop? Adjust routes now if needed. <mark>Why: Monday morning should be execution, not scrambling. The planning happens Friday.</mark></li>' +
+      '</ol>' +
+      '<h2>Output</h2><p>When you\'re done, you should have:</p><ul>' +
+      '<li>This week\'s scorecard numbers (for Monday\'s meeting)</li>' +
+      '<li>A list of people to coach next week</li>' +
+      '<li>An issues list for Monday\'s IDS</li>' +
+      '<li>Next week\'s schedule confirmed</li>' +
+      '</ul>' +
+      '<p><strong>If you do the closeout every Friday, Monday\'s meeting runs itself.</strong></p>',
+  },
+  {
+    id: 'gm-sales-door-approach',
+    title: 'The Door Knock & Cold Approach',
+    category: 'General Manager',
+    type: 'gm-sales',
+    content: '<h2>How to approach someone cold and walk away with a yes</h2><p>Door knocking and cold approaches are the fastest way to fill your route — if you do it right. Most people fail because they pitch too early. The goal of the first 30 seconds isn\'t to sell. It\'s to not get rejected.</p>' +
+      '<h2>Before You Knock</h2><ol>' +
+      '<li><strong>Target the right doors:</strong> Look for signs — overgrown lawn, weeds in beds, no fresh mow lines. These people either don\'t have a service or aren\'t happy with the one they have. <mark>Why: Knocking on a perfect lawn is wasted time. Look for pain first.</mark></li>' +
+      '<li><strong>Work the neighbor effect:</strong> If you just finished a property that looks great, knock on the neighbors\' doors. "Hey, I just finished up next door at [address]..." <mark>Why: Social proof is the most powerful sales tool. People want what their neighbors have.</mark></li>' +
+      '<li><strong>Look the part:</strong> Clean uniform, truck visible from the door, professional appearance. You have 3 seconds before they decide if you\'re trustworthy. <mark>Why: People buy from people they trust. Trust starts with appearance.</mark></li>' +
+      '</ol>' +
+      '<h2>The Approach (First 30 Seconds)</h2><ol>' +
+      '<li><strong>Smile, step back, hands visible:</strong> After you knock, take a step back from the door. Hands out of your pockets. Relaxed posture. <mark>Why: A stranger at the door triggers a threat response. Stepping back and being open with your body language lowers their guard.</mark></li>' +
+      '<li><strong>Name and context, not a pitch:</strong> "Hey, I\'m [Name] with Hey Jude\'s — we just finished up at your neighbor\'s place at [address]." That\'s it. Stop talking. <mark>Why: Context before pitch. You\'re not a random salesperson — you\'re the guy who just made the neighbor\'s lawn look great. Let that sink in.</mark></li>' +
+      '<li><strong>Compliment or observe, don\'t criticize:</strong> "You\'ve got a really nice property" or "Looks like you\'ve got a big yard to keep up with." Never say "your lawn looks bad." <mark>Why: Nobody buys from someone who insulted them. A compliment opens the conversation. An observation about size or difficulty creates a natural opening for your offer.</mark></li>' +
+      '</ol>' +
+      '<h2>The Conversation (Not a Pitch)</h2><ol>' +
+      '<li><strong>Ask, don\'t tell:</strong> "Are you handling the lawn yourself right now, or do you have someone?" Let them talk. <mark>Why: Questions create engagement. Statements create resistance. The more they talk, the more they sell themselves.</mark></li>' +
+      '<li><strong>Find the pain:</strong> If they do it themselves: "That\'s a lot of work — how many hours a week does that take you?" If they have a service: "How\'s that going for you?" <mark>Why: You\'re looking for frustration — time spent, inconsistent quality, unreliable service. That\'s your opening.</mark></li>' +
+      '<li><strong>Mirror their pain back:</strong> "Yeah, that\'s what I hear a lot — guys showing up whenever they feel like it." <mark>Why: Mirroring is the most powerful rapport technique. When someone feels understood, they trust you. It\'s psychology — not manipulation, just good listening.</mark></li>' +
+      '<li><strong>Offer the easy next step:</strong> "Tell you what — I\'m already in the neighborhood every [day]. Let me put together a quick quote, no obligation. I can have it to you by tonight." <mark>Why: Low commitment, high convenience. You\'re not asking them to sign a contract on the doorstep — just to receive a quote. The barrier is almost zero.</mark></li>' +
+      '</ol>' +
+      '<h2>Psychology Principles at Work</h2><ul>' +
+      '<li><strong>Proximity bias:</strong> "I\'m already in the neighborhood" makes you convenient, not pushy</li>' +
+      '<li><strong>Social proof:</strong> "I just finished your neighbor\'s place" — if it\'s good enough for them, it\'s good enough for me</li>' +
+      '<li><strong>Reciprocity:</strong> Give a genuine compliment or helpful observation before asking for anything</li>' +
+      '<li><strong>Loss aversion:</strong> "We only have a couple spots left on our [day] route" — people fear missing out more than they desire gaining</li>' +
+      '<li><strong>Consistency:</strong> Get small yeses first (yes to a quote, yes to a phone number) — people who say yes once are more likely to say yes again</li>' +
+      '</ul>',
+  },
+  {
+    id: 'gm-sales-on-site-closing',
+    title: 'On-Site Estimate & Closing',
+    category: 'General Manager',
+    type: 'gm-sales',
+    content: '<h2>How to close the deal when you\'re standing on their lawn</h2><p>The on-site estimate is where most lawn care sales are won or lost. You\'re not just measuring — you\'re building trust, demonstrating expertise, and making it easy to say yes. The person who shows up prepared and confident wins.</p>' +
+      '<h2>Before You Arrive</h2><ol>' +
+      '<li><strong>Do your homework:</strong> Satellite measure the property before you get there. Know the approximate square footage, lot layout, and what you\'re going to charge before you step out of the truck. <mark>Why: Walking the property while fumbling with a measuring wheel screams amateur. Showing up with numbers ready screams professional.</mark></li>' +
+      '<li><strong>Look up the neighborhood:</strong> Are you already servicing nearby? Know the names. "I take care of the Johnsons two doors down." <mark>Why: It\'s not just social proof — it tells them you\'re already here and adding them is easy.</mark></li>' +
+      '</ol>' +
+      '<h2>The Walk-Around</h2><ol>' +
+      '<li><strong>Walk WITH them, not ahead of them:</strong> "Want to walk the property with me? I want to make sure I understand exactly what you\'re looking for." <mark>Why: Walking together creates partnership. Walking ahead of them feels like an inspection. Side by side, you\'re on the same team.</mark></li>' +
+      '<li><strong>Ask about their priorities:</strong> "What matters most to you — keeping it looking sharp every week, or are you more focused on keeping costs down?" <mark>Why: This tells you how to frame your price. Quality-focused clients hear "premium service." Budget-focused clients hear "best value in the area."</mark></li>' +
+      '<li><strong>Point out things they didn\'t notice:</strong> "See how the grass is thinning here under this tree? That\'s a shade issue — we can overseed with a shade mix in the fall and it\'ll fill right in." <mark>Why: Free expertise builds massive trust. You just demonstrated you know more than the last guy. Now they want YOU, not just a lawn service.</mark></li>' +
+      '<li><strong>Identify upsell opportunities but don\'t push them:</strong> Note the beds, the edging, the tree line. Mention it casually: "Your beds could really pop with fresh mulch — that\'s something we can add later if you want." <mark>Why: Planting the seed now means they\'ll come back to you for it later. Don\'t cram everything into the first sale.</mark></li>' +
+      '</ol>' +
+      '<h2>Presenting the Price</h2><ol>' +
+      '<li><strong>Use monthly pricing:</strong> "$180 a month" lands softer than "$45 a visit times 4." Monthly feels like a subscription. Per-visit feels like a transaction. <mark>Why: Monthly pricing reduces the perceived cost and increases commitment. People cancel transactions; they maintain subscriptions.</mark></li>' +
+      '<li><strong>Anchor high, offer value:</strong> "A property this size typically runs $200–220 a month. Because I\'m already on this street, I can do $180." <mark>Why: Anchoring sets the frame. The first number they hear becomes the reference point. Everything after that feels like a deal.</mark></li>' +
+      '<li><strong>Shut up after the price:</strong> Say the number. Then stop talking. Let them respond. <mark>Why: The first person to talk after the price loses. Silence creates space for them to say yes. If you keep talking, you\'re negotiating against yourself.</mark></li>' +
+      '</ol>' +
+      '<h2>Handling Objections</h2><ol>' +
+      '<li><strong>"I need to think about it":</strong> "Totally understand. What specifically are you weighing?" Then address that specific concern. <mark>Why: "I need to think about it" usually means one specific thing is holding them back. Find it and solve it.</mark></li>' +
+      '<li><strong>"That\'s more than I expected":</strong> "What were you expecting?" Let them name a number. Then: "I can\'t hit that number and deliver the quality I showed you on the Johnsons\' lawn. But here\'s what I can do..." <mark>Why: Never just drop your price. Reframe value first. If you drop without pushback, they think you were overcharging.</mark></li>' +
+      '<li><strong>"I want to get a few quotes":</strong> "Smart move. When you\'re comparing, make sure they include [edging, blowing, detailed trimming] — a lot of guys quote cheap and skip the detail work." <mark>Why: You just made yourself the standard they judge others against. And you planted doubt about the cheaper guys without saying anything negative.</mark></li>' +
+      '</ol>' +
+      '<h2>The Close</h2><ol>' +
+      '<li><strong>Assume the sale:</strong> "I\'ve got an opening on Tuesdays — does that work for you, or is another day better?" <mark>Why: An assumptive close skips "do you want to?" and goes straight to "when do we start?" It works because most people are ready — they just need a nudge.</mark></li>' +
+      '<li><strong>Make it instant:</strong> "I can get you on the schedule this week. I\'ll send the agreement to your phone right now — takes 30 seconds to sign." <mark>Why: Speed kills hesitation. The longer between "yes" and signing, the more likely they talk themselves out of it.</mark></li>' +
+      '</ol>',
+  },
+  {
+    id: 'gm-sales-psychology',
+    title: 'Sales Psychology Cheat Sheet',
+    category: 'General Manager',
+    type: 'gm-sales',
+    content: '<h2>The mental models that make people say yes</h2><p>Sales isn\'t about tricks — it\'s about understanding how people make decisions and removing the barriers between "interested" and "yes." These principles work in every conversation, not just sales.</p>' +
+      '<h2>The Big 6 Principles</h2><ol>' +
+      '<li><strong>Reciprocity — Give first, always:</strong> Give a free tip, a genuine compliment, a quick observation about their property. When you give something of value with no strings attached, people feel compelled to give back. "Your irrigation head on the south side is spraying the sidewalk — easy fix, just twist it 15 degrees." They didn\'t ask for that. Now they feel like they owe you. <mark>Why: Humans are wired to return favors. A 10-second tip can be worth a $2,000/year contract.</mark></li>' +
+      '<li><strong>Social Proof — Show, don\'t tell:</strong> "I take care of 6 properties on this street" beats "we do great work" every time. Before/after photos on your phone. Google reviews pulled up and ready. The neighbor\'s lawn looking perfect right next door. <mark>Why: People don\'t trust what you say about yourself. They trust what other people say — and what they can see with their own eyes.</mark></li>' +
+      '<li><strong>Scarcity — Limited spots, not limited time:</strong> "We only have two openings left on our Thursday route" is honest and effective. Don\'t fake urgency with countdown timers or "today only" nonsense. But real scarcity — route capacity — is powerful and true. <mark>Why: People procrastinate unless there\'s a reason not to. Real scarcity gives them that reason.</mark></li>' +
+      '<li><strong>Authority — Look and sound like the expert:</strong> Clean truck, clean uniform, confident handshake. Know the grass type on their lawn without asking. Reference specific techniques: "We run a 3.5-inch cut on fescue this time of year — goes to 4 inches in July to hold moisture." <mark>Why: People follow experts. Every detail you know that they don\'t builds your authority. They stop comparing you on price and start comparing you on competence.</mark></li>' +
+      '<li><strong>Consistency — Get small yeses first:</strong> "Mind if I take a quick look at the backyard?" Yes. "Would it help if I put together a quick quote?" Yes. "Can I grab your number to send it over?" Yes. By the time you ask for the sale, they\'ve already said yes three times. <mark>Why: People want to be consistent with their past behavior. Each small yes makes the big yes feel natural.</mark></li>' +
+      '<li><strong>Liking — Be a human, not a salesperson:</strong> Use their name. Notice their dog. Comment on the garden they clearly put work into. Find one thing you genuinely have in common and mention it. <mark>Why: People buy from people they like. And people like people who notice them, remember details, and feel real — not rehearsed.</mark></li>' +
+      '</ol>' +
+      '<h2>Tactical Moves</h2><ul>' +
+      '<li><strong>The takeaway:</strong> "Honestly, with your lot size, you might not even need full weekly service — maybe biweekly would be enough." Taking something OFF the table makes people want it more. They\'ll often talk themselves into the bigger package.</li>' +
+      '<li><strong>The feel-felt-found:</strong> When someone objects: "I totally get how you feel. A lot of my clients felt the same way at first. What they found was [specific benefit]." This validates their concern without arguing.</li>' +
+      '<li><strong>The silence close:</strong> After you state the price or ask for the sale, stop talking. Count to 10 in your head. The person who speaks first loses leverage. Let them fill the silence — it\'s almost always with a yes or a solvable objection.</li>' +
+      '<li><strong>The Ben Franklin close:</strong> If they\'re on the fence: "Let\'s just list it out — what are the pros and what are the cons?" Physically list them. The pros will always outnumber the cons because you\'ve been building value the whole conversation.</li>' +
+      '<li><strong>Name repetition:</strong> Use their name 3–4 times in the conversation. Not every sentence — that\'s creepy. But enough that it registers. "So John, based on what you told me..." People light up when they hear their own name. It builds instant rapport.</li>' +
+      '</ul>' +
+      '<h2>The #1 Rule</h2><p><strong>Listen more than you talk.</strong> The best salespeople talk 30% of the time and listen 70%. Every question you ask gives you ammo to close. Every time you talk without listening, you\'re guessing at what they want. Stop guessing. Start asking.</p>',
+  },
+];
+
 export const initialPMEGuides = [
   {
     id: '31',
@@ -614,5 +866,180 @@ export const initialQuests = [
     createdAt: '2026-02-01T08:00:00.000Z',
     createdBy: 'owner',
     active: true,
+  },
+];
+
+/* ── Daily Quiz ── */
+
+export const initialQuizLog = [];
+
+export const QUIZ_QUESTIONS = [
+  // Core Values — scenario-based
+  {
+    id: 'q1',
+    question: 'A client points out a small patch of grass you missed behind their shed. You go back and fix it without being asked. Which value is this?',
+    options: [
+      { text: 'Give a Damn', correct: true },
+      { text: 'Clean Finish, Clean Reset', correct: false },
+      { text: 'Go the Extra Mile', correct: false },
+      { text: 'Communicate issues immediately', correct: false },
+    ],
+    explanation: '"Give a Damn" means you care about the details — even the ones nobody else would notice.',
+  },
+  {
+    id: 'q2',
+    question: 'After finishing a job, you blow off all the clippings from the driveway, sidewalk, and beds, then clean every tool before loading up. Which value?',
+    options: [
+      { text: 'Clean Finish, Clean Reset', correct: true },
+      { text: 'Give a Damn', correct: false },
+      { text: 'Go the Extra Mile', correct: false },
+      { text: 'Communicate issues immediately', correct: false },
+    ],
+    explanation: '"Clean Finish, Clean Reset" — the job isn\'t done until the property AND your gear are spotless.',
+  },
+  {
+    id: 'q3',
+    question: 'You notice a client\'s gate is broken and let them know, even though it\'s not part of the job. Which value?',
+    options: [
+      { text: 'Go the Extra Mile', correct: true },
+      { text: 'Give a Damn', correct: false },
+      { text: 'Clean Finish, Clean Reset', correct: false },
+      { text: 'Communicate issues immediately', correct: false },
+    ],
+    explanation: '"Go the Extra Mile" — doing more than what\'s expected to deliver real value.',
+  },
+  {
+    id: 'q4',
+    question: 'A client complains about rough edging along their flower beds. Which value should you think about first?',
+    options: [
+      { text: 'Give a Damn', correct: true },
+      { text: 'Go the Extra Mile', correct: false },
+      { text: 'Clean Finish, Clean Reset', correct: false },
+      { text: 'Communicate issues immediately', correct: false },
+    ],
+    explanation: 'Sloppy edging means we didn\'t care enough. "Give a Damn" — take pride in every detail.',
+  },
+  {
+    id: 'q5',
+    question: 'You leave a job site and the mower deck still has caked-on grass. Which value did you skip?',
+    options: [
+      { text: 'Clean Finish, Clean Reset', correct: true },
+      { text: 'Give a Damn', correct: false },
+      { text: 'Go the Extra Mile', correct: false },
+      { text: 'Communicate issues immediately', correct: false },
+    ],
+    explanation: '"Clean Finish, Clean Reset" — equipment gets cleaned after every job, not just at end of day.',
+  },
+  // Responsibilities — direct recall
+  {
+    id: 'q6',
+    question: 'What is responsibility #1?',
+    options: [
+      { text: 'Complete your opening & closing checklists every day', correct: true },
+      { text: 'Log mileage and scan receipts same day', correct: false },
+      { text: 'Show up on time, in uniform, ready to work', correct: false },
+      { text: 'Communicate issues immediately', correct: false },
+    ],
+    explanation: 'Checklists keep the crew sharp and the trucks ready. No shortcuts.',
+  },
+  {
+    id: 'q7',
+    question: 'What is responsibility #2?',
+    options: [
+      { text: 'Follow the playbook and complete your checklists', correct: true },
+      { text: 'Complete your opening & closing checklists every day', correct: false },
+      { text: 'Show up on time, in uniform, ready to work', correct: false },
+      { text: 'Log mileage and scan receipts same day', correct: false },
+    ],
+    explanation: 'The playbook is how you do it right. The checklist is proof you did it.',
+  },
+  {
+    id: 'q8',
+    question: 'What is responsibility #3?',
+    options: [
+      { text: 'Log mileage and scan receipts same day', correct: true },
+      { text: 'Follow the playbook and complete your checklists', correct: false },
+      { text: 'Communicate issues immediately', correct: false },
+      { text: 'Complete your opening & closing checklists every day', correct: false },
+    ],
+    explanation: 'Don\'t let it pile up. End of day, log your miles and snap your receipts.',
+  },
+  {
+    id: 'q9',
+    question: 'What is responsibility #4?',
+    options: [
+      { text: 'Show up on time, in uniform, ready to work', correct: true },
+      { text: 'Communicate issues immediately', correct: false },
+      { text: 'Log mileage and scan receipts same day', correct: false },
+      { text: 'Follow the playbook and complete your checklists', correct: false },
+    ],
+    explanation: 'Be where you\'re supposed to be, looking professional, with your gear ready.',
+  },
+  {
+    id: 'q10',
+    question: 'What is responsibility #5?',
+    options: [
+      { text: 'Communicate issues immediately — don\'t hide problems', correct: true },
+      { text: 'Show up on time, in uniform, ready to work', correct: false },
+      { text: 'Complete your opening & closing checklists every day', correct: false },
+      { text: 'Go the extra mile for every client', correct: false },
+    ],
+    explanation: 'Equipment broke? Customer complaint? Running late? Say something right away.',
+  },
+  // Application — which responsibility applies?
+  {
+    id: 'q11',
+    question: 'You forgot to scan a gas receipt yesterday and now it\'s lost. Which responsibility did you miss?',
+    options: [
+      { text: 'Log mileage and scan receipts same day', correct: true },
+      { text: 'Communicate issues immediately', correct: false },
+      { text: 'Follow the playbook', correct: false },
+      { text: 'Complete your checklists every day', correct: false },
+    ],
+    explanation: 'Responsibility #3 — scan receipts the same day so nothing gets lost.',
+  },
+  {
+    id: 'q12',
+    question: 'A trimmer line breaks mid-job and you don\'t tell anyone, hoping to fix it later. Which responsibility did you skip?',
+    options: [
+      { text: 'Communicate issues immediately', correct: true },
+      { text: 'Follow the playbook', correct: false },
+      { text: 'Complete your checklists every day', correct: false },
+      { text: 'Show up on time, in uniform, ready to work', correct: false },
+    ],
+    explanation: 'Responsibility #5 — don\'t hide problems. Report equipment issues right away.',
+  },
+  {
+    id: 'q13',
+    question: 'You show up 10 minutes late in a wrinkled t-shirt. Which responsibility are you breaking?',
+    options: [
+      { text: 'Show up on time, in uniform, ready to work', correct: true },
+      { text: 'Complete your opening & closing checklists every day', correct: false },
+      { text: 'Communicate issues immediately', correct: false },
+      { text: 'Follow the playbook', correct: false },
+    ],
+    explanation: 'Responsibility #4 — be where you\'re supposed to be, looking professional.',
+  },
+  {
+    id: 'q14',
+    question: 'How many core values does the team have?',
+    options: [
+      { text: '3', correct: true },
+      { text: '4', correct: false },
+      { text: '5', correct: false },
+      { text: '2', correct: false },
+    ],
+    explanation: 'We have 3 core values: Give a Damn, Clean Finish Clean Reset, and Go the Extra Mile.',
+  },
+  {
+    id: 'q15',
+    question: 'You finish mowing but skip blowing off the driveway because you\'re running behind. Which value and responsibility overlap here?',
+    options: [
+      { text: 'Clean Finish, Clean Reset + Follow the playbook', correct: true },
+      { text: 'Give a Damn + Communicate issues', correct: false },
+      { text: 'Go the Extra Mile + Log mileage', correct: false },
+      { text: 'Give a Damn + Show up on time', correct: false },
+    ],
+    explanation: 'Skipping blowoff breaks "Clean Finish, Clean Reset" and the playbook says to always blow off hard surfaces.',
   },
 ];

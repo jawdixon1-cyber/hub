@@ -71,12 +71,8 @@ export default function PlaybookDetail({ ownerMode }) {
     let html = item.content;
     html = html.replace(/<details open>/g, '<details>');
 
-    if (showWhy) {
-      html = html.replace(/<mark([^>]*)>/g, '<mark$1 style="background:var(--why-bg);padding:1px 4px;border-radius:3px;">');
-      html = html.replace(/—\s*([^<]+)(?=<|$)/g, '— <span class="why-highlight">$1</span>');
-    } else {
-      html = html.replace(/<mark[^>]*>([^<]*)<\/mark>/g, '');
-      html = html.replace(/\s*—\s*[^<]+(?=<|$)/g, '');
+    if (!showWhy) {
+      html = html.replace(/<mark[^>]*>[\s\S]*?<\/mark>/g, '');
     }
 
     return html;
