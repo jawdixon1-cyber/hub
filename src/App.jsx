@@ -57,10 +57,13 @@ const NAV_ITEMS = [
   { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
 ];
 
-const SECONDARY_ITEMS = [
+const TOOLS_ITEMS = [
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
+];
+
+const TEAM_ITEMS = [
   { id: 'ideas', path: '/ideas', label: 'Ideas', icon: Lightbulb },
   { id: 'hr', path: '/hr', label: 'HR', icon: Users },
 ];
@@ -306,8 +309,9 @@ function AppShell() {
       })}
 
       <div className="h-px bg-border-subtle my-3 mx-2" />
+      {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Tools</p>}
 
-      {SECONDARY_ITEMS.map((item) => {
+      {TOOLS_ITEMS.map((item) => {
         const Icon = needsOnboarding ? Lock : item.icon;
         const active = isActive(item.path);
         return (
@@ -328,6 +332,38 @@ function AppShell() {
           </button>
         );
       })}
+
+      <div className="h-px bg-border-subtle my-3 mx-2" />
+      {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Team</p>}
+
+      {TEAM_ITEMS.map((item) => {
+        const Icon = needsOnboarding ? Lock : item.icon;
+        const active = isActive(item.path);
+        return (
+          <button
+            key={item.id}
+            onClick={() => handleNav(item.path)}
+            title={collapsed ? item.label : undefined}
+            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              needsOnboarding
+                ? 'opacity-40 cursor-not-allowed text-muted'
+                : active
+                  ? 'bg-brand-light text-brand-text-strong'
+                  : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+            }`}
+          >
+            <Icon size={20} className="shrink-0" />
+            {!collapsed && <span className="truncate">{item.label}</span>}
+          </button>
+        );
+      })}
+
+      {ownerMode && (
+        <>
+          <div className="h-px bg-border-subtle my-3 mx-2" />
+          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Owner</p>}
+        </>
+      )}
 
       {ownerMode && OWNER_ITEMS.map((item) => {
         const Icon = item.icon;
