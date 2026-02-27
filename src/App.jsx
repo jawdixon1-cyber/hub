@@ -486,8 +486,7 @@ function AppShell() {
             <X size={20} />
           </button>
           <div className="h-16 flex items-center px-4 border-b border-border-subtle shrink-0">
-            <img src="/logo.png" alt="" className="h-10 w-10 shrink-0" />
-            <span className="ml-3 font-bold text-primary text-lg truncate">Hey Jude's</span>
+            <img src="/logo.png" alt="Hey Jude's Lawn Care" className="h-10 shrink-0" />
           </div>
           {renderSidebarNav(false)}
           <div className="border-t border-border-subtle p-2 shrink-0">
