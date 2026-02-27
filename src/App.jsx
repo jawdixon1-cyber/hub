@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Gauge,
+  Receipt,
   Lightbulb,
   UserCog,
   ClipboardCheck,
@@ -47,6 +48,7 @@ const ChecklistTrackerPage = lazy(() => import('./pages/ChecklistTrackerPage'));
 const Quoting = lazy(() => import('./pages/Quoting'));
 const DailyChecklist = lazy(() => import('./pages/DailyChecklist'));
 const ExecutionDashboard = lazy(() => import('./pages/ExecutionDashboard'));
+const ReceiptTracker = lazy(() => import('./pages/ReceiptTracker'));
 const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
 
 const NAV_ITEMS = [
@@ -58,6 +60,7 @@ const NAV_ITEMS = [
 const SECONDARY_ITEMS = [
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
+  { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
   { id: 'ideas', path: '/ideas', label: 'Ideas', icon: Lightbulb },
   { id: 'hr', path: '/hr', label: 'HR', icon: Users },
 ];
@@ -534,6 +537,7 @@ function AppShell() {
                 <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/mileage" element={<MileageLog />} />
+                <Route path="/receipts" element={<ReceiptTracker />} />
                 <Route path="/ideas" element={<IdeasFeedback />} />
                 <Route path="/daily-checklist" element={<DailyChecklist />} />
                 <Route path="/checklist-tracker" element={<ChecklistTrackerPage />} />

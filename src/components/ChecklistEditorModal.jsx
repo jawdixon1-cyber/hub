@@ -10,9 +10,11 @@ import {
   ChevronLeft,
   Type,
   Link,
+  ExternalLink,
 } from 'lucide-react';
 import { genId } from '../data';
 import renderLinkedText from '../utils/renderLinkedText';
+import QuickLinks from './QuickLinks';
 
 function normalizeItem(item) {
   return {
@@ -21,6 +23,7 @@ function normalizeItem(item) {
     type: item.type || 'item',
     indent: item.indent || 0,
     done: item.done || false,
+    links: item.links || [],
   };
 }
 
@@ -78,10 +81,12 @@ export function ChecklistSection({ title, items, setItems }) {
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState('');  // plain text (no markdown URLs)
   const [editLinks, setEditLinks] = useState([]); // extracted links
+  const [editQuickLinks, setEditQuickLinks] = useState([]); // quick links for current edit
   const [addText, setAddText] = useState('');
   const [addType, setAddType] = useState('item');
   const [selectedId, setSelectedId] = useState(null);
   const [editingLinkIdx, setEditingLinkIdx] = useState(null);
+  const [editingQuickLinkIdx, setEditingQuickLinkIdx] = useState(null);
   const [dragFromIndex, setDragFromIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const editInputRef = useRef(null);
@@ -124,19 +129,23 @@ export function ChecklistSection({ title, items, setItems }) {
     setEditingId(item.id);
     setEditText(plainText);
     setEditLinks(links);
+    setEditQuickLinks(item.links || []);
     setEditingLinkIdx(null);
+    setEditingQuickLinkIdx(null);
     setSelectedId(null);
   };
 
   const saveEdit = () => {
     const rebuilt = rebuildMarkdown(editText.trim(), editLinks);
     if (rebuilt.trim()) {
-      setItems(normalized.map((i) => (i.id === editingId ? { ...i, text: rebuilt.trim() } : i)));
+      setItems(normalized.map((i) => (i.id === editingId ? { ...i, text: rebuilt.trim(), links: editQuickLinks } : i)));
     }
     setEditingId(null);
     setEditText('');
     setEditLinks([]);
+    setEditQuickLinks([]);
     setEditingLinkIdx(null);
+    setEditingQuickLinkIdx(null);
   };
 
   const deleteItem = (id) => {
@@ -159,7 +168,7 @@ export function ChecklistSection({ title, items, setItems }) {
   const addItem = (e) => {
     e.preventDefault();
     if (!addText.trim()) return;
-    setItems([...normalized, { id: genId(), text: addText.trim(), type: addType, indent: 0, done: false }]);
+    setItems([...normalized, { id: genId(), text: addText.trim(), type: addType, indent: 0, done: false, links: [] }]);
     setAddText('');
   };
 
@@ -204,6 +213,21 @@ export function ChecklistSection({ title, items, setItems }) {
     setEditingLinkIdx(null);
   };
 
+  const addQuickLink = () => {
+    const newLink = { id: genId(), label: '', url: '' };
+    setEditQuickLinks((prev) => [...prev, newLink]);
+    setEditingQuickLinkIdx(editQuickLinks.length);
+  };
+
+  const updateQuickLink = (idx, field, value) => {
+    setEditQuickLinks((prev) => prev.map((l, i) => (i === idx ? { ...l, [field]: value } : l)));
+  };
+
+  const removeQuickLink = (idx) => {
+    setEditQuickLinks((prev) => prev.filter((_, i) => i !== idx));
+    setEditingQuickLinkIdx(null);
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Item list */}
@@ -239,7 +263,7 @@ export function ChecklistSection({ title, items, setItems }) {
                   onChange={(e) => setEditText(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') saveEdit();
-                    if (e.key === 'Escape') { setEditingId(null); setEditText(''); setEditLinks([]); }
+                    if (e.key === 'Escape') { setEditingId(null); setEditText(''); setEditLinks([]); setEditQuickLinks([]); }
                   }}
                   className="w-full rounded-lg border border-border-default bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-brand"
                   autoFocus
@@ -286,13 +310,62 @@ export function ChecklistSection({ title, items, setItems }) {
                     ))}
                   </div>
                 )}
+                {/* Quick link chips */}
+                {editQuickLinks.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {editQuickLinks.map((ql, idx) => (
+                      <div key={ql.id}>
+                        {editingQuickLinkIdx === idx ? (
+                          <div className="flex items-center gap-1.5 bg-card border border-border-default rounded-lg p-2">
+                            <input
+                              type="text"
+                              value={ql.label}
+                              onChange={(e) => updateQuickLink(idx, 'label', e.target.value)}
+                              placeholder="Label"
+                              className="w-24 rounded-lg border border-border-default bg-surface-alt px-2 py-1 text-xs text-primary outline-none focus:ring-1 focus:ring-emerald-400"
+                              autoFocus
+                            />
+                            <input
+                              type="text"
+                              value={ql.url}
+                              onChange={(e) => updateQuickLink(idx, 'url', e.target.value)}
+                              placeholder="URL"
+                              className="w-36 rounded-lg border border-border-default bg-surface-alt px-2 py-1 text-xs text-primary outline-none focus:ring-1 focus:ring-emerald-400"
+                            />
+                            <button onClick={() => setEditingQuickLinkIdx(null)} className="p-1 rounded text-muted hover:text-primary cursor-pointer">
+                              <Check size={14} />
+                            </button>
+                            <button onClick={() => removeQuickLink(idx)} className="p-1 rounded text-muted hover:text-red-500 cursor-pointer">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setEditingQuickLinkIdx(idx)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 text-xs font-medium hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors cursor-pointer"
+                            title={ql.url}
+                          >
+                            <ExternalLink size={10} />
+                            {ql.label || 'Untitled'}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
-                  <button onClick={insertLink} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-muted hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer" title="Add link">
-                    <Link size={12} />
-                    Link
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={insertLink} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-muted hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer" title="Add inline link">
+                      <Link size={12} />
+                      Link
+                    </button>
+                    <button onClick={addQuickLink} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-muted hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer" title="Add quick link">
+                      <ExternalLink size={12} />
+                      Quick Link
+                    </button>
+                  </div>
                   <div className="flex gap-2">
-                    <button onClick={() => { setEditingId(null); setEditText(''); setEditLinks([]); }} className="px-3 py-1.5 rounded-lg text-xs font-medium text-muted hover:bg-surface-alt cursor-pointer">
+                    <button onClick={() => { setEditingId(null); setEditText(''); setEditLinks([]); setEditQuickLinks([]); }} className="px-3 py-1.5 rounded-lg text-xs font-medium text-muted hover:bg-surface-alt cursor-pointer">
                       Cancel
                     </button>
                     <button onClick={saveEdit} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-brand text-on-brand hover:bg-brand-hover cursor-pointer">
@@ -356,6 +429,7 @@ export function ChecklistSection({ title, items, setItems }) {
                   <div className="flex-1 min-w-0">
                     <span className="text-sm text-primary break-words">
                       {renderLinkedText(item.text)}
+                      <QuickLinks links={item.links} />
                     </span>
                   </div>
                   <div className="flex items-center gap-0.5 shrink-0">

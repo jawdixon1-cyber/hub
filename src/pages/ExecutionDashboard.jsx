@@ -24,6 +24,7 @@ import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useChecklistDay, useChecklistLog } from '../components/owner/MyDaySection';
 import renderLinkedText from '../utils/renderLinkedText';
+import QuickLinks from '../components/QuickLinks';
 import { ChecklistSection } from '../components/ChecklistEditorModal';
 
 /* ─── Constants ─── */
@@ -74,6 +75,9 @@ function createFreshDay(date, keepOutcomes, keepTimeBlocks, keepWins, keepParkin
       doneToday: '',
       movedToTomorrow: '',
       firstTaskTomorrow: '',
+      whatWentWell: '',
+      whatWentBad: '',
+      whatToImprove: '',
     },
   };
 }
@@ -220,6 +224,7 @@ function StartMyDayGate({ greeting, date, items, setItems, checklistLog, setChec
                 </div>
                 <span className={`text-sm transition-all ${item.done ? 'text-muted line-through' : 'text-primary'}`}>
                   {renderLinkedText(item.text)}
+                  <QuickLinks links={item.links} />
                 </span>
               </button>
             ))}
@@ -261,7 +266,9 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
   const [step, setStep] = useState('checklist');
   const [editMode, setEditMode] = useState(false);
 
-  const [journal, setJournal] = useState(dash.endOfDay.doneToday || '');
+  const [journalGood, setJournalGood] = useState(dash.endOfDay.whatWentWell || '');
+  const [journalBad, setJournalBad] = useState(dash.endOfDay.whatWentBad || '');
+  const [journalBetter, setJournalBetter] = useState(dash.endOfDay.whatToImprove || '');
 
   // Checklist
   useChecklistDay(checklistItems, setChecklistItems, 'owner-end');
@@ -298,8 +305,7 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
   }, [checklistItems]);
 
   const handleFinish = () => {
-    // Just archive and roll — everything stays as-is
-    onRoll(journal);
+    onRoll({ whatWentWell: journalGood, whatWentBad: journalBad, whatToImprove: journalBetter });
   };
 
   const stepLabels = ['Checklist', 'Journal'];
@@ -388,6 +394,7 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
                       </div>
                       <span className={`text-sm transition-all ${item.done ? 'text-muted line-through' : 'text-primary'}`}>
                         {renderLinkedText(item.text)}
+                        <QuickLinks links={item.links} />
                       </span>
                     </button>
                   ))}
@@ -425,16 +432,41 @@ function WrapUpDayScreen({ dash, checklistItems, setChecklistItems, checklistLog
           <div className="text-center mb-6">
             <RotateCcw size={36} className="text-purple-500 mx-auto mb-2" />
             <h1 className="text-xl font-bold text-primary">Journal</h1>
-            <p className="text-sm text-muted mt-1">What got done today?</p>
+            <p className="text-sm text-muted mt-1">Daily reflection</p>
           </div>
 
-          <textarea
-            value={journal}
-            onChange={(e) => setJournal(e.target.value)}
-            placeholder="Wins, completions, progress, reflections..."
-            rows={5}
-            className="w-full bg-card border border-border-subtle rounded-xl px-4 py-3 text-sm text-primary outline-none placeholder:text-muted focus:ring-2 focus:ring-brand resize-none"
-          />
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-emerald-500 mb-1.5">What did I do good today?</label>
+              <textarea
+                value={journalGood}
+                onChange={(e) => setJournalGood(e.target.value)}
+                placeholder="Wins, completions, progress..."
+                rows={3}
+                className="w-full bg-card border border-border-subtle rounded-xl px-4 py-3 text-sm text-primary outline-none placeholder:text-muted focus:ring-2 focus:ring-emerald-500 resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-red-400 mb-1.5">What did I do bad today?</label>
+              <textarea
+                value={journalBad}
+                onChange={(e) => setJournalBad(e.target.value)}
+                placeholder="Mistakes, missed opportunities, wasted time..."
+                rows={3}
+                className="w-full bg-card border border-border-subtle rounded-xl px-4 py-3 text-sm text-primary outline-none placeholder:text-muted focus:ring-2 focus:ring-red-400 resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-blue-400 mb-1.5">What will I do better tomorrow?</label>
+              <textarea
+                value={journalBetter}
+                onChange={(e) => setJournalBetter(e.target.value)}
+                placeholder="Adjustments, new habits, focus areas..."
+                rows={3}
+                className="w-full bg-card border border-border-subtle rounded-xl px-4 py-3 text-sm text-primary outline-none placeholder:text-muted focus:ring-2 focus:ring-blue-400 resize-none"
+              />
+            </div>
+          </div>
 
           <div className="mt-6 flex gap-3">
             <button
@@ -928,7 +960,7 @@ export default function ExecutionDashboard() {
   const handleRollToTomorrow = (journal) => {
     setExecutionDashboard((current) => {
       // Archive today's snapshot
-      const archived = { ...current, endOfDay: { ...current.endOfDay, doneToday: journal || '' } };
+      const archived = { ...current, endOfDay: { ...current.endOfDay, ...journal } };
       setExecutionHistory([...(executionHistory || []), archived]);
 
       const tomorrow = new Date();
@@ -939,7 +971,7 @@ export default function ExecutionDashboard() {
       return {
         ...current,
         date: tomorrowStr,
-        endOfDay: { doneToday: '', movedToTomorrow: '', firstTaskTomorrow: '' },
+        endOfDay: { doneToday: '', movedToTomorrow: '', firstTaskTomorrow: '', whatWentWell: '', whatWentBad: '', whatToImprove: '' },
       };
     });
     setWrappingUp(false);

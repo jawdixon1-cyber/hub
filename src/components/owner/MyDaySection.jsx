@@ -6,6 +6,7 @@ import { genId } from '../../data';
 import { useEffect, useRef } from 'react';
 import { getTodayInTimezone } from '../../utils/timezone';
 import renderLinkedText from '../../utils/renderLinkedText';
+import QuickLinks from '../QuickLinks';
 
 export function useChecklistDay(items, setItems, checklistType) {
   const itemsRef = useRef(items);
@@ -114,6 +115,7 @@ function ChecklistRow({ label, items, setItems, checklistType, checklistLog, set
             return (
               <p key={item.id} className={`text-sm text-secondary ${item.indent ? 'ml-4' : ''}`}>
                 {renderLinkedText(item.text)}
+                <QuickLinks links={item.links} />
               </p>
             );
           })}

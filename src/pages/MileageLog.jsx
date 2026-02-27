@@ -301,23 +301,32 @@ export default function MileageLog() {
       ) : (
         <div className="space-y-2">
           {paginated.map((entry) => (
-            <div key={entry.id} className="bg-card rounded-xl shadow-sm border border-border-subtle p-4">
-              <div className="flex items-start justify-between gap-3">
+            <div key={entry.id} className={`bg-card rounded-xl shadow-sm border p-4 transition-colors ${entry.tracked ? 'border-emerald-200 dark:border-emerald-800/50' : 'border-border-subtle'}`}>
+              <div className="flex items-start gap-3">
+                {ownerMode && (
+                  <button
+                    onClick={() => handleToggleTracked(entry.id)}
+                    className={`mt-0.5 w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                      entry.tracked
+                        ? 'bg-emerald-500 border-emerald-500'
+                        : 'border-border-strong hover:border-emerald-400'
+                    }`}
+                    title={entry.tracked ? 'Click to mark untracked' : 'Click to mark tracked'}
+                  >
+                    {entry.tracked && <Check size={14} className="text-white" />}
+                  </button>
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-primary">{entry.vehicleName}</h3>
+                    <h3 className={`text-sm font-bold ${entry.tracked ? 'text-muted line-through' : 'text-primary'}`}>{entry.vehicleName}</h3>
                     {ownerMode && (
-                      <button
-                        onClick={() => handleToggleTracked(entry.id)}
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-colors cursor-pointer ${
-                          entry.tracked
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                        }`}
-                        title={entry.tracked ? 'Click to mark untracked' : 'Click to mark tracked'}
-                      >
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        entry.tracked
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                      }`}>
                         {entry.tracked ? 'Tracked' : 'Untracked'}
-                      </button>
+                      </span>
                     )}
                   </div>
                   <p className="text-xs text-secondary mt-1">

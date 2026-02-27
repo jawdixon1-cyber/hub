@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { genId } from '../data';
 import renderLinkedText from '../utils/renderLinkedText';
+import QuickLinks from './QuickLinks';
 import { getTodayInTimezone } from '../utils/timezone';
 
 export default function OwnerChecklist({ title, items, setItems, checklistType, checklistLog, setChecklistLog, footer }) {
@@ -126,6 +127,7 @@ export default function OwnerChecklist({ title, items, setItems, checklistType, 
                     }`}
                   >
                     {renderLinkedText(item.text)}
+                    <QuickLinks links={item.links} />
                   </span>
                 </li>
               );

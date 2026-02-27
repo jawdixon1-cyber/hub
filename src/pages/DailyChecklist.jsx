@@ -5,6 +5,7 @@ import { useAppStore } from '../store/AppStoreContext';
 import { genId } from '../data';
 import { getTodayInTimezone } from '../utils/timezone';
 import renderLinkedText from '../utils/renderLinkedText';
+import QuickLinks from '../components/QuickLinks';
 
 /* ─── Hooks (reused from MyDaySection pattern) ─── */
 
@@ -259,6 +260,7 @@ function ChecklistItem({ item, onToggle }) {
           item.done ? 'text-muted line-through' : 'text-primary'
         }`}>
           {renderLinkedText(item.text)}
+          <QuickLinks links={item.links} />
         </span>
       </div>
     </div>

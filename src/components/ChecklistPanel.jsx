@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Gauge, Check } from 'lucide-react';
 import { genId } from '../data';
 import renderLinkedText from '../utils/renderLinkedText';
+import QuickLinks from './QuickLinks';
 import { getTodayInTimezone } from '../utils/timezone';
 
 /* ─── Hold-to-Check Item (same style as owner DailyChecklist) ─── */
@@ -44,6 +45,7 @@ function ChecklistItem({ item, checked, onToggle }) {
           done ? 'text-muted line-through' : 'text-primary'
         }`}>
           {renderLinkedText(item.text)}
+          <QuickLinks links={item.links} />
         </span>
       </div>
     </div>

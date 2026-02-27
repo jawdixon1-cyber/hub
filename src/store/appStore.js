@@ -22,6 +22,7 @@ import {
   initialQuests,
   initialQuotes,
   initialQuotingSettings,
+  initialReceiptLog,
 } from '../data';
 
 const DATA_CACHE_KEY = 'greenteam-data-cache';
@@ -52,6 +53,7 @@ const STATE_KEYS = [
   { key: 'mileageLog',          supaKey: 'greenteam-mileageLog',          initial: initialMileageLog },
   { key: 'quotes',              supaKey: 'greenteam-quotes',              initial: initialQuotes },
   { key: 'quotingSettings',     supaKey: 'greenteam-quotingSettings',     initial: initialQuotingSettings },
+  { key: 'receiptLog',          supaKey: 'greenteam-receiptLog',          initial: initialReceiptLog },
   { key: 'ownerNotes',          supaKey: 'greenteam-ownerNotes',          initial: '' },
   { key: 'ownerSchedule',       supaKey: 'greenteam-ownerSchedule',       initial: { sales: { start: '07:00', end: '09:00' }, build: { start: '09:00', end: '11:00' }, delegate: { start: '11:00', end: '12:00' } } },
   { key: 'executionDashboard',  supaKey: 'greenteam-executionDashboard',  initial: null },

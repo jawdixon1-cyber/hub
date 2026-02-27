@@ -346,6 +346,8 @@ export const initialMileageLog = [];
 
 export const initialQuotes = [];
 
+export const initialReceiptLog = [];
+
 export const initialQuotingSettings = {
   mulchTypes: [
     { label: 'Hardwood', pricePerYd: 36 },
