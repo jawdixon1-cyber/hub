@@ -59,6 +59,7 @@ export default function ReceiptTracker() {
         imageData: form.imageData,
         payee: form.payee,
         description: form.description,
+        items: form.items || [],
         amount: form.amount,
         date: form.date,
         loggedBy: form.loggedBy,
@@ -224,8 +225,18 @@ export default function ReceiptTracker() {
                   {entry.description && (
                     <p className="text-xs text-secondary mt-1 line-clamp-2">{entry.description}</p>
                   )}
+                  {entry.items?.length > 0 && (
+                    <div className="mt-1.5 space-y-0.5">
+                      {entry.items.map((item, i) => (
+                        <div key={i} className="flex justify-between text-xs text-tertiary">
+                          <span className="truncate mr-2">{item.name}</span>
+                          <span className="shrink-0 font-medium">${Number(item.price).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-sm font-semibold text-primary mt-1">
-                    ${Number(entry.amount).toFixed(2)}
+                    Total: ${Number(entry.amount).toFixed(2)}
                   </p>
                   <p className="text-xs text-muted mt-1">
                     {entry.date} &middot; Logged by {entry.loggedBy}

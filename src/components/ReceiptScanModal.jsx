@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Camera, Loader2 } from 'lucide-react';
+import { X, Camera, Loader2, Plus, Trash2 } from 'lucide-react';
 
 export default function ReceiptScanModal({ currentUser, onSubmit, onClose }) {
   const today = new Date().toISOString().slice(0, 10);
@@ -9,6 +9,7 @@ export default function ReceiptScanModal({ currentUser, onSubmit, onClose }) {
   const [form, setForm] = useState({
     payee: '',
     description: '',
+    items: [],
     amount: '',
     date: today,
   });
@@ -38,9 +39,14 @@ export default function ReceiptScanModal({ currentUser, onSubmit, onClose }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Scan failed');
+      const items = Array.isArray(data.items) ? data.items.map((it) => ({
+        name: it.name || '',
+        price: it.price != null ? String(it.price) : '',
+      })) : [];
       setForm({
         payee: data.payee || '',
         description: data.description || '',
+        items,
         amount: data.amount != null ? String(data.amount) : '',
         date: data.date || today,
       });
@@ -52,12 +58,34 @@ export default function ReceiptScanModal({ currentUser, onSubmit, onClose }) {
     }
   };
 
+  const updateItem = (index, field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      items: prev.items.map((it, i) => i === index ? { ...it, [field]: value } : it),
+    }));
+  };
+
+  const removeItem = (index) => {
+    setForm((prev) => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index),
+    }));
+  };
+
+  const addItem = () => {
+    setForm((prev) => ({
+      ...prev,
+      items: [...prev.items, { name: '', price: '' }],
+    }));
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     onSubmit({
       imageData,
       payee: form.payee,
       description: form.description,
+      items: form.items.map((it) => ({ name: it.name, price: Number(it.price) || 0 })),
       amount: Number(form.amount),
       date: form.date,
       loggedBy: currentUser,
@@ -151,8 +179,50 @@ export default function ReceiptScanModal({ currentUser, onSubmit, onClose }) {
                 />
               </div>
 
+              {/* Line items */}
               <div>
-                <label className="block text-sm font-semibold text-secondary mb-1">Amount</label>
+                <label className="block text-sm font-semibold text-secondary mb-2">Line Items</label>
+                <div className="space-y-2">
+                  {form.items.map((item, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={item.name}
+                        onChange={(e) => updateItem(i, 'name', e.target.value)}
+                        className="flex-1 rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary focus:ring-2 focus:ring-violet-500 outline-none transition"
+                        placeholder="Item name"
+                      />
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={item.price}
+                        onChange={(e) => updateItem(i, 'price', e.target.value)}
+                        className="w-24 rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary focus:ring-2 focus:ring-violet-500 outline-none transition text-right"
+                        placeholder="0.00"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeItem(i)}
+                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer shrink-0"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={addItem}
+                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 cursor-pointer"
+                >
+                  <Plus size={14} />
+                  Add item
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-secondary mb-1">Total Amount</label>
                 <input
                   type="number"
                   required

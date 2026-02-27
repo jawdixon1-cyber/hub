@@ -134,7 +134,7 @@ app.post('/api/scan-receipt', async (req, res) => {
             content: [
               {
                 type: 'text',
-                text: 'Extract the following from this receipt image and return ONLY valid JSON with no other text:\n{\n  "payee": "store/business name",\n  "description": "brief summary of items purchased",\n  "amount": 0.00,\n  "date": "YYYY-MM-DD"\n}\nIf you cannot determine a field, use null for that field. The amount should be the total amount as a number (no currency symbol).',
+                text: 'Extract the following from this receipt image and return ONLY valid JSON with no other text:\n{\n  "payee": "store/business name",\n  "description": "brief summary of items purchased",\n  "items": [\n    { "name": "item name", "price": 0.00 }\n  ],\n  "amount": 0.00,\n  "date": "YYYY-MM-DD"\n}\nRules:\n- "items" is an array of every line item on the receipt with its individual price as a number.\n- "amount" is the receipt total as a number (no currency symbol).\n- If you cannot determine a field, use null. If no line items are legible, return an empty items array.',
               },
               {
                 type: 'image_url',
@@ -143,7 +143,7 @@ app.post('/api/scan-receipt', async (req, res) => {
             ],
           },
         ],
-        max_tokens: 500,
+        max_tokens: 1500,
       }),
     });
 
