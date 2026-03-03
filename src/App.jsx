@@ -55,19 +55,18 @@ const Standards = lazy(() => import('./pages/Standards'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
-  { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
-  { id: 'standards', path: '/standards', label: 'Standards', icon: ShieldCheck },
-  { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator, ownerOnly: true },
+  { id: 'standards', path: '/standards', label: 'What\'s Expected', icon: ShieldCheck },
 ];
 
 const TOOLS_ITEMS = [
+  { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
-  { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
+  { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
+  { id: 'ideas', path: '/ideas', label: 'Ideas', icon: Lightbulb },
 ];
 
 const TEAM_ITEMS = [
-  { id: 'ideas', path: '/ideas', label: 'Ideas', icon: Lightbulb },
   { id: 'hr', path: '/hr', label: 'HR', icon: Users },
 ];
 
@@ -337,7 +336,7 @@ function AppShell() {
       })}
 
       <div className="h-px bg-border-subtle my-3 mx-2" />
-      {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Team</p>}
+      {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Human Resources</p>}
 
       {TEAM_ITEMS.map((item) => {
         const Icon = needsOnboarding ? Lock : item.icon;
@@ -477,28 +476,6 @@ function AppShell() {
           >
             {needsOnboarding ? <Lock size={12} /> : getInitials(currentUser)}
           </button>
-        </div>
-        {/* Mobile tabs */}
-        <div className="flex border-t border-border-subtle overflow-x-auto">
-          {NAV_ITEMS.filter((t) => !t.ownerOnly || ownerMode).map((t) => {
-            const Icon = needsOnboarding ? Lock : t.icon;
-            return (
-              <button
-                key={t.id}
-                onClick={() => handleNav(t.path)}
-                className={`flex-1 flex flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors min-w-[64px] ${
-                  needsOnboarding
-                    ? 'opacity-50 cursor-not-allowed text-muted'
-                    : isActive(t.path)
-                      ? 'text-brand-text-strong border-b-2 border-border-brand'
-                      : 'text-muted'
-                }`}
-              >
-                <Icon size={18} />
-                {t.label}
-              </button>
-            );
-          })}
         </div>
       </nav>
 

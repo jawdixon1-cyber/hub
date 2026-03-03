@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Megaphone, ChevronRight, AlertCircle, Lightbulb, Check, ClipboardCheck, FlagTriangleRight, PartyPopper, ArrowLeft } from 'lucide-react';
+import { Megaphone, ChevronRight, AlertCircle, Lightbulb, Check, ClipboardCheck, FlagTriangleRight, PartyPopper, ArrowLeft, ShieldCheck, BookOpen, Receipt, Gauge, Wrench } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ChecklistPanel from '../components/ChecklistPanel';
 import DailyQuizCard, { useQuizDoneToday } from '../components/DailyQuizCard';
@@ -123,46 +123,88 @@ export default function Home() {
   };
 
   const quickLinks = (
-    <div className="bg-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden">
-      <div className="p-2 space-y-1">
-        <a
-          href="jobber://"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-surface-alt transition-colors"
-        >
-          <div className="w-9 h-9 rounded-lg bg-blue-500/15 flex items-center justify-center shrink-0">
-            <ChevronRight size={18} className="text-blue-500" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-primary">Open Jobber</p>
-            <p className="text-xs text-muted">View today's schedule and jobs</p>
-          </div>
-        </a>
-        <button
-          onClick={() => navigate('/equipment?report=1')}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
-        >
-          <div className="w-9 h-9 rounded-lg bg-orange-500/15 flex items-center justify-center shrink-0">
-            <AlertCircle size={18} className="text-orange-500" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-primary">Report Repair</p>
-            <p className="text-xs text-muted">Equipment needs repair</p>
-          </div>
-        </button>
-        <button
-          onClick={() => navigate('/ideas?submit=1')}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
-        >
-          <div className="w-9 h-9 rounded-lg bg-purple-500/15 flex items-center justify-center shrink-0">
-            <Lightbulb size={18} className="text-purple-500" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-primary">Submit Idea</p>
-            <p className="text-xs text-muted">Suggest an improvement</p>
-          </div>
-        </button>
+    <div className="space-y-3">
+      {/* Jobs */}
+      <div className="bg-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden">
+        <div className="px-4 py-2 border-b border-border-subtle">
+          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted">Jobs</h3>
+        </div>
+        <div className="p-2 space-y-1">
+          <a
+            href="jobber://"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors"
+          >
+            <div className="w-8 h-8 rounded-lg bg-blue-500/15 flex items-center justify-center shrink-0">
+              <ChevronRight size={16} className="text-blue-500" />
+            </div>
+            <span className="text-sm font-semibold text-primary">Open Jobber</span>
+          </a>
+          <button
+            onClick={() => navigate('/guides')}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center shrink-0">
+              <BookOpen size={16} className="text-purple-500" />
+            </div>
+            <span className="text-sm font-semibold text-primary">Playbooks</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Log & Track */}
+      <div className="bg-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden">
+        <div className="px-4 py-2 border-b border-border-subtle">
+          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted">Log & Track</h3>
+        </div>
+        <div className="p-2 space-y-1">
+          <button
+            onClick={() => navigate('/mileage')}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center shrink-0">
+              <Gauge size={16} className="text-emerald-500" />
+            </div>
+            <span className="text-sm font-semibold text-primary">Mileage</span>
+          </button>
+          <button
+            onClick={() => navigate('/receipts')}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-violet-500/15 flex items-center justify-center shrink-0">
+              <Receipt size={16} className="text-violet-500" />
+            </div>
+            <span className="text-sm font-semibold text-primary">Receipts</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Report */}
+      <div className="bg-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden">
+        <div className="px-4 py-2 border-b border-border-subtle">
+          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted">Report</h3>
+        </div>
+        <div className="p-2 space-y-1">
+          <button
+            onClick={() => navigate('/equipment?report=1')}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-orange-500/15 flex items-center justify-center shrink-0">
+              <Wrench size={16} className="text-orange-500" />
+            </div>
+            <span className="text-sm font-semibold text-primary">Report Repair</span>
+          </button>
+          <button
+            onClick={() => navigate('/ideas?submit=1')}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center shrink-0">
+              <Lightbulb size={16} className="text-amber-500" />
+            </div>
+            <span className="text-sm font-semibold text-primary">Submit Idea</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -277,6 +319,20 @@ export default function Home() {
       {/* Flow State: working */}
       {flowState === 'working' && (
         <>
+          <button
+            onClick={() => navigate('/standards')}
+            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-gradient-to-r from-violet-500/10 to-purple-500/10 border border-violet-500/20 hover:border-violet-500/40 transition-colors cursor-pointer mb-4 text-left"
+          >
+            <div className="w-9 h-9 rounded-lg bg-violet-500/15 flex items-center justify-center shrink-0">
+              <ShieldCheck size={18} className="text-violet-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-primary">What&apos;s Expected</p>
+              <p className="text-xs text-muted">The standard. No exceptions.</p>
+            </div>
+            <ChevronRight size={16} className="text-muted shrink-0" />
+          </button>
+
           {quickLinks}
 
           <button

@@ -1,6 +1,5 @@
 import {
   ShieldCheck,
-  Flame,
   Sparkles,
   Trophy,
   Sunrise,
@@ -10,7 +9,9 @@ import {
   Sunset,
   AlertTriangle,
   Handshake,
+  ArrowLeft,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const CORE_VALUES = [
 { label: 'Clean Finish, Clean Reset', desc: 'Leave every job site, truck, and trailer cleaner than you found it.', emoji: '✨', bg: 'bg-sky-500/15', icon: Sparkles, iconColor: 'text-sky-500' },
@@ -77,15 +78,23 @@ const DAILY_FLOW = [
 ];
 
 export default function Standards() {
+  const navigate = useNavigate();
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Back + Header */}
+      <button
+        onClick={() => navigate('/')}
+        className="inline-flex items-center gap-1.5 text-sm text-secondary hover:text-primary cursor-pointer"
+      >
+        <ArrowLeft size={16} />
+        Home
+      </button>
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-brand-light flex items-center justify-center">
           <ShieldCheck size={22} className="text-brand-text-strong" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-primary">Standards</h1>
+          <h1 className="text-2xl font-bold text-primary">What&apos;s Expected</h1>
           <p className="text-sm text-tertiary">Our values & your daily flow</p>
         </div>
       </div>
