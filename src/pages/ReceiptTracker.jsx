@@ -85,6 +85,7 @@ export default function ReceiptTracker() {
   });
 
   const pendingCount = visibleEntries.filter((e) => e.status === 'pending').length;
+  const filteredTotal = filtered.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
   const sorted = [...filtered].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
@@ -154,12 +155,7 @@ export default function ReceiptTracker() {
           <div>
             <h1 className="text-2xl font-bold text-primary">Receipts</h1>
             <p className="text-sm text-tertiary">
-              {sorted.length} {sorted.length === 1 ? 'receipt' : 'receipts'}
-              {ownerMode && pendingCount > 0 && (
-                <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 text-xs font-semibold">
-                  {pendingCount} pending
-                </span>
-              )}
+              {sorted.length} {sorted.length === 1 ? 'receipt' : 'receipts'} &middot; ${filteredTotal.toFixed(2)}
             </p>
           </div>
         </div>
@@ -186,43 +182,36 @@ export default function ReceiptTracker() {
 
       {/* Status filter (owner only) */}
       {ownerMode && (
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted mr-1">Status:</span>
-          {['pending', 'reviewed', 'all'].map((f) => (
+        <select
+          value={statusFilter}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+          className="rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-violet-500 cursor-pointer"
+        >
+          <option value="pending">Pending ({pendingCount})</option>
+          <option value="reviewed">Reviewed</option>
+          <option value="all">All</option>
+        </select>
+      )}
+
+      {/* Per-page selector - only show with many receipts */}
+      {sorted.length > 20 && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted">Per page:</span>
+          {PER_PAGE_OPTIONS.map((n) => (
             <button
-              key={f}
-              onClick={() => { setStatusFilter(f); setPage(1); }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                statusFilter === f
-                  ? f === 'pending' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 shadow-sm'
-                  : f === 'reviewed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 shadow-sm'
-                  : 'bg-surface-alt text-primary shadow-sm'
-                  : 'text-tertiary hover:text-secondary hover:bg-surface-alt'
+              key={n}
+              onClick={() => updatePerPage(n)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                perPage === n
+                  ? 'bg-surface-alt text-primary shadow-sm'
+                  : 'text-tertiary hover:text-secondary'
               }`}
             >
-              {f === 'all' ? 'All' : f === 'pending' ? `Pending (${pendingCount})` : 'Reviewed'}
+              {n}
             </button>
           ))}
         </div>
       )}
-
-      {/* Per-page selector */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted">Per page:</span>
-        {PER_PAGE_OPTIONS.map((n) => (
-          <button
-            key={n}
-            onClick={() => updatePerPage(n)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              perPage === n
-                ? 'bg-surface-alt text-primary shadow-sm'
-                : 'text-tertiary hover:text-secondary'
-            }`}
-          >
-            {n}
-          </button>
-        ))}
-      </div>
 
       {/* Receipt list */}
       {paginated.length === 0 ? (
@@ -236,75 +225,35 @@ export default function ReceiptTracker() {
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="bg-card rounded-xl shadow-sm border border-border-subtle divide-y divide-border-subtle">
           {paginated.map((entry) => (
-            <div key={entry.id} onClick={() => setViewingReceipt(entry)} className={`bg-card rounded-xl shadow-sm border p-4 transition-colors cursor-pointer hover:bg-surface-alt/50 ${entry.status === 'reviewed' ? 'border-emerald-200 dark:border-emerald-800/50' : 'border-border-subtle'}`}>
-              <div className="flex items-start gap-3">
-                {ownerMode && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleToggleReviewed(entry.id); }}
-                    className={`mt-0.5 w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all cursor-pointer ${
-                      entry.status === 'reviewed'
-                        ? 'bg-emerald-500 border-emerald-500'
-                        : 'border-border-strong hover:border-violet-400'
-                    }`}
-                    title={entry.status === 'reviewed' ? 'Click to mark pending' : 'Click to mark reviewed'}
-                  >
-                    {entry.status === 'reviewed' && <Check size={14} className="text-white" />}
-                  </button>
-                )}
-                {/* Thumbnail */}
-                {(entry.imageUrl || entry.imageData) && (
-                  <img
-                    src={entry.imageUrl || entry.imageData}
-                    alt="Receipt"
-                    className="w-14 h-14 rounded-lg object-cover shrink-0 border border-border-subtle"
-                    loading="lazy"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className={`text-sm font-bold ${entry.status === 'reviewed' ? 'text-muted line-through' : 'text-primary'}`}>{entry.payee || 'Unknown'}</h3>
-                    {ownerMode && (
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                        entry.status === 'reviewed'
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                      }`}>
-                        {entry.status === 'reviewed' ? 'Reviewed' : 'Pending'}
-                      </span>
-                    )}
-                  </div>
-                  {entry.description && (
-                    <p className="text-xs text-secondary mt-1 line-clamp-2">{entry.description}</p>
-                  )}
-                  {entry.items?.length > 0 && (
-                    <div className="mt-1.5 space-y-0.5">
-                      {entry.items.map((item, i) => (
-                        <div key={i} className="flex justify-between text-xs text-tertiary">
-                          <span className="truncate mr-2">{item.name}</span>
-                          <span className="shrink-0 font-medium">${Number(item.price).toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-sm font-semibold text-primary mt-1">
-                    Total: ${Number(entry.amount).toFixed(2)}
-                  </p>
-                  <p className="text-xs text-muted mt-1">
-                    {entry.date} &middot; Logged by {entry.loggedBy}
-                  </p>
-                </div>
-                {ownerMode && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(entry.id); }}
-                    className="p-1.5 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer shrink-0"
-                    title="Delete receipt"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
+            <div
+              key={entry.id}
+              onClick={() => setViewingReceipt(entry)}
+              className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface-alt/50 transition-colors"
+            >
+              {ownerMode && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleToggleReviewed(entry.id); }}
+                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                    entry.status === 'reviewed'
+                      ? 'bg-emerald-500 border-emerald-500'
+                      : 'border-border-strong hover:border-violet-400'
+                  }`}
+                >
+                  {entry.status === 'reviewed' && <Check size={12} className="text-white" />}
+                </button>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-semibold truncate ${entry.status === 'reviewed' ? 'text-muted line-through' : 'text-primary'}`}>
+                  {entry.payee || 'Unknown'}
+                </p>
+                <p className="text-xs text-muted truncate">{entry.date} &middot; {entry.loggedBy}</p>
               </div>
+              <span className="text-sm font-bold text-primary shrink-0">
+                ${Number(entry.amount).toFixed(2)}
+              </span>
+              <ChevronRight size={16} className="text-muted shrink-0" />
             </div>
           ))}
         </div>
@@ -409,13 +358,36 @@ export default function ReceiptTracker() {
                 }`}>
                   {viewingReceipt.status === 'reviewed' ? 'Reviewed' : 'Pending'}
                 </span>
-                <button
-                  onClick={() => setEditingReceipt({ ...viewingReceipt, amount: String(viewingReceipt.amount) })}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface-alt text-secondary text-sm font-medium hover:text-primary hover:bg-surface transition-colors cursor-pointer"
-                >
-                  <Pencil size={14} />
-                  Edit
-                </button>
+                <div className="flex items-center gap-2">
+                  {ownerMode && (
+                    <>
+                      <button
+                        onClick={() => { handleToggleReviewed(viewingReceipt.id); setViewingReceipt({ ...viewingReceipt, status: viewingReceipt.status === 'reviewed' ? 'pending' : 'reviewed' }); }}
+                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                          viewingReceipt.status === 'reviewed'
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200'
+                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 hover:bg-emerald-200'
+                        }`}
+                      >
+                        <Check size={14} />
+                        {viewingReceipt.status === 'reviewed' ? 'Unreview' : 'Reviewed'}
+                      </button>
+                      <button
+                        onClick={() => { setViewingReceipt(null); setConfirmDeleteId(viewingReceipt.id); }}
+                        className="p-2 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => setEditingReceipt({ ...viewingReceipt, amount: String(viewingReceipt.amount) })}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-alt text-secondary text-sm font-medium hover:text-primary hover:bg-surface transition-colors cursor-pointer"
+                  >
+                    <Pencil size={14} />
+                    Edit
+                  </button>
+                </div>
               </div>
             </div>
           </div>

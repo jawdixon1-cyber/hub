@@ -43,7 +43,7 @@ const MODULE_GRADIENTS = {
 function generateDefaultSections(moduleId, playbookLabels) {
   const data = {
     1: [
-      { id: 'd1-goal', title: 'Goal', content: '<p><strong>Set expectations, get set up, build company culture.</strong></p>' },
+      { id: 'd1-goal', title: 'Goal', content: '<p><strong>Set standards, get set up, build company culture.</strong></p>' },
       { id: 'd1-learn', title: "What You'll Learn", content: '<ul><li>Welcome from Jude: Our story, values (client respect, quality first)</li><li>Role overview: Daily duties as field member/lead</li><li>HR essentials: Pay schedule, time off, code of conduct</li><li>Uniform/shirts: Get from mentor/owner, why important (professionalism/safety)</li><li>Logistics: Schedule, meeting points, communication (app announcements)</li></ul>' },
       { id: 'd1-actions', title: 'Actions', content: '<ol><li>Read HR policies.</li><li>Get shirts/uniform.</li><li>Acknowledge understanding.</li><li>Submit progress: \u201COnboarded \u2013 questions?\u201D</li></ol>' },
       { id: 'd1-links', title: 'Quick Links', content: '<p><a href="/hr">View HR Policies</a> \u00B7 <a href="/hr">Request Time Off</a></p>' },

@@ -21,6 +21,7 @@ export default defineConfig({
           'vendor-supabase': ['@supabase/supabase-js'],
           'vendor-dnd': ['@dnd-kit/core'],
           'vendor-zustand': ['zustand'],
+          'vendor-leaflet': ['leaflet', 'react-leaflet', 'leaflet-draw'],
         },
       },
     },

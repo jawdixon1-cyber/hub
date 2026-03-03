@@ -56,6 +56,7 @@ const Standards = lazy(() => import('./pages/Standards'));
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
+  { id: 'standards', path: '/standards', label: 'Standards', icon: ShieldCheck },
   { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator, ownerOnly: true },
 ];
 
@@ -66,7 +67,6 @@ const TOOLS_ITEMS = [
 ];
 
 const TEAM_ITEMS = [
-  { id: 'standards', path: '/standards', label: 'Standards', icon: ShieldCheck },
   { id: 'ideas', path: '/ideas', label: 'Ideas', icon: Lightbulb },
   { id: 'hr', path: '/hr', label: 'HR', icon: Users },
 ];

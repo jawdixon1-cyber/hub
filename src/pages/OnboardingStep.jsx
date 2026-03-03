@@ -50,11 +50,11 @@ function generateDefaultSections(stepId) {
       { id: 'ob2-next', title: "What's Next", content: '<p>Once the owner approves this step, <strong>training modules unlock automatically</strong>. You\'ll work through them in order with your mentor.</p>' },
     ],
     'onboard-3': [
-      { id: 'ob3-about', title: 'What This Step Is About', content: '<p><strong>Review and sign key company policies.</strong> These policies cover expectations, scheduling, conduct, and other important guidelines you\'ll need to follow as a team member.</p>' },
+      { id: 'ob3-about', title: 'What This Step Is About', content: '<p><strong>Review and sign key company policies.</strong> These policies cover standards, scheduling, conduct, and other important guidelines you\'ll need to follow as a team member.</p>' },
       { id: 'ob3-policies', title: 'Policies Overview', content: '<p>All company policies are accessible on the <a href="/hr">HR page</a>. During this step, you\'ll read through and formally accept the policies listed below. Each one requires your signature to confirm you\'ve read and understood it.</p>' },
     ],
     'onboard-4': [
-      { id: 'ob4-about', title: 'What This Step Is About', content: '<p><strong>Review your team\'s playbook(s) and confirm your understanding.</strong> Playbooks outline the procedures, expectations, and guidelines for how your team operates day-to-day.</p>' },
+      { id: 'ob4-about', title: 'What This Step Is About', content: '<p><strong>Review your team\'s playbook(s) and confirm your understanding.</strong> Playbooks outline the procedures, standards, and guidelines for how your team operates day-to-day.</p>' },
       { id: 'ob4-where', title: 'Where to Find Playbooks', content: '<p>Your team\'s playbooks are available on the <a href="/guides">Playbooks page</a>. Take your time reading through each one carefully. If anything is unclear, ask your lead or mentor for clarification.</p>' },
       { id: 'ob4-next', title: "What's Next", content: '<p>Once the owner approves this step, <strong>training modules unlock automatically</strong>. You\'ll work through them in order with your mentor.</p>' },
     ],
@@ -86,7 +86,7 @@ function generateDefaultActionItems(stepId) {
       { id: 'ai3-newhire', type: 'policy', label: 'Read and accept New Hire Onboarding', policyId: '52' },
     ],
     'onboard-4': [
-      { id: 'ai4-playbook', type: 'policy', label: 'I have reviewed and understand my assigned team playbook(s)', policyText: 'I confirm that I have reviewed the playbook(s) assigned to my team. I understand the procedures, expectations, and guidelines outlined in the playbook(s) and agree to follow them in my daily work.' },
+      { id: 'ai4-playbook', type: 'policy', label: 'I have reviewed and understand my assigned team playbook(s)', policyText: 'I confirm that I have reviewed the playbook(s) assigned to my team. I understand the procedures, standards, and guidelines outlined in the playbook(s) and agree to follow them in my daily work.' },
     ],
   };
   return data[stepId] || [];
