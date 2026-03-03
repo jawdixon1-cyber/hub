@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Receipt, Plus, Search, ChevronLeft, ChevronRight,
-  Trash2, Check,
+  Trash2, Check, X, Pencil,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import ReceiptScanModal from '../components/ReceiptScanModal';
 import { genId } from '../data';
+import { supabase } from '../lib/supabase';
 
 const PER_PAGE_OPTIONS = [20, 30, 40];
 
@@ -16,15 +17,15 @@ export default function ReceiptTracker() {
   const receiptLog = useAppStore((s) => s.receiptLog);
   const setReceiptLog = useAppStore((s) => s.setReceiptLog);
 
-  // One-time migration: compress any oversized receipt images
+  // One-time migration: move base64 images to Supabase Storage
   const migrated = useRef(false);
   useEffect(() => {
     if (migrated.current || !receiptLog || receiptLog.length === 0) return;
-    const oversized = receiptLog.filter((r) => r.imageData && r.imageData.length > 200000); // >200KB
-    if (oversized.length === 0) { migrated.current = true; return; }
+    const needsMigration = receiptLog.filter((r) => r.imageData && !r.imageUrl);
+    if (needsMigration.length === 0) { migrated.current = true; return; }
     migrated.current = true;
     (async () => {
-      const compress = (dataUrl) => new Promise((resolve) => {
+      const toBlob = (dataUrl) => new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -33,15 +34,23 @@ export default function ReceiptTracker() {
           canvas.height = img.height * scale;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL('image/jpeg', 0.6));
+          canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.6);
         };
-        img.onerror = () => resolve(dataUrl); // keep original if compression fails
+        img.onerror = () => resolve(null);
         img.src = dataUrl;
       });
       const updated = await Promise.all(
         receiptLog.map(async (r) => {
-          if (r.imageData && r.imageData.length > 200000) {
-            return { ...r, imageData: await compress(r.imageData) };
+          if (r.imageData && !r.imageUrl) {
+            try {
+              const blob = await toBlob(r.imageData);
+              if (!blob) return r;
+              const fileName = `${r.id || genId()}.jpg`;
+              const { error } = await supabase.storage.from('receipts').upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+              if (error) { console.warn('Migration upload failed:', error.message); return r; }
+              const { data: urlData } = supabase.storage.from('receipts').getPublicUrl(fileName);
+              return { ...r, imageUrl: urlData.publicUrl, imageData: null };
+            } catch { return r; }
           }
           return r;
         })
@@ -57,10 +66,10 @@ export default function ReceiptTracker() {
   const [perPage, setPerPage] = useState(20);
   const [page, setPage] = useState(1);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [viewingReceipt, setViewingReceipt] = useState(null);
+  const [editingReceipt, setEditingReceipt] = useState(null);
 
-  const visibleEntries = ownerMode
-    ? receiptLog
-    : receiptLog.filter((e) => e.loggedBy === currentUser);
+  const visibleEntries = receiptLog;
 
   const filtered = visibleEntries.filter((entry) => {
     if (ownerMode && statusFilter === 'pending' && entry.status !== 'pending') return false;
@@ -90,7 +99,8 @@ export default function ReceiptTracker() {
       ...receiptLog,
       {
         id: genId(),
-        imageData: form.imageData,
+        imageUrl: form.imageUrl || null,
+        imageData: form.imageData || null, // fallback only
         payee: form.payee,
         description: form.description,
         items: form.items || [],
@@ -117,6 +127,15 @@ export default function ReceiptTracker() {
     ));
   };
 
+  const handleSaveEdit = () => {
+    if (!editingReceipt) return;
+    setReceiptLog(receiptLog.map((e) =>
+      e.id === editingReceipt.id ? { ...e, payee: editingReceipt.payee, description: editingReceipt.description, amount: Number(editingReceipt.amount), date: editingReceipt.date, items: editingReceipt.items } : e
+    ));
+    setViewingReceipt({ ...viewingReceipt, payee: editingReceipt.payee, description: editingReceipt.description, amount: Number(editingReceipt.amount), date: editingReceipt.date, items: editingReceipt.items });
+    setEditingReceipt(null);
+  };
+
   const pageNumbers = [];
   const maxVisible = 5;
   let start = Math.max(1, safePage - Math.floor(maxVisible / 2));
@@ -136,7 +155,6 @@ export default function ReceiptTracker() {
             <h1 className="text-2xl font-bold text-primary">Receipts</h1>
             <p className="text-sm text-tertiary">
               {sorted.length} {sorted.length === 1 ? 'receipt' : 'receipts'}
-              {!ownerMode && ' (yours)'}
               {ownerMode && pendingCount > 0 && (
                 <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 text-xs font-semibold">
                   {pendingCount} pending
@@ -220,11 +238,11 @@ export default function ReceiptTracker() {
       ) : (
         <div className="space-y-2">
           {paginated.map((entry) => (
-            <div key={entry.id} className={`bg-card rounded-xl shadow-sm border p-4 transition-colors ${entry.status === 'reviewed' ? 'border-emerald-200 dark:border-emerald-800/50' : 'border-border-subtle'}`}>
+            <div key={entry.id} onClick={() => setViewingReceipt(entry)} className={`bg-card rounded-xl shadow-sm border p-4 transition-colors cursor-pointer hover:bg-surface-alt/50 ${entry.status === 'reviewed' ? 'border-emerald-200 dark:border-emerald-800/50' : 'border-border-subtle'}`}>
               <div className="flex items-start gap-3">
                 {ownerMode && (
                   <button
-                    onClick={() => handleToggleReviewed(entry.id)}
+                    onClick={(e) => { e.stopPropagation(); handleToggleReviewed(entry.id); }}
                     className={`mt-0.5 w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all cursor-pointer ${
                       entry.status === 'reviewed'
                         ? 'bg-emerald-500 border-emerald-500'
@@ -236,11 +254,12 @@ export default function ReceiptTracker() {
                   </button>
                 )}
                 {/* Thumbnail */}
-                {entry.imageData && (
+                {(entry.imageUrl || entry.imageData) && (
                   <img
-                    src={entry.imageData}
+                    src={entry.imageUrl || entry.imageData}
                     alt="Receipt"
                     className="w-14 h-14 rounded-lg object-cover shrink-0 border border-border-subtle"
+                    loading="lazy"
                   />
                 )}
                 <div className="flex-1 min-w-0">
@@ -278,7 +297,7 @@ export default function ReceiptTracker() {
                 </div>
                 {ownerMode && (
                   <button
-                    onClick={() => setConfirmDeleteId(entry.id)}
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(entry.id); }}
                     className="p-1.5 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer shrink-0"
                     title="Delete receipt"
                   >
@@ -342,6 +361,116 @@ export default function ReceiptTracker() {
             </div>
             <h3 className="text-lg font-bold text-primary mb-1">Receipt Saved!</h3>
             <p className="text-sm text-secondary">Your receipt has been added.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt Detail / Edit Modal */}
+      {viewingReceipt && !editingReceipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setViewingReceipt(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-violet-500 to-purple-600 px-6 py-5 relative rounded-t-2xl">
+              <button onClick={() => setViewingReceipt(null)} className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors cursor-pointer">
+                <X size={22} />
+              </button>
+              <h2 className="text-xl font-bold text-white">{viewingReceipt.payee || 'Receipt'}</h2>
+              <p className="text-white/70 text-sm mt-0.5">{viewingReceipt.date} &middot; {viewingReceipt.loggedBy}</p>
+            </div>
+            <div className="p-6 space-y-4">
+              {(viewingReceipt.imageUrl || viewingReceipt.imageData) && (
+                <img src={viewingReceipt.imageUrl || viewingReceipt.imageData} alt="Receipt" className="w-full rounded-xl border border-border-subtle" loading="lazy" />
+              )}
+              <div>
+                <p className="text-xs text-muted font-medium mb-1">Description</p>
+                <p className="text-sm text-primary">{viewingReceipt.description || '—'}</p>
+              </div>
+              {viewingReceipt.items?.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted font-medium mb-2">Line Items</p>
+                  <div className="space-y-1.5">
+                    {viewingReceipt.items.map((item, i) => (
+                      <div key={i} className="flex justify-between text-sm">
+                        <span className="text-secondary">{item.name}</span>
+                        <span className="text-primary font-medium">${Number(item.price).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-between items-center pt-2 border-t border-border-subtle">
+                <span className="text-sm font-bold text-primary">Total</span>
+                <span className="text-lg font-bold text-primary">${Number(viewingReceipt.amount).toFixed(2)}</span>
+              </div>
+              <div className="flex items-center justify-between pt-2">
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                  viewingReceipt.status === 'reviewed'
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                }`}>
+                  {viewingReceipt.status === 'reviewed' ? 'Reviewed' : 'Pending'}
+                </span>
+                <button
+                  onClick={() => setEditingReceipt({ ...viewingReceipt, amount: String(viewingReceipt.amount) })}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface-alt text-secondary text-sm font-medium hover:text-primary hover:bg-surface transition-colors cursor-pointer"
+                >
+                  <Pencil size={14} />
+                  Edit
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt Edit Modal */}
+      {editingReceipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setEditingReceipt(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-violet-500 to-purple-600 px-6 py-5 relative rounded-t-2xl">
+              <button onClick={() => setEditingReceipt(null)} className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors cursor-pointer">
+                <X size={22} />
+              </button>
+              <h2 className="text-xl font-bold text-white">Edit Receipt</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">Payee</label>
+                <input type="text" value={editingReceipt.payee} onChange={(e) => setEditingReceipt({ ...editingReceipt, payee: e.target.value })} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-violet-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">Description</label>
+                <input type="text" value={editingReceipt.description} onChange={(e) => setEditingReceipt({ ...editingReceipt, description: e.target.value })} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-violet-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">Total Amount</label>
+                <input type="number" step="0.01" value={editingReceipt.amount} onChange={(e) => setEditingReceipt({ ...editingReceipt, amount: e.target.value })} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-violet-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">Date</label>
+                <input type="date" value={editingReceipt.date} onChange={(e) => setEditingReceipt({ ...editingReceipt, date: e.target.value })} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-violet-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-2">Line Items</label>
+                <div className="space-y-2">
+                  {(editingReceipt.items || []).map((item, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input type="text" value={item.name} onChange={(e) => { const items = [...editingReceipt.items]; items[i] = { ...items[i], name: e.target.value }; setEditingReceipt({ ...editingReceipt, items }); }} placeholder="Item name" className="flex-1 rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-violet-500" />
+                      <input type="number" step="0.01" value={item.price} onChange={(e) => { const items = [...editingReceipt.items]; items[i] = { ...items[i], price: e.target.value }; setEditingReceipt({ ...editingReceipt, items }); }} placeholder="0.00" className="w-24 rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-violet-500 text-right" />
+                      <button type="button" onClick={() => { const items = editingReceipt.items.filter((_, idx) => idx !== i); setEditingReceipt({ ...editingReceipt, items }); }} className="p-1.5 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer shrink-0">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={() => setEditingReceipt({ ...editingReceipt, items: [...(editingReceipt.items || []), { name: '', price: '' }] })} className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 hover:text-violet-700 cursor-pointer">
+                  <Plus size={14} /> Add item
+                </button>
+              </div>
+              <div className="flex gap-3 justify-end pt-2">
+                <button onClick={() => setEditingReceipt(null)} className="px-5 py-2.5 rounded-lg border border-border-strong text-secondary font-medium hover:bg-surface transition-colors cursor-pointer">Cancel</button>
+                <button onClick={handleSaveEdit} className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 text-white font-medium hover:opacity-90 transition-opacity cursor-pointer">Save Changes</button>
+              </div>
+            </div>
           </div>
         </div>
       )}

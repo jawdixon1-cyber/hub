@@ -1,7 +1,38 @@
 import { useState } from 'react';
 import { X, Camera, Loader2, Plus, Trash2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { genId } from '../data';
 
-// Compress image to reduce storage size — keeps full res for scanning, saves thumbnail for storage
+// Compress image and return as blob for upload
+function compressImageToBlob(dataUrl, maxWidth = 800, quality = 0.6) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(1, maxWidth / img.width);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
+    };
+    img.src = dataUrl;
+  });
+}
+
+async function uploadReceiptImage(dataUrl) {
+  const blob = await compressImageToBlob(dataUrl, 800, 0.6);
+  const fileName = `${genId()}.jpg`;
+  const { error } = await supabase.storage.from('receipts').upload(fileName, blob, {
+    contentType: 'image/jpeg',
+    upsert: false,
+  });
+  if (error) throw error;
+  const { data: urlData } = supabase.storage.from('receipts').getPublicUrl(fileName);
+  return urlData.publicUrl;
+}
+
+// Legacy compress for fallback
 function compressImage(dataUrl, maxWidth = 800, quality = 0.6) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -101,17 +132,35 @@ export default function ReceiptScanModal({ currentUser, onSubmit, onClose }) {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSubmit({
-      imageData: thumbnailData || imageData, // save compressed version
-      payee: form.payee,
-      description: form.description,
-      items: form.items.map((it) => ({ name: it.name, price: Number(it.price) || 0 })),
-      amount: Number(form.amount),
-      date: form.date,
-      loggedBy: currentUser,
-    });
+    setSaving(true);
+    try {
+      let imageUrl = null;
+      if (imageData) {
+        try {
+          imageUrl = await uploadReceiptImage(imageData);
+        } catch (err) {
+          console.warn('Storage upload failed, falling back to compressed base64:', err.message);
+          // Fallback: save compressed base64 if storage upload fails (e.g. bucket not created yet)
+          imageUrl = thumbnailData || await compressImage(imageData, 800, 0.6);
+        }
+      }
+      onSubmit({
+        imageUrl,
+        imageData: null, // no longer store base64 in the receipt object
+        payee: form.payee,
+        description: form.description,
+        items: form.items.map((it) => ({ name: it.name, price: Number(it.price) || 0 })),
+        amount: Number(form.amount),
+        date: form.date,
+        loggedBy: currentUser,
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -288,9 +337,10 @@ export default function ReceiptScanModal({ currentUser, onSubmit, onClose }) {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 text-white font-medium hover:opacity-90 transition-opacity cursor-pointer"
+                  disabled={saving}
+                  className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 text-white font-medium hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 inline-flex items-center gap-2"
                 >
-                  Save Receipt
+                  {saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : 'Save Receipt'}
                 </button>
               </div>
             </>
