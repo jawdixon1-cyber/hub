@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Receipt, Plus, Search, ChevronLeft, ChevronRight,
-  Trash2, Check, X, Pencil,
+  Trash2, Check, X, Pencil, ArrowLeft,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import ReceiptScanModal from '../components/ReceiptScanModal';
@@ -12,6 +13,7 @@ import { supabase } from '../lib/supabase';
 const PER_PAGE_OPTIONS = [20, 30, 40];
 
 export default function ReceiptTracker() {
+  const navigate = useNavigate();
   const { currentUser, ownerMode } = useAuth();
 
   const receiptLog = useAppStore((s) => s.receiptLog);
@@ -146,6 +148,9 @@ export default function ReceiptTracker() {
 
   return (
     <div className="space-y-6">
+      <button onClick={() => navigate('/')} className="inline-flex items-center gap-1.5 text-sm text-secondary hover:text-primary cursor-pointer">
+        <ArrowLeft size={16} /> Home
+      </button>
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">

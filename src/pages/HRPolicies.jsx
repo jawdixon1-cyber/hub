@@ -1,16 +1,40 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronRight, ChevronDown, X, Calendar, Plus, Pencil, Trash2, Search } from 'lucide-react';
 import ViewModal from '../components/ViewModal';
 import EditModal from '../components/EditModal';
-import { genId } from '../data';
+import { genId, initialPolicies } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 
+const SEED_POLICY_IDS = ['54', '55', '56', '57'];
 
 export default function HRPolicies() {
   const { ownerMode, currentUser } = useAuth();
   const items = useAppStore((s) => s.policies);
   const setItems = useAppStore((s) => s.setPolicies);
+
+  // Seed: inject missing default policies or fix plain-text → HTML
+  useEffect(() => {
+    if (!items || items.length === 0) return;
+    const seedMap = Object.fromEntries(initialPolicies.filter((p) => SEED_POLICY_IDS.includes(p.id)).map((p) => [p.id, p]));
+    let updated = false;
+    let result = items.map((p) => {
+      // Replace if content exists in seed and current content is not HTML
+      if (seedMap[p.id] && p.content && !p.content.includes('<')) {
+        updated = true;
+        return { ...p, content: seedMap[p.id].content, summary: seedMap[p.id].summary };
+      }
+      return p;
+    });
+    // Add any missing seed policies
+    const existingIds = new Set(result.map((p) => p.id));
+    const missing = Object.values(seedMap).filter((p) => !existingIds.has(p.id));
+    if (missing.length > 0) {
+      result = [...result, ...missing];
+      updated = true;
+    }
+    if (updated) setItems(result);
+  }, [items, setItems]);
   const timeOffRequests = useAppStore((s) => s.timeOffRequests);
   const setTimeOffRequests = useAppStore((s) => s.setTimeOffRequests);
 

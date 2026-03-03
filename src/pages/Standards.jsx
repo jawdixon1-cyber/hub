@@ -38,7 +38,7 @@ const DAILY_FLOW = [
     items: [
       'Have the playbook open during the service',
       'Clean the site before you leave — blow off clippings, clean up mud, leave zero trace',
-      'Complete the job checklist when finished',
+      'Complete the job form if there is one attached to the job',
       'Mark the job complete in Jobber',
     ],
   },
@@ -49,7 +49,7 @@ const DAILY_FLOW = [
     iconColor: 'text-sky-500',
     items: [
       'Hit directions for the next job',
-      'Send "On My Way" to notify the client',
+      'Hit "On My Way" to notify the client and send',
     ],
   },
   {
@@ -59,8 +59,6 @@ const DAILY_FLOW = [
     iconColor: 'text-indigo-500',
     items: [
       'Complete your closing checklist',
-      'Log mileage',
-      'Scan any receipts',
     ],
   },
   {
@@ -102,16 +100,18 @@ export default function Standards() {
       {/* Core Values */}
       <div className="bg-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border-subtle">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-muted">Our Core Values</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted">The Standard</h3>
         </div>
-        <div className="p-4 grid grid-cols-3 gap-3">
+        <div className="p-4 space-y-3">
           {CORE_VALUES.map((v) => (
-            <div key={v.label} className="text-center px-2 py-3">
-              <div className={`w-12 h-12 rounded-xl ${v.bg} flex items-center justify-center mx-auto mb-2`}>
-                <span className="text-xl">{v.emoji}</span>
+            <div key={v.label} className="flex items-start gap-4 px-2 py-2">
+              <div className={`w-10 h-10 rounded-xl ${v.bg} flex items-center justify-center shrink-0`}>
+                <span className="text-lg">{v.emoji}</span>
               </div>
-              <p className="text-xs font-bold text-primary leading-tight">{v.label}</p>
-              <p className="text-[11px] text-tertiary mt-1 leading-snug">{v.desc}</p>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-primary">{v.label}</p>
+                <p className="text-xs text-tertiary mt-0.5 leading-relaxed">{v.desc}</p>
+              </div>
             </div>
           ))}
         </div>
@@ -120,7 +120,7 @@ export default function Standards() {
       {/* Daily Flow */}
       <div className="bg-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border-subtle">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-muted">Your Daily Flow</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted">The Routine</h3>
         </div>
         <div className="p-4 space-y-1">
           {DAILY_FLOW.map((section, si) => {

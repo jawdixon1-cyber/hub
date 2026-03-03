@@ -518,37 +518,6 @@ export default function ExecutionDashboard() {
   const today = getTodayStr();
   const firstName = currentUser?.split(' ')[0] || 'Boss';
 
-  const weeklyQuote = useMemo(() => {
-    const quotes = [
-      { text: 'Whatever you do, work at it with all your heart.', ref: 'Colossians 3:23' },
-      { text: 'Commit to the Lord whatever you do, and he will establish your plans.', ref: 'Proverbs 16:3' },
-      { text: 'The hand of the diligent will rule, while the slothful will be put to forced labor.', ref: 'Proverbs 12:24' },
-      { text: 'Do everything in love.', ref: '1 Corinthians 16:14' },
-      { text: 'Be strong and courageous. Do not be afraid; do not be discouraged.', ref: 'Joshua 1:9' },
-      { text: 'Let us not become weary in doing good, for at the proper time we will reap a harvest.', ref: 'Galatians 6:9' },
-      { text: 'Iron sharpens iron, and one man sharpens another.', ref: 'Proverbs 27:17' },
-      { text: 'I can do all things through him who strengthens me.', ref: 'Philippians 4:13' },
-      { text: 'The plans of the diligent lead surely to abundance.', ref: 'Proverbs 21:5' },
-      { text: 'Two are better than one, because they have a good reward for their toil.', ref: 'Ecclesiastes 4:9' },
-      { text: 'Whatever your hand finds to do, do it with all your might.', ref: 'Ecclesiastes 9:10' },
-      { text: 'He who gathers in summer is a prudent son.', ref: 'Proverbs 10:5' },
-      { text: 'As each has received a gift, use it to serve one another.', ref: '1 Peter 4:10' },
-      { text: 'Well done, good and faithful servant. You have been faithful over a little; I will set you over much.', ref: 'Matthew 25:21' },
-      { text: 'For we are his workmanship, created for good works.', ref: 'Ephesians 2:10' },
-      { text: 'Do not be slothful in zeal, be fervent in spirit, serve the Lord.', ref: 'Romans 12:11' },
-      { text: 'In all toil there is profit, but mere talk tends only to poverty.', ref: 'Proverbs 14:23' },
-      { text: 'He gives power to the faint, and to him who has no might he increases strength.', ref: 'Isaiah 40:29' },
-      { text: 'The Lord will fight for you; you need only to be still.', ref: 'Exodus 14:14' },
-      { text: 'A generous person will prosper; whoever refreshes others will be refreshed.', ref: 'Proverbs 11:25' },
-      { text: 'Let your light shine before others, that they may see your good deeds.', ref: 'Matthew 5:16' },
-      { text: 'Trust in the Lord with all your heart and lean not on your own understanding.', ref: 'Proverbs 3:5' },
-      { text: 'And let us consider how to stir up one another to love and good works.', ref: 'Hebrews 10:24' },
-    ];
-    const now = new Date();
-    const start = new Date(now.getFullYear(), 0, 1);
-    const weekNum = Math.floor(((now - start) / 86400000 + start.getDay()) / 7);
-    return quotes[weekNum % quotes.length];
-  }, []);
 
   const [morningDismissed, setMorningDismissed] = useState(false);
   const [wrappingUp, setWrappingUp] = useState(false);
@@ -1016,9 +985,7 @@ export default function ExecutionDashboard() {
     <div className="space-y-8 pb-8">
       {/* ─── Header ─── */}
       <div className="flex items-start justify-between">
-        <div className="flex-1 min-w-0 mr-3">
-          <p className="text-xs text-secondary italic leading-relaxed">"{weeklyQuote.text}" <span className="not-italic text-muted">— {weeklyQuote.ref}</span></p>
-        </div>
+        <div className="flex-1 min-w-0 mr-3" />
         <div className="flex gap-2">
           <button
             onClick={() => navigate('/owner-dashboard')}

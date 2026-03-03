@@ -360,24 +360,6 @@ function AppShell() {
         );
       })}
 
-      {ownerMode && (
-        <>
-          <div className="h-px bg-border-subtle my-3 mx-2" />
-          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Owner</p>}
-        </>
-      )}
-
-      {ownerMode && (
-        <button
-          onClick={() => navigate('/profile')}
-          title={collapsed ? 'Owner Settings' : undefined}
-          className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer`}
-        >
-          <Wrench size={20} className="shrink-0" />
-          {!collapsed && <span className="truncate">Owner Settings</span>}
-        </button>
-      )}
-
       {ownerMode && !needsOnboarding && (
         <>
           <div className="h-px bg-border-subtle my-3 mx-2" />

@@ -12,8 +12,9 @@ import {
   ClipboardList,
   Pencil,
   Eye,
+  ArrowLeft,
 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { genId, EQUIPMENT_TYPES, getActiveRepairs } from '../data';
 import AddEquipmentModal from '../components/AddEquipmentModal';
 import ReportRepairModal from '../components/ReportRepairModal';
@@ -21,6 +22,7 @@ import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function EquipmentIdeas() {
+  const navigate = useNavigate();
   const { ownerMode, currentUser } = useAuth();
   const equipment = useAppStore((s) => s.equipment);
   const setEquipment = useAppStore((s) => s.setEquipment);
@@ -205,6 +207,9 @@ export default function EquipmentIdeas() {
 
   return (
     <div>
+      <button onClick={() => navigate('/')} className="inline-flex items-center gap-1.5 text-sm text-secondary hover:text-primary cursor-pointer mb-4">
+        <ArrowLeft size={16} /> Home
+      </button>
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-primary">Equipment Log</h1>
         <p className="text-tertiary mt-1">Repairs, fixes, and maintenance history</p>

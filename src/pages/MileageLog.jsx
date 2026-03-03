@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import {
   Gauge, Plus, Search, ChevronDown, ChevronLeft, ChevronRight,
-  Trash2, X, Link2, Check,
+  Trash2, X, Link2, Check, ArrowLeft,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import MileageModal from '../components/MileageModal';
@@ -11,6 +12,7 @@ import { genId } from '../data';
 const PER_PAGE_OPTIONS = [20, 30, 40];
 
 export default function MileageLog() {
+  const navigate = useNavigate();
   const { currentUser, ownerMode } = useAuth();
 
   const vehicles = useAppStore((s) => s.vehicles);
@@ -179,6 +181,9 @@ export default function MileageLog() {
 
   return (
     <div className="space-y-6">
+      <button onClick={() => navigate('/')} className="inline-flex items-center gap-1.5 text-sm text-secondary hover:text-primary cursor-pointer">
+        <ArrowLeft size={16} /> Home
+      </button>
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">

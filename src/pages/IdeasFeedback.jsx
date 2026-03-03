@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Lightbulb, MessageSquare, Plus, X, Trash2, CheckCircle } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { Lightbulb, MessageSquare, Plus, X, Trash2, CheckCircle, ArrowLeft } from 'lucide-react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -293,6 +293,7 @@ export function IdeasFeedbackContent({ filterByUser, compact, autoSubmit }) {
 }
 
 export default function IdeasFeedback() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const autoOpen = searchParams.get('submit') === '1';
 
@@ -302,5 +303,12 @@ export default function IdeasFeedback() {
     }
   }, [autoOpen, setSearchParams]);
 
-  return <IdeasFeedbackContent autoSubmit={autoOpen} />;
+  return (
+    <div>
+      <button onClick={() => navigate('/')} className="inline-flex items-center gap-1.5 text-sm text-secondary hover:text-primary cursor-pointer mb-4">
+        <ArrowLeft size={16} /> Home
+      </button>
+      <IdeasFeedbackContent autoSubmit={autoOpen} />
+    </div>
+  );
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Sparkles } from 'lucide-react';
+import { Plus, Search, Sparkles, ArrowLeft } from 'lucide-react';
 import Card from '../components/Card';
 import EditModal from '../components/EditModal';
 import AIPlaybookModal from '../components/AIPlaybookModal';
@@ -156,6 +156,9 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
 
   return (
     <div>
+      <button onClick={() => navigate('/')} className="inline-flex items-center gap-1.5 text-sm text-secondary hover:text-primary cursor-pointer mb-4">
+        <ArrowLeft size={16} /> Home
+      </button>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-primary">Playbooks</h1>

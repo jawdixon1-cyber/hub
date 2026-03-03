@@ -45,7 +45,7 @@ export default function MileageModal({ vehicles, currentUser, onSubmit, onClose 
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-secondary mb-1">Odometer Reading</label>
+            <label className="block text-sm font-semibold text-secondary mb-1">Total Miles Driven</label>
             <input
               type="number"
               required
@@ -53,7 +53,7 @@ export default function MileageModal({ vehicles, currentUser, onSubmit, onClose 
               value={form.odometer}
               onChange={(e) => setForm({ ...form, odometer: e.target.value })}
               className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-primary focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition"
-              placeholder="e.g. 45230"
+              placeholder="e.g. 30"
             />
           </div>
 

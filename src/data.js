@@ -519,6 +519,150 @@ export const initialPolicies = [
     summary: 'Workplace behavior standards and disciplinary guidelines.',
     content: `All employees are expected to uphold the following standards of conduct:\n\n1. Treat all colleagues, clients, and vendors with respect and courtesy.\n2. Maintain honesty and integrity in all business dealings.\n3. Protect company property, equipment, and confidential information.\n4. Report any harassment, discrimination, or unsafe conditions immediately.\n5. No alcohol or drug use before or during work hours.\n6. Personal phone use is limited to break times only.\n7. Social media posts about the company must be approved by management.\n8. Conflicts of interest must be disclosed to management.\n\nViolations may result in disciplinary action up to and including termination.`,
   },
+  {
+    id: '54',
+    title: 'Dress Code',
+    category: 'Conduct',
+    summary: 'Required uniform and appearance standards for all field team members.',
+    content:
+      '<p>All field team members must follow the company dress code while on the job:</p>' +
+      '<h2>Required Uniform</h2>' +
+      '<ul>' +
+      '<li>Company-issued shirt or polo — must be worn at all times on job sites.</li>' +
+      '<li>Work pants or shorts (no jeans with holes, no sweatpants).</li>' +
+      '<li>Closed-toe work boots or sturdy shoes — no sandals, no sneakers.</li>' +
+      '<li>Company hat or visor if provided.</li>' +
+      '</ul>' +
+      '<h2>Appearance Standards</h2>' +
+      '<ul>' +
+      '<li>Clothing must be clean and in good condition at the start of each day.</li>' +
+      '<li>No offensive graphics, logos, or language on any visible clothing.</li>' +
+      '<li>Sunglasses are allowed but must be appropriate for a professional setting.</li>' +
+      '</ul>' +
+      '<h2>Personal Protective Equipment (PPE)</h2>' +
+      '<ul>' +
+      '<li>Safety glasses must be worn when operating trimmers, edgers, or blowers.</li>' +
+      '<li>Ear protection is required when operating loud equipment for extended periods.</li>' +
+      '<li>Gloves should be worn when handling chemicals, debris, or sharp materials.</li>' +
+      '<li>High-visibility vests are required when working near roadways.</li>' +
+      '</ul>' +
+      '<h2>Violations</h2>' +
+      '<ul>' +
+      '<li>First offense: Verbal reminder.</li>' +
+      '<li>Second offense: Written warning.</li>' +
+      '<li>Repeated violations may result in being sent home without pay for the day.</li>' +
+      '</ul>',
+  },
+  {
+    id: '55',
+    title: 'Safety & Equipment',
+    category: 'Safety',
+    summary: 'PPE requirements, equipment handling rules, and injury reporting procedures.',
+    content:
+      '<p>The safety of every team member is our top priority. Follow these rules at all times:</p>' +
+      '<h2>Personal Protective Equipment (PPE)</h2>' +
+      '<ul>' +
+      '<li>Safety glasses are <strong>mandatory</strong> when operating trimmers, edgers, blowers, or any power equipment.</li>' +
+      '<li>Ear protection is required when operating loud equipment for more than 15 minutes.</li>' +
+      '<li>Gloves must be worn when handling chemicals, fertilizer, sharp debris, or doing manual cleanup.</li>' +
+      '<li>High-visibility vests are required when working near roadways or in low-visibility conditions.</li>' +
+      '<li>Closed-toe work boots or sturdy shoes at all times — no exceptions.</li>' +
+      '</ul>' +
+      '<h2>Equipment Handling</h2>' +
+      '<ul>' +
+      '<li>Only operate equipment you have been trained on. If unsure, ask your crew lead.</li>' +
+      '<li>Inspect equipment before each use — check blades, guards, fuel, and safety features.</li>' +
+      '<li>Never remove or disable safety guards on any equipment.</li>' +
+      '<li>Shut off equipment before making adjustments, clearing jams, or refueling.</li>' +
+      '<li>Report damaged or malfunctioning equipment immediately using the app — do not continue using it.</li>' +
+      '<li>Secure all equipment on the trailer before driving. Double-check straps and gates.</li>' +
+      '</ul>' +
+      '<h2>Heat & Weather Safety</h2>' +
+      '<ul>' +
+      '<li>Stay hydrated — drink water every 15–20 minutes in hot conditions.</li>' +
+      '<li>Take shade breaks as needed. Watch for signs of heat exhaustion (dizziness, nausea, headache).</li>' +
+      '<li>If lightning is visible or thunder is heard, stop work immediately and seek shelter.</li>' +
+      '<li>Sunscreen is strongly encouraged for all outdoor work.</li>' +
+      '</ul>' +
+      '<h2>Injury Reporting</h2>' +
+      '<ul>' +
+      '<li>Report <strong>all</strong> injuries to your General Manager immediately — no matter how minor.</li>' +
+      '<li>Do not try to "tough it out." Small injuries can become serious if untreated.</li>' +
+      '<li>First aid kits are located in every truck. Know where yours is.</li>' +
+      '<li>If someone is seriously injured, call 911 first, then notify your GM.</li>' +
+      '</ul>',
+  },
+  {
+    id: '56',
+    title: 'Attendance & Punctuality',
+    category: 'Conduct',
+    summary: 'Show-up expectations, tardiness policy, and no-call/no-show consequences.',
+    content:
+      '<p>Reliability is everything in this business. Your crew and our clients depend on you showing up.</p>' +
+      '<h2>Expectations</h2>' +
+      '<ul>' +
+      '<li>Be at the shop or meeting point <strong>on time, every day</strong> — ready to work, not just arriving.</li>' +
+      '<li>"On time" means geared up, truck loaded, and ready to roll at your scheduled start time.</li>' +
+      '<li>If you are going to be late for any reason, text or call your General Manager <strong>before</strong> your start time.</li>' +
+      '</ul>' +
+      '<h2>Tardiness</h2>' +
+      '<ul>' +
+      '<li>First late arrival: Verbal conversation.</li>' +
+      '<li>Second late arrival (within 30 days): Written warning.</li>' +
+      '<li>Third late arrival (within 30 days): May result in suspension or termination.</li>' +
+      '<li>Consistently arriving 1–5 minutes late still counts — it adds up and affects the whole crew.</li>' +
+      '</ul>' +
+      '<h2>Absences</h2>' +
+      '<ul>' +
+      '<li>Request time off through the app at least 2 weeks in advance when possible.</li>' +
+      '<li>Sick days: Notify your GM as early as possible — ideally before your shift starts.</li>' +
+      '<li>If you cannot work, <strong>you must communicate</strong>. No exceptions.</li>' +
+      '</ul>' +
+      '<h2>No-Call / No-Show</h2>' +
+      '<ul>' +
+      '<li>A no-call/no-show is a serious offense. Your crew is left short-handed and clients are affected.</li>' +
+      '<li>First no-call/no-show: Written warning and meeting with GM.</li>' +
+      '<li>Second no-call/no-show: Termination.</li>' +
+      '</ul>',
+  },
+  {
+    id: '57',
+    title: 'Vehicle & Driving',
+    category: 'Safety',
+    summary: 'Company vehicle rules, phone policy while driving, and accident reporting.',
+    content:
+      '<p>Company vehicles represent our brand on the road. Drive safely and professionally at all times.</p>' +
+      '<h2>General Rules</h2>' +
+      '<ul>' +
+      '<li>Only authorized employees may operate company vehicles and trailers.</li>' +
+      '<li>You must have a valid driver\'s license at all times. Report any license suspensions immediately.</li>' +
+      '<li>Obey all traffic laws — speeding tickets and moving violations are your responsibility.</li>' +
+      '<li>Seatbelts must be worn at all times by the driver and all passengers.</li>' +
+      '<li>No unauthorized passengers in company vehicles — ever.</li>' +
+      '</ul>' +
+      '<h2>Phone & Distraction Policy</h2>' +
+      '<ul>' +
+      '<li><strong>No phone use while driving</strong> — no texting, no calls, no exceptions.</li>' +
+      '<li>If you need to use your phone, pull over safely first.</li>' +
+      '<li>Use hands-free navigation only. Set your route before you start driving.</li>' +
+      '</ul>' +
+      '<h2>Vehicle Care</h2>' +
+      '<ul>' +
+      '<li>Do a walk-around check before your first drive of the day (tires, lights, trailer hitch, mirrors).</li>' +
+      '<li>Keep the cab clean — no trash, loose tools, or clutter.</li>' +
+      '<li>Report any mechanical issues, warning lights, or damage immediately.</li>' +
+      '<li>Fuel up at the end of the day so the truck is ready for the next morning.</li>' +
+      '</ul>' +
+      '<h2>Accidents & Incidents</h2>' +
+      '<ul>' +
+      '<li>If you are involved in any accident — no matter how minor — stop immediately.</li>' +
+      '<li>Check for injuries first. Call 911 if anyone is hurt.</li>' +
+      '<li>Exchange insurance and contact information with the other party.</li>' +
+      '<li>Take photos of all vehicles, damage, and the scene.</li>' +
+      '<li>Call your General Manager immediately after securing the scene.</li>' +
+      '<li>Do <strong>not</strong> admit fault or make statements to the other party beyond exchanging info.</li>' +
+      '</ul>',
+  },
 ];
 
 export const initialTimeOffRequests = [
