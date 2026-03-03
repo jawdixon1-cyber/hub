@@ -71,7 +71,7 @@ function resolveInitial(cloudValue, initial) {
 }
 
 // IDs of guides that should always be seeded into existing data
-const SEED_GUIDE_IDS = ['gm-expectations-playbook', 'gm-weekly-team-meeting', 'gm-onboarding-new-hire', 'gm-hard-conversations', 'gm-morning-routine', 'gm-weekly-closeout', 'gm-sales-door-approach', 'gm-sales-on-site-closing', 'gm-sales-psychology'];
+const SEED_GUIDE_IDS = ['gm-standards-playbook', 'gm-weekly-team-meeting', 'gm-onboarding-new-hire', 'gm-hard-conversations', 'gm-morning-routine', 'gm-weekly-closeout', 'gm-sales-door-approach', 'gm-sales-on-site-closing', 'gm-sales-psychology'];
 
 function seedMissingGuides(guides, allInitialGuides) {
   const existingIds = new Set(guides.map((g) => g.id));
@@ -130,7 +130,20 @@ export function createAppStore(cloudData) {
               if (entry) cached[sk] = state[entry.key];
             }
             localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(cached));
-          } catch {}
+          } catch (e) {
+            console.warn('[appStore] localStorage save failed:', e.name, e.message);
+            // If quota exceeded, try clearing old cache and saving just changed keys
+            if (e.name === 'QuotaExceededError') {
+              try {
+                const fresh = {};
+                for (const sk of keysToSync) {
+                  const entry = STATE_KEYS.find((en) => en.supaKey === sk);
+                  if (entry) fresh[sk] = state[entry.key];
+                }
+                localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(fresh));
+              } catch {}
+            }
+          }
 
           // Persist to Supabase (retry once on failure)
           for (const sk of keysToSync) {

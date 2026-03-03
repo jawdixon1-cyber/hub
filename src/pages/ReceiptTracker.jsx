@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Receipt, Plus, Search, ChevronLeft, ChevronRight,
   Trash2, Check,
@@ -15,6 +15,40 @@ export default function ReceiptTracker() {
 
   const receiptLog = useAppStore((s) => s.receiptLog);
   const setReceiptLog = useAppStore((s) => s.setReceiptLog);
+
+  // One-time migration: compress any oversized receipt images
+  const migrated = useRef(false);
+  useEffect(() => {
+    if (migrated.current || !receiptLog || receiptLog.length === 0) return;
+    const oversized = receiptLog.filter((r) => r.imageData && r.imageData.length > 200000); // >200KB
+    if (oversized.length === 0) { migrated.current = true; return; }
+    migrated.current = true;
+    (async () => {
+      const compress = (dataUrl) => new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const scale = Math.min(1, 800 / img.width);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
+        };
+        img.onerror = () => resolve(dataUrl); // keep original if compression fails
+        img.src = dataUrl;
+      });
+      const updated = await Promise.all(
+        receiptLog.map(async (r) => {
+          if (r.imageData && r.imageData.length > 200000) {
+            return { ...r, imageData: await compress(r.imageData) };
+          }
+          return r;
+        })
+      );
+      setReceiptLog(updated);
+    })();
+  }, [receiptLog, setReceiptLog]);
 
   const [showModal, setShowModal] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);

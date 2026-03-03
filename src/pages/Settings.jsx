@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { ChevronRight, ChevronDown, Pencil, Sun, Moon, Clock, Globe, Settings as SettingsIcon, ClipboardList, GraduationCap, Users, X, Wrench, Plus, BookOpen, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Pencil, Sun, Moon, Clock, Globe, Settings as SettingsIcon, ClipboardList, ClipboardCheck, GraduationCap, Users, UserCog, X, Wrench, Plus, BookOpen, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
@@ -244,6 +244,28 @@ export function SettingsContent() {
           )}
         </div>
       </div>
+
+      {/* ── Owner Quick Links ── */}
+      {ownerMode && (
+        <div className="bg-card rounded-2xl shadow-lg border border-border-subtle overflow-hidden">
+          <div className="p-4 grid grid-cols-3 gap-3">
+            {[
+              { label: 'Manage', icon: ClipboardList, path: '/owner-dashboard' },
+              { label: 'Checklists', icon: ClipboardCheck, path: '/checklist-tracker' },
+              { label: 'Team', icon: UserCog, path: '/team' },
+            ].map((item) => (
+              <button
+                key={item.label}
+                onClick={() => navigate(item.path)}
+                className="flex flex-col items-center gap-2 p-4 rounded-xl bg-surface-alt hover:bg-brand-light hover:text-brand-text-strong text-secondary transition-colors cursor-pointer"
+              >
+                <item.icon size={22} />
+                <span className="text-xs font-semibold">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Owner Settings (toggle) ── */}
       {ownerMode && (

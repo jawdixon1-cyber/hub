@@ -30,6 +30,8 @@ export default function MileageLog() {
   // Vehicle management (owner only)
   const [showManage, setShowManage] = useState(false);
   const [newVehicleName, setNewVehicleName] = useState('');
+  const [editingVehicleId, setEditingVehicleId] = useState(null);
+  const [editingVehicleName, setEditingVehicleName] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState(null);
 
@@ -144,6 +146,14 @@ export default function MileageLog() {
 
   const handleRemoveVehicle = (id) => {
     setVehicles(vehicles.filter((v) => v.id !== id));
+  };
+
+  const handleRenameVehicle = (id) => {
+    const name = editingVehicleName.trim();
+    if (!name) return;
+    setVehicles(vehicles.map((v) => v.id === id ? { ...v, name } : v));
+    setEditingVehicleId(null);
+    setEditingVehicleName('');
   };
 
   const handleDeleteEntry = (id) => {
@@ -420,7 +430,25 @@ export default function MileageLog() {
               )}
               {vehicles.map((v) => (
                 <div key={v.id} className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-secondary">{v.name}</span>
+                  {editingVehicleId === v.id ? (
+                    <input
+                      type="text"
+                      value={editingVehicleName}
+                      onChange={(e) => setEditingVehicleName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleRenameVehicle(v.id); if (e.key === 'Escape') setEditingVehicleId(null); }}
+                      onBlur={() => handleRenameVehicle(v.id)}
+                      autoFocus
+                      className="flex-1 rounded-lg border border-border-strong bg-card px-3 py-1.5 text-sm text-primary outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  ) : (
+                    <span
+                      className="text-sm text-secondary cursor-pointer hover:text-primary transition-colors"
+                      onClick={() => { setEditingVehicleId(v.id); setEditingVehicleName(v.name); }}
+                      title="Click to rename"
+                    >
+                      {v.name}
+                    </span>
+                  )}
                   <button
                     onClick={() => handleRemoveVehicle(v.id)}
                     className="p-1 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"

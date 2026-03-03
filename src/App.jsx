@@ -51,12 +51,11 @@ const DailyChecklist = lazy(() => import('./pages/DailyChecklist'));
 const ExecutionDashboard = lazy(() => import('./pages/ExecutionDashboard'));
 const ReceiptTracker = lazy(() => import('./pages/ReceiptTracker'));
 const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
-const Expectations = lazy(() => import('./pages/Expectations'));
+const Standards = lazy(() => import('./pages/Standards'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
-  { id: 'expectations', path: '/expectations', label: 'Expectations', icon: ShieldCheck },
   { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator, ownerOnly: true },
 ];
 
@@ -67,6 +66,7 @@ const TOOLS_ITEMS = [
 ];
 
 const TEAM_ITEMS = [
+  { id: 'standards', path: '/standards', label: 'Standards', icon: ShieldCheck },
   { id: 'ideas', path: '/ideas', label: 'Ideas', icon: Lightbulb },
   { id: 'hr', path: '/hr', label: 'HR', icon: Users },
 ];
@@ -368,25 +368,16 @@ function AppShell() {
         </>
       )}
 
-      {ownerMode && OWNER_ITEMS.map((item) => {
-        const Icon = item.icon;
-        const active = isActive(item.path);
-        return (
-          <button
-            key={item.id}
-            onClick={() => navigate(item.path)}
-            title={collapsed ? item.label : undefined}
-            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-              active
-                ? 'bg-brand-light text-brand-text-strong'
-                : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-            }`}
-          >
-            <Icon size={20} className="shrink-0" />
-            {!collapsed && <span className="truncate">{item.label}</span>}
-          </button>
-        );
-      })}
+      {ownerMode && (
+        <button
+          onClick={() => navigate('/profile')}
+          title={collapsed ? 'Owner Settings' : undefined}
+          className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer`}
+        >
+          <Wrench size={20} className="shrink-0" />
+          {!collapsed && <span className="truncate">Owner Settings</span>}
+        </button>
+      )}
 
       {ownerMode && !needsOnboarding && (
         <>
@@ -576,7 +567,7 @@ function AppShell() {
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/mileage" element={<MileageLog />} />
                 <Route path="/receipts" element={<ReceiptTracker />} />
-                <Route path="/expectations" element={<Expectations />} />
+                <Route path="/standards" element={<Standards />} />
                 <Route path="/ideas" element={<IdeasFeedback />} />
                 <Route path="/daily-checklist" element={<DailyChecklist />} />
                 <Route path="/checklist-tracker" element={<ChecklistTrackerPage />} />

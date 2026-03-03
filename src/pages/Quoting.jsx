@@ -1,12 +1,17 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import {
   Calculator, Trash2, ChevronDown, ChevronUp, Save,
   Settings, Plus, X, ArrowLeft, ArrowRight, Trees, Mountain,
-  Ruler, TreePine, Shrub, Fence, Scissors, Leaf,
+  Ruler, TreePine, Shrub, Fence, Scissors, Leaf, MapPin, CheckCircle, Loader2, FileText, CircleDot, CalendarDays, Sprout,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { genId, initialQuotingSettings } from '../data';
+import useAddressAutocomplete from '../components/PropertyMapper/useAddressAutocomplete';
+import { getNetSqft } from '../components/PropertyMapper/mapUtils';
+
+const MapView = lazy(() => import('../components/PropertyMapper/MapView'));
+const MeasurementList = lazy(() => import('../components/PropertyMapper/MeasurementList'));
 
 const TAX_RATE = 0.07;
 const SQ_FT_PER_YD_AT_1IN = 324;
@@ -18,24 +23,32 @@ const SERVICE_SECTIONS = [
   {
     label: 'MAINTENANCE',
     services: [
-      { id: 'lawn', label: 'Lawn Care', icon: Scissors, color: 'green' },
+      { id: 'lawn', label: 'Lawn Maintenance', icon: Sprout, color: 'green' },
+      { id: 'bushes', label: 'Bush Maintenance', icon: Shrub, color: 'green' },
+      { id: 'leafMaint', label: 'Leaf Maintenance', icon: Leaf, color: 'amber' },
     ],
   },
   {
-    label: 'CLEANUP',
+    label: 'ONE-TIME / YEARLY',
     services: [
-      { id: 'bushes', label: 'Bushes', icon: Shrub, color: 'green' },
-      { id: 'overgrown', label: 'Overgrown Area', icon: Fence, color: 'orange' },
+      { id: 'aeration', label: 'Aeration', icon: CircleDot, color: 'green' },
+      { id: 'overgrownLawn', label: 'Overgrown Lawn', icon: Fence, color: 'orange' },
+      { id: 'overgrownBushes', label: 'Overgrown Bushes', icon: Shrub, color: 'orange' },
       { id: 'leafCleanup', label: 'Leaf Cleanup', icon: Leaf, color: 'amber' },
     ],
   },
   {
-    label: 'LANDSCAPING',
+    label: 'GROUNDCOVER',
     services: [
       { id: 'mulch', label: 'Mulch', icon: Trees, color: 'emerald' },
       { id: 'rock', label: 'Rock', icon: Mountain, color: 'slate' },
-      { id: 'edging', label: 'Edging', icon: Ruler, color: 'blue' },
       { id: 'pine', label: 'Pine Needles', icon: TreePine, color: 'amber' },
+    ],
+  },
+  {
+    label: 'LANDSCAPING SOLUTIONS',
+    services: [
+      { id: 'edging', label: 'Edging', icon: Ruler, color: 'blue' },
     ],
   },
 ];
@@ -73,83 +86,97 @@ function getActiveTierLabel(cubicYards, tiers) {
   return null;
 }
 
-const ZERO_CALC = { quote: 0, materialCostTotal: 0, delivery: 0, equipment: 0 };
+const ZERO_CALC = { quote: 0, materialCostTotal: 0, delivery: 0, equipment: 0, cogs: 0, labor: 0, material: 0, tax: 0 };
 
 // ─── Calc functions ───
+
+const DELIVERY_PER_LOAD = 50;
+const YARDS_PER_LOAD = 6;
 
 function calcMulch(m) {
   const sqft = num(m.sqft);
   const depth = num(m.depth);
   const materialCostPerYd = num(m.materialCostPerYd);
   const chargePerYd = num(m.chargePerYd);
-  const delivery = num(m.delivery);
+  const diffMult = { easy: 1.0, moderate: 1.1, hard: 1.4 }[m.difficulty] || 1.0;
 
-  const cubicYards = (sqft * depth) / SQ_FT_PER_YD_AT_1IN;
+  const cubicYardsRaw = (sqft * depth) / SQ_FT_PER_YD_AT_1IN;
+  const cubicYards = cubicYardsRaw * 1.1; // 10% material buffer
+  const loads = cubicYards > 0 ? Math.ceil(cubicYards / YARDS_PER_LOAD) : 0;
+  const delivery = loads * DELIVERY_PER_LOAD;
   const material = cubicYards * materialCostPerYd;
   const equipment = 0;
   const tax = (material + equipment + delivery) * TAX_RATE;
-  const labor = cubicYards * chargePerYd;
-  const quote = material + equipment + delivery + tax + labor;
+  const cogs = material + delivery + tax;
+  const labor = cubicYards * chargePerYd * diffMult;
+  const quote = cogs + labor;
 
-  return { cubicYards, material, equipment, delivery, tax, labor, quote };
+  return { cubicYards, loads, material, equipment, delivery, tax, cogs, labor, quote, diffMult };
 }
 
 function calcRock(r) {
   const sqft = num(r.sqft);
   const depth = num(r.depth) || 3;
-  const pricePerYd = num(r.pricePerYd);
+  const materialCostPerYd = num(r.materialCostPerYd);
   const chargePerYd = num(r.chargePerYd);
   const equipment = num(r.equipmentCost);
-  const delivery = num(r.delivery);
+  const diffMult = { easy: 1.0, moderate: 1.1, hard: 1.4 }[r.difficulty] || 1.0;
 
-  const cubicFeet = sqft * (depth / 12);
-  const cubicYardsRaw = cubicFeet / 27;
-  const cubicYardsWithWaste = cubicYardsRaw * 1.15;
-  const cubicYards = Math.round(cubicYardsWithWaste * 4) / 4;
-  const rockMaterial = cubicYards * pricePerYd;
+  const cubicYardsRaw = (sqft * (depth / 12)) / 27;
+  const cubicYards = cubicYardsRaw * 1.1; // 10% material buffer
+  const loads = cubicYards > 0 ? Math.ceil(cubicYards / YARDS_PER_LOAD) : 0;
+  const delivery = loads * DELIVERY_PER_LOAD;
+  const material = cubicYards * materialCostPerYd;
 
-  // Landscape fabric
-  let fabricCost = 0;
-  let fabricRollsNeeded = 0;
-  if (r.includeFabric && sqft > 0) {
-    const coverage = num(r.fabricCoverage) || 1;
-    fabricRollsNeeded = Math.ceil(sqft / coverage);
-    fabricCost = fabricRollsNeeded * num(r.fabricCostPerRoll);
-  }
+  // Landscape fabric — always included, uses sqft with same 10% buffer
+  const fabricSqft = sqft > 0 ? sqft * 1.1 : 0;
+  const rollCoverage = num(r.fabricRollCoverage) || 900;
+  const rollCost = num(r.fabricRollCost) || 32.06;
+  const fabricRolls = fabricSqft > 0 ? Math.ceil(fabricSqft / rollCoverage) : 0;
+  const fabricCost = fabricRolls * rollCost; // pre-tax, tax added in main tax line
+  const fabricCharge = fabricSqft * (num(r.fabricChargePerSqft) || 0);
 
-  const material = rockMaterial + fabricCost;
-  const tax = (material + equipment + delivery) * TAX_RATE;
-  const labor = cubicYards * chargePerYd;
-  const quote = material + equipment + delivery + tax + labor;
+  const totalMaterial = material + fabricCost;
+  const tax = (totalMaterial + equipment + delivery) * TAX_RATE;
+  const labor = (cubicYards * chargePerYd * diffMult) + fabricCharge;
+  const cogs = totalMaterial + delivery + tax + equipment;
+  const quote = cogs + labor;
 
-  return { cubicYards, rockMaterial, fabricCost, fabricRollsNeeded, material, equipment, delivery, tax, labor, quote };
+  return { cubicYards, loads, material, fabricCost, fabricRolls, fabricSqft, fabricCharge, totalMaterial, equipment, delivery, tax, labor, cogs, quote, diffMult };
 }
 
 function calcPine(p) {
+  // Override mode
+  if (p.override) {
+    const quote = num(p.overridePrice);
+    return { cogs: 0, quote, delivery: 0, profit: quote, override: true };
+  }
+
   const bales = num(p.bales);
-  const balePrice = num(p.balePrice);
-  const svcCost = num(p.serviceCostPerBale);
+  const ourCost = num(p.ourCost) || 4.25;
+  const chargePerBale = num(p.chargePerBale);
   const delivery = num(p.delivery);
-  const materialSubtotal = bales * balePrice;
-  const materialTax = materialSubtotal * TAX_RATE;
-  const materialCostTotal = materialSubtotal + materialTax;
-  const quote = bales * (balePrice + svcCost) + materialTax + delivery;
-  return { materialTax, materialCostTotal, quote, delivery };
+
+  const cogs = bales * ourCost;
+  const quote = (bales * chargePerBale) + delivery;
+  const profit = quote - cogs;
+  return { cogs, quote, delivery, profit };
 }
 
 function calcEdging(e) {
   const linearFt = num(e.linearFeet);
   const unitLength = num(e.unitLength) || 1;
   const costPerUnit = num(e.costPerUnit);
-  const servicePerFt = num(e.servicePerFoot);
+  const chargePerFt = num(e.chargePerFoot);
   const delivery = num(e.delivery);
-  const unitsNeeded = Math.ceil(linearFt / unitLength);
-  const materialSubtotal = unitsNeeded * costPerUnit;
-  const materialTax = materialSubtotal * TAX_RATE;
-  const materialCostTotal = materialSubtotal + materialTax;
-  const serviceTotal = linearFt * servicePerFt;
-  const quote = materialSubtotal + materialTax + serviceTotal + delivery;
-  return { linearFt, unitsNeeded, materialSubtotal, materialTax, materialCostTotal, serviceTotal, material: materialSubtotal, tax: materialTax, labor: serviceTotal, equipment: 0, quote, delivery };
+  const diffMult = { easy: 1.0, moderate: 1.1, hard: 1.4 }[e.difficulty] || 1.0;
+  const unitsNeeded = linearFt > 0 ? Math.ceil(linearFt / unitLength) : 0;
+  const material = unitsNeeded * costPerUnit;
+  const tax = (material + delivery) * TAX_RATE;
+  const cogs = material + delivery + tax;
+  const labor = linearFt * chargePerFt * diffMult;
+  const quote = cogs + labor;
+  return { linearFt, unitsNeeded, material, delivery, tax, cogs, labor, quote, diffMult, equipment: 0 };
 }
 
 const DEFAULT_LAWN_TIERS = [
@@ -167,6 +194,14 @@ const DEFAULT_LAWN_WEEKLY_MIN = 55;
 const DEFAULT_LAWN_BIWEEKLY_MIN = 70;
 
 function calcLawn(l, settings) {
+  // Override mode — user sets prices directly
+  if (l.override) {
+    const weekly = num(l.overrideWeekly);
+    const biweekly = num(l.overrideBiweekly);
+    const quote = biweekly || weekly;
+    return { weekly, biweekly, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote, override: true };
+  }
+
   const sqft = num(l.sqft);
   if (sqft <= 0) return { weekly: 0, biweekly: 0, quote: 0, material: 0, delivery: 0, equipment: 0, tax: 0, labor: 0 };
 
@@ -190,6 +225,106 @@ function calcLawn(l, settings) {
 
   const quote = biweekly;
   return { weekly, biweekly, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote };
+}
+
+const DEFAULT_BUSH_PRICES = { small: 8, medium: 12, large: 18, xl: 50 };
+
+function calcBushes(b, settings) {
+  // Always 3x/year: Apr, Jul, Oct
+  const VISITS_PER_YEAR = 3;
+
+  // Override mode — user sets per-visit price directly
+  if (b.override) {
+    const perVisit = num(b.overridePerVisit);
+    const monthly = Math.round((perVisit * VISITS_PER_YEAR) / 12);
+    const quote = perVisit;
+    return { smallTotal: 0, mediumTotal: 0, largeTotal: 0, totalCount: 0, perVisit, monthly, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote, override: true };
+  }
+
+  const sm = num(b.small);
+  const md = num(b.medium);
+  const lg = num(b.large);
+  const xlg = num(b.xl);
+  const totalCount = sm + md + lg + xlg;
+  if (totalCount <= 0) return { smallTotal: 0, mediumTotal: 0, largeTotal: 0, xlTotal: 0, totalCount: 0, monthly: 0, perVisit: 0, quote: 0, material: 0, delivery: 0, equipment: 0, tax: 0, labor: 0 };
+
+  const prices = settings?.bushPrices || DEFAULT_BUSH_PRICES;
+
+  const smallTotal = sm * (num(prices.small) || DEFAULT_BUSH_PRICES.small);
+  const mediumTotal = md * (num(prices.medium) || DEFAULT_BUSH_PRICES.medium);
+  const largeTotal = lg * (num(prices.large) || DEFAULT_BUSH_PRICES.large);
+  const xlTotal = xlg * (num(prices.xl) || DEFAULT_BUSH_PRICES.xl);
+  const perVisit = Math.max(smallTotal + mediumTotal + largeTotal + xlTotal, 35); // $35 minimum
+  const monthly = Math.round((perVisit * VISITS_PER_YEAR) / 12);
+
+  const quote = perVisit;
+  return { smallTotal, mediumTotal, largeTotal, xlTotal, totalCount, perVisit, monthly, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote };
+}
+
+const DEFAULT_AERATION_BASE = 169;
+const DEFAULT_AERATION_THRESHOLD = 10000;
+const DEFAULT_AERATION_PER_1K = 15;
+
+function calcAeration(a, settings) {
+  // Overseeding sub-calc (used in both normal and override modes)
+  const BAG_LBS = 50;
+  const calcOverseed = (sqft) => {
+    if (!a.includeOverseed) return { seedLbs: 0, overseedQuote: 0, overseedCogs: 0, overseedProfit: 0, overseedOverride: false };
+    if (a.overrideOverseed) {
+      const q = num(a.overrideOverseedPrice);
+      return { seedLbs: 0, overseedQuote: q, overseedCogs: 0, overseedProfit: q, overseedOverride: true };
+    }
+    const seedRate = num(a.seedRate);
+    const bagPrice = num(a.bagPrice);
+    const ourBagCost = num(a.ourBagCost);
+    const seedLbs = (sqft / 1000) * seedRate;
+    // Customer price per lb (bag price + 7% tax / 50 lbs)
+    const bagTotal = bagPrice + (bagPrice * TAX_RATE);
+    const perLb = bagTotal / BAG_LBS;
+    const overseedQuote = Math.round(perLb * seedLbs * 100) / 100;
+    // Our cost per lb (our bag cost + 7% tax / 50 lbs)
+    const ourBagTotal = ourBagCost + (ourBagCost * TAX_RATE);
+    const ourPerLb = ourBagCost > 0 ? ourBagTotal / BAG_LBS : 0;
+    const overseedCogs = Math.round(ourPerLb * seedLbs * 100) / 100;
+    const overseedProfit = overseedQuote - overseedCogs;
+    return { seedLbs: Math.round(seedLbs * 10) / 10, perLb: Math.round(perLb * 1000) / 1000, overseedQuote, overseedCogs, overseedProfit, overseedOverride: false };
+  };
+
+  // Override mode — aeration price overridden
+  if (a.override) {
+    const aerationPrice = num(a.overridePrice);
+    const os = calcOverseed(num(a.sqft) || 0);
+    const quote = aerationPrice + os.overseedQuote;
+    return { aerationPrice, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote, override: true, ...os };
+  }
+
+  const sqft = num(a.sqft);
+  if (sqft <= 0) return { aerationPrice: 0, quote: 0, material: 0, delivery: 0, equipment: 0, tax: 0, labor: 0, seedLbs: 0, overseedQuote: 0, overseedCogs: 0, overseedProfit: 0 };
+
+  const base = num(settings?.aerationBase) || DEFAULT_AERATION_BASE;
+  const threshold = num(settings?.aerationThreshold) || DEFAULT_AERATION_THRESHOLD;
+  const per1k = num(settings?.aerationPer1k) || DEFAULT_AERATION_PER_1K;
+
+  const aerationPrice = sqft <= threshold
+    ? base
+    : base + ((sqft - threshold) / 1000) * per1k;
+
+  const os = calcOverseed(sqft);
+  const quote = Math.round((aerationPrice + os.overseedQuote) * 100) / 100;
+
+  return { aerationPrice: Math.round(aerationPrice * 100) / 100, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote, ...os };
+}
+
+function calcLeafMaint(lm) {
+  // Override mode
+  if (lm.override) {
+    const perVisit = num(lm.overridePerVisit);
+    return { perVisit, quote: perVisit, material: 0, delivery: 0, equipment: 0, tax: 0, labor: perVisit, override: true };
+  }
+  // Per-visit price = lawn mow price × multiplier (default 1.5x the mow rate)
+  const perVisit = num(lm.perVisit);
+  if (perVisit <= 0) return { perVisit: 0, quote: 0, material: 0, delivery: 0, equipment: 0, tax: 0, labor: 0 };
+  return { perVisit, quote: perVisit, material: 0, delivery: 0, equipment: 0, tax: 0, labor: perVisit };
 }
 
 function calcLeafCleanup(lc) {
@@ -370,6 +505,27 @@ function PricingSettings({ settings, onUpdate, ownerMode }) {
             </div>
           </div>
 
+          {/* Bushes Pricing */}
+          <div>
+            <h3 className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Bushes Pricing (per bush)</h3>
+            <div className="grid grid-cols-4 gap-3">
+              <div><label className="block text-xs font-medium text-secondary mb-1">Small</label><div className="relative"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span><input type="text" inputMode="decimal" value={s.bushPrices?.small ?? DEFAULT_BUSH_PRICES.small} onChange={(e) => onUpdate({ ...s, bushPrices: { ...(s.bushPrices || DEFAULT_BUSH_PRICES), small: num(e.target.value) } })} className="w-full rounded-lg border border-border-strong bg-card pl-6 pr-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" /></div></div>
+              <div><label className="block text-xs font-medium text-secondary mb-1">Medium</label><div className="relative"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span><input type="text" inputMode="decimal" value={s.bushPrices?.medium ?? DEFAULT_BUSH_PRICES.medium} onChange={(e) => onUpdate({ ...s, bushPrices: { ...(s.bushPrices || DEFAULT_BUSH_PRICES), medium: num(e.target.value) } })} className="w-full rounded-lg border border-border-strong bg-card pl-6 pr-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" /></div></div>
+              <div><label className="block text-xs font-medium text-secondary mb-1">Large</label><div className="relative"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span><input type="text" inputMode="decimal" value={s.bushPrices?.large ?? DEFAULT_BUSH_PRICES.large} onChange={(e) => onUpdate({ ...s, bushPrices: { ...(s.bushPrices || DEFAULT_BUSH_PRICES), large: num(e.target.value) } })} className="w-full rounded-lg border border-border-strong bg-card pl-6 pr-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" /></div></div>
+              <div><label className="block text-xs font-medium text-secondary mb-1">XL</label><div className="relative"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span><input type="text" inputMode="decimal" value={s.bushPrices?.xl ?? DEFAULT_BUSH_PRICES.xl} onChange={(e) => onUpdate({ ...s, bushPrices: { ...(s.bushPrices || DEFAULT_BUSH_PRICES), xl: num(e.target.value) } })} className="w-full rounded-lg border border-border-strong bg-card pl-6 pr-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" /></div></div>
+            </div>
+          </div>
+
+          {/* Aeration Pricing */}
+          <div>
+            <h3 className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Aeration Pricing</h3>
+            <div className="grid grid-cols-3 gap-3">
+              <div><label className="block text-xs font-medium text-secondary mb-1">Base Price</label><div className="relative"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span><input type="text" inputMode="decimal" value={s.aerationBase ?? DEFAULT_AERATION_BASE} onChange={(e) => onUpdate({ ...s, aerationBase: num(e.target.value) })} className="w-full rounded-lg border border-border-strong bg-card pl-6 pr-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" /></div></div>
+              <div><label className="block text-xs font-medium text-secondary mb-1">Up to (sqft)</label><input type="text" inputMode="decimal" value={s.aerationThreshold ?? DEFAULT_AERATION_THRESHOLD} onChange={(e) => onUpdate({ ...s, aerationThreshold: num(e.target.value) })} className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" /></div>
+              <div><label className="block text-xs font-medium text-secondary mb-1">Per 1k over</label><div className="relative"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span><input type="text" inputMode="decimal" value={s.aerationPer1k ?? DEFAULT_AERATION_PER_1K} onChange={(e) => onUpdate({ ...s, aerationPer1k: num(e.target.value) })} className="w-full rounded-lg border border-border-strong bg-card pl-6 pr-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" /></div></div>
+            </div>
+          </div>
+
           {/* Defaults */}
           <div>
             <h3 className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Defaults</h3>
@@ -393,25 +549,38 @@ export default function Quoting() {
   const setSettings = useAppStore((s) => s.setQuotingSettings);
 
   const mulchTypes = settings.mulchTypes || initialQuotingSettings.mulchTypes;
-  const defaultMulchType = mulchTypes[0] || { label: 'Hardwood', pricePerYd: 36 };
+  const defaultMulchType = mulchTypes[0] || { label: 'Hardwood', pricePerYd: 30 };
+  const rockTypes = settings.rockTypes || initialQuotingSettings.rockTypes;
+  const defaultRockType = rockTypes[0] || { label: 'Pea Gravel', pricePerYd: 55 };
 
   const makeDefaults = () => ({
-    lawn: { sqft: '', difficulty: 'moderate' },
-    mulch: { sqft: '', depth: '', materialCostPerYd: String(defaultMulchType.pricePerYd), chargePerYd: '', delivery: '', mulchType: defaultMulchType.label },
-    rock: { sqft: '', depth: '3', pricePerYd: '', chargePerYd: '', equipmentCost: '', delivery: '', includeFabric: false, fabricCoverage: '', fabricCostPerRoll: '' },
-    edging: { linearFeet: '', unitLength: '20', costPerUnit: '', servicePerFoot: '', delivery: '' },
-    pine: { bales: '', balePrice: '', serviceCostPerBale: '', delivery: '' },
+    lawn: { sqft: '', difficulty: 'easy', override: false, overrideWeekly: '', overrideBiweekly: '' },
+    bushes: { small: '', medium: '', large: '', xl: '', override: false, overridePerVisit: '' },
+    aeration: { sqft: '', override: false, overridePrice: '', includeOverseed: false, seedRate: '8', bagPrice: '190', ourBagCost: '84', overrideOverseed: false, overrideOverseedPrice: '' },
+    mulch: { sqft: '', depth: '', materialCostPerYd: String(defaultMulchType.pricePerYd), chargePerYd: '80', difficulty: 'easy', mulchType: defaultMulchType.label, crewSize: '2', estHours: '', crewRate: '17' },
+    rock: { sqft: '', depth: '3', materialCostPerYd: String(defaultRockType.pricePerYd), chargePerYd: '150', difficulty: 'easy', equipmentCost: '', rockType: defaultRockType.label, fabricRollCoverage: '900', fabricRollCost: '32.06', fabricChargePerSqft: '0.75', crewSize: '2', estHours: '', crewRate: '17' },
+    edging: { linearFeet: '', unitLength: '20', costPerUnit: '', chargePerFoot: '5', difficulty: 'easy', delivery: '' },
+    pine: { bales: '', ourCost: '4.25', chargePerBale: '', delivery: '', override: false, overridePrice: '' },
+    leafMaint: { perVisit: '', override: false, overridePerVisit: '' },
     leafCleanup: { yardSize: 'M', leafVolume: 'MED', fenceAccess: 'NONE', haulOff: false, haulLoads: '1', difficulty: 'NORMAL' },
-    other: { bushes: '', overgrown: '' },
+    other: { overgrownLawn: '', overgrownBushes: '' },
+    annual: { enabled: false, lawnFrequency: 'weekly', mowingWeeks: '38', leafMaintVisits: '10', pineVisits: '1', leafVisits: '1', mulchVisits: '1', rockVisits: '1', edgingVisits: '1' },
   });
 
-  // ─── Step state: 'list' | 'setup' | 'calculator' ───
+  // ─── Step state: 'list' | 'client' | 'measurements' | 'services' | 'calculator' ───
   const [step, setStep] = useState('list');
+  const [quickMode, setQuickMode] = useState(false);
   const [clientName, setClientName] = useState('');
+  const [clientAddress, setClientAddress] = useState('');
+  const [clientLatLng, setClientLatLng] = useState(null);
   const [selectedServices, setSelectedServices] = useState(new Set());
   const [data, setData] = useState(makeDefaults);
   const [showSaved, setShowSaved] = useState(true);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [measurementsOpen, setMeasurementsOpen] = useState(false);
+  const [measurements, setMeasurements] = useState({ measurements: [], mapCenter: null, mapAddress: '' });
+
+  const addressAutocomplete = useAddressAutocomplete();
 
   const toggleService = (id) => {
     setSelectedServices((prev) => {
@@ -432,28 +601,80 @@ export default function Quoting() {
     setData((prev) => ({ ...prev, mulch: { ...prev.mulch, mulchType: val, materialCostPerYd: String(type?.pricePerYd || '') } }));
   };
 
+  const updateRockType = (val) => {
+    const type = rockTypes.find((t) => t.label === val);
+    setData((prev) => ({ ...prev, rock: { ...prev.rock, rockType: val, materialCostPerYd: String(type?.pricePerYd || '') } }));
+  };
+
 
   // Calculations (only for selected services)
   const lawnCalc = has('lawn') ? calcLawn(data.lawn, settings) : ZERO_CALC;
+  const bushesCalc = has('bushes') ? calcBushes(data.bushes, settings) : ZERO_CALC;
+  const aerationCalc = has('aeration') ? calcAeration(data.aeration, settings) : ZERO_CALC;
   const mulchCalc = has('mulch') ? calcMulch(data.mulch) : ZERO_CALC;
   const rockCalc = has('rock') ? calcRock(data.rock) : ZERO_CALC;
   const edgingCalc = has('edging') ? calcEdging(data.edging) : ZERO_CALC;
   const pineCalc = has('pine') ? calcPine(data.pine) : ZERO_CALC;
+  const leafMaintCalc = has('leafMaint') ? calcLeafMaint(data.leafMaint) : ZERO_CALC;
   const leafCleanupCalc = has('leafCleanup') ? calcLeafCleanup(data.leafCleanup) : ZERO_CALC;
   const otherCalcs = {
-    quote: (has('bushes') ? num(data.other.bushes) : 0) + (has('overgrown') ? num(data.other.overgrown) : 0),
+    quote: (has('overgrownLawn') ? num(data.other.overgrownLawn) : 0) + (has('overgrownBushes') ? num(data.other.overgrownBushes) : 0),
     materialCostTotal: 0, delivery: 0,
   };
-  const summary = calcSummary([lawnCalc, mulchCalc, rockCalc, edgingCalc, pineCalc, leafCleanupCalc, otherCalcs]);
+  const summary = calcSummary([lawnCalc, bushesCalc, leafMaintCalc, aerationCalc, mulchCalc, rockCalc, edgingCalc, pineCalc, leafCleanupCalc, otherCalcs]);
+
+  // Compute annual total when annual contract is enabled
+  const annualTotal = (() => {
+    if (!data.annual.enabled) return null;
+    let total = 0;
+    if (has('lawn') && lawnCalc.quote > 0) {
+      const weeks = num(data.annual.mowingWeeks) || 38;
+      const isWeekly = data.annual.lawnFrequency === 'weekly';
+      const perCut = isWeekly ? lawnCalc.weekly : lawnCalc.biweekly;
+      total += perCut * (isWeekly ? weeks : Math.ceil(weeks / 2));
+    }
+    if (has('bushes') && bushesCalc.quote > 0) {
+      total += bushesCalc.perVisit * 3; // 3x/year: Apr, Jul, Oct
+    }
+    if (has('leafMaint') && leafMaintCalc.quote > 0) {
+      total += leafMaintCalc.perVisit * (num(data.annual.leafMaintVisits) || 10);
+    }
+    if (has('aeration') && aerationCalc.quote > 0) total += aerationCalc.quote;
+    if (has('mulch') && mulchCalc.quote > 0) total += mulchCalc.quote * (num(data.annual.mulchVisits) || 1);
+    if (has('rock') && rockCalc.quote > 0) total += rockCalc.quote * (num(data.annual.rockVisits) || 1);
+    if (has('edging') && edgingCalc.quote > 0) total += edgingCalc.quote * (num(data.annual.edgingVisits) || 1);
+    if (has('pine') && pineCalc.quote > 0) total += pineCalc.quote * (num(data.annual.pineVisits) || 1);
+    if (has('leafCleanup') && leafCleanupCalc.quote > 0) total += leafCleanupCalc.quote * (num(data.annual.leafVisits) || 1);
+    if (has('overgrownLawn')) total += num(data.other.overgrownLawn);
+    if (has('overgrownBushes')) total += num(data.other.overgrownBushes);
+    return total;
+  })();
 
 
   // ─── Actions ───
 
   const startNewQuote = () => {
+    setQuickMode(false);
     setClientName('');
+    setClientAddress('');
+    setClientLatLng(null);
     setSelectedServices(new Set());
     setData(makeDefaults());
-    setStep('setup');
+    setMeasurements({ measurements: [], mapCenter: null, mapAddress: '' });
+    addressAutocomplete.clear();
+    setStep('client');
+  };
+
+  const startQuickQuote = () => {
+    setQuickMode(true);
+    setClientName('Quick Quote');
+    setClientAddress('');
+    setClientLatLng(null);
+    setSelectedServices(new Set());
+    setData(makeDefaults());
+    setMeasurements({ measurements: [], mapCenter: null, mapAddress: '' });
+    addressAutocomplete.clear();
+    setStep('services');
   };
 
   const handleSave = () => {
@@ -464,14 +685,25 @@ export default function Quoting() {
       date: new Date().toISOString().slice(0, 10),
       services: [...selectedServices],
       lawn: has('lawn') ? { ...data.lawn } : null,
+      bushes: has('bushes') ? { ...data.bushes } : null,
+      leafMaint: has('leafMaint') ? { ...data.leafMaint } : null,
+      aeration: has('aeration') ? { ...data.aeration } : null,
       mulch: has('mulch') ? { ...data.mulch } : null,
       rock: has('rock') ? { ...data.rock } : null,
       edging: has('edging') ? { ...data.edging } : null,
       pineNeedles: has('pine') ? { ...data.pine } : null,
       leafCleanup: has('leafCleanup') ? { ...data.leafCleanup } : null,
       otherServices: { ...data.other },
-      total: summary.totalQuote,
+      annual: data.annual.enabled ? { ...data.annual } : null,
+      total: data.annual.enabled ? annualTotal : summary.totalQuote,
+      annualTotal: data.annual.enabled ? annualTotal : null,
+      monthlyPayment: data.annual.enabled ? Math.round((annualTotal / 12) * 100) / 100 : null,
       createdBy: currentUser,
+      measurements: measurements.measurements,
+      mapCenter: measurements.mapCenter,
+      mapAddress: measurements.mapAddress,
+      clientAddress,
+      clientLatLng,
     };
     setQuotes([newQuote, ...quotes]);
     setStep('list');
@@ -483,29 +715,45 @@ export default function Quoting() {
   };
 
   const handleLoadQuote = (q) => {
+    setQuickMode(false);
     setClientName(q.clientName);
+    setClientAddress(q.clientAddress || q.mapAddress || '');
+    setClientLatLng(q.clientLatLng || q.mapCenter || null);
     const svcs = new Set(q.services || []);
     // Backward compat: detect services from data if services array missing
     if (svcs.size === 0) {
-      if (q.lawn && num(q.lawn.sqft)) svcs.add('lawn');
+      if (q.lawn && (num(q.lawn.sqft) || q.lawn.override)) svcs.add('lawn');
       if (q.mulch && (num(q.mulch.sqft) || num(q.mulch.area))) svcs.add('mulch');
       if (q.rock && (num(q.rock.sqft) || num(q.rock.area))) svcs.add('rock');
       if (q.edging && num(q.edging.linearFeet)) svcs.add('edging');
       if (q.pineNeedles && num(q.pineNeedles.bales)) svcs.add('pine');
       if (q.leafCleanup) svcs.add('leafCleanup');
-      if (num(q.otherServices?.bushes)) svcs.add('bushes');
-      if (num(q.otherServices?.overgrown)) svcs.add('overgrown');
+      if (q.bushes && (num(q.bushes.small) || num(q.bushes.medium) || num(q.bushes.large) || num(q.bushes.xl) || num(q.bushes.bushCount))) svcs.add('bushes');
+      if (q.aeration && (num(q.aeration.sqft) || q.aeration.override)) svcs.add('aeration');
+      if (num(q.otherServices?.overgrownLawn)) svcs.add('overgrownLawn');
+      if (num(q.otherServices?.overgrownBushes)) svcs.add('overgrownBushes');
+      // Backward compat: old "overgrown" → overgrownLawn
+      if (num(q.otherServices?.overgrown)) svcs.add('overgrownLawn');
     }
     setSelectedServices(svcs);
     const defs = makeDefaults();
     setData({
       lawn: { ...defs.lawn, ...q.lawn },
+      bushes: { ...defs.bushes, ...q.bushes },
+      leafMaint: { ...defs.leafMaint, ...q.leafMaint },
+      aeration: { ...defs.aeration, ...q.aeration },
       mulch: { ...defs.mulch, ...q.mulch },
       rock: { ...defs.rock, ...q.rock },
       edging: { ...defs.edging, ...q.edging },
       pine: { ...defs.pine, ...q.pineNeedles },
       leafCleanup: { ...defs.leafCleanup, ...q.leafCleanup },
-      other: { ...defs.other, ...q.otherServices },
+      other: { ...defs.other, ...q.otherServices, overgrownLawn: q.otherServices?.overgrownLawn || q.otherServices?.overgrown || '' },
+      annual: { ...defs.annual, ...(q.annual || {}) },
+    });
+    setMeasurements({
+      measurements: q.measurements || [],
+      mapCenter: q.mapCenter || q.clientLatLng || null,
+      mapAddress: q.mapAddress || q.clientAddress || '',
     });
     setStep('calculator');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -513,41 +761,65 @@ export default function Quoting() {
 
   // ─── Render: List view ───
 
+  const [showPastQuotes, setShowPastQuotes] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
   if (step === 'list') {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
-              <Calculator size={20} className="text-emerald-600" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-primary">Quoting</h1>
-              <p className="text-sm text-tertiary">{quotes.length} saved {quotes.length === 1 ? 'quote' : 'quotes'}</p>
-            </div>
+        {/* Clean landing — just the big Create Quote button */}
+        <div className="flex flex-col items-center justify-center py-16">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-6">
+            <Calculator size={32} className="text-emerald-600" />
           </div>
+          <h1 className="text-2xl font-bold text-primary mb-2">Quoting</h1>
           <button
             onClick={startNewQuote}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer"
+            className="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white text-lg font-semibold hover:opacity-90 transition-opacity cursor-pointer mt-4"
           >
-            <Plus size={16} />
-            New Quote
+            <Plus size={20} />
+            Create Quote
           </button>
+          <button
+            onClick={startQuickQuote}
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl border border-border-strong text-secondary text-sm font-medium hover:bg-surface-alt transition-colors cursor-pointer mt-3"
+          >
+            <Calculator size={16} />
+            Quick Quote — Skip to Calculators
+          </button>
+
+          {/* Small utility buttons */}
+          <div className="flex items-center gap-3 mt-8">
+            {quotes.length > 0 && (
+              <button
+                onClick={() => setShowPastQuotes((v) => !v)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-secondary hover:bg-surface-alt border border-border-subtle transition-colors cursor-pointer"
+              >
+                <FileText size={14} />
+                Past Quotes ({quotes.length})
+              </button>
+            )}
+            {ownerMode && (
+              <button
+                onClick={() => setShowSettings((v) => !v)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-secondary hover:bg-surface-alt border border-border-subtle transition-colors cursor-pointer"
+              >
+                <Settings size={14} />
+                Settings
+              </button>
+            )}
+          </div>
         </div>
 
-        <PricingSettings settings={settings} onUpdate={setSettings} ownerMode={ownerMode} />
+        {/* Expandable settings */}
+        {showSettings && ownerMode && (
+          <PricingSettings settings={settings} onUpdate={setSettings} ownerMode={ownerMode} />
+        )}
 
-        {quotes.length === 0 ? (
-          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-12 text-center">
-            <Calculator size={40} className="text-muted mx-auto mb-4" />
-            <p className="text-base font-semibold text-secondary mb-1">No quotes yet</p>
-            <p className="text-sm text-muted mb-6">Create your first quote to get started.</p>
-            <button onClick={startNewQuote} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer">
-              <Plus size={16} /> New Quote
-            </button>
-          </div>
-        ) : (
+        {/* Expandable past quotes */}
+        {showPastQuotes && quotes.length > 0 && (
           <div className="space-y-2">
+            <h2 className="text-sm font-bold text-secondary uppercase tracking-wide px-1">Past Quotes</h2>
             {quotes.map((q) => (
               <div key={q.id} className="bg-card rounded-xl shadow-sm border border-border-subtle p-4 flex items-center justify-between gap-3 hover:bg-surface-alt transition-colors">
                 <button onClick={() => handleLoadQuote(q)} className="flex-1 min-w-0 text-left cursor-pointer">
@@ -559,7 +831,7 @@ export default function Quoting() {
                     })}
                   </div>
                   <p className="text-xs text-tertiary mt-1">
-                    {q.date} &middot; ${fmt(q.total)} &middot; by {q.createdBy}
+                    {q.date} &middot; {q.monthlyPayment ? `$${fmt(q.monthlyPayment)}/mo (Annual)` : `$${fmt(q.total)}`} &middot; by {q.createdBy}
                   </p>
                 </button>
                 {ownerMode && (
@@ -588,9 +860,9 @@ export default function Quoting() {
     );
   }
 
-  // ─── Render: Setup step ───
+  // ─── Render: Client step ───
 
-  if (step === 'setup') {
+  if (step === 'client') {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -599,53 +871,215 @@ export default function Quoting() {
           </button>
           <div>
             <h1 className="text-2xl font-bold text-primary">New Quote</h1>
-            <p className="text-sm text-tertiary">Step 1: Client &amp; services</p>
+            <p className="text-sm text-tertiary">Step 1 of 4: Client info</p>
           </div>
         </div>
 
         <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-5">
           <InputField label="Client Name" value={clientName} onChange={setClientName} placeholder="Enter client name..." />
 
-          <div>
-            <label className="block text-sm font-semibold text-primary mb-3">What services does this quote include?</label>
-            <div className="space-y-5">
-              {SERVICE_SECTIONS.map((section) => (
-                <div key={section.label}>
-                  <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">{section.label}</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {section.services.map((svc) => {
-                      const Icon = svc.icon;
-                      const active = selectedServices.has(svc.id);
-                      return (
-                        <button
-                          key={svc.id}
-                          onClick={() => toggleService(svc.id)}
-                          className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                            active
-                              ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 shadow-sm'
-                              : 'border-border-subtle hover:border-border-strong hover:bg-surface-alt'
-                          }`}
-                        >
-                          <Icon size={24} className={active ? 'text-emerald-600' : 'text-muted'} />
-                          <span className={`text-sm font-medium ${active ? 'text-emerald-700 dark:text-emerald-300' : 'text-secondary'}`}>{svc.label}</span>
-                          {active && (
-                            <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
-                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+          <div className="relative">
+            <label className="block text-xs font-medium text-secondary mb-1">Property Address</label>
+            <div className="relative">
+              <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+              <input
+                type="text"
+                value={addressAutocomplete.search || clientAddress}
+                onChange={(e) => {
+                  setClientAddress(e.target.value);
+                  addressAutocomplete.setSearch(e.target.value);
+                }}
+                placeholder="Start typing an address..."
+                className="w-full rounded-lg border border-border-strong bg-card pl-9 pr-10 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand placeholder:text-placeholder-muted"
+              />
+              {addressAutocomplete.loading && (
+                <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted animate-spin" />
+              )}
+              {!addressAutocomplete.loading && clientLatLng && (
+                <CheckCircle size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500" />
+              )}
             </div>
+
+            {addressAutocomplete.suggestions.length > 0 && (
+              <div className="absolute z-50 mt-1 w-full bg-card border border-border-strong rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {addressAutocomplete.suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setClientAddress(s.displayName);
+                      setClientLatLng({ lat: s.lat, lng: s.lng });
+                      addressAutocomplete.clear();
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-primary hover:bg-surface-alt transition-colors cursor-pointer border-b border-border-subtle last:border-b-0"
+                  >
+                    {s.displayName}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {addressAutocomplete.error && (
+              <p className="text-xs text-red-500 mt-1">{addressAutocomplete.error}</p>
+            )}
+
+            {clientLatLng && (
+              <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                <CheckCircle size={12} /> Location saved
+              </p>
+            )}
           </div>
         </div>
 
         <button
-          onClick={() => setStep('calculator')}
-          disabled={!clientName.trim() || selectedServices.size === 0}
+          onClick={() => {
+            if (clientLatLng) {
+              setMeasurements((prev) => ({ ...prev, mapCenter: clientLatLng, mapAddress: clientAddress }));
+            }
+            setStep('measurements');
+          }}
+          disabled={!clientName.trim()}
+          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Next: Measure Property
+          <ArrowRight size={16} />
+        </button>
+      </div>
+    );
+  }
+
+  // ─── Render: Measurements step ───
+
+  if (step === 'measurements') {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setStep('client')} className="p-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
+            <ArrowLeft size={20} className="text-secondary" />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-primary">Measure Property</h1>
+            <p className="text-sm text-tertiary">Step 2 of 4: Draw areas on the map</p>
+          </div>
+        </div>
+
+        {clientAddress && (
+          <p className="text-sm text-secondary flex items-center gap-2">
+            <MapPin size={14} className="text-muted" /> {clientAddress}
+          </p>
+        )}
+
+        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle overflow-hidden">
+          <div style={{ height: '50vh' }}>
+            <Suspense fallback={<div className="w-full h-full flex items-center justify-center text-muted">Loading map...</div>}>
+              <MapView
+                center={measurements.mapCenter ? [measurements.mapCenter.lat, measurements.mapCenter.lng] : null}
+                onMeasurementsChange={(updater) => {
+                  setMeasurements((prev) => {
+                    const next = typeof updater === 'function' ? updater(prev.measurements) : updater;
+                    return { ...prev, measurements: next };
+                  });
+                }}
+                measurements={measurements.measurements}
+              />
+            </Suspense>
+          </div>
+        </div>
+
+        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
+          <h3 className="text-sm font-bold text-primary mb-3">Measurements</h3>
+          <Suspense fallback={null}>
+            <MeasurementList
+              measurements={measurements.measurements}
+              onUpdate={(id, changes) => {
+                setMeasurements((prev) => ({
+                  ...prev,
+                  measurements: prev.measurements.map((m) => (m.id === id ? { ...m, ...changes } : m)),
+                }));
+              }}
+              onDelete={(id) => {
+                setMeasurements((prev) => ({
+                  ...prev,
+                  measurements: prev.measurements.filter((m) => m.id !== id),
+                }));
+              }}
+            />
+          </Suspense>
+        </div>
+
+        <button
+          onClick={() => setStep('services')}
+          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer"
+        >
+          Next: Select Services
+          <ArrowRight size={16} />
+        </button>
+      </div>
+    );
+  }
+
+  // ─── Render: Services step ───
+
+  if (step === 'services') {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setStep(quickMode ? 'list' : 'measurements')} className="p-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
+            <ArrowLeft size={20} className="text-secondary" />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-primary">Select Services</h1>
+            <p className="text-sm text-tertiary">{quickMode ? 'Step 1 of 2: Choose services' : 'Step 3 of 4: Choose services for this quote'}</p>
+          </div>
+        </div>
+
+        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6">
+          <label className="block text-sm font-semibold text-primary mb-3">What services does this quote include?</label>
+          <div className="space-y-5">
+            {SERVICE_SECTIONS.map((section) => (
+              <div key={section.label}>
+                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">{section.label}</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {section.services.map((svc) => {
+                    const Icon = svc.icon;
+                    const active = selectedServices.has(svc.id);
+                    return (
+                      <button
+                        key={svc.id}
+                        onClick={() => toggleService(svc.id)}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                          active
+                            ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 shadow-sm'
+                            : 'border-border-subtle hover:border-border-strong hover:bg-surface-alt'
+                        }`}
+                      >
+                        <Icon size={24} className={active ? 'text-emerald-600' : 'text-muted'} />
+                        <span className={`text-sm font-medium ${active ? 'text-emerald-700 dark:text-emerald-300' : 'text-secondary'}`}>{svc.label}</span>
+                        {active && (
+                          <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button
+          onClick={() => {
+            // Auto-fill lawn sqft from measurements
+            const excludes = measurements.measurements.filter((m) => m.category === 'exclude');
+            const lawnAreas = measurements.measurements.filter((m) => (m.category || 'lawn') === 'lawn');
+            if (lawnAreas.length > 0) {
+              const lawnNet = lawnAreas.reduce((sum, m) => sum + getNetSqft(m, excludes), 0);
+              if (lawnNet > 0) update('lawn', 'sqft', String(lawnNet));
+            }
+            setStep('calculator');
+          }}
+          disabled={selectedServices.size === 0}
           className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Next: Build Quote
@@ -660,12 +1094,12 @@ export default function Quoting() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <button onClick={() => setStep('setup')} className="p-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
+        <button onClick={() => setStep('services')} className="p-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
           <ArrowLeft size={20} className="text-secondary" />
         </button>
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-bold text-primary">{clientName}</h1>
-          <p className="text-sm text-tertiary">Step 2: Fill in the numbers</p>
+          <p className="text-sm text-tertiary">{quickMode ? 'Step 2 of 2: Fill in the numbers' : 'Step 4 of 4: Fill in the numbers'}</p>
         </div>
       </div>
 
@@ -673,30 +1107,346 @@ export default function Quoting() {
         {/* Left: Only selected calculators */}
         <div className="lg:col-span-2 space-y-6">
 
+          {/* Collapsible measurements reference panel */}
+          {measurements.measurements.length > 0 && (
+            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle">
+              <button
+                onClick={() => setMeasurementsOpen((v) => !v)}
+                className="w-full flex items-center justify-between p-5 cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <MapPin size={16} className="text-muted" />
+                  <h2 className="text-sm font-bold text-primary">Measurements Reference</h2>
+                  <span className="text-xs text-muted">({measurements.measurements.length} area{measurements.measurements.length !== 1 ? 's' : ''})</span>
+                </div>
+                {measurementsOpen ? <ChevronUp size={16} className="text-muted" /> : <ChevronDown size={16} className="text-muted" />}
+              </button>
+              {measurementsOpen && (() => {
+                const catMeta = { lawn: { label: 'Lawn', color: '#22c55e' }, beds: { label: 'Beds', color: '#ef4444' }, exclude: { label: 'Exclude', color: '#6b7280' } };
+                const groups = {};
+                measurements.measurements.forEach((m) => {
+                  const cat = m.category || 'lawn';
+                  if (!groups[cat]) groups[cat] = [];
+                  groups[cat].push(m);
+                });
+                const excludes = groups.exclude || [];
+                const lawnNet = (groups.lawn || []).reduce((s, m) => s + getNetSqft(m, excludes), 0);
+                const bedsNet = (groups.beds || []).reduce((s, m) => s + getNetSqft(m, excludes), 0);
+                const netTotal = lawnNet + bedsNet;
+                return (
+                  <div className="px-5 pb-5 space-y-3">
+                    {['lawn', 'beds', 'exclude'].map((catId) => {
+                      const items = groups[catId];
+                      if (!items || items.length === 0) return null;
+                      const meta = catMeta[catId];
+                      const catGross = items.reduce((s, m) => s + m.sqft, 0);
+                      const isExclude = catId === 'exclude';
+                      const catNet = isExclude ? catGross : items.reduce((s, m) => s + getNetSqft(m, excludes), 0);
+                      return (
+                        <div key={catId}>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: meta.color }} />
+                            <span className="text-xs font-bold text-secondary uppercase tracking-wide">{meta.label}</span>
+                            <span className="text-xs font-semibold text-muted ml-auto">{isExclude ? '-' : ''}{(isExclude ? catGross : catNet).toLocaleString('en-US')} ft²</span>
+                          </div>
+                          {items.map((m) => (
+                            <div key={m.id} className={`flex items-center gap-3 rounded-lg px-3 py-2 border mb-1 ${isExclude ? 'bg-gray-50 dark:bg-gray-900/20 border-gray-300 dark:border-gray-700' : 'bg-surface border-border-subtle'}`}>
+                              <span className="w-4 h-4 rounded-sm shrink-0" style={{ backgroundColor: m.color }} />
+                              <span className="flex-1 min-w-0 text-sm font-medium text-primary truncate">{m.label}</span>
+                              <span className="text-sm font-semibold text-secondary whitespace-nowrap">{isExclude ? '-' : ''}{m.sqft.toLocaleString('en-US')} ft²</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                    <div className="flex items-center justify-between pt-2 border-t border-border-default">
+                      <span className="text-sm font-bold text-primary">Net Total</span>
+                      <span className="text-sm font-bold text-primary">{Math.max(0, netTotal).toLocaleString('en-US')} ft²</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ── Annual Contract Toggle ── */}
+          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CalendarDays size={18} className="text-blue-500" />
+                <span className="text-sm font-bold text-primary">Annual Contract</span>
+              </div>
+              <button
+                onClick={() => update('annual', 'enabled', !data.annual.enabled)}
+                className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                  data.annual.enabled
+                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-400'
+                    : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                }`}
+              >
+                {data.annual.enabled ? 'Annual On' : 'Off'}
+              </button>
+            </div>
+            {data.annual.enabled && (
+              <div className="mt-4 space-y-3">
+                <p className="text-xs text-muted">Total annual cost divided by 12 = flat monthly payment.</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {has('lawn') && (
+                    <>
+                      <div>
+                        <label className="block text-xs font-medium text-secondary mb-1">Lawn Frequency</label>
+                        <select value={data.annual.lawnFrequency} onChange={(e) => update('annual', 'lawnFrequency', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                          <option value="weekly">Weekly</option>
+                          <option value="biweekly">Every Other Week</option>
+                        </select>
+                      </div>
+                      <InputField label="Mowing Weeks/Year" value={data.annual.mowingWeeks} onChange={(v) => update('annual', 'mowingWeeks', v)} placeholder="38" />
+                    </>
+                  )}
+                  {has('leafMaint') && <InputField label="Leaf Maint Visits/Year" value={data.annual.leafMaintVisits} onChange={(v) => update('annual', 'leafMaintVisits', v)} placeholder="10" />}
+                  {has('pine') && <InputField label="Pine Needles ×/Year" value={data.annual.pineVisits} onChange={(v) => update('annual', 'pineVisits', v)} placeholder="1" />}
+                  {has('leafCleanup') && <InputField label="Leaf Cleanup ×/Year" value={data.annual.leafVisits} onChange={(v) => update('annual', 'leafVisits', v)} placeholder="1" />}
+                  {has('mulch') && <InputField label="Mulch ×/Year" value={data.annual.mulchVisits} onChange={(v) => update('annual', 'mulchVisits', v)} placeholder="1" />}
+                  {has('rock') && <InputField label="Rock ×/Year" value={data.annual.rockVisits} onChange={(v) => update('annual', 'rockVisits', v)} placeholder="1" />}
+                  {has('edging') && <InputField label="Edging ×/Year" value={data.annual.edgingVisits} onChange={(v) => update('annual', 'edgingVisits', v)} placeholder="1" />}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* ── Lawn Care ── */}
           {has('lawn') && (
             <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
-              <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Scissors size={20} className="text-green-600" /> Lawn Care</h2>
-              <div className="grid grid-cols-2 gap-3">
-                <InputField label="Mowable Sq Ft" value={data.lawn.sqft} onChange={(v) => update('lawn', 'sqft', v)} placeholder="0" />
-                <div>
-                  <label className="block text-xs font-medium text-secondary mb-1">Difficulty</label>
-                  <select value={data.lawn.difficulty} onChange={(e) => update('lawn', 'difficulty', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
-                    <option value="easy">Easy (1.0x)</option>
-                    <option value="moderate">Moderate (1.15x)</option>
-                    <option value="hard">Hard (1.3x)</option>
-                  </select>
-                </div>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Sprout size={20} className="text-green-600" /> Lawn Maintenance</h2>
+                <button
+                  onClick={() => update('lawn', 'override', !data.lawn.override)}
+                  className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                    data.lawn.override
+                      ? 'bg-brand-light text-brand-text-strong border-brand'
+                      : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                  }`}
+                >
+                  {data.lawn.override ? 'Override On' : 'Override'}
+                </button>
               </div>
+              {data.lawn.override ? (
+                <>
+                  <p className="text-xs text-muted">Set your own prices instead of using the tier calculator.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <InputField label="Weekly Price" value={data.lawn.overrideWeekly} onChange={(v) => update('lawn', 'overrideWeekly', v)} placeholder="0" prefix="$" />
+                    <InputField label="Every Other Week Price" value={data.lawn.overrideBiweekly} onChange={(v) => update('lawn', 'overrideBiweekly', v)} placeholder="0" prefix="$" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <InputField label="Mowable Sq Ft" value={data.lawn.sqft} onChange={(v) => update('lawn', 'sqft', v)} placeholder="0" />
+                    <div>
+                      <label className="block text-xs font-medium text-secondary mb-1">Difficulty</label>
+                      <select value={data.lawn.difficulty} onChange={(e) => update('lawn', 'difficulty', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                        <option value="easy">Easy (1.0x)</option>
+                        <option value="moderate">Moderate (1.15x)</option>
+                        <option value="hard">Hard (1.3x)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="border-t border-border-subtle pt-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <ReadonlyField label="Weekly Price" value={`$${fmt(lawnCalc.weekly)}`} />
+                      <ReadonlyField label="Every Other Week Price" value={`$${fmt(lawnCalc.biweekly)}`} />
+                    </div>
+                    {(lawnCalc.weekly <= (num(settings.lawnWeeklyMin) || 55)) && num(data.lawn.sqft) > 0 && (
+                      <p className="text-[10px] text-muted mt-2">Minimum applied ($${fmt(num(settings.lawnWeeklyMin) || 55)} weekly / $${fmt(num(settings.lawnBiweeklyMin) || 70)} EOW)</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Bushes ── */}
+          {has('bushes') && (
+            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Shrub size={20} className="text-green-600" /> Bush Maintenance</h2>
+                <button
+                  onClick={() => update('bushes', 'override', !data.bushes.override)}
+                  className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                    data.bushes.override
+                      ? 'bg-brand-light text-brand-text-strong border-brand'
+                      : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                  }`}
+                >
+                  {data.bushes.override ? 'Override On' : 'Override'}
+                </button>
+              </div>
+              <p className="text-[10px] text-muted">3× per year — Apr, Jul, Oct</p>
+              {data.bushes.override ? (
+                <>
+                  <p className="text-xs text-muted">Set your own per-visit price instead of using the calculator.</p>
+                  <InputField label="Per Visit Price" value={data.bushes.overridePerVisit} onChange={(v) => update('bushes', 'overridePerVisit', v)} placeholder="0" prefix="$" />
+                  {num(data.bushes.overridePerVisit) > 0 && (
+                    <div className="border-t border-border-subtle pt-4">
+                      <ReadonlyField label="Monthly Avg" value={`$${fmt(bushesCalc.monthly)}`} />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-4 gap-3">
+                    <InputField label={`Small ($${settings?.bushPrices?.small || DEFAULT_BUSH_PRICES.small}/ea)`} value={data.bushes.small} onChange={(v) => update('bushes', 'small', v)} placeholder="0" />
+                    <InputField label={`Medium ($${settings?.bushPrices?.medium || DEFAULT_BUSH_PRICES.medium}/ea)`} value={data.bushes.medium} onChange={(v) => update('bushes', 'medium', v)} placeholder="0" />
+                    <InputField label={`Large ($${settings?.bushPrices?.large || DEFAULT_BUSH_PRICES.large}/ea)`} value={data.bushes.large} onChange={(v) => update('bushes', 'large', v)} placeholder="0" />
+                    <InputField label={`XL ($${settings?.bushPrices?.xl || DEFAULT_BUSH_PRICES.xl}/ea)`} value={data.bushes.xl} onChange={(v) => update('bushes', 'xl', v)} placeholder="0" />
+                  </div>
+                  <div className="border-t border-border-subtle pt-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <ReadonlyField label="Per Visit" value={`$${fmt(bushesCalc.perVisit)}`} />
+                      <ReadonlyField label="Monthly Avg" value={`$${fmt(bushesCalc.monthly)}`} />
+                      <ReadonlyField label="Total Bushes" value={String(bushesCalc.totalCount)} />
+                    </div>
+                    {bushesCalc.perVisit === 35 && bushesCalc.totalCount > 0 && (
+                      <p className="text-[10px] text-muted mt-2">$35 minimum applied</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Leaf Maintenance ── */}
+          {has('leafMaint') && (
+            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Leaf size={20} className="text-amber-500" /> Leaf Maintenance</h2>
+                <button
+                  onClick={() => update('leafMaint', 'override', !data.leafMaint.override)}
+                  className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                    data.leafMaint.override
+                      ? 'bg-brand-light text-brand-text-strong border-brand'
+                      : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                  }`}
+                >
+                  {data.leafMaint.override ? 'Override On' : 'Override'}
+                </button>
+              </div>
+              <p className="text-[10px] text-muted">Recurring leaf blowing/cleanup — priced per visit</p>
+              {data.leafMaint.override ? (
+                <>
+                  <p className="text-xs text-muted">Set your own per-visit price.</p>
+                  <InputField label="Per Visit Price" value={data.leafMaint.overridePerVisit} onChange={(v) => update('leafMaint', 'overridePerVisit', v)} placeholder="0" prefix="$" />
+                </>
+              ) : (
+                <InputField label="Per Visit Price" value={data.leafMaint.perVisit} onChange={(v) => update('leafMaint', 'perVisit', v)} placeholder="0" prefix="$" />
+              )}
+              {leafMaintCalc.perVisit > 0 && (
+                <div className="border-t border-border-subtle pt-4">
+                  <ReadonlyField label="Per Visit" value={`$${fmt(leafMaintCalc.perVisit)}`} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Aeration ── */}
+          {has('aeration') && (
+            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-primary flex items-center gap-2"><CircleDot size={20} className="text-green-600" /> Aeration</h2>
+                <button
+                  onClick={() => update('aeration', 'override', !data.aeration.override)}
+                  className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                    data.aeration.override
+                      ? 'bg-brand-light text-brand-text-strong border-brand'
+                      : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                  }`}
+                >
+                  {data.aeration.override ? 'Override On' : 'Override'}
+                </button>
+              </div>
+              {data.aeration.override ? (
+                <>
+                  <p className="text-xs text-muted">Set your own aeration price.</p>
+                  <InputField label="Aeration Price" value={data.aeration.overridePrice} onChange={(v) => update('aeration', 'overridePrice', v)} placeholder="0" prefix="$" />
+                </>
+              ) : (
+                <>
+                  <InputField label="Lawn Sq Ft" value={data.aeration.sqft} onChange={(v) => update('aeration', 'sqft', v)} placeholder="0" />
+                  {num(data.aeration.sqft) > 0 && (
+                    <div className="border-t border-border-subtle pt-4">
+                      <ReadonlyField label="Aeration Price" value={`$${fmt(aerationCalc.aerationPrice)}`} />
+                      <p className="text-[10px] text-muted mt-2">
+                        {num(data.aeration.sqft) <= (num(settings?.aerationThreshold) || DEFAULT_AERATION_THRESHOLD)
+                          ? `Base rate: $${num(settings?.aerationBase) || DEFAULT_AERATION_BASE} (up to ${((num(settings?.aerationThreshold) || DEFAULT_AERATION_THRESHOLD) / 1000).toLocaleString()}k sqft)`
+                          : `$${num(settings?.aerationBase) || DEFAULT_AERATION_BASE} base + $${num(settings?.aerationPer1k) || DEFAULT_AERATION_PER_1K}/1k sqft over ${((num(settings?.aerationThreshold) || DEFAULT_AERATION_THRESHOLD) / 1000).toLocaleString()}k`
+                        }
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ── Overseeding toggle ── */}
               <div className="border-t border-border-subtle pt-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <ReadonlyField label="Weekly Price" value={`$${fmt(lawnCalc.weekly)}`} />
-                  <ReadonlyField label="Every Other Week Price" value={`$${fmt(lawnCalc.biweekly)}`} />
-                </div>
-                {(lawnCalc.weekly <= (num(settings.lawnWeeklyMin) || 55)) && num(data.lawn.sqft) > 0 && (
-                  <p className="text-[10px] text-muted mt-2">Minimum applied ($${fmt(num(settings.lawnWeeklyMin) || 55)} weekly / $${fmt(num(settings.lawnBiweeklyMin) || 70)} EOW)</p>
-                )}
+                <button
+                  onClick={() => update('aeration', 'includeOverseed', !data.aeration.includeOverseed)}
+                  className={`flex items-center gap-2 text-sm font-medium transition-colors cursor-pointer ${
+                    data.aeration.includeOverseed ? 'text-brand-text-strong' : 'text-muted hover:text-secondary'
+                  }`}
+                >
+                  <div className={`w-9 h-5 rounded-full transition-colors relative ${data.aeration.includeOverseed ? 'bg-brand' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${data.aeration.includeOverseed ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </div>
+                  Include Seed
+                </button>
               </div>
+
+              {data.aeration.includeOverseed && (
+                <div className="space-y-3 pl-1">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-secondary uppercase tracking-wide">Seed</p>
+                    <button
+                      onClick={() => update('aeration', 'overrideOverseed', !data.aeration.overrideOverseed)}
+                      className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                        data.aeration.overrideOverseed
+                          ? 'bg-brand-light text-brand-text-strong border-brand'
+                          : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                      }`}
+                    >
+                      {data.aeration.overrideOverseed ? 'Override On' : 'Override'}
+                    </button>
+                  </div>
+                  {data.aeration.overrideOverseed ? (
+                    <InputField label="Seed Price" value={data.aeration.overrideOverseedPrice} onChange={(v) => update('aeration', 'overrideOverseedPrice', v)} placeholder="0" prefix="$" />
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-3 gap-3">
+                        <InputField label="Lbs / 1,000 sqft" value={data.aeration.seedRate} onChange={(v) => update('aeration', 'seedRate', v)} placeholder="8" />
+                        <InputField label="Bag Price (50 lb)" value={data.aeration.bagPrice} onChange={(v) => update('aeration', 'bagPrice', v)} prefix="$" placeholder="190" />
+                        <InputField label="Our Bag Cost" value={data.aeration.ourBagCost} onChange={(v) => update('aeration', 'ourBagCost', v)} prefix="$" placeholder="0" />
+                      </div>
+                      {aerationCalc.seedLbs > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <ReadonlyField label="Seed Needed" value={`${aerationCalc.seedLbs} lbs`} />
+                          <ReadonlyField label="Seed Quote" value={`$${fmt(aerationCalc.overseedQuote)}`} />
+                          <ReadonlyField label="Material Cost (incl. 7% tax)" value={`$${fmt(aerationCalc.overseedCogs)}`} />
+                          <ReadonlyField label="Seed Profit" value={`$${fmt(aerationCalc.overseedProfit)}`} />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Combined total */}
+              {aerationCalc.quote > 0 && (data.aeration.includeOverseed && aerationCalc.overseedQuote > 0) && (
+                <div className="border-t border-border-subtle pt-3">
+                  <div className="flex justify-between text-sm font-bold">
+                    <span className="text-primary">Aeration + Seed Total</span>
+                    <span className="text-emerald-600">${fmt(aerationCalc.quote)}</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -705,84 +1455,156 @@ export default function Quoting() {
             <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
               <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Trees size={20} className="text-emerald-600" /> Mulch</h2>
 
-              {/* Mulch type selector */}
+              {/* ── Inputs ── */}
               <div>
                 <label className="block text-xs font-medium text-secondary mb-1">Mulch Type</label>
                 <select value={data.mulch.mulchType} onChange={(e) => updateMulchType(e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
                   {mulchTypes.map((t) => <option key={t.label} value={t.label}>{t.label} (${t.pricePerYd}/yd)</option>)}
                 </select>
               </div>
-
-              {/* Inputs */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <InputField label="Square Feet" value={data.mulch.sqft} onChange={(v) => update('mulch', 'sqft', v)} placeholder="0" />
-                <InputField label="Depth (inches)" value={data.mulch.depth} onChange={(v) => update('mulch', 'depth', v)} placeholder="0" />
-                <InputField label="Material Cost / Yard" value={data.mulch.materialCostPerYd} onChange={(v) => update('mulch', 'materialCostPerYd', v)} prefix="$" placeholder="0" />
-              </div>
-
               <div className="grid grid-cols-2 gap-3">
-                <InputField label="Your Charge / Yard" value={data.mulch.chargePerYd} onChange={(v) => update('mulch', 'chargePerYd', v)} prefix="$" placeholder="0" />
-                <InputField label="Delivery Fee" value={data.mulch.delivery} onChange={(v) => update('mulch', 'delivery', v)} prefix="$" placeholder="0" />
+                <InputField label="Sqft" value={data.mulch.sqft} onChange={(v) => update('mulch', 'sqft', v)} placeholder="0" />
+                <InputField label="Depth (in)" value={data.mulch.depth} onChange={(v) => update('mulch', 'depth', v)} placeholder="0" />
               </div>
-
-              {/* Calculated results */}
-              <div className="border-t border-border-subtle pt-4 space-y-3">
-                <p className="text-xs font-bold text-secondary uppercase tracking-wide">Calculated</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <ReadonlyField label="Cubic Yards Needed" value={fmt(mulchCalc.cubicYards)} />
-                  <ReadonlyField label="Material Cost" value={`$${fmt(mulchCalc.material)}`} />
-                  <ReadonlyField label="Tax (7%)" value={`$${fmt(mulchCalc.tax)}`} />
+              <div className="grid grid-cols-2 gap-3">
+                <InputField label="Charge / Yard" value={data.mulch.chargePerYd} onChange={(v) => update('mulch', 'chargePerYd', v)} prefix="$" placeholder="65" />
+                <div>
+                  <label className="block text-xs font-medium text-secondary mb-1">Difficulty</label>
+                  <select value={data.mulch.difficulty} onChange={(e) => update('mulch', 'difficulty', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                    <option value="easy">Easy (1.0x)</option>
+                    <option value="moderate">Moderate (1.1x)</option>
+                    <option value="hard">Hard (1.4x)</option>
+                  </select>
                 </div>
               </div>
+
+              {/* ── Breakdown ── */}
+              <div className="border-t border-border-subtle pt-3 space-y-1.5 text-sm">
+                <div className="flex justify-between"><span className="text-muted">Yards needed (10% buffer)</span><span className="text-primary font-medium">{fmt(mulchCalc.cubicYards)} yd</span></div>
+                <div className="flex justify-between"><span className="text-muted">Mulch material</span><span className="text-primary">${fmt(mulchCalc.material)}</span></div>
+                <div className="flex justify-between"><span className="text-muted">Mulch delivery ({mulchCalc.loads} load{mulchCalc.loads !== 1 ? 's' : ''})</span><span className="text-primary">${fmt(mulchCalc.delivery)}</span></div>
+                <div className="flex justify-between"><span className="text-muted">Tax (7%)</span><span className="text-primary">${fmt(mulchCalc.tax)}</span></div>
+                <div className="flex justify-between font-semibold pt-1.5 border-t border-border-subtle"><span className="text-secondary">Your Cost</span><span className="text-red-400">${fmt(mulchCalc.cogs)}</span></div>
+              </div>
+
+              <div className="border-t border-border-subtle pt-3 space-y-1.5 text-sm">
+                <div className="flex justify-between"><span className="text-muted">Mulch spread ({fmt(mulchCalc.cubicYards)} yd × ${data.mulch.chargePerYd}{mulchCalc.diffMult > 1 ? ` × ${mulchCalc.diffMult}x` : ''})</span><span className="text-primary">${fmt(mulchCalc.labor)}</span></div>
+                <div className="flex justify-between font-semibold pt-1.5 border-t border-border-subtle"><span className="text-secondary">Your Revenue</span><span className="text-blue-400">${fmt(mulchCalc.labor)}</span></div>
+              </div>
+
+              {/* ── Quote ── */}
+              <div className="border-t-2 border-emerald-500/30 pt-3">
+                <div className="flex justify-between text-lg font-bold">
+                  <span className="text-primary">Quote</span>
+                  <span className="text-emerald-500">${fmt(mulchCalc.quote)}</span>
+                </div>
+                <p className="text-[10px] text-muted mt-1">Cost {'$'}{fmt(mulchCalc.cogs)} + Revenue {'$'}{fmt(mulchCalc.labor)}</p>
+              </div>
+
+              {/* ── Job Profit ── */}
+              {mulchCalc.quote > 0 && (() => {
+                const crewCost = num(data.mulch.crewSize) * num(data.mulch.estHours) * num(data.mulch.crewRate);
+                const profit = mulchCalc.labor - crewCost;
+                const profitPerHr = num(data.mulch.estHours) > 0 ? profit / num(data.mulch.estHours) : 0;
+                return (
+                  <div className="border-t border-border-subtle pt-4 space-y-3">
+                    <p className="text-xs font-bold text-secondary uppercase tracking-wide">Job Profit</p>
+                    <div className="grid grid-cols-3 gap-3">
+                      <InputField label="Crew Size" value={data.mulch.crewSize} onChange={(v) => update('mulch', 'crewSize', v)} placeholder="2" />
+                      <InputField label="Est. Hours" value={data.mulch.estHours} onChange={(v) => update('mulch', 'estHours', v)} placeholder="0" />
+                      <InputField label="Rate/hr" value={data.mulch.crewRate} onChange={(v) => update('mulch', 'crewRate', v)} prefix="$" placeholder="17" />
+                    </div>
+                    {num(data.mulch.estHours) > 0 && (
+                      <div className="space-y-1.5 text-sm">
+                        <div className="flex justify-between"><span className="text-muted">Crew cost ({data.mulch.crewSize} × {data.mulch.estHours}hr × ${data.mulch.crewRate})</span><span className="text-primary">${fmt(crewCost)}</span></div>
+                        <div className="flex justify-between font-semibold"><span className="text-secondary">Your Profit</span><span className={profit >= 0 ? 'text-emerald-400' : 'text-red-400'}>${fmt(profit)}</span></div>
+                        <div className="flex justify-between font-semibold"><span className="text-secondary">Profit / Hour</span><span className={profitPerHr >= 0 ? 'text-emerald-400' : 'text-red-400'}>${fmt(profitPerHr)}/hr</span></div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
           {/* ── Rock Installation ── */}
           {has('rock') && (
             <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
-              <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Mountain size={20} className="text-slate-500" /> Rock Installation</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <InputField label="Square Feet" value={data.rock.sqft} onChange={(v) => update('rock', 'sqft', v)} placeholder="0" />
-                <InputField label="Depth (inches)" value={data.rock.depth} onChange={(v) => update('rock', 'depth', v)} placeholder="3" />
-                <InputField label="Material Cost / Yard" value={data.rock.pricePerYd} onChange={(v) => update('rock', 'pricePerYd', v)} prefix="$" placeholder="0" />
-              </div>
+              <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Mountain size={20} className="text-slate-500" /> Rock</h2>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <InputField label="Your Charge / Yard" value={data.rock.chargePerYd} onChange={(v) => update('rock', 'chargePerYd', v)} prefix="$" placeholder="0" />
-                <InputField label="Equipment Cost" value={data.rock.equipmentCost} onChange={(v) => update('rock', 'equipmentCost', v)} prefix="$" placeholder="0" />
-                <InputField label="Delivery Fee" value={data.rock.delivery} onChange={(v) => update('rock', 'delivery', v)} prefix="$" placeholder="0" />
+              {/* ── Inputs ── */}
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">Rock Type</label>
+                <select value={data.rock.rockType} onChange={(e) => updateRockType(e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                  {rockTypes.map((t) => <option key={t.label} value={t.label}>{t.label} (${t.pricePerYd}/yd)</option>)}
+                </select>
               </div>
-
-              {/* Landscape Fabric Toggle */}
-              <div className="border-t border-border-subtle pt-4 space-y-3">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <div className={`relative w-10 h-5 rounded-full transition-colors ${data.rock.includeFabric ? 'bg-emerald-500' : 'bg-gray-600'}`}
-                    onClick={() => setData(prev => ({ ...prev, rock: { ...prev.rock, includeFabric: !prev.rock.includeFabric } }))}>
-                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${data.rock.includeFabric ? 'translate-x-5' : ''}`} />
-                  </div>
-                  <span className="text-sm font-semibold text-primary">Include Landscape Fabric</span>
-                </label>
-                {data.rock.includeFabric && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    <ReadonlyField label="Square Feet Needed" value={data.rock.sqft || '0'} />
-                    <InputField label="Coverage per Roll (sqft)" value={data.rock.fabricCoverage} onChange={(v) => update('rock', 'fabricCoverage', v)} placeholder="0" />
-                    <InputField label="Cost per Roll" value={data.rock.fabricCostPerRoll} onChange={(v) => update('rock', 'fabricCostPerRoll', v)} prefix="$" placeholder="0" />
-                  </div>
-                )}
+              <div className="grid grid-cols-3 gap-3">
+                <InputField label="Sqft" value={data.rock.sqft} onChange={(v) => update('rock', 'sqft', v)} placeholder="0" />
+                <InputField label="Depth (in)" value={data.rock.depth} onChange={(v) => update('rock', 'depth', v)} placeholder="3" />
+                <InputField label="Equipment" value={data.rock.equipmentCost} onChange={(v) => update('rock', 'equipmentCost', v)} prefix="$" placeholder="0" />
               </div>
-
-              {/* Calculated results */}
-              <div className="border-t border-border-subtle pt-4 space-y-3">
-                <p className="text-xs font-bold text-secondary uppercase tracking-wide">Calculated</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <ReadonlyField label="Cubic Yards Needed" value={rockCalc.cubicYards.toFixed(2)} />
-                  <ReadonlyField label="Rock Material" value={`$${fmt(rockCalc.rockMaterial)}`} />
-                  {data.rock.includeFabric && <ReadonlyField label={`Fabric (${rockCalc.fabricRollsNeeded} rolls)`} value={`$${fmt(rockCalc.fabricCost)}`} />}
-                  <ReadonlyField label="Total Material" value={`$${fmt(rockCalc.material)}`} />
-                  <ReadonlyField label="Tax (7%)" value={`$${fmt(rockCalc.tax)}`} />
+              <div className="grid grid-cols-2 gap-3">
+                <InputField label="Charge / Yard" value={data.rock.chargePerYd} onChange={(v) => update('rock', 'chargePerYd', v)} prefix="$" placeholder="150" />
+                <div>
+                  <label className="block text-xs font-medium text-secondary mb-1">Difficulty</label>
+                  <select value={data.rock.difficulty} onChange={(e) => update('rock', 'difficulty', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                    <option value="easy">Easy (1.0x)</option>
+                    <option value="moderate">Moderate (1.1x)</option>
+                    <option value="hard">Hard (1.4x)</option>
+                  </select>
                 </div>
-                <p className="text-[10px] text-muted">Includes 15% waste &middot; Rounded to nearest 0.25 yard</p>
               </div>
+
+              {/* ── Breakdown ── */}
+              <div className="border-t border-border-subtle pt-3 space-y-1.5 text-sm">
+                <div className="flex justify-between"><span className="text-muted">Yards needed (10% buffer)</span><span className="text-primary font-medium">{fmt(rockCalc.cubicYards)} yd</span></div>
+                <div className="flex justify-between"><span className="text-muted">Rock material</span><span className="text-primary">${fmt(rockCalc.material)}</span></div>
+                <div className="flex justify-between"><span className="text-muted">Fabric ({rockCalc.fabricRolls} roll{rockCalc.fabricRolls !== 1 ? 's' : ''})</span><span className="text-primary">${fmt(rockCalc.fabricCost)}</span></div>
+                <div className="flex justify-between"><span className="text-muted">Delivery ({rockCalc.loads} load{rockCalc.loads !== 1 ? 's' : ''})</span><span className="text-primary">${fmt(rockCalc.delivery)}</span></div>
+                {num(data.rock.equipmentCost) > 0 && <div className="flex justify-between"><span className="text-muted">Equipment</span><span className="text-primary">${fmt(num(data.rock.equipmentCost))}</span></div>}
+                <div className="flex justify-between"><span className="text-muted">Tax (7%)</span><span className="text-primary">${fmt(rockCalc.tax)}</span></div>
+                <div className="flex justify-between font-semibold pt-1.5 border-t border-border-subtle"><span className="text-secondary">Your Cost</span><span className="text-red-400">${fmt(rockCalc.cogs)}</span></div>
+              </div>
+
+              <div className="border-t border-border-subtle pt-3 space-y-1.5 text-sm">
+                <div className="flex justify-between"><span className="text-muted">Rock spread ({fmt(rockCalc.cubicYards)} yd × ${data.rock.chargePerYd}{rockCalc.diffMult > 1 ? ` × ${rockCalc.diffMult}x` : ''})</span><span className="text-primary">${fmt(rockCalc.cubicYards * num(data.rock.chargePerYd) * (rockCalc.diffMult || 1))}</span></div>
+                <div className="flex justify-between"><span className="text-muted">Fabric install ({fmt(rockCalc.fabricSqft)} sqft × $0.75)</span><span className="text-primary">${fmt(rockCalc.fabricCharge)}</span></div>
+                <div className="flex justify-between font-semibold pt-1.5 border-t border-border-subtle"><span className="text-secondary">Your Revenue</span><span className="text-blue-400">${fmt(rockCalc.labor)}</span></div>
+              </div>
+
+              {/* ── Quote ── */}
+              <div className="border-t-2 border-emerald-500/30 pt-3">
+                <div className="flex justify-between text-lg font-bold">
+                  <span className="text-primary">Quote</span>
+                  <span className="text-emerald-500">${fmt(rockCalc.quote)}</span>
+                </div>
+                <p className="text-[10px] text-muted mt-1">Cost {'$'}{fmt(rockCalc.cogs)} + Revenue {'$'}{fmt(rockCalc.labor)}</p>
+              </div>
+
+              {/* ── Job Profit ── */}
+              {rockCalc.quote > 0 && (() => {
+                const crewCost = num(data.rock.crewSize) * num(data.rock.estHours) * num(data.rock.crewRate);
+                const profit = rockCalc.labor - crewCost;
+                const profitPerHr = num(data.rock.estHours) > 0 ? profit / num(data.rock.estHours) : 0;
+                return (
+                  <div className="border-t border-border-subtle pt-4 space-y-3">
+                    <p className="text-xs font-bold text-secondary uppercase tracking-wide">Job Profit</p>
+                    <div className="grid grid-cols-3 gap-3">
+                      <InputField label="Crew Size" value={data.rock.crewSize} onChange={(v) => update('rock', 'crewSize', v)} placeholder="2" />
+                      <InputField label="Est. Hours" value={data.rock.estHours} onChange={(v) => update('rock', 'estHours', v)} placeholder="0" />
+                      <InputField label="Rate/hr" value={data.rock.crewRate} onChange={(v) => update('rock', 'crewRate', v)} prefix="$" placeholder="17" />
+                    </div>
+                    {num(data.rock.estHours) > 0 && (
+                      <div className="space-y-1.5 text-sm">
+                        <div className="flex justify-between"><span className="text-muted">Crew cost ({data.rock.crewSize} × {data.rock.estHours}hr × ${data.rock.crewRate})</span><span className="text-primary">${fmt(crewCost)}</span></div>
+                        <div className="flex justify-between font-semibold"><span className="text-secondary">Your Profit</span><span className={profit >= 0 ? 'text-emerald-400' : 'text-red-400'}>${fmt(profit)}</span></div>
+                        <div className="flex justify-between font-semibold"><span className="text-secondary">Profit / Hour</span><span className={profitPerHr >= 0 ? 'text-emerald-400' : 'text-red-400'}>${fmt(profitPerHr)}/hr</span></div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -790,29 +1612,60 @@ export default function Quoting() {
           {has('edging') && (
             <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
               <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Ruler size={20} className="text-blue-500" /> Edging</h2>
-              <div className="rounded-lg bg-surface-alt border border-border-subtle px-4 py-3 text-xs text-secondary space-y-1">
-                <p className="font-semibold text-primary text-xs mb-1">Pricing Reference</p>
-                <p>Easy, straight runs, soft soil &rarr; <span className="font-semibold text-primary">$4/ft</span></p>
-                <p>Normal job &rarr; <span className="font-semibold text-primary">$5/ft</span></p>
-                <p>Curves, tight access, harder soil &rarr; <span className="font-semibold text-primary">$6+/ft</span></p>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <InputField label="Linear Feet Needed" value={data.edging.linearFeet} onChange={(v) => update('edging', 'linearFeet', v)} placeholder="0" />
+
+              {/* ── Job Info ── */}
+              <div className="grid grid-cols-2 gap-3">
+                <InputField label="Linear Feet" value={data.edging.linearFeet} onChange={(v) => update('edging', 'linearFeet', v)} placeholder="0" />
                 <InputField label="Unit Length (ft/piece)" value={data.edging.unitLength} onChange={(v) => update('edging', 'unitLength', v)} placeholder="20" />
-                <InputField label="Cost/Unit" value={data.edging.costPerUnit} onChange={(v) => update('edging', 'costPerUnit', v)} prefix="$" placeholder="0" />
-                <InputField label="Service $/Foot" value={data.edging.servicePerFoot} onChange={(v) => update('edging', 'servicePerFoot', v)} prefix="$" placeholder="0" />
-                <InputField label="Delivery" value={data.edging.delivery} onChange={(v) => update('edging', 'delivery', v)} prefix="$" placeholder="0" />
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-border-subtle">
-                <ReadonlyField label="Units Needed" value={edgingCalc.unitsNeeded} />
-                <ReadonlyField label="Material Subtotal" value={`$${fmt(edgingCalc.materialSubtotal)}`} />
-                <ReadonlyField label="Material Tax" value={`$${fmt(edgingCalc.materialTax)}`} />
-                <ReadonlyField label="Total Material Cost" value={`$${fmt(edgingCalc.materialCostTotal)}`} />
-                <ReadonlyField label="Delivery" value={`$${fmt(edgingCalc.delivery)}`} />
-                <ReadonlyField label="Service Total" value={`$${fmt(edgingCalc.serviceTotal)}`} />
+              <ReadonlyField label="Units Needed" value={edgingCalc.unitsNeeded} />
+
+              {/* ── COGS ── */}
+              <div className="border-t border-border-subtle pt-4 space-y-3">
+                <p className="text-xs font-bold text-secondary uppercase tracking-wide">COGS — What this job costs you</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <InputField label="Cost / Unit" value={data.edging.costPerUnit} onChange={(v) => update('edging', 'costPerUnit', v)} prefix="$" placeholder="0" />
+                  <ReadonlyField label="Material" value={`$${fmt(edgingCalc.material)}`} />
+                  <InputField label="Delivery" value={data.edging.delivery} onChange={(v) => update('edging', 'delivery', v)} prefix="$" placeholder="0" />
+                </div>
+                <div className="border-t border-border-subtle pt-3">
+                  <ReadonlyField label="Tax (7%)" value={`$${fmt(edgingCalc.tax)}`} />
+                  <div className="flex justify-between text-sm font-bold pt-2">
+                    <span className="text-secondary">Total COGS</span>
+                    <span className="text-red-400">${fmt(edgingCalc.cogs)}</span>
+                  </div>
+                </div>
               </div>
-              <div className="pt-2 border-t border-border-subtle">
-                <ReadonlyField label="Edging Quote" value={`$${fmt(edgingCalc.quote)}`} className="max-w-[200px]" />
+
+              {/* ── Labor ── */}
+              <div className="border-t border-border-subtle pt-4 space-y-3">
+                <p className="text-xs font-bold text-secondary uppercase tracking-wide">Revenue — What you charge</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <InputField label="Charge / Foot" value={data.edging.chargePerFoot} onChange={(v) => update('edging', 'chargePerFoot', v)} prefix="$" placeholder="5" />
+                  <div>
+                    <label className="block text-xs font-medium text-secondary mb-1">Difficulty</label>
+                    <select value={data.edging.difficulty} onChange={(e) => update('edging', 'difficulty', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                      <option value="easy">Easy — Straight runs (1.0x)</option>
+                      <option value="moderate">Moderate — Some curves (1.1x)</option>
+                      <option value="hard">Hard — Tight/curves/roots (1.4x)</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="border-t border-border-subtle pt-3">
+                  <div className="flex justify-between text-sm font-bold">
+                    <span className="text-secondary">Your Revenue</span>
+                    <span className="text-blue-400">${fmt(edgingCalc.labor)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Quote Total ── */}
+              <div className="border-t-2 border-emerald-500/30 pt-4">
+                <div className="flex justify-between text-lg font-bold">
+                  <span className="text-primary">Quote</span>
+                  <span className="text-emerald-500">${fmt(edgingCalc.quote)}</span>
+                </div>
+                <p className="text-[10px] text-muted mt-1">Cost {'$'}{fmt(edgingCalc.cogs)} + Revenue {'$'}{fmt(edgingCalc.labor)}</p>
               </div>
             </div>
           )}
@@ -820,18 +1673,41 @@ export default function Quoting() {
           {/* ── Pine Needles ── */}
           {has('pine') && (
             <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
-              <h2 className="text-lg font-bold text-primary flex items-center gap-2"><TreePine size={20} className="text-amber-600" /> Pine Needles</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <InputField label="Bales" value={data.pine.bales} onChange={(v) => update('pine', 'bales', v)} placeholder="0" />
-                <InputField label="Bale Price" value={data.pine.balePrice} onChange={(v) => update('pine', 'balePrice', v)} prefix="$" placeholder="0" />
-                <InputField label="Service/Bale" value={data.pine.serviceCostPerBale} onChange={(v) => update('pine', 'serviceCostPerBale', v)} prefix="$" placeholder="0" />
-                <InputField label="Delivery" value={data.pine.delivery} onChange={(v) => update('pine', 'delivery', v)} prefix="$" placeholder="0" />
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-primary flex items-center gap-2"><TreePine size={20} className="text-amber-600" /> Pine Needles</h2>
+                <button
+                  onClick={() => update('pine', 'override', !data.pine.override)}
+                  className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                    data.pine.override
+                      ? 'bg-brand-light text-brand-text-strong border-brand'
+                      : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                  }`}
+                >
+                  {data.pine.override ? 'Override On' : 'Override'}
+                </button>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-border-subtle">
-                <ReadonlyField label="Material Tax" value={`$${fmt(pineCalc.materialTax)}`} />
-                <ReadonlyField label="Material Cost" value={`$${fmt(pineCalc.materialCostTotal)}`} />
-                <ReadonlyField label="Pine Quote" value={`$${fmt(pineCalc.quote)}`} />
-              </div>
+              {data.pine.override ? (
+                <>
+                  <p className="text-xs text-muted">Set your own pine needles price.</p>
+                  <InputField label="Pine Needles Price" value={data.pine.overridePrice} onChange={(v) => update('pine', 'overridePrice', v)} placeholder="0" prefix="$" />
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <InputField label="Bales" value={data.pine.bales} onChange={(v) => update('pine', 'bales', v)} placeholder="0" />
+                    <InputField label="Our Cost / Bale" value={data.pine.ourCost} onChange={(v) => update('pine', 'ourCost', v)} prefix="$" placeholder="4.25" />
+                    <InputField label="Charge / Bale" value={data.pine.chargePerBale} onChange={(v) => update('pine', 'chargePerBale', v)} prefix="$" placeholder="0" />
+                    <InputField label="Delivery" value={data.pine.delivery} onChange={(v) => update('pine', 'delivery', v)} prefix="$" placeholder="0" />
+                  </div>
+                  {num(data.pine.bales) > 0 && num(data.pine.chargePerBale) > 0 && (
+                    <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border-subtle">
+                      <ReadonlyField label="Quote" value={`$${fmt(pineCalc.quote)}`} />
+                      <ReadonlyField label="Material Cost" value={`$${fmt(pineCalc.cogs)}`} />
+                      <ReadonlyField label="Profit" value={`$${fmt(pineCalc.profit)}`} />
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 
@@ -919,12 +1795,12 @@ export default function Quoting() {
           )}
 
           {/* ── Other services (flat $) ── */}
-          {(has('bushes') || has('overgrown')) && (
+          {(has('overgrownLawn') || has('overgrownBushes')) && (
             <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
               <h2 className="text-lg font-bold text-primary">Other Services</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {has('bushes') && <InputField label="Bushes" value={data.other.bushes} onChange={(v) => update('other', 'bushes', v)} prefix="$" placeholder="0" />}
-                {has('overgrown') && <InputField label="Overgrown Area" value={data.other.overgrown} onChange={(v) => update('other', 'overgrown', v)} prefix="$" placeholder="0" />}
+                {has('overgrownLawn') && <InputField label="Overgrown Lawn" value={data.other.overgrownLawn} onChange={(v) => update('other', 'overgrownLawn', v)} prefix="$" placeholder="0" />}
+                {has('overgrownBushes') && <InputField label="Overgrown Bushes" value={data.other.overgrownBushes} onChange={(v) => update('other', 'overgrownBushes', v)} prefix="$" placeholder="0" />}
               </div>
             </div>
           )}
@@ -935,120 +1811,235 @@ export default function Quoting() {
           <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4 lg:sticky lg:top-24">
             <h2 className="text-lg font-bold text-primary">Quote Summary</h2>
 
-            {/* Total Quote */}
-            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-300 dark:border-emerald-700 px-5 py-4 text-center">
-              <p className="text-xs text-secondary mb-1">Total Quote</p>
-              <p className="text-2xl font-bold text-emerald-600">${fmt(summary.totalQuote)}</p>
-            </div>
+            {/* Per-service breakdown table */}
+            {(() => {
+              const isAnnual = data.annual.enabled;
+              const lines = [];
+              let totalCost = 0;
 
-            {/* Per-service breakdowns */}
-            {has('lawn') && lawnCalc.quote > 0 && (
-              <div>
-                <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Lawn Care</p>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Difficulty</span><span className="text-primary capitalize">{data.lawn.difficulty}</span></div>
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Weekly</span><span className="text-primary">${fmt(lawnCalc.weekly)}</span></div>
-                  <div className="flex justify-between text-sm font-semibold border-t border-border-subtle pt-1 mt-1"><span className="text-primary">Every Other Week</span><span className="text-emerald-600">${fmt(lawnCalc.biweekly)}</span></div>
+              if (has('lawn') && lawnCalc.quote > 0) {
+                const isWeekly = data.annual.lawnFrequency === 'weekly';
+                const perCut = isWeekly ? lawnCalc.weekly : lawnCalc.biweekly;
+                if (isAnnual) {
+                  const weeks = num(data.annual.mowingWeeks) || 38;
+                  const cuts = isWeekly ? weeks : Math.ceil(weeks / 2);
+                  const annual = perCut * cuts;
+                  lines.push({ label: 'Lawn Maintenance', per: perCut, times: cuts, timesLabel: isWeekly ? `${cuts} cuts` : `${cuts} cuts (EOW)`, quote: annual, cost: 0 });
+                } else {
+                  lines.push({ label: `Lawn Maintenance${data.lawn.override ? ' (Override)' : ''}`, detail: `W: $${fmt(lawnCalc.weekly)} / EOW: $${fmt(lawnCalc.biweekly)}`, quote: lawnCalc.biweekly, cost: 0 });
+                }
+              }
+              if (has('bushes') && bushesCalc.quote > 0) {
+                if (isAnnual) {
+                  const annual = bushesCalc.perVisit * 3;
+                  lines.push({ label: 'Bush Maintenance', per: bushesCalc.perVisit, times: 3, timesLabel: '3×/yr', quote: annual, cost: 0 });
+                } else {
+                  lines.push({ label: `Bush Maintenance${data.bushes.override ? ' (Override)' : ''}`, detail: '3×/yr (Apr, Jul, Oct) · Per Visit', quote: bushesCalc.perVisit, cost: 0 });
+                }
+              }
+              if (has('leafMaint') && leafMaintCalc.quote > 0) {
+                if (isAnnual) {
+                  const visits = num(data.annual.leafMaintVisits) || 10;
+                  const annual = leafMaintCalc.perVisit * visits;
+                  lines.push({ label: 'Leaf Maintenance', per: leafMaintCalc.perVisit, times: visits, timesLabel: `${visits}×/yr`, quote: annual, cost: 0 });
+                } else {
+                  lines.push({ label: `Leaf Maintenance${data.leafMaint.override ? ' (Override)' : ''}`, detail: 'Per Visit', quote: leafMaintCalc.perVisit, cost: 0 });
+                }
+              }
+              if (has('aeration') && (aerationCalc.aerationPrice > 0 || aerationCalc.quote > 0)) {
+                const osCost = (data.aeration.includeOverseed && aerationCalc.overseedCogs) ? aerationCalc.overseedCogs : 0;
+                totalCost += osCost;
+                if (isAnnual) {
+                  lines.push({ label: data.aeration.includeOverseed ? 'Aeration + Seed' : 'Aeration', per: aerationCalc.quote, times: 1, timesLabel: '1×/yr', quote: aerationCalc.quote, cost: osCost });
+                } else {
+                  const ap = aerationCalc.aerationPrice || aerationCalc.quote;
+                  lines.push({ label: `Aeration${data.aeration.override ? ' (Override)' : ''}`, quote: ap, cost: 0 });
+                  if (data.aeration.includeOverseed && aerationCalc.overseedQuote > 0) {
+                    lines.push({ label: `  Seed${data.aeration.overrideOverseed ? ' (Override)' : ''}`, detail: aerationCalc.seedLbs > 0 ? `${aerationCalc.seedLbs} lbs seed` : null, quote: aerationCalc.overseedQuote, cost: osCost, indent: true });
+                  }
+                }
+              }
+              if (has('mulch') && mulchCalc.quote > 0) {
+                const mCostPer = mulchCalc.material + mulchCalc.delivery + mulchCalc.tax + (mulchCalc.equipment || 0);
+                const visits = isAnnual ? (num(data.annual.mulchVisits) || 1) : 1;
+                totalCost += mCostPer * visits;
+                lines.push(isAnnual
+                  ? { label: 'Mulch', per: mulchCalc.quote, times: visits, timesLabel: `${visits}×/yr`, quote: mulchCalc.quote * visits, cost: mCostPer * visits }
+                  : { label: 'Mulch', quote: mulchCalc.quote, cost: mCostPer });
+              }
+              if (has('rock') && rockCalc.quote > 0) {
+                const rCostPer = rockCalc.material + rockCalc.delivery + rockCalc.tax + (rockCalc.equipment || 0);
+                const visits = isAnnual ? (num(data.annual.rockVisits) || 1) : 1;
+                totalCost += rCostPer * visits;
+                lines.push(isAnnual
+                  ? { label: 'Rock', per: rockCalc.quote, times: visits, timesLabel: `${visits}×/yr`, quote: rockCalc.quote * visits, cost: rCostPer * visits }
+                  : { label: 'Rock', quote: rockCalc.quote, cost: rCostPer });
+              }
+              if (has('edging') && edgingCalc.quote > 0) {
+                const eCostPer = edgingCalc.material + edgingCalc.delivery + edgingCalc.tax;
+                const visits = isAnnual ? (num(data.annual.edgingVisits) || 1) : 1;
+                totalCost += eCostPer * visits;
+                lines.push(isAnnual
+                  ? { label: 'Edging', per: edgingCalc.quote, times: visits, timesLabel: `${visits}×/yr`, quote: edgingCalc.quote * visits, cost: eCostPer * visits }
+                  : { label: 'Edging', quote: edgingCalc.quote, cost: eCostPer });
+              }
+              if (has('pine') && pineCalc.quote > 0) {
+                const pCostPer = pineCalc.cogs || 0;
+                const visits = isAnnual ? (num(data.annual.pineVisits) || 1) : 1;
+                totalCost += pCostPer * visits;
+                lines.push(isAnnual
+                  ? { label: 'Pine Needles', per: pineCalc.quote, times: visits, timesLabel: `${visits}×/yr`, quote: pineCalc.quote * visits, cost: pCostPer * visits }
+                  : { label: `Pine Needles${data.pine.override ? ' (Override)' : ''}`, detail: !data.pine.override && num(data.pine.bales) > 0 ? `${data.pine.bales} bales` : null, quote: pineCalc.quote, cost: pCostPer });
+              }
+              if (has('leafCleanup') && leafCleanupCalc.quote > 0) {
+                const visits = isAnnual ? (num(data.annual.leafVisits) || 1) : 1;
+                lines.push(isAnnual
+                  ? { label: 'Leaf Cleanup', per: leafCleanupCalc.quote, times: visits, timesLabel: `${visits}×/yr`, quote: leafCleanupCalc.quote * visits, cost: 0 }
+                  : { label: 'Leaf Cleanup', quote: leafCleanupCalc.quote, cost: 0 });
+              }
+              if (has('overgrownLawn') && num(data.other.overgrownLawn) > 0) {
+                const q = num(data.other.overgrownLawn);
+                lines.push(isAnnual
+                  ? { label: 'Overgrown Lawn', per: q, times: 1, timesLabel: '1×', quote: q, cost: 0 }
+                  : { label: 'Overgrown Lawn', quote: q, cost: 0 });
+              }
+              if (has('overgrownBushes') && num(data.other.overgrownBushes) > 0) {
+                const q = num(data.other.overgrownBushes);
+                lines.push(isAnnual
+                  ? { label: 'Overgrown Bushes', per: q, times: 1, timesLabel: '1×', quote: q, cost: 0 }
+                  : { label: 'Overgrown Bushes', quote: q, cost: 0 });
+              }
+
+              const totalQuote = lines.reduce((s, l) => s + l.quote, 0);
+              const totalProfit = totalQuote - totalCost;
+
+              if (lines.length === 0) return <p className="text-sm text-muted italic">No services calculated yet.</p>;
+
+              // ── Annual view ──
+              if (isAnnual) {
+                const monthly = totalQuote / 12;
+                const monthlyCost = totalCost / 12;
+                const monthlyProfit = monthly - monthlyCost;
+                return (
+                  <div className="space-y-3">
+                    {/* Monthly payment hero */}
+                    <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-300 dark:border-blue-700 px-5 py-4 text-center">
+                      <p className="text-xs text-secondary mb-1">Monthly Payment</p>
+                      <p className="text-3xl font-bold text-blue-600">${fmt(monthly)}</p>
+                      <p className="text-[11px] text-muted mt-1">${fmt(totalQuote)}/yr &divide; 12 months</p>
+                    </div>
+
+                    {/* Header row */}
+                    <div className="grid grid-cols-[1fr_50px_65px_65px] gap-1 text-[10px] font-bold text-muted uppercase tracking-wider">
+                      <span>Service</span>
+                      <span className="text-right">Freq</span>
+                      <span className="text-right">Annual</span>
+                      <span className="text-right">Cost</span>
+                    </div>
+
+                    {/* Service rows */}
+                    <div className="space-y-1.5">
+                      {lines.map((l, i) => (
+                        <div key={i}>
+                          <div className="grid grid-cols-[1fr_50px_65px_65px] gap-1 items-center">
+                            <span className="text-xs font-medium text-primary truncate">{l.label}</span>
+                            <span className="text-[10px] text-right text-muted">{l.timesLabel}</span>
+                            <span className="text-xs text-right font-semibold text-primary">${fmt(l.quote)}</span>
+                            <span className="text-xs text-right text-muted">{l.cost > 0 ? `$${fmt(l.cost)}` : '\u2014'}</span>
+                          </div>
+                          {l.per > 0 && l.times > 1 && <p className="text-[10px] text-muted mt-0.5">${fmt(l.per)} each</p>}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Annual totals */}
+                    <div className="border-t-2 border-border-subtle pt-3 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="font-bold text-primary">Annual Total</span>
+                        <span className="font-bold text-primary">${fmt(totalQuote)}</span>
+                      </div>
+                      {totalCost > 0 && (
+                        <>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted">Annual Cost</span>
+                            <span className="text-muted">${fmt(totalCost)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="font-bold text-primary">Annual Profit</span>
+                            <span className={`font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>${fmt(totalProfit)}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Monthly breakdown */}
+                    <div className="rounded-xl bg-surface-alt border border-border-subtle px-4 py-3 space-y-1.5">
+                      <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Monthly Breakdown</p>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-primary font-semibold">Revenue</span>
+                        <span className="text-primary font-semibold">${fmt(monthly)}</span>
+                      </div>
+                      {totalCost > 0 && (
+                        <>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted">Cost</span>
+                            <span className="text-muted">${fmt(monthlyCost)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="font-semibold text-primary">Profit</span>
+                            <span className={`font-semibold ${monthlyProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>${fmt(monthlyProfit)}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              // ── Standard (non-annual) view ──
+              return (
+                <div className="space-y-3">
+                  {/* Total Quote */}
+                  <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-300 dark:border-emerald-700 px-5 py-4 text-center">
+                    <p className="text-xs text-secondary mb-1">Total Quote</p>
+                    <p className="text-2xl font-bold text-emerald-600">${fmt(totalQuote)}</p>
+                  </div>
+
+                  {/* Header row */}
+                  <div className="grid grid-cols-[1fr_70px_70px_70px] gap-1 text-[10px] font-bold text-muted uppercase tracking-wider">
+                    <span>Service</span>
+                    <span className="text-right">Quote</span>
+                    <span className="text-right">Cost</span>
+                    <span className="text-right">Profit</span>
+                  </div>
+
+                  {/* Service rows */}
+                  <div className="space-y-1.5">
+                    {lines.map((l, i) => (
+                      <div key={i}>
+                        <div className="grid grid-cols-[1fr_70px_70px_70px] gap-1 items-center">
+                          <span className={`text-xs font-medium ${l.indent ? 'text-muted' : 'text-primary'} truncate`}>{l.label}</span>
+                          <span className="text-xs text-right font-semibold text-primary">${fmt(l.quote)}</span>
+                          <span className="text-xs text-right text-muted">{l.cost > 0 ? `$${fmt(l.cost)}` : '\u2014'}</span>
+                          <span className={`text-xs text-right font-semibold ${(l.quote - l.cost) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>${fmt(l.quote - l.cost)}</span>
+                        </div>
+                        {l.detail && <p className="text-[10px] text-muted mt-0.5">{l.detail}</p>}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Totals */}
+                  <div className="border-t-2 border-border-subtle pt-3">
+                    <div className="grid grid-cols-[1fr_70px_70px_70px] gap-1 items-center">
+                      <span className="text-sm font-bold text-primary">TOTAL</span>
+                      <span className="text-sm text-right font-bold text-primary">${fmt(totalQuote)}</span>
+                      <span className="text-sm text-right font-bold text-muted">${fmt(totalCost)}</span>
+                      <span className={`text-sm text-right font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>${fmt(totalProfit)}</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {has('mulch') && mulchCalc.quote > 0 && (
-              <div>
-                <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Mulch</p>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Material</span><span className="text-primary">${fmt(mulchCalc.material)}</span></div>
-                  {mulchCalc.equipment > 0 && <div className="flex justify-between text-xs"><span className="text-secondary">Equipment</span><span className="text-primary">${fmt(mulchCalc.equipment)}</span></div>}
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Delivery</span><span className="text-primary">${fmt(mulchCalc.delivery)}</span></div>
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Tax</span><span className="text-primary">${fmt(mulchCalc.tax)}</span></div>
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Service</span><span className="text-primary">${fmt(mulchCalc.labor)}</span></div>
-                  <div className="flex justify-between text-sm font-semibold border-t border-border-subtle pt-1 mt-1"><span className="text-primary">Mulch Quote</span><span className="text-emerald-600">${fmt(mulchCalc.quote)}</span></div>
-                </div>
-              </div>
-            )}
-
-            {has('rock') && rockCalc.quote > 0 && (
-              <div>
-                <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Rock</p>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Material</span><span className="text-primary">${fmt(rockCalc.material)}</span></div>
-                  {rockCalc.equipment > 0 && <div className="flex justify-between text-xs"><span className="text-secondary">Equipment</span><span className="text-primary">${fmt(rockCalc.equipment)}</span></div>}
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Delivery</span><span className="text-primary">${fmt(rockCalc.delivery)}</span></div>
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Tax</span><span className="text-primary">${fmt(rockCalc.tax)}</span></div>
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Service</span><span className="text-primary">${fmt(rockCalc.labor)}</span></div>
-                  <div className="flex justify-between text-sm font-semibold border-t border-border-subtle pt-1 mt-1"><span className="text-primary">Rock Quote</span><span className="text-emerald-600">${fmt(rockCalc.quote)}</span></div>
-                </div>
-              </div>
-            )}
-
-            {has('edging') && edgingCalc.quote > 0 && (
-              <div>
-                <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Edging</p>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Material</span><span className="text-primary">${fmt(edgingCalc.material)}</span></div>
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Delivery</span><span className="text-primary">${fmt(edgingCalc.delivery)}</span></div>
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Tax</span><span className="text-primary">${fmt(edgingCalc.tax)}</span></div>
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Service</span><span className="text-primary">${fmt(edgingCalc.labor)}</span></div>
-                  <div className="flex justify-between text-sm font-semibold border-t border-border-subtle pt-1 mt-1"><span className="text-primary">Edging Quote</span><span className="text-emerald-600">${fmt(edgingCalc.quote)}</span></div>
-                </div>
-              </div>
-            )}
-
-            {has('pine') && pineCalc.quote > 0 && (
-              <div>
-                <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Pine Needles</p>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Material</span><span className="text-primary">${fmt(pineCalc.materialCostTotal)}</span></div>
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Delivery</span><span className="text-primary">${fmt(pineCalc.delivery)}</span></div>
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Tax</span><span className="text-primary">${fmt(pineCalc.materialTax)}</span></div>
-                  <div className="flex justify-between text-sm font-semibold border-t border-border-subtle pt-1 mt-1"><span className="text-primary">Pine Quote</span><span className="text-emerald-600">${fmt(pineCalc.quote)}</span></div>
-                </div>
-              </div>
-            )}
-
-            {has('leafCleanup') && leafCleanupCalc.quote > 0 && (
-              <div>
-                <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Leaf Cleanup</p>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs"><span className="text-secondary">Base</span><span className="text-primary">${fmt(leafCleanupCalc.base)}</span></div>
-                  {leafCleanupCalc.fenceFee > 0 && <div className="flex justify-between text-xs"><span className="text-secondary">Fence Fee</span><span className="text-primary">${fmt(leafCleanupCalc.fenceFee)}</span></div>}
-                  {leafCleanupCalc.haulFee > 0 && <div className="flex justify-between text-xs"><span className="text-secondary">Haul Fee</span><span className="text-primary">${fmt(leafCleanupCalc.haulFee)}</span></div>}
-                  {leafCleanupCalc.multiplier > 1 && <div className="flex justify-between text-xs"><span className="text-secondary">Difficulty</span><span className="text-primary">{leafCleanupCalc.multiplier}x (Hard)</span></div>}
-                  {leafCleanupCalc.minApplied && <div className="flex justify-between text-xs"><span className="text-secondary">Note</span><span className="text-primary">Min applied</span></div>}
-                  <div className="flex justify-between text-sm font-semibold border-t border-border-subtle pt-1 mt-1"><span className="text-primary">Leaf Cleanup Quote</span><span className="text-emerald-600">${fmt(leafCleanupCalc.quote)}</span></div>
-                </div>
-              </div>
-            )}
-
-            {otherCalcs.quote > 0 && (
-              <div>
-                <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Other Services</p>
-                <div className="space-y-1">
-                  {has('bushes') && num(data.other.bushes) > 0 && <div className="flex justify-between text-xs"><span className="text-secondary">Bushes</span><span className="text-primary">${fmt(num(data.other.bushes))}</span></div>}
-                  {has('overgrown') && num(data.other.overgrown) > 0 && <div className="flex justify-between text-xs"><span className="text-secondary">Overgrown</span><span className="text-primary">${fmt(num(data.other.overgrown))}</span></div>}
-                  <div className="flex justify-between text-sm font-semibold border-t border-border-subtle pt-1 mt-1"><span className="text-primary">Other Quote</span><span className="text-emerald-600">${fmt(otherCalcs.quote)}</span></div>
-                </div>
-              </div>
-            )}
-
-            {/* Combined Expenses */}
-            <div className="border-t-2 border-border-subtle pt-3">
-              <p className="text-xs font-bold text-secondary uppercase tracking-wide mb-2">Combined Expenses</p>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm"><span className="text-secondary">Material</span><span className="font-medium text-primary">${fmt(summary.totalMaterial)}</span></div>
-                {summary.totalEquipment > 0 && <div className="flex justify-between text-sm"><span className="text-secondary">Equipment</span><span className="font-medium text-primary">${fmt(summary.totalEquipment)}</span></div>}
-                <div className="flex justify-between text-sm"><span className="text-secondary">Delivery</span><span className="font-medium text-primary">${fmt(summary.totalDelivery)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-secondary">Tax (7%)</span><span className="font-medium text-primary">${fmt(summary.totalTax)}</span></div>
-              </div>
-              <div className="border-t border-border-subtle mt-2 pt-2">
-                <div className="flex justify-between text-sm font-semibold"><span className="text-primary">Total Expenses</span><span className="text-primary">${fmt(summary.totalExpenses)}</span></div>
-              </div>
-            </div>
-
-            {/* Estimated Profit */}
-            <div className="border-t border-border-subtle pt-3">
-              <div className="flex justify-between text-base font-bold"><span className="text-primary">Estimated Profit</span><span className={summary.totalLabor >= 0 ? 'text-emerald-600' : 'text-red-500'}>${fmt(summary.totalLabor)}</span></div>
-            </div>
+              );
+            })()}
 
             <button onClick={handleSave} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer">
               <Save size={16} /> Save Quote

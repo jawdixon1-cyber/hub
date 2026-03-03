@@ -145,20 +145,20 @@ export const initialFieldOpsGuides = [
 
 export const initialGMGuides = [
   {
-    id: 'gm-expectations-playbook',
-    title: 'Making Expectations Stick',
+    id: 'gm-standards-playbook',
+    title: 'Making Standards Stick',
     category: 'General Manager',
     type: 'gm-people',
-    content: '<h2>How to make expectations more than words on a screen</h2><p>Having an Expectations page in the app is step one. Making your crew actually live those values and responsibilities is the real work. This playbook is your system for turning expectations into culture.</p>' +
+    content: '<h2>How to make standards more than words on a screen</h2><p>Having a Standards page in the app is step one. Making your crew actually live those values and responsibilities is the real work. This playbook is your system for turning standards into culture.</p>' +
       '<h2>Make It Part of the Routine</h2><ol>' +
-      '<li><strong>Day-one walkthrough:</strong> Every new hire sits down and reads the Expectations page together with you on their first day. Don\'t just hand them a phone — walk through each value and each responsibility. Explain <em>why</em> each one matters. <mark>Why: If they don\'t hear it from you directly, it\'s just another screen they\'ll forget.</mark></li>' +
+      '<li><strong>Day-one walkthrough:</strong> Every new hire sits down and reads the Standards page together with you on their first day. Don\'t just hand them a phone — walk through each value and each responsibility. Explain <em>why</em> each one matters. <mark>Why: If they don\'t hear it from you directly, it\'s just another screen they\'ll forget.</mark></li>' +
       '<li><strong>Reference by number:</strong> When giving feedback, tie it to a specific responsibility. "Hey, that\'s number 5 — communicate issues immediately." Using the number system makes it fast and clear. <mark>Why: A shared shorthand builds accountability without long lectures.</mark></li>' +
       '<li><strong>Weekly meeting review:</strong> Pick one value or responsibility each week and spend 2 minutes discussing it in your team meeting. Ask: "Who has an example of this from the past week?" <mark>Why: Repetition is how values move from a page into people\'s heads.</mark></li>' +
       '</ol>' +
       '<h2>Tie It to Accountability</h2><ol>' +
-      '<li><strong>Use it in corrections:</strong> When someone misses a checklist or doesn\'t log mileage, don\'t make it personal — point to the Expectations page. "This is the standard for the seat. It\'s not a surprise." <mark>Why: Making expectations black and white removes emotion from accountability conversations.</mark></li>' +
+      '<li><strong>Use it in corrections:</strong> When someone misses a checklist or doesn\'t log mileage, don\'t make it personal — point to the Standards page. "This is the standard for the seat. It\'s not a surprise." <mark>Why: Making standards black and white removes emotion from accountability conversations.</mark></li>' +
       '<li><strong>Performance check-ins:</strong> In one-on-ones, go through all 5 responsibilities: "How are you doing on each of these?" Let them self-assess first, then share your view. <mark>Why: Self-assessment builds ownership. If they know the standard, they can hold themselves to it.</mark></li>' +
-      '<li><strong>Track what you can:</strong> Checklist completion rates, mileage logs, receipt submissions — these are measurable. Review them weekly. If someone is at 60% checklist completion, the conversation is easy: the expectation is 100%. <mark>Why: Data removes opinion from performance conversations.</mark></li>' +
+      '<li><strong>Track what you can:</strong> Checklist completion rates, mileage logs, receipt submissions — these are measurable. Review them weekly. If someone is at 60% checklist completion, the conversation is easy: the standard is 100%. <mark>Why: Data removes opinion from performance conversations.</mark></li>' +
       '</ol>' +
       '<h2>Lead with the Values</h2><ol>' +
       '<li><strong>Catch people doing it right:</strong> When someone goes the extra mile, call it out publicly. "That right there — that\'s Go the Extra Mile. That\'s what we\'re about." <mark>Why: Public recognition of values in action is the strongest culture-building tool you have.</mark></li>' +
@@ -166,7 +166,7 @@ export const initialGMGuides = [
       '<li><strong>Model it yourself:</strong> If you expect Clean Finish Clean Reset but your truck is a mess, you\'ve lost credibility. Live the values louder than you preach them. <mark>Why: Your crew watches what you do, not what you say.</mark></li>' +
       '</ol>' +
       '<h2>The Repetition Rule</h2><p><strong>Say the values and responsibilities so often that your crew can recite them without looking at the app.</strong> That\'s the benchmark. If you ask a crew member "What are our 3 values?" and they hesitate, you haven\'t said it enough yet.</p>' +
-      '<p>Culture isn\'t built in a meeting — it\'s built in the 100 small moments every week where you either reinforce the standard or let it slide. The Expectations page gives you the tool. This playbook is how you use it.</p>',
+      '<p>Culture isn\'t built in a meeting — it\'s built in the 100 small moments every week where you either reinforce the standard or let it slide. The Standards page gives you the tool. This playbook is how you use it.</p>',
   },
   {
     id: 'gm-weekly-team-meeting',
@@ -206,7 +206,7 @@ export const initialGMGuides = [
       '<li><strong>Prep the truck:</strong> Uniform ready, gear assigned, truck stocked. They should feel expected, not like an afterthought.</li>' +
       '</ol>' +
       '<h2>Day 1</h2><ol>' +
-      '<li><strong>Expectations walkthrough:</strong> Sit down together and go through the Expectations page in the app. Read every value and every responsibility out loud. Ask them what each one means to them. <mark>Why: This is the most important conversation you\'ll have with them. It sets the tone for everything.</mark></li>' +
+      '<li><strong>Standards walkthrough:</strong> Sit down together and go through the Standards page in the app. Read every value and every responsibility out loud. Ask them what each one means to them. <mark>Why: This is the most important conversation you\'ll have with them. It sets the tone for everything.</mark></li>' +
       '<li><strong>App tour:</strong> Walk them through the app — checklists, playbooks, mileage, receipts. Show them what they\'ll use every day. Have them complete their first opening checklist with you watching.</li>' +
       '<li><strong>Shadow the buddy:</strong> They ride with their buddy all day. Watch, ask questions, learn the route. No solo work on day one.</li>' +
       '</ol>' +
@@ -237,13 +237,13 @@ export const initialGMGuides = [
     type: 'gm-people',
     content: '<h2>How to give direct feedback, correct underperformance, and let someone go</h2><p>Hard conversations are the price of leadership. Avoiding them doesn\'t make problems go away — it makes them worse and poisons the team. This playbook gives you a framework so you can be direct without being cruel.</p>' +
       '<h2>The 3 Strikes Framework</h2><p>Before you fire anyone, they should have had 3 clear conversations. Not hints. Not passive-aggressive comments. Direct, documented conversations.</p><ol>' +
-      '<li><strong>Strike 1 — The coaching conversation:</strong> Pull them aside, same day as the issue. "Hey, I noticed [specific behavior]. The expectation is [specific standard — reference the number]. What happened?" Listen. Then: "Here\'s what I need to see going forward. Can you do that?" <mark>Why: Most people will correct course when the expectation is made clear. Give them the chance.</mark></li>' +
-      '<li><strong>Strike 2 — The formal conversation:</strong> If the behavior repeats, this is a sit-down. "We talked about this on [date]. The expectation hasn\'t changed, but the behavior has. This is serious. If it happens again, we\'ll need to part ways. I don\'t want that — do you?" Document this conversation with the date and what was said. <mark>Why: Strike 2 removes all ambiguity. They know exactly where they stand.</mark></li>' +
+      '<li><strong>Strike 1 — The coaching conversation:</strong> Pull them aside, same day as the issue. "Hey, I noticed [specific behavior]. The standard is [specific standard — reference the number]. What happened?" Listen. Then: "Here\'s what I need to see going forward. Can you do that?" <mark>Why: Most people will correct course when the standard is made clear. Give them the chance.</mark></li>' +
+      '<li><strong>Strike 2 — The formal conversation:</strong> If the behavior repeats, this is a sit-down. "We talked about this on [date]. The standard hasn\'t changed, but the behavior has. This is serious. If it happens again, we\'ll need to part ways. I don\'t want that — do you?" Document this conversation with the date and what was said. <mark>Why: Strike 2 removes all ambiguity. They know exactly where they stand.</mark></li>' +
       '<li><strong>Strike 3 — The exit conversation:</strong> "We\'ve had this conversation twice. The standard hasn\'t been met. Today is your last day." Keep it short, keep it factual, keep it respectful. <mark>Why: By strike 3, both of you know this is coming. Don\'t drag it out.</mark></li>' +
       '</ol>' +
       '<h2>How to Actually Say It</h2><ol>' +
       '<li><strong>Be specific, not general:</strong> "You\'ve been late 3 times this month" — not "You have an attendance problem." <mark>Why: Specific = actionable. General = defensive.</mark></li>' +
-      '<li><strong>Use the Expectations page:</strong> "Responsibility #4 is show up on time, in uniform, ready to work. That\'s the standard for the seat." <mark>Why: It\'s not your opinion — it\'s the documented expectation. This removes emotion from the conversation.</mark></li>' +
+      '<li><strong>Use the Standards page:</strong> "Responsibility #4 is show up on time, in uniform, ready to work. That\'s the standard for the seat." <mark>Why: It\'s not your opinion — it\'s the documented standard. This removes emotion from the conversation.</mark></li>' +
       '<li><strong>Ask, don\'t assume:</strong> "What happened?" before "Here\'s what you did wrong." Sometimes there\'s context you don\'t have. <mark>Why: Asking first shows respect and sometimes reveals a real problem you can help solve.</mark></li>' +
       '<li><strong>End with clarity:</strong> "So we\'re aligned — what are you going to do differently starting tomorrow?" Get them to say it back. <mark>Why: If they can\'t articulate the change, they won\'t make it.</mark></li>' +
       '</ol>' +
@@ -510,13 +510,13 @@ export const initialPolicies = [
     title: 'New Hire Onboarding',
     category: 'Onboarding',
     summary: 'Orientation, training, and first-week requirements for new employees.',
-    content: `All new hires must complete the following before their first day in the field:\n\n1. Submit completed application, W-4, I-9, and direct deposit forms.\n2. Pass a background check and drug screening.\n3. Complete a 4-hour orientation covering company history, values, and expectations.\n4. Review and sign the employee handbook acknowledgment form.\n5. Complete equipment safety training (minimum 2 hours with a crew lead).\n6. Shadow an experienced crew for at least 3 full working days.\n7. Pass a practical skills assessment before operating any equipment independently.\n8. Receive company uniform, PPE kit, and employee ID badge.`,
+    content: `All new hires must complete the following before their first day in the field:\n\n1. Submit completed application, W-4, I-9, and direct deposit forms.\n2. Pass a background check and drug screening.\n3. Complete a 4-hour orientation covering company history, values, and standards.\n4. Review and sign the employee handbook acknowledgment form.\n5. Complete equipment safety training (minimum 2 hours with a crew lead).\n6. Shadow an experienced crew for at least 3 full working days.\n7. Pass a practical skills assessment before operating any equipment independently.\n8. Receive company uniform, PPE kit, and employee ID badge.`,
   },
   {
     id: '53',
     title: 'Code of Conduct',
     category: 'Conduct',
-    summary: 'Workplace behavior expectations and disciplinary guidelines.',
+    summary: 'Workplace behavior standards and disciplinary guidelines.',
     content: `All employees are expected to uphold the following standards of conduct:\n\n1. Treat all colleagues, clients, and vendors with respect and courtesy.\n2. Maintain honesty and integrity in all business dealings.\n3. Protect company property, equipment, and confidential information.\n4. Report any harassment, discrimination, or unsafe conditions immediately.\n5. No alcohol or drug use before or during work hours.\n6. Personal phone use is limited to break times only.\n7. Social media posts about the company must be approved by management.\n8. Conflicts of interest must be disclosed to management.\n\nViolations may result in disciplinary action up to and including termination.`,
   },
 ];
@@ -602,19 +602,15 @@ export const initialReceiptLog = [];
 
 export const initialQuotingSettings = {
   mulchTypes: [
-    { label: 'Hardwood', pricePerYd: 36 },
-    { label: 'Black', pricePerYd: 42 },
+    { label: 'Hardwood', pricePerYd: 30 },
+    { label: 'Black', pricePerYd: 40 },
     { label: 'Brown', pricePerYd: 40 },
-    { label: 'Red', pricePerYd: 42 },
-    { label: 'Cedar', pricePerYd: 50 },
+    { label: 'Red', pricePerYd: 40 },
+    { label: 'Cedar', pricePerYd: 55 },
   ],
   rockTypes: [
-    { label: 'Pea Gravel', pricePerYd: 55 },
-    { label: 'River Rock (1-3")', pricePerYd: 75 },
-    { label: 'Crushed Granite', pricePerYd: 60 },
-    { label: 'Lava Rock', pricePerYd: 110 },
-    { label: 'Mexican Beach Pebble', pricePerYd: 300 },
-    { label: 'Marble Chips', pricePerYd: 120 },
+    { label: 'DEFO New England 1\'-2"', pricePerYd: 275 },
+    { label: 'White Rock 2x1', pricePerYd: 170 },
   ],
   volumeTiers: [
     { minYards: 0, discountPct: 0 },

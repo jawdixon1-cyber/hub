@@ -1,9 +1,27 @@
 import { useState } from 'react';
 import { X, Camera, Loader2, Plus, Trash2 } from 'lucide-react';
 
+// Compress image to reduce storage size — keeps full res for scanning, saves thumbnail for storage
+function compressImage(dataUrl, maxWidth = 800, quality = 0.6) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(1, maxWidth / img.width);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
 export default function ReceiptScanModal({ currentUser, onSubmit, onClose }) {
   const today = new Date().toISOString().slice(0, 10);
-  const [imageData, setImageData] = useState(null);
+  const [imageData, setImageData] = useState(null);       // full res for scanning
+  const [thumbnailData, setThumbnailData] = useState(null); // compressed for storage
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState(null);
   const [form, setForm] = useState({
@@ -15,14 +33,18 @@ export default function ReceiptScanModal({ currentUser, onSubmit, onClose }) {
   });
   const [scanned, setScanned] = useState(false);
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setScanError(null);
     const reader = new FileReader();
-    reader.onloadend = () => {
-      setImageData(reader.result);
+    reader.onloadend = async () => {
+      const fullRes = reader.result;
+      setImageData(fullRes);
       setScanned(false);
+      // Create compressed thumbnail for storage
+      const thumb = await compressImage(fullRes, 800, 0.6);
+      setThumbnailData(thumb);
     };
     reader.readAsDataURL(file);
   };
@@ -82,7 +104,7 @@ export default function ReceiptScanModal({ currentUser, onSubmit, onClose }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     onSubmit({
-      imageData,
+      imageData: thumbnailData || imageData, // save compressed version
       payee: form.payee,
       description: form.description,
       items: form.items.map((it) => ({ name: it.name, price: Number(it.price) || 0 })),
