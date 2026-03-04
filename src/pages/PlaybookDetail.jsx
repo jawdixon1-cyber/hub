@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Lightbulb, Pencil } from 'lucide-react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { ArrowLeft, Lightbulb, Pencil, Link as LinkIcon, Check } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
 import EditModal from '../components/EditModal';
+import { toSlug } from '../utils/slug';
 
 const gradients = {
   Quality: 'from-emerald-500 to-emerald-700',
@@ -45,12 +46,17 @@ const CATEGORY_TO_TYPE = {
 const ALL_CATEGORIES = ['Services', 'Equipment', 'Software', 'Executive Assistant', 'General Manager'];
 
 export default function PlaybookDetail({ ownerMode }) {
-  const { id } = useParams();
+  const { id, slug } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const guides = useAppStore((s) => s.guides);
   const setGuides = useAppStore((s) => s.setGuides);
 
-  const item = guides.find((g) => g.id === id);
+  const item = slug
+    ? guides.find((g) => (g.slug || toSlug(g.title)) === slug)
+    : guides.find((g) => g.id === id);
+
+  const [copied, setCopied] = useState(false);
 
   const [editing, setEditing] = useState(false);
   const [showWhy, setShowWhy] = useState(() => {
@@ -97,7 +103,8 @@ export default function PlaybookDetail({ ownerMode }) {
 
   const handleSave = (form) => {
     const type = CATEGORY_TO_TYPE[form.category] || 'service';
-    setGuides(guides.map((g) => (g.id === item.id ? { ...g, ...form, type } : g)));
+    const slug = form.slug || toSlug(form.title);
+    setGuides(guides.map((g) => (g.id === item.id ? { ...g, ...form, type, slug } : g)));
     setEditing(false);
   };
 
@@ -117,8 +124,27 @@ export default function PlaybookDetail({ ownerMode }) {
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-1">{item.category}</p>
           <h1 className="text-2xl font-bold text-primary">{item.title}</h1>
+          <p className="text-xs text-muted font-mono mt-1">/p/{item.slug || toSlug(item.title)}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 mt-1">
+          <button
+            onClick={() => {
+              const playBookSlug = item.slug || toSlug(item.title);
+              const url = `${window.location.origin}/p/${playBookSlug}`;
+              navigator.clipboard.writeText(url).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              });
+            }}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+              copied
+                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                : 'bg-surface-alt text-secondary hover:bg-surface'
+            }`}
+          >
+            {copied ? <Check size={16} /> : <LinkIcon size={16} />}
+            {copied ? 'Copied!' : 'Copy Link'}
+          </button>
           <button
             onClick={toggleWhy}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${

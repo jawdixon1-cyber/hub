@@ -1,13 +1,14 @@
 import { useState, useRef, Suspense, lazy } from 'react';
-import { X } from 'lucide-react';
+import { X, Link as LinkIcon } from 'lucide-react';
+import { toSlug } from '../utils/slug';
 
 const RichTextEditor = lazy(() => import('./RichTextEditor'));
 
 export default function EditModal({ item, categories, onSave, onClose, title, richText }) {
   const [form, setForm] = useState(() =>
     item
-      ? { title: item.title || '', category: item.category || (categories?.[0]) || '', content: item.content || '' }
-      : { title: '', category: (categories?.[0]) || '', content: '' }
+      ? { title: item.title || '', category: item.category || (categories?.[0]) || '', content: item.content || '', slug: item.slug || '' }
+      : { title: '', category: (categories?.[0]) || '', content: '', slug: '' }
   );
 
   const handleSubmit = (e) => {
@@ -53,6 +54,24 @@ export default function EditModal({ item, categories, onSave, onClose, title, ri
               className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
             />
           </div>
+          {richText && (
+            <div>
+              <label className="block text-sm font-semibold text-secondary mb-1">
+                <span className="flex items-center gap-1.5"><LinkIcon size={14} /> Short Link Slug</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted whitespace-nowrap">/p/</span>
+                <input
+                  type="text"
+                  value={form.slug || toSlug(form.title)}
+                  onChange={(e) => setForm({ ...form, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })}
+                  placeholder={toSlug(form.title) || 'e.g. mowing'}
+                  className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition font-mono text-sm"
+                />
+              </div>
+              <p className="text-xs text-muted mt-1">Custom short URL for sharing (auto-generated from title if left blank)</p>
+            </div>
+          )}
           {categories && categories.length > 0 && (
             <div>
               <label className="block text-sm font-semibold text-secondary mb-1">Category</label>

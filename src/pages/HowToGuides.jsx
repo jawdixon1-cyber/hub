@@ -6,6 +6,7 @@ import EditModal from '../components/EditModal';
 import AIPlaybookModal from '../components/AIPlaybookModal';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
+import { toSlug } from '../utils/slug';
 
 const ALL_CATEGORIES = ['Services', 'Equipment', 'Software', 'Executive Assistant', 'General Manager'];
 
@@ -130,10 +131,11 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
 
   const handleSave = (form) => {
     const type = CATEGORY_TO_TYPE[form.category] || 'service';
+    const slug = form.slug || toSlug(form.title);
     if (editing) {
-      setItems(items.map((i) => (i.id === editing.id ? { ...i, ...form, type } : i)));
+      setItems(items.map((i) => (i.id === editing.id ? { ...i, ...form, type, slug } : i)));
     } else {
-      setItems([...items, { id: genId(), ...form, type }]);
+      setItems([...items, { id: genId(), ...form, type, slug }]);
     }
     setEditing(null);
     setAdding(false);
