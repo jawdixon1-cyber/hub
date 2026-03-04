@@ -130,7 +130,7 @@ export default function PlaybookDetail({ ownerMode }) {
           <button
             onClick={() => {
               const playBookSlug = item.slug || toSlug(item.title);
-              const url = `${window.location.origin}/p/${playBookSlug}`;
+              const url = `https://lawn-care-hub.vercel.app/p/${playBookSlug}`;
               navigator.clipboard.writeText(url).then(() => {
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
