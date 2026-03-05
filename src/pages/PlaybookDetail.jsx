@@ -89,7 +89,7 @@ export default function PlaybookDetail({ ownerMode }) {
       <div className="max-w-3xl mx-auto py-12 text-center">
         <p className="text-tertiary text-lg mb-4">Playbook not found</p>
         <button
-          onClick={() => navigate('/guides')}
+          onClick={() => navigate('/guides', { state: { tab: location.state?.tab } })}
           className="inline-flex items-center gap-2 text-brand-text hover:text-brand-text-strong font-medium transition-colors"
         >
           <ArrowLeft size={18} />
@@ -112,7 +112,7 @@ export default function PlaybookDetail({ ownerMode }) {
     <div className="max-w-3xl mx-auto">
       {/* Back button */}
       <button
-        onClick={() => navigate('/guides')}
+        onClick={() => navigate('/guides', { state: { tab: location.state?.tab } })}
         className="inline-flex items-center gap-2 text-secondary hover:text-primary font-medium text-sm mb-4 transition-colors"
       >
         <ArrowLeft size={18} />

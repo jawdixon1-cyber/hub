@@ -154,13 +154,14 @@ function calcPine(p) {
 
   const bales = num(p.bales);
   const ourCost = num(p.ourCost) || 4.25;
-  const chargePerBale = num(p.chargePerBale);
+  const laborPerBale = num(p.laborPerBale);
   const delivery = num(p.delivery);
 
   const cogs = bales * ourCost;
-  const quote = (bales * chargePerBale) + delivery;
+  const totalPerBale = ourCost + laborPerBale;
+  const quote = (totalPerBale * bales) + delivery;
   const profit = quote - cogs;
-  return { cogs, quote, delivery, profit };
+  return { cogs, quote, delivery, profit, totalPerBale };
 }
 
 function calcEdging(e) {
@@ -290,12 +291,10 @@ function calcAeration(a, settings) {
     return { seedLbs: Math.round(seedLbs * 10) / 10, perLb: Math.round(perLb * 1000) / 1000, overseedQuote, overseedCogs, overseedProfit, overseedOverride: false };
   };
 
-  // Override mode — aeration price overridden
+  // Override mode — single total price for aeration + seed
   if (a.override) {
-    const aerationPrice = num(a.overridePrice);
-    const os = calcOverseed(num(a.sqft) || 0);
-    const quote = aerationPrice + os.overseedQuote;
-    return { aerationPrice, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote, override: true, ...os };
+    const quote = num(a.overridePrice);
+    return { aerationPrice: quote, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote, override: true, seedLbs: 0, overseedQuote: 0, overseedCogs: 0, overseedProfit: 0, overseedOverride: false };
   }
 
   const sqft = num(a.sqft);
@@ -554,17 +553,17 @@ export default function Quoting() {
   const defaultRockType = rockTypes[0] || { label: 'Pea Gravel', pricePerYd: 55 };
 
   const makeDefaults = () => ({
-    lawn: { sqft: '', difficulty: 'easy', override: false, overrideWeekly: '', overrideBiweekly: '' },
+    lawn: { sqft: '', difficulty: 'easy', override: false, overrideWeekly: '', overrideBiweekly: '', overrideDisplay: 'eow' },
     bushes: { small: '', medium: '', large: '', xl: '', override: false, overridePerVisit: '' },
     aeration: { sqft: '', override: false, overridePrice: '', includeOverseed: false, seedRate: '8', bagPrice: '190', ourBagCost: '84', overrideOverseed: false, overrideOverseedPrice: '' },
     mulch: { sqft: '', depth: '', materialCostPerYd: String(defaultMulchType.pricePerYd), chargePerYd: '80', difficulty: 'easy', mulchType: defaultMulchType.label, crewSize: '2', estHours: '', crewRate: '17' },
     rock: { sqft: '', depth: '3', materialCostPerYd: String(defaultRockType.pricePerYd), chargePerYd: '150', difficulty: 'easy', equipmentCost: '', rockType: defaultRockType.label, fabricRollCoverage: '900', fabricRollCost: '32.06', fabricChargePerSqft: '0.75', crewSize: '2', estHours: '', crewRate: '17' },
     edging: { linearFeet: '', unitLength: '20', costPerUnit: '', chargePerFoot: '5', difficulty: 'easy', delivery: '' },
-    pine: { bales: '', ourCost: '4.25', chargePerBale: '', delivery: '', override: false, overridePrice: '' },
+    pine: { bales: '', ourCost: '4.25', laborPerBale: '', delivery: '', override: false, overridePrice: '' },
     leafMaint: { perVisit: '', override: false, overridePerVisit: '' },
     leafCleanup: { yardSize: 'M', leafVolume: 'MED', fenceAccess: 'NONE', haulOff: false, haulLoads: '1', difficulty: 'NORMAL' },
     other: { overgrownLawn: '', overgrownBushes: '' },
-    annual: { enabled: false, lawnFrequency: 'weekly', mowingWeeks: '38', leafMaintVisits: '10', pineVisits: '1', leafVisits: '1', mulchVisits: '1', rockVisits: '1', edgingVisits: '1' },
+    annual: { enabled: false, lawnFrequency: 'weekly', mowingWeeks: '35', leafMaintVisits: '8', pineVisits: '1', leafVisits: '1', mulchVisits: '1', rockVisits: '1', edgingVisits: '1' },
   });
 
   // ─── Step state: 'list' | 'client' | 'measurements' | 'services' | 'calculator' ───
@@ -628,7 +627,7 @@ export default function Quoting() {
     if (!data.annual.enabled) return null;
     let total = 0;
     if (has('lawn') && lawnCalc.quote > 0) {
-      const weeks = num(data.annual.mowingWeeks) || 38;
+      const weeks = num(data.annual.mowingWeeks) || 35;
       const isWeekly = data.annual.lawnFrequency === 'weekly';
       const perCut = isWeekly ? lawnCalc.weekly : lawnCalc.biweekly;
       total += perCut * (isWeekly ? weeks : Math.ceil(weeks / 2));
@@ -637,7 +636,7 @@ export default function Quoting() {
       total += bushesCalc.perVisit * 3; // 3x/year: Apr, Jul, Oct
     }
     if (has('leafMaint') && leafMaintCalc.quote > 0) {
-      total += leafMaintCalc.perVisit * (num(data.annual.leafMaintVisits) || 10);
+      total += leafMaintCalc.perVisit * (num(data.annual.leafMaintVisits) || 8);
     }
     if (has('aeration') && aerationCalc.quote > 0) total += aerationCalc.quote;
     if (has('mulch') && mulchCalc.quote > 0) total += mulchCalc.quote * (num(data.annual.mulchVisits) || 1);
@@ -1200,16 +1199,39 @@ export default function Quoting() {
                           <option value="biweekly">Every Other Week</option>
                         </select>
                       </div>
-                      <InputField label="Mowing Weeks/Year" value={data.annual.mowingWeeks} onChange={(v) => update('annual', 'mowingWeeks', v)} placeholder="38" />
+                      <InputField label="Mowing Weeks/Year" value={data.annual.mowingWeeks} onChange={(v) => update('annual', 'mowingWeeks', v)} placeholder="35" />
                     </>
                   )}
-                  {has('leafMaint') && <InputField label="Leaf Maint Visits/Year" value={data.annual.leafMaintVisits} onChange={(v) => update('annual', 'leafMaintVisits', v)} placeholder="10" />}
-                  {has('pine') && <InputField label="Pine Needles ×/Year" value={data.annual.pineVisits} onChange={(v) => update('annual', 'pineVisits', v)} placeholder="1" />}
-                  {has('leafCleanup') && <InputField label="Leaf Cleanup ×/Year" value={data.annual.leafVisits} onChange={(v) => update('annual', 'leafVisits', v)} placeholder="1" />}
-                  {has('mulch') && <InputField label="Mulch ×/Year" value={data.annual.mulchVisits} onChange={(v) => update('annual', 'mulchVisits', v)} placeholder="1" />}
-                  {has('rock') && <InputField label="Rock ×/Year" value={data.annual.rockVisits} onChange={(v) => update('annual', 'rockVisits', v)} placeholder="1" />}
-                  {has('edging') && <InputField label="Edging ×/Year" value={data.annual.edgingVisits} onChange={(v) => update('annual', 'edgingVisits', v)} placeholder="1" />}
+                  {has('leafMaint') && <InputField label="Leaf Maint Visits/Year" value={data.annual.leafMaintVisits} onChange={(v) => update('annual', 'leafMaintVisits', v)} placeholder="8" />}
                 </div>
+                {(has('lawn') || has('leafMaint')) && (() => {
+                  const isWeekly = data.lawn?.override
+                    ? (data.lawn.overrideDisplay || 'eow') === 'weekly'
+                    : data.annual.lawnFrequency === 'weekly';
+                  const mowWeeks = num(data.annual.mowingWeeks) || 35;
+                  const mowVisits = isWeekly ? mowWeeks : Math.ceil(mowWeeks / 2);
+                  const leafVisits = num(data.annual.leafMaintVisits) || 8;
+                  const totalVisits = (has('lawn') ? mowVisits : 0) + (has('leafMaint') ? leafVisits : 0);
+                  return (
+                    <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                      {has('lawn') && (
+                        <div className="bg-surface-alt rounded-lg px-3 py-2 border border-border-subtle">
+                          <span className="font-bold text-primary">Mowing</span>
+                          <span className="text-muted ml-1">Mar – Oct · {mowVisits} visits ({isWeekly ? 'Weekly' : 'EOW'})</span>
+                        </div>
+                      )}
+                      {has('leafMaint') && (
+                        <div className="bg-surface-alt rounded-lg px-3 py-2 border border-border-subtle">
+                          <span className="font-bold text-primary">Leaves</span>
+                          <span className="text-muted ml-1">Nov – Feb · {leafVisits} visits (EOW)</span>
+                        </div>
+                      )}
+                      <div className="bg-surface-alt rounded-lg px-3 py-2 border border-brand">
+                        <span className="font-bold text-brand-text-strong">Total: {totalVisits} visits/year</span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -1236,6 +1258,24 @@ export default function Quoting() {
                   <div className="grid grid-cols-2 gap-3">
                     <InputField label="Weekly Price" value={data.lawn.overrideWeekly} onChange={(v) => update('lawn', 'overrideWeekly', v)} placeholder="0" prefix="$" />
                     <InputField label="Every Other Week Price" value={data.lawn.overrideBiweekly} onChange={(v) => update('lawn', 'overrideBiweekly', v)} placeholder="0" prefix="$" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-secondary mb-1.5">Show in quote summary</p>
+                    <div className="flex gap-2">
+                      {[['weekly', 'Weekly'], ['eow', 'Every Other Week']].map(([val, label]) => (
+                        <button
+                          key={val}
+                          onClick={() => update('lawn', 'overrideDisplay', val)}
+                          className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                            (data.lawn.overrideDisplay || 'eow') === val
+                              ? 'bg-brand-light text-brand-text-strong border-brand'
+                              : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </>
               ) : (
@@ -1286,11 +1326,6 @@ export default function Quoting() {
                 <>
                   <p className="text-xs text-muted">Set your own per-visit price instead of using the calculator.</p>
                   <InputField label="Per Visit Price" value={data.bushes.overridePerVisit} onChange={(v) => update('bushes', 'overridePerVisit', v)} placeholder="0" prefix="$" />
-                  {num(data.bushes.overridePerVisit) > 0 && (
-                    <div className="border-t border-border-subtle pt-4">
-                      <ReadonlyField label="Monthly Avg" value={`$${fmt(bushesCalc.monthly)}`} />
-                    </div>
-                  )}
                 </>
               ) : (
                 <>
@@ -1303,7 +1338,6 @@ export default function Quoting() {
                   <div className="border-t border-border-subtle pt-4">
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       <ReadonlyField label="Per Visit" value={`$${fmt(bushesCalc.perVisit)}`} />
-                      <ReadonlyField label="Monthly Avg" value={`$${fmt(bushesCalc.monthly)}`} />
                       <ReadonlyField label="Total Bushes" value={String(bushesCalc.totalCount)} />
                     </div>
                     {bushesCalc.perVisit === 35 && bushesCalc.totalCount > 0 && (
@@ -1366,8 +1400,8 @@ export default function Quoting() {
               </div>
               {data.aeration.override ? (
                 <>
-                  <p className="text-xs text-muted">Set your own aeration price.</p>
-                  <InputField label="Aeration Price" value={data.aeration.overridePrice} onChange={(v) => update('aeration', 'overridePrice', v)} placeholder="0" prefix="$" />
+                  <p className="text-xs text-muted">Set total price for aeration & seed combined.</p>
+                  <InputField label="Total Price (Aeration + Seed)" value={data.aeration.overridePrice} onChange={(v) => update('aeration', 'overridePrice', v)} placeholder="0" prefix="$" />
                 </>
               ) : (
                 <>
@@ -1386,66 +1420,70 @@ export default function Quoting() {
                 </>
               )}
 
-              {/* ── Overseeding toggle ── */}
-              <div className="border-t border-border-subtle pt-4">
-                <button
-                  onClick={() => update('aeration', 'includeOverseed', !data.aeration.includeOverseed)}
-                  className={`flex items-center gap-2 text-sm font-medium transition-colors cursor-pointer ${
-                    data.aeration.includeOverseed ? 'text-brand-text-strong' : 'text-muted hover:text-secondary'
-                  }`}
-                >
-                  <div className={`w-9 h-5 rounded-full transition-colors relative ${data.aeration.includeOverseed ? 'bg-brand' : 'bg-gray-300 dark:bg-gray-600'}`}>
-                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${data.aeration.includeOverseed ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                  </div>
-                  Include Seed
-                </button>
-              </div>
-
-              {data.aeration.includeOverseed && (
-                <div className="space-y-3 pl-1">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold text-secondary uppercase tracking-wide">Seed</p>
+              {!data.aeration.override && (
+                <>
+                  {/* ── Overseeding toggle ── */}
+                  <div className="border-t border-border-subtle pt-4">
                     <button
-                      onClick={() => update('aeration', 'overrideOverseed', !data.aeration.overrideOverseed)}
-                      className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
-                        data.aeration.overrideOverseed
-                          ? 'bg-brand-light text-brand-text-strong border-brand'
-                          : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                      onClick={() => update('aeration', 'includeOverseed', !data.aeration.includeOverseed)}
+                      className={`flex items-center gap-2 text-sm font-medium transition-colors cursor-pointer ${
+                        data.aeration.includeOverseed ? 'text-brand-text-strong' : 'text-muted hover:text-secondary'
                       }`}
                     >
-                      {data.aeration.overrideOverseed ? 'Override On' : 'Override'}
+                      <div className={`w-9 h-5 rounded-full transition-colors relative ${data.aeration.includeOverseed ? 'bg-brand' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${data.aeration.includeOverseed ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                      </div>
+                      Include Seed
                     </button>
                   </div>
-                  {data.aeration.overrideOverseed ? (
-                    <InputField label="Seed Price" value={data.aeration.overrideOverseedPrice} onChange={(v) => update('aeration', 'overrideOverseedPrice', v)} placeholder="0" prefix="$" />
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-3 gap-3">
-                        <InputField label="Lbs / 1,000 sqft" value={data.aeration.seedRate} onChange={(v) => update('aeration', 'seedRate', v)} placeholder="8" />
-                        <InputField label="Bag Price (50 lb)" value={data.aeration.bagPrice} onChange={(v) => update('aeration', 'bagPrice', v)} prefix="$" placeholder="190" />
-                        <InputField label="Our Bag Cost" value={data.aeration.ourBagCost} onChange={(v) => update('aeration', 'ourBagCost', v)} prefix="$" placeholder="0" />
-                      </div>
-                      {aerationCalc.seedLbs > 0 && (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                          <ReadonlyField label="Seed Needed" value={`${aerationCalc.seedLbs} lbs`} />
-                          <ReadonlyField label="Seed Quote" value={`$${fmt(aerationCalc.overseedQuote)}`} />
-                          <ReadonlyField label="Material Cost (incl. 7% tax)" value={`$${fmt(aerationCalc.overseedCogs)}`} />
-                          <ReadonlyField label="Seed Profit" value={`$${fmt(aerationCalc.overseedProfit)}`} />
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
 
-              {/* Combined total */}
-              {aerationCalc.quote > 0 && (data.aeration.includeOverseed && aerationCalc.overseedQuote > 0) && (
-                <div className="border-t border-border-subtle pt-3">
-                  <div className="flex justify-between text-sm font-bold">
-                    <span className="text-primary">Aeration + Seed Total</span>
-                    <span className="text-emerald-600">${fmt(aerationCalc.quote)}</span>
-                  </div>
-                </div>
+                  {data.aeration.includeOverseed && (
+                    <div className="space-y-3 pl-1">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold text-secondary uppercase tracking-wide">Seed</p>
+                        <button
+                          onClick={() => update('aeration', 'overrideOverseed', !data.aeration.overrideOverseed)}
+                          className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                            data.aeration.overrideOverseed
+                              ? 'bg-brand-light text-brand-text-strong border-brand'
+                              : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                          }`}
+                        >
+                          {data.aeration.overrideOverseed ? 'Override On' : 'Override'}
+                        </button>
+                      </div>
+                      {data.aeration.overrideOverseed ? (
+                        <InputField label="Seed Price" value={data.aeration.overrideOverseedPrice} onChange={(v) => update('aeration', 'overrideOverseedPrice', v)} placeholder="0" prefix="$" />
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-3 gap-3">
+                            <InputField label="Lbs / 1,000 sqft" value={data.aeration.seedRate} onChange={(v) => update('aeration', 'seedRate', v)} placeholder="8" />
+                            <InputField label="Bag Price (50 lb)" value={data.aeration.bagPrice} onChange={(v) => update('aeration', 'bagPrice', v)} prefix="$" placeholder="190" />
+                            <InputField label="Our Bag Cost" value={data.aeration.ourBagCost} onChange={(v) => update('aeration', 'ourBagCost', v)} prefix="$" placeholder="0" />
+                          </div>
+                          {aerationCalc.seedLbs > 0 && (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              <ReadonlyField label="Seed Needed" value={`${aerationCalc.seedLbs} lbs`} />
+                              <ReadonlyField label="Seed Quote" value={`$${fmt(aerationCalc.overseedQuote)}`} />
+                              <ReadonlyField label="Material Cost (incl. 7% tax)" value={`$${fmt(aerationCalc.overseedCogs)}`} />
+                              <ReadonlyField label="Seed Profit" value={`$${fmt(aerationCalc.overseedProfit)}`} />
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Combined total */}
+                  {aerationCalc.quote > 0 && (data.aeration.includeOverseed && aerationCalc.overseedQuote > 0) && (
+                    <div className="border-t border-border-subtle pt-3">
+                      <div className="flex justify-between text-sm font-bold">
+                        <span className="text-primary">Aeration + Seed Total</span>
+                        <span className="text-emerald-600">${fmt(aerationCalc.quote)}</span>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1696,10 +1734,10 @@ export default function Quoting() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <InputField label="Bales" value={data.pine.bales} onChange={(v) => update('pine', 'bales', v)} placeholder="0" />
                     <InputField label="Our Cost / Bale" value={data.pine.ourCost} onChange={(v) => update('pine', 'ourCost', v)} prefix="$" placeholder="4.25" />
-                    <InputField label="Charge / Bale" value={data.pine.chargePerBale} onChange={(v) => update('pine', 'chargePerBale', v)} prefix="$" placeholder="0" />
+                    <InputField label="Labor / Bale" value={data.pine.laborPerBale} onChange={(v) => update('pine', 'laborPerBale', v)} prefix="$" placeholder="0" />
                     <InputField label="Delivery" value={data.pine.delivery} onChange={(v) => update('pine', 'delivery', v)} prefix="$" placeholder="0" />
                   </div>
-                  {num(data.pine.bales) > 0 && num(data.pine.chargePerBale) > 0 && (
+                  {num(data.pine.bales) > 0 && num(data.pine.laborPerBale) > 0 && (
                     <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border-subtle">
                       <ReadonlyField label="Quote" value={`$${fmt(pineCalc.quote)}`} />
                       <ReadonlyField label="Material Cost" value={`$${fmt(pineCalc.cogs)}`} />
@@ -1818,10 +1856,12 @@ export default function Quoting() {
               let totalCost = 0;
 
               if (has('lawn') && lawnCalc.quote > 0) {
-                const isWeekly = data.annual.lawnFrequency === 'weekly';
+                const isWeekly = data.lawn.override
+                  ? (data.lawn.overrideDisplay || 'eow') === 'weekly'
+                  : data.annual.lawnFrequency === 'weekly';
                 const perCut = isWeekly ? lawnCalc.weekly : lawnCalc.biweekly;
                 if (isAnnual) {
-                  const weeks = num(data.annual.mowingWeeks) || 38;
+                  const weeks = num(data.annual.mowingWeeks) || 35;
                   const cuts = isWeekly ? weeks : Math.ceil(weeks / 2);
                   const annual = perCut * cuts;
                   lines.push({ label: 'Lawn Maintenance', per: perCut, times: cuts, timesLabel: isWeekly ? `${cuts} cuts` : `${cuts} cuts (EOW)`, quote: annual, cost: 0 });
@@ -1839,7 +1879,7 @@ export default function Quoting() {
               }
               if (has('leafMaint') && leafMaintCalc.quote > 0) {
                 if (isAnnual) {
-                  const visits = num(data.annual.leafMaintVisits) || 10;
+                  const visits = num(data.annual.leafMaintVisits) || 8;
                   const annual = leafMaintCalc.perVisit * visits;
                   lines.push({ label: 'Leaf Maintenance', per: leafMaintCalc.perVisit, times: visits, timesLabel: `${visits}×/yr`, quote: annual, cost: 0 });
                 } else {

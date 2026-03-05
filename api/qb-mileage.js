@@ -1,7 +1,7 @@
 // Pushes a mileage entry to QuickBooks as an Expense
 import { createClient } from '@supabase/supabase-js';
 
-const IRS_MILEAGE_RATE = 0.70; // 2026 IRS standard mileage rate
+const IRS_MILEAGE_RATE = 0.725; // 2026 IRS standard mileage rate
 const QBO_BASE = 'https://quickbooks.api.intuit.com'; // production
 // const QBO_BASE = 'https://sandbox-quickbooks.api.intuit.com'; // sandbox
 

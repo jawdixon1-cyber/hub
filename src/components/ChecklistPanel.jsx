@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Gauge, Check } from 'lucide-react';
+import { Gauge, Check, ChevronDown } from 'lucide-react';
 import { genId } from '../data';
 import renderLinkedText from '../utils/renderLinkedText';
 import QuickLinks from './QuickLinks';
@@ -54,12 +54,17 @@ function ChecklistItem({ item, checked, onToggle }) {
 
 /* ─── Mileage Checklist Row ─── */
 
+const vdn = (v) => v.nickname || [v.year, v.make, v.model].filter(Boolean).join(' ') || v.name || '';
+const vdesc = (v) => { const p = [v.year, v.make, v.model].filter(Boolean).join(' '); return v.nickname && p ? p : ''; };
+
 function MileageRow({ vehicles, onSubmit }) {
   const [expanded, setExpanded] = useState(false);
   const [vehicleId, setVehicleId] = useState('');
   const [odometer, setOdometer] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [justCompleted, setJustCompleted] = useState(false);
+  const [vehOpen, setVehOpen] = useState(false);
+  const vehRef = useRef(null);
 
   const handleRowClick = () => {
     if (!submitted) setExpanded((prev) => !prev);
@@ -76,14 +81,14 @@ function MileageRow({ vehicles, onSubmit }) {
 
   return (
     <div
-      className={`relative overflow-hidden rounded-xl select-none transition-all duration-300 ${
+      className={`relative rounded-xl select-none transition-all duration-300 ${
         submitted
           ? 'bg-brand-light/50'
           : 'bg-card hover:bg-surface-alt active:scale-[0.98]'
       }`}
     >
       {justCompleted && (
-        <div className="absolute inset-0 dc-sweep-fill" />
+        <div className="absolute inset-0 dc-sweep-fill rounded-xl" />
       )}
       {/* Row header — looks like a normal checklist item */}
       <div
@@ -112,23 +117,45 @@ function MileageRow({ vehicles, onSubmit }) {
       {/* Expanded inline form */}
       {expanded && !submitted && (
         <div className="px-4 pb-3 space-y-2">
-          <select
-            value={vehicleId}
-            onChange={(e) => setVehicleId(e.target.value)}
-            className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-primary text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition"
-          >
-            <option value="">Select vehicle...</option>
-            {vehicles.map((v) => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
-          </select>
+          <div ref={vehRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setVehOpen((p) => !p)}
+              className="w-full flex items-center justify-between rounded-lg border border-border-strong bg-card px-4 py-2.5 text-left text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition cursor-pointer"
+            >
+              {vehicleId ? (
+                <span className="flex items-center gap-2">
+                  <span className="text-primary">{vdn(vehicles.find((v) => v.id === vehicleId) || {})}</span>
+                  {vdesc(vehicles.find((v) => v.id === vehicleId) || {}) && <span className="text-xs text-muted">{vdesc(vehicles.find((v) => v.id === vehicleId) || {})}</span>}
+                </span>
+              ) : (
+                <span className="text-placeholder-muted">Select vehicle...</span>
+              )}
+              <ChevronDown size={14} className={`text-muted shrink-0 transition-transform ${vehOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {vehOpen && (
+              <div className="absolute z-50 left-0 right-0 bottom-full mb-1 bg-card rounded-xl border border-border-subtle shadow-xl max-h-48 overflow-y-auto">
+                {vehicles.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => { setVehicleId(v.id); setVehOpen(false); }}
+                    className={`w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-surface-alt transition-colors cursor-pointer ${v.id === vehicleId ? 'bg-surface-alt' : ''}`}
+                  >
+                    <span className="text-sm text-primary">{vdn(v)}</span>
+                    {vdesc(v) && <span className="text-xs text-muted">{vdesc(v)}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex gap-2">
             <input
               type="number"
               min="0"
               value={odometer}
               onChange={(e) => setOdometer(e.target.value)}
-              placeholder="Odometer reading"
+              placeholder="Miles driven"
               className="flex-1 rounded-lg border border-border-strong bg-card px-4 py-2.5 text-primary text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition"
             />
             <button
@@ -255,6 +282,7 @@ export default function ChecklistPanel({ title, items, checklistType, checklistL
     mileage.onSubmit(data);
     setMileageSubmitted(true);
   };
+
 
   // Group items by headers
   const groups = useMemo(() => {

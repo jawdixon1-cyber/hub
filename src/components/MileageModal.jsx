@@ -1,5 +1,65 @@
-import { useState } from 'react';
-import { X } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { X, ChevronDown } from 'lucide-react';
+
+const dn = (v) => v.nickname || [v.year, v.make, v.model].filter(Boolean).join(' ') || v.name || '';
+const desc = (v) => {
+  const parts = [v.year, v.make, v.model].filter(Boolean).join(' ');
+  return v.nickname && parts ? parts : '';
+};
+
+function VehicleSelect({ vehicles, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = vehicles.find((v) => v.id === value);
+
+  const sorted = vehicles;
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between rounded-lg border border-border-strong bg-card px-4 py-2.5 text-left focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition cursor-pointer"
+      >
+        {selected ? (
+          <span className="flex items-center gap-2">
+            <span className="text-primary">{dn(selected)}</span>
+            {desc(selected) && <span className="text-xs text-muted">{desc(selected)}</span>}
+          </span>
+        ) : (
+          <span className="text-placeholder-muted">Select vehicle...</span>
+        )}
+        <ChevronDown size={16} className={`text-muted shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-card rounded-xl border border-border-subtle shadow-xl max-h-60 overflow-y-auto">
+          {sorted.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => { onChange(v.id); setOpen(false); }}
+              className={`w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-surface-alt transition-colors cursor-pointer ${
+                v.id === value ? 'bg-surface-alt' : ''
+              }`}
+            >
+              <span className="text-sm text-primary">{dn(v)}</span>
+              {desc(v) && <span className="text-xs text-muted">{desc(v)}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* Hidden input for form validation */}
+      <input type="text" required value={value} onChange={() => {}} className="sr-only" tabIndex={-1} />
+    </div>
+  );
+}
 
 export default function MileageModal({ vehicles, currentUser, onSubmit, onClose }) {
   const today = new Date().toISOString().slice(0, 10);
@@ -31,17 +91,11 @@ export default function MileageModal({ vehicles, currentUser, onSubmit, onClose 
         <form onSubmit={handleSubmit} className="p-8 overflow-y-auto space-y-5">
           <div>
             <label className="block text-sm font-semibold text-secondary mb-1">Vehicle</label>
-            <select
-              required
+            <VehicleSelect
+              vehicles={vehicles}
               value={form.vehicleId}
-              onChange={(e) => setForm({ ...form, vehicleId: e.target.value })}
-              className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-primary focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition"
-            >
-              <option value="">Select vehicle...</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>{v.name}</option>
-              ))}
-            </select>
+              onChange={(id) => setForm({ ...form, vehicleId: id })}
+            />
           </div>
 
           <div>

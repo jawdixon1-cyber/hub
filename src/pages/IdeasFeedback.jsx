@@ -90,24 +90,29 @@ export function IdeasFeedbackContent({ filterByUser, compact, autoSubmit }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <Lightbulb size={compact ? 18 : 22} className="text-amber-500" />
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          {!compact && (
+            <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+              <Lightbulb size={20} className="text-amber-500" />
+            </div>
+          )}
+          {compact && <Lightbulb size={18} className="text-amber-500" />}
+          <div>
             <h2 className={`${compact ? 'text-lg' : 'text-2xl'} font-bold text-primary`}>
               {filterByUser ? 'My Ideas & Feedback' : 'Ideas & Feedback'}
             </h2>
+            {!compact && (
+              <p className="text-sm text-tertiary">{baseSuggestions.length} {baseSuggestions.length === 1 ? 'submission' : 'submissions'}</p>
+            )}
           </div>
-          {!compact && (
-            <p className="text-tertiary mt-1">Submit ideas to improve the business or feedback on the software</p>
-          )}
         </div>
         {!adding && (
           <button
             onClick={() => setAdding(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500 text-white font-medium text-sm hover:bg-amber-600 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold text-sm hover:opacity-90 transition-opacity cursor-pointer"
           >
-            <Plus size={18} /> Submit
+            <Plus size={16} /> Submit
           </button>
         )}
       </div>
@@ -191,87 +196,94 @@ export function IdeasFeedbackContent({ filterByUser, compact, autoSubmit }) {
         </div>
       )}
 
-      <div className="flex items-center gap-1 bg-surface-alt p-1 rounded-xl w-fit mb-6 overflow-x-auto">
-        {filterTabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setFilter(t.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
-              filter === t.key
-                ? 'bg-card text-primary shadow-sm'
-                : 'text-tertiary hover:text-secondary'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-12 text-center">
-          <Lightbulb size={40} className="text-muted mx-auto mb-3" />
-          <p className="text-muted text-sm">
-            {baseSuggestions.length === 0
-              ? filterByUser
-                ? 'You haven\'t submitted any ideas or feedback yet.'
-                : 'No submissions yet. Be the first to share an idea or give feedback!'
-              : 'No submissions in this category.'}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {filtered.map((item) => {
-            const typeInfo = TYPE_ICON[item.type] || TYPE_ICON.idea;
-            const ItemIcon = typeInfo.Icon;
-            return (
-              <div
-                key={item.id}
-                className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5"
+      {/* Wrapped card container */}
+      <div className="bg-card rounded-2xl shadow-sm border border-border-subtle">
+        <div className="p-5 pb-0">
+          <div className="flex items-center gap-1 bg-surface-alt p-1 rounded-xl w-fit overflow-x-auto">
+            {filterTabs.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setFilter(t.key)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                  filter === t.key
+                    ? 'bg-card text-primary shadow-sm'
+                    : 'text-tertiary hover:text-secondary'
+                }`}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <ItemIcon size={16} className={`${typeInfo.color} shrink-0`} />
-                      <h3 className="text-base font-bold text-primary">{item.title}</h3>
-                    </div>
-                    <p className="text-sm text-secondary mt-1 ml-6 whitespace-pre-line">{item.description}</p>
-                    <div className="flex items-center gap-3 mt-3 ml-6">
-                      <p className="text-xs text-muted">
-                        {item.submittedBy} &middot; {item.date}
-                      </p>
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[item.status] || 'bg-surface-alt text-secondary'}`}>
-                        {item.status}
-                      </span>
-                    </div>
-                    {ownerMode && (
-                      <div className="flex flex-wrap gap-2 mt-3 ml-6">
-                        {['New', 'Reviewing', 'Approved', 'Implemented', 'Rejected']
-                          .filter((s) => s !== item.status)
-                          .map((s) => (
-                            <button
-                              key={s}
-                              onClick={() => handleStatus(item.id, s)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${STATUS_COLORS[s]} hover:opacity-80`}
-                            >
-                              {s}
-                            </button>
-                          ))}
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 dark:bg-red-900/40 dark:text-red-400 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-900/60 transition-colors cursor-pointer"
-                        >
-                          <Trash2 size={12} />
-                          Delete
-                        </button>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="px-5 pb-5 space-y-4 mt-4">
+
+        {filtered.length === 0 ? (
+          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-12 text-center">
+            <Lightbulb size={40} className="text-muted mx-auto mb-3" />
+            <p className="text-muted text-sm">
+              {baseSuggestions.length === 0
+                ? filterByUser
+                  ? 'You haven\'t submitted any ideas or feedback yet.'
+                  : 'No submissions yet. Be the first to share an idea or give feedback!'
+                : 'No submissions in this category.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filtered.map((item) => {
+              const typeInfo = TYPE_ICON[item.type] || TYPE_ICON.idea;
+              const ItemIcon = typeInfo.Icon;
+              return (
+                <div
+                  key={item.id}
+                  className="bg-card rounded-xl shadow-sm border border-border-subtle p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <ItemIcon size={16} className={`${typeInfo.color} shrink-0`} />
+                        <h3 className="text-base font-bold text-primary">{item.title}</h3>
                       </div>
-                    )}
+                      <p className="text-sm text-secondary mt-1 ml-6 whitespace-pre-line">{item.description}</p>
+                      <div className="flex items-center gap-3 mt-3 ml-6">
+                        <p className="text-xs text-muted">
+                          {item.submittedBy} &middot; {item.date}
+                        </p>
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[item.status] || 'bg-surface-alt text-secondary'}`}>
+                          {item.status}
+                        </span>
+                      </div>
+                      {ownerMode && (
+                        <div className="flex flex-wrap gap-2 mt-3 ml-6">
+                          {['New', 'Reviewing', 'Approved', 'Implemented', 'Rejected']
+                            .filter((s) => s !== item.status)
+                            .map((s) => (
+                              <button
+                                key={s}
+                                onClick={() => handleStatus(item.id, s)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${STATUS_COLORS[s]} hover:opacity-80`}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 dark:bg-red-900/40 dark:text-red-400 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-900/60 transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={12} />
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+        )}
         </div>
-      )}
+      </div>
 
       {/* Success toast */}
       {successToast && (

@@ -173,129 +173,139 @@ export default function ReceiptTracker() {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => updateSearch(e.target.value)}
-          placeholder="Search by payee, description, or name..."
-          className="w-full rounded-xl border border-border-strong bg-card pl-10 pr-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-violet-500 placeholder:text-placeholder-muted"
-        />
-      </div>
-
-      {/* Status filter (owner only) */}
-      {ownerMode && (
-        <select
-          value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-violet-500 cursor-pointer"
-        >
-          <option value="pending">Pending ({pendingCount})</option>
-          <option value="reviewed">Reviewed</option>
-          <option value="all">All</option>
-        </select>
-      )}
-
-      {/* Per-page selector - only show with many receipts */}
-      {sorted.length > 20 && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted">Per page:</span>
-          {PER_PAGE_OPTIONS.map((n) => (
-            <button
-              key={n}
-              onClick={() => updatePerPage(n)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                perPage === n
-                  ? 'bg-surface-alt text-primary shadow-sm'
-                  : 'text-tertiary hover:text-secondary'
-              }`}
-            >
-              {n}
-            </button>
-          ))}
+      {/* Wrapped card container */}
+      <div className="bg-card rounded-2xl shadow-sm border border-border-subtle">
+        <div className="p-5 pb-0">
+          <span className="text-sm font-bold text-primary">Receipts ({sorted.length})</span>
         </div>
-      )}
+        <div className="px-5 pb-5 space-y-4 mt-4">
 
-      {/* Receipt list */}
-      {paginated.length === 0 ? (
-        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-8 text-center">
-          <Receipt size={32} className="text-muted mx-auto mb-3" />
-          <p className="text-sm font-semibold text-secondary mb-1">No receipts found</p>
-          <p className="text-xs text-muted">
-            {search || statusFilter !== 'all'
-              ? 'Try adjusting your search or filters.'
-              : 'Tap "Scan Receipt" to add your first receipt.'}
-          </p>
-        </div>
-      ) : (
-        <div className="bg-card rounded-xl shadow-sm border border-border-subtle divide-y divide-border-subtle">
-          {paginated.map((entry) => (
-            <div
-              key={entry.id}
-              onClick={() => setViewingReceipt(entry)}
-              className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface-alt/50 transition-colors"
+        {/* Filters row */}
+        <div className="flex items-center gap-3">
+          {ownerMode && (
+            <select
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+              className="flex-1 min-w-0 rounded-xl border border-border-strong bg-card px-3 py-2 text-xs font-medium text-primary outline-none focus:ring-2 focus:ring-violet-500 cursor-pointer"
             >
-              {ownerMode && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleToggleReviewed(entry.id); }}
-                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all cursor-pointer ${
-                    entry.status === 'reviewed'
-                      ? 'bg-emerald-500 border-emerald-500'
-                      : 'border-border-strong hover:border-violet-400'
-                  }`}
+              <option value="pending">Pending ({pendingCount})</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="all">All</option>
+            </select>
+          )}
+          {sorted.length > 20 && (
+            <select
+              value={perPage}
+              onChange={(e) => updatePerPage(Number(e.target.value))}
+              className="rounded-xl border border-border-strong bg-card px-3 py-2 text-xs font-medium text-primary outline-none focus:ring-2 focus:ring-violet-500 cursor-pointer"
+            >
+              {PER_PAGE_OPTIONS.map((n) => (
+                <option key={n} value={n}>{n} per page</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => updateSearch(e.target.value)}
+            placeholder="Search by payee, description, or name..."
+            className="w-full rounded-xl border border-border-strong bg-card pl-10 pr-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-violet-500 placeholder:text-placeholder-muted"
+          />
+        </div>
+
+        {/* Receipt list */}
+        {paginated.length === 0 ? (
+          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-8 text-center">
+            <Receipt size={32} className="text-muted mx-auto mb-3" />
+            <p className="text-sm font-semibold text-secondary mb-1">No receipts found</p>
+            <p className="text-xs text-muted">
+              {search || statusFilter !== 'all'
+                ? 'Try adjusting your search or filters.'
+                : 'Tap "Scan Receipt" to add your first receipt.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {paginated.map((entry) => {
+              const formattedDate = entry.date ? (() => {
+                const [y, m, d] = entry.date.split('-');
+                return y && m && d ? `${parseInt(m)}/${parseInt(d)}/${y}` : entry.date;
+              })() : '';
+              return (
+                <div
+                  key={entry.id}
+                  onClick={() => setViewingReceipt(entry)}
+                  className="bg-card rounded-xl shadow-sm border border-border-subtle p-4 cursor-pointer hover:bg-surface-alt/50 transition-colors"
                 >
-                  {entry.status === 'reviewed' && <Check size={12} className="text-white" />}
-                </button>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className={`text-sm font-semibold truncate ${entry.status === 'reviewed' ? 'text-muted line-through' : 'text-primary'}`}>
-                  {entry.payee || 'Unknown'}
-                </p>
-                <p className="text-xs text-muted truncate">{entry.date} &middot; {entry.loggedBy}</p>
-              </div>
-              <span className="text-sm font-bold text-primary shrink-0">
-                ${Number(entry.amount).toFixed(2)}
-              </span>
-              <ChevronRight size={16} className="text-muted shrink-0" />
-            </div>
-          ))}
-        </div>
-      )}
+                  <div className="flex items-center gap-3">
+                    {ownerMode && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleToggleReviewed(entry.id); }}
+                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                          entry.status === 'reviewed'
+                            ? 'bg-emerald-500 border-emerald-500'
+                            : 'border-border-strong hover:border-violet-400'
+                        }`}
+                      >
+                        {entry.status === 'reviewed' && <Check size={12} className="text-white" />}
+                      </button>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-semibold truncate ${entry.status === 'reviewed' ? 'text-muted line-through' : 'text-primary'}`}>
+                        {entry.payee || 'Unknown'}
+                      </p>
+                      <p className="text-xs text-muted truncate">{formattedDate} &middot; {entry.loggedBy}</p>
+                    </div>
+                    <span className="text-sm font-bold text-primary shrink-0">
+                      ${Number(entry.amount).toFixed(2)}
+                    </span>
+                    <ChevronRight size={16} className="text-muted shrink-0" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
-      {/* Pagination controls */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1 pt-2">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={safePage <= 1}
-            className="p-2 rounded-lg text-secondary hover:bg-surface-alt transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          {pageNumbers.map((n) => (
+        {/* Pagination controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-1 pt-2">
             <button
-              key={n}
-              onClick={() => setPage(n)}
-              className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                n === safePage
-                  ? 'bg-brand text-on-brand'
-                  : 'text-secondary hover:bg-surface-alt'
-              }`}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={safePage <= 1}
+              className="p-2 rounded-lg text-secondary hover:bg-surface-alt transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              {n}
+              <ChevronLeft size={16} />
             </button>
-          ))}
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={safePage >= totalPages}
-            className="p-2 rounded-lg text-secondary hover:bg-surface-alt transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            <ChevronRight size={16} />
-          </button>
+            {pageNumbers.map((n) => (
+              <button
+                key={n}
+                onClick={() => setPage(n)}
+                className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  n === safePage
+                    ? 'bg-brand text-on-brand'
+                    : 'text-secondary hover:bg-surface-alt'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage >= totalPages}
+              className="p-2 rounded-lg text-secondary hover:bg-surface-alt transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
         </div>
-      )}
+      </div>
 
       {/* Scan Modal */}
       {showModal && (

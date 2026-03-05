@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Search, Sparkles, ArrowLeft } from 'lucide-react';
 import Card from '../components/Card';
 import EditModal from '../components/EditModal';
@@ -57,8 +57,10 @@ const GM_SUBTABS = [
 ];
 
 export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
-  const defaultTab = ownerMode ? 'strategy' : 'field-team';
+  const defaultTab = 'field-team';
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTab = location.state?.tab;
   const items = useAppStore((s) => s.guides);
   const setItems = useAppStore((s) => s.setGuides);
 
@@ -71,7 +73,10 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
     ? ALL_TABS.filter((t) => allowedPlaybooks.includes(t.playbookKey))
     : ALL_TABS;
 
-  const [filter, setFilter] = useState(() => visibleTabs.some((t) => t.key === defaultTab) ? defaultTab : (visibleTabs[0]?.key || 'field-team'));
+  const [filter, setFilter] = useState(() => {
+    const preferred = returnTab || defaultTab;
+    return visibleTabs.some((t) => t.key === preferred) ? preferred : (visibleTabs[0]?.key || 'field-team');
+  });
   const [subFilter, setSubFilter] = useState('service');
   const [gmSubFilter, setGmSubFilter] = useState('gm-rhythm');
   const [search, setSearch] = useState('');
@@ -249,7 +254,7 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
             <Card
               key={item.id}
               item={item}
-              onClick={() => navigate(`/guides/${item.id}`)}
+              onClick={() => navigate(`/guides/${item.id}`, { state: { tab: filter } })}
               onEdit={setEditing}
               onDelete={handleDelete}
               ownerMode={ownerMode}

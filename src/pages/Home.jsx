@@ -201,7 +201,7 @@ export default function Home() {
   const handleMileageSubmit = (form) => {
     const vehicle = vehicles.find((v) => v.id === form.vehicleId);
     const odometerNum = Number(form.odometer);
-    const vehicleName = vehicle?.name || 'Unknown';
+    const vehicleName = vehicle ? (vehicle.nickname || [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || vehicle.name || 'Unknown') : 'Unknown';
 
     const prevEntry = [...mileageLog]
       .filter((e) => e.vehicleId === form.vehicleId)
@@ -221,19 +221,6 @@ export default function Home() {
         createdAt: new Date().toISOString(),
       },
     ]);
-
-    fetch('/api/qb-mileage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        vehicleName,
-        odometer: odometerNum,
-        date: form.date,
-        notes: form.notes,
-        loggedBy: form.loggedBy,
-        previousOdometer: prevEntry?.odometer || null,
-      }),
-    }).catch(() => {});
 
     setShowMileageModal(false);
     setSuccessToast('Mileage logged successfully!');
@@ -287,7 +274,7 @@ export default function Home() {
   const handleInlineMileage = ({ vehicleId, odometer }) => {
     const vehicle = vehicles.find((v) => v.id === vehicleId);
     const odometerNum = Number(odometer);
-    const vehicleName = vehicle?.name || 'Unknown';
+    const vehicleName = vehicle ? (vehicle.nickname || [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || vehicle.name || 'Unknown') : 'Unknown';
     const todayISO = new Date().toISOString().slice(0, 10);
 
     const prevEntry = [...mileageLog]
@@ -308,19 +295,6 @@ export default function Home() {
         createdAt: new Date().toISOString(),
       },
     ]);
-
-    fetch('/api/qb-mileage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        vehicleName,
-        odometer: odometerNum,
-        date: todayISO,
-        notes: '',
-        loggedBy: currentUser,
-        previousOdometer: prevEntry?.odometer || null,
-      }),
-    }).catch(() => {});
   };
 
   const quickLinks = (

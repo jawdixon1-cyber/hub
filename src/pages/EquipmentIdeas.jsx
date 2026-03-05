@@ -210,17 +210,49 @@ export default function EquipmentIdeas() {
       <button onClick={() => navigate('/')} className="inline-flex items-center gap-1.5 text-sm text-secondary hover:text-primary cursor-pointer mb-4">
         <ArrowLeft size={16} /> Home
       </button>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-primary">Equipment Log</h1>
-        <p className="text-tertiary mt-1">Repairs, fixes, and maintenance history</p>
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
+            <Wrench size={20} className="text-orange-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-primary">Equipment Log</h1>
+            <p className="text-sm text-tertiary">{equipment.length} {equipment.length === 1 ? 'item' : 'items'}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {ownerMode && (
+            <button
+              onClick={() => setAddingEquipment(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand text-on-brand text-sm font-semibold rounded-xl hover:bg-brand-hover transition-colors cursor-pointer"
+            >
+              <Plus size={16} />
+              Add Equipment
+            </button>
+          )}
+          <button
+            onClick={() => setReportingRepair(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer"
+          >
+            <AlertCircle size={16} />
+            Report Repair
+          </button>
+        </div>
       </div>
 
-      {/* Filter & Actions */}
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
+      {/* Wrapped card container */}
+      <div className="bg-card rounded-2xl shadow-sm border border-border-subtle">
+        <div className="p-5 pb-0">
+          <span className="text-sm font-bold text-primary">Equipment ({filtered.length})</span>
+        </div>
+        <div className="px-5 pb-5 space-y-4 mt-4">
+
+        {/* Filter */}
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
-          className="rounded-xl border border-border-default px-4 py-2.5 text-sm font-semibold text-primary bg-card focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition cursor-pointer"
+          className="w-full rounded-xl border border-border-strong bg-card px-3 py-2 text-xs font-medium text-primary outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer"
         >
           <option value="all">All Types ({equipment.length})</option>
           <option value="needs-repair">Needs Repair ({needsRepairCount})</option>
@@ -231,114 +263,99 @@ export default function EquipmentIdeas() {
             );
           })}
         </select>
-        {ownerMode && (
-          <button
-            onClick={() => setAddingEquipment(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand text-on-brand text-sm font-semibold rounded-xl hover:bg-brand-hover transition-colors cursor-pointer"
-          >
-            <Plus size={16} />
-            Add Equipment
-          </button>
-        )}
-        <button
-          onClick={() => setReportingRepair(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity cursor-pointer"
-        >
-          <AlertCircle size={16} />
-          Report Repair
-        </button>
-      </div>
 
-      {/* Search */}
-      <div className="relative mb-6">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search equipment by name or serial..."
-          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border-default text-sm text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none"
-        />
-      </div>
-
-      {/* Equipment List */}
-      {filtered.length === 0 ? (
-        <p className="text-muted text-sm">
-          {typeFilter === 'needs-repair' ? "Everything's operational :D" : 'No equipment matches your filters'}
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map((item) => {
-            const needsRepair = item.status === 'needs-repair';
-
-            return (
-              <div
-                key={item.id}
-                className={`rounded-xl border-l-4 px-4 py-3 ${
-                  needsRepair
-                    ? 'border-l-red-500 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800'
-                    : 'border-l-emerald-500 bg-card border border-border-subtle'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${needsRepair ? 'bg-red-500' : 'bg-emerald-500'}`} />
-                  <h3 className="text-sm font-semibold text-primary">{item.name}</h3>
-                </div>
-                {needsRepair && (() => {
-                  const repairs = getActiveRepairs(item);
-                  if (repairs.length === 0) return null;
-                  return (
-                    <div className="ml-4 mb-2 space-y-0.5">
-                      {repairs.map((r) => (
-                        <p key={r.id} className="text-xs text-red-700 dark:text-red-300">
-                          {r.issue}
-                          <span className="text-muted ml-1">— {r.reportedBy}, {r.reportedDate}</span>
-                        </p>
-                      ))}
-                    </div>
-                  );
-                })()}
-                <div className="flex items-center gap-2 ml-4">
-                  <button
-                    onClick={() => { setHistoryItem(item); setEditingNotes(false); setNotesText(item.notes || ''); }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-alt text-secondary text-xs font-semibold hover:bg-surface-strong transition-colors cursor-pointer"
-                  >
-                    <Eye size={12} />
-                    View
-                  </button>
-                  {needsRepair && (
-                    <button
-                      onClick={() => {
-                        const repairs = getActiveRepairs(item);
-                        if (repairs.length > 0) {
-                          setHistoryItem(item);
-                          setEditingNotes(false);
-                          setNotesText(item.notes || '');
-                          setFixingRepairId(repairs[0].id);
-                          setFixDescription('');
-                        }
-                      }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
-                    >
-                      <Check size={12} />
-                      Fixed
-                    </button>
-                  )}
-                  {ownerMode && (
-                    <button
-                      onClick={() => openEditModal(item)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-light text-brand-text-strong text-xs font-semibold hover:bg-brand-light/80 transition-colors cursor-pointer"
-                    >
-                      <Pencil size={12} />
-                      Edit
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+        {/* Search */}
+        <div className="relative">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search equipment by name or serial..."
+            className="w-full rounded-xl border border-border-strong bg-card pl-10 pr-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-orange-500 placeholder:text-placeholder-muted"
+          />
         </div>
-      )}
+
+        {/* Equipment List */}
+        {filtered.length === 0 ? (
+          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-8 text-center">
+            <Wrench size={32} className="text-muted mx-auto mb-3" />
+            <p className="text-sm font-semibold text-secondary mb-1">No equipment found</p>
+            <p className="text-xs text-muted">
+              {typeFilter === 'needs-repair' ? "Everything's operational!" : 'No equipment matches your filters.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map((item) => {
+              const needsRepair = item.status === 'needs-repair';
+
+              return (
+                <div
+                  key={item.id}
+                  className="bg-card rounded-xl shadow-sm border border-border-subtle p-4"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${needsRepair ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                    <h3 className="text-sm font-semibold text-primary">{item.name}</h3>
+                  </div>
+                  {needsRepair && (() => {
+                    const repairs = getActiveRepairs(item);
+                    if (repairs.length === 0) return null;
+                    return (
+                      <div className="ml-4 mb-2 space-y-0.5">
+                        {repairs.map((r) => (
+                          <p key={r.id} className="text-xs text-red-700 dark:text-red-300">
+                            {r.issue}
+                            <span className="text-muted ml-1">— {r.reportedBy}, {r.reportedDate}</span>
+                          </p>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                  <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={() => { setHistoryItem(item); setEditingNotes(false); setNotesText(item.notes || ''); }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-alt text-secondary text-xs font-semibold hover:bg-surface-strong transition-colors cursor-pointer"
+                    >
+                      <Eye size={12} />
+                      View
+                    </button>
+                    {needsRepair && (
+                      <button
+                        onClick={() => {
+                          const repairs = getActiveRepairs(item);
+                          if (repairs.length > 0) {
+                            setHistoryItem(item);
+                            setEditingNotes(false);
+                            setNotesText(item.notes || '');
+                            setFixingRepairId(repairs[0].id);
+                            setFixDescription('');
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
+                      >
+                        <Check size={12} />
+                        Fixed
+                      </button>
+                    )}
+                    {ownerMode && (
+                      <button
+                        onClick={() => openEditModal(item)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-light text-brand-text-strong text-xs font-semibold hover:bg-brand-light/80 transition-colors cursor-pointer"
+                      >
+                        <Pencil size={12} />
+                        Edit
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        </div>
+      </div>
 
       {addingEquipment && (
         <AddEquipmentModal

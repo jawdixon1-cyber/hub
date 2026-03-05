@@ -263,3 +263,9 @@
   50% { box-shadow: 0 0 12px rgba(249, 115, 22, 0.4); }
 }
 .dc-streak-glow { animation: dc-streak-glow-pulse 2s ease-in-out infinite; }
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in-right { animation: slide-in-right 0.25s ease-out; }
