@@ -145,20 +145,16 @@ export default function Commander() {
           <h1 className="text-2xl font-bold text-primary">Commander</h1>
           <p className="text-sm text-tertiary mt-1">Weekly growth scorecard</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {PRESETS.map(p => (
-            <button
-              key={p.id}
-              onClick={() => setPreset(p.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                preset === p.id
-                  ? 'bg-brand text-on-brand'
-                  : 'bg-surface-alt text-secondary hover:bg-surface-strong'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <select
+            value={preset}
+            onChange={e => setPreset(e.target.value)}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-alt text-primary border border-border-default cursor-pointer focus:outline-none focus:ring-1 focus:ring-brand"
+          >
+            {PRESETS.map(p => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
           <button
             onClick={() => setRetryKey(k => k + 1)}
             disabled={loading}
