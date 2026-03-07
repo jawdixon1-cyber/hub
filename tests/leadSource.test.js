@@ -1,4 +1,4 @@
-import { normalizeLeadSource } from '../leadSource.js';
+import { normalizeLeadSource } from '../lib/leadSource.js';
 
 // Lead source normalization tests
 const testCases = [

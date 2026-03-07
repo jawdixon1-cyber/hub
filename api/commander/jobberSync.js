@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { getSupabaseAdmin } from './supabaseAdmin.js';
+import { getSupabaseAdmin } from '../../lib/supabaseAdmin.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TOKENS_PATH = join(__dirname, '..', '..', '.jobber-tokens.json');

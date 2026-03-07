@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getSupabaseAdmin } from './supabaseAdmin.js';
-import { normalizeLeadSource } from './leadSource.js';
+import { getSupabaseAdmin } from '../../lib/supabaseAdmin.js';
+import { normalizeLeadSource } from '../../lib/leadSource.js';
 
 const router = Router();
 
