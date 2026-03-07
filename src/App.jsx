@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ShieldCheck,
   Crosshair,
+  GitBranch,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -54,6 +55,7 @@ const ReceiptTracker = lazy(() => import('./pages/ReceiptTracker'));
 const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
 const Standards = lazy(() => import('./pages/Standards'));
 const Commander = lazy(() => import('./pages/Commander'));
+const SalesPipeline = lazy(() => import('./pages/SalesPipeline'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -74,6 +76,7 @@ const TEAM_ITEMS = [
 
 const OWNER_ITEMS = [
   { id: 'commander', path: '/commander', label: 'Commander', icon: Crosshair },
+  { id: 'pipeline', path: '/pipeline', label: 'Sales Pipeline', icon: GitBranch },
   { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
 ];
 
@@ -545,6 +548,7 @@ function AppShell() {
                 <Route path="/equipment" element={<EquipmentIdeas />} />
                 <Route path="/hr" element={<HRPolicies />} />
                 <Route path="/commander" element={<Commander />} />
+                <Route path="/pipeline" element={<SalesPipeline />} />
                 <Route path="/quoting" element={<Quoting />} />
                 <Route path="/team" element={<TeamManagement />} />
                 <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />

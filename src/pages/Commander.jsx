@@ -1,14 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  TrendingUp,
-  TrendingDown,
   Users,
   FileText,
   CheckCircle2,
   Repeat,
   ArrowRight,
   RefreshCw,
-  Info,
   Target,
 } from 'lucide-react';
 
@@ -52,12 +49,11 @@ function getPresetRange(preset) {
     }
     case 'this-week': {
       const day = today.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-      const mon = new Date(today);
-      mon.setDate(mon.getDate() + diff);
+      const sun = new Date(today);
+      sun.setDate(sun.getDate() - day);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      return { start: fmt(mon), end: fmt(tomorrow), label: 'This Week' };
+      return { start: fmt(sun), end: fmt(tomorrow), label: 'This Week' };
     }
     case 'last-7': {
       const s = new Date(today);
@@ -135,6 +131,8 @@ export default function Commander() {
   const [error, setError] = useState(null);
   const [retryKey, setRetryKey] = useState(0);
   const [showLeadNames, setShowLeadNames] = useState(false);
+  const [showQuoteNames, setShowQuoteNames] = useState(false);
+  const [showApprovedNames, setShowApprovedNames] = useState(false);
 
   const range = useMemo(() => {
     if (preset === 'custom' && customStart && customEnd) {
@@ -149,6 +147,8 @@ export default function Commander() {
     setLoading(true);
     setError(null);
     setShowLeadNames(false);
+    setShowQuoteNames(false);
+    setShowApprovedNames(false);
 
     const refreshParam = retryKey > 0 ? '&refresh=1' : '';
     fetch(`/api/commander/summary?start=${range.start}&end=${range.end}${refreshParam}`)
@@ -175,12 +175,12 @@ export default function Commander() {
   const activeRecurringCount = data?.activeRecurringCount ?? 0;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {/* 1. Header + Date Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-primary">Commander</h1>
-          <p className="text-sm text-tertiary mt-1">Weekly growth scorecard</p>
+          <p className="text-sm text-tertiary mt-1">{PRESETS.find(p => p.id === preset)?.label || 'Growth scorecard'}</p>
         </div>
         <div className="flex items-center gap-2">
           <select
@@ -243,15 +243,18 @@ export default function Commander() {
 
       {!loading && !error && data && (
         <>
+          {/* 1. Growth Target — North Star */}
+          <GrowthTarget current={activeRecurringCount} goal={GROWTH_TARGET} />
+
           {/* 2. KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <div className="relative">
-              <KpiCard label="New Leads" icon={Users} onClick={() => setShowLeadNames(v => !v)}>
+              <KpiCard label="New Requests" icon={Users} onClick={() => setShowLeadNames(v => !v)}>
                 <span className="text-2xl font-bold text-primary cursor-pointer">{kpis.newLeads}</span>
               </KpiCard>
               {showLeadNames && data?.leadNames?.length > 0 && (
                 <div className="absolute top-full left-0 mt-1 z-20 bg-card border border-border-default rounded-lg shadow-lg p-3 min-w-[180px] max-h-60 overflow-y-auto">
-                  <p className="text-xs text-muted mb-2 font-medium">Leads in range:</p>
+                  <p className="text-xs text-muted mb-2 font-medium">Requests in range:</p>
                   {data.leadNames.map((name, i) => (
                     <p key={i} className="text-sm text-primary py-0.5">{name}</p>
                   ))}
@@ -259,72 +262,56 @@ export default function Commander() {
               )}
             </div>
 
-            <KpiCard label="Quotes Sent" icon={FileText}>
-              <span className="text-2xl font-bold text-primary">{kpis.quotesSent}</span>
-            </KpiCard>
+            <div className="relative">
+              <KpiCard label="Quotes Sent" icon={FileText} onClick={() => setShowQuoteNames(v => !v)}>
+                <span className="text-2xl font-bold text-primary cursor-pointer">{kpis.quotesSent}</span>
+              </KpiCard>
+              {showQuoteNames && data?.quotesSentNames?.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 z-20 bg-card border border-border-default rounded-lg shadow-lg p-3 min-w-[180px] max-h-60 overflow-y-auto">
+                  <p className="text-xs text-muted mb-2 font-medium">Quotes sent to:</p>
+                  {data.quotesSentNames.map((name, i) => (
+                    <p key={i} className="text-sm text-primary py-0.5">{name}</p>
+                  ))}
+                </div>
+              )}
+            </div>
 
-            <KpiCard label="Quotes Approved" icon={CheckCircle2}>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-bold text-primary">{kpis.quotesApproved}</span>
-                <span className="text-sm text-muted">/ {kpis.quotesSent}</span>
-              </div>
-              <span className="text-xs text-tertiary">{pct(kpis.quotesApproved, kpis.quotesSent)}% approval</span>
-            </KpiCard>
+            <div className="relative">
+              <KpiCard label="Quotes Approved" icon={CheckCircle2} onClick={() => setShowApprovedNames(v => !v)}>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold text-primary cursor-pointer">{kpis.quotesApproved}</span>
+                  <span className="text-sm text-muted">/ {Math.max(kpis.quotesSent, kpis.quotesApproved)}</span>
+                </div>
+                <span className="text-xs text-tertiary">{Math.min(pct(kpis.quotesApproved, kpis.quotesSent), 100)}% approval</span>
+              </KpiCard>
+              {showApprovedNames && data?.quotesApprovedNames?.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 z-20 bg-card border border-border-default rounded-lg shadow-lg p-3 min-w-[180px] max-h-60 overflow-y-auto">
+                  <p className="text-xs text-muted mb-2 font-medium">Approved quotes:</p>
+                  {data.quotesApprovedNames.map((name, i) => (
+                    <p key={i} className="text-sm text-primary py-0.5">{name}</p>
+                  ))}
+                </div>
+              )}
+            </div>
 
-            <KpiCard label="Recurring Starts" icon={Repeat} highlight={kpis.recurringStarts > 0}>
-              <span className="text-2xl font-bold text-primary">
-                {kpis.recurringStarts} <span className="text-sm font-medium text-muted">{kpis.recurringStarts === 1 ? 'client' : 'clients'}</span>
-              </span>
+            <KpiCard label="Clients Signed" icon={Repeat} highlight={kpis.recurringStarts > 0}>
+              <span className="text-2xl font-bold text-primary">{kpis.recurringStarts}</span>
               <span className={`text-xs ${kpis.startsMonthlyRevenue > 0 ? 'text-brand-text-strong' : 'text-tertiary'}`}>
                 {kpis.startsMonthlyRevenue > 0 ? `+${money(kpis.startsMonthlyRevenue)} / mo` : '$0 / mo'}
               </span>
             </KpiCard>
 
-            <KpiCard
-              label="Net Growth"
-              icon={kpis.netGrowth >= 0 ? TrendingUp : TrendingDown}
-              highlight={kpis.netGrowth > 0}
-              negative={kpis.netGrowth < 0}
-            >
-              <div className="flex items-baseline gap-2">
-                <span className={`text-2xl font-bold ${
-                  kpis.netGrowth > 0 ? 'text-brand-text-strong' : kpis.netGrowth < 0 ? 'text-red-600 dark:text-red-400' : 'text-primary'
-                }`}>
-                  {kpis.netGrowth > 0 ? '+' : ''}{kpis.netGrowth}
-                </span>
-                {kpis.cancels > 0 && (
-                  <span className="text-xs text-red-500">{kpis.cancels} cancel{kpis.cancels !== 1 ? 's' : ''}</span>
-                )}
-              </div>
+            <KpiCard label="Close Rate" icon={ArrowRight}>
+              <span className="text-2xl font-bold text-primary">{Math.min(pct(kpis.quotesApproved, kpis.quotesSent), 100)}%</span>
+              <span className="text-xs text-tertiary">{kpis.quotesApproved} of {Math.max(kpis.quotesSent, kpis.quotesApproved)} closed</span>
             </KpiCard>
           </div>
 
-          {/* 3. Funnel Metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FunnelCard
-              label="Lead to Quote"
-              value={`${pct(kpis.quotesSent, kpis.newLeads)}%`}
-              sublabel={`${kpis.quotesSent} quoted of ${kpis.newLeads} leads`}
-              icon={ArrowRight}
-              tooltip="Quotes Sent / New Leads"
-            />
-            <FunnelCard
-              label="Quote to Close"
-              value={`${pct(kpis.quotesApproved, kpis.quotesSent)}%`}
-              sublabel={`${kpis.quotesApproved} approved of ${kpis.quotesSent} sent`}
-              icon={ArrowRight}
-              tooltip="Quotes Approved / Quotes Sent"
-            />
-          </div>
-
-          {/* 4. Source Performance Table */}
+          {/* 5. Where Leads Come From */}
           <SourceTable data={sourceTable} />
 
-          {/* 5. Trends Chart */}
+          {/* 6. Trends */}
           {trends && <TrendsChart trends={trends} />}
-
-          {/* 6. Growth Target */}
-          <GrowthTarget current={activeRecurringCount} goal={GROWTH_TARGET} />
         </>
       )}
     </div>
@@ -346,31 +333,6 @@ function KpiCard({ label, icon: Icon, children, highlight, negative, onClick }) 
         <Icon size={14} className={`${negative ? 'text-red-500' : highlight ? 'text-brand-text' : 'text-muted'}`} />
       </div>
       {children}
-    </div>
-  );
-}
-
-/* ── Funnel Metric Card ── */
-
-function FunnelCard({ label, value, sublabel, icon: Icon, tooltip }) {
-  return (
-    <div className="bg-card rounded-xl border border-border-subtle p-4">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <Icon size={14} className="text-muted" />
-          <span className="text-[11px] font-medium text-muted uppercase tracking-wide">{label}</span>
-        </div>
-        {tooltip && (
-          <span className="group relative">
-            <Info size={12} className="text-muted" />
-            <span className="absolute bottom-full right-0 mb-1 px-2 py-1 rounded bg-surface-strong text-primary text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-              {tooltip}
-            </span>
-          </span>
-        )}
-      </div>
-      <p className="text-xl font-bold text-primary">{value}</p>
-      <p className="text-xs text-tertiary mt-0.5">{sublabel}</p>
     </div>
   );
 }
@@ -405,7 +367,7 @@ function SourceTable({ data }) {
   return (
     <div className="bg-card rounded-xl border border-border-subtle overflow-hidden">
       <div className="px-4 py-3 border-b border-border-subtle">
-        <h2 className="text-sm font-semibold text-primary">Where Leads Come From</h2>
+        <h2 className="text-sm font-semibold text-primary">Where Requests Come From</h2>
       </div>
       <div className="p-4">
         {/* Stacked bar */}
@@ -545,33 +507,28 @@ function GrowthTarget({ current, goal }) {
   const progressPct = goal > 0 ? Math.min((current / goal) * 100, 100) : 0;
 
   return (
-    <div className="bg-card rounded-xl border border-border-subtle p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <Target size={15} className="text-muted" />
-        <h2 className="text-sm font-semibold text-primary">Growth Target</h2>
+    <div className="bg-card rounded-xl border border-brand/30 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Target size={16} className="text-brand-text" />
+          <span className="text-xs font-medium text-muted uppercase tracking-wide">Growth Target</span>
+        </div>
+        <span className="text-xs text-muted">{remaining} to go</span>
       </div>
 
-      <div className="flex items-baseline gap-6 mb-3">
-        <div>
-          <span className="text-2xl font-bold text-primary">{current}</span>
-          <span className="text-sm text-muted ml-1">active recurring</span>
-        </div>
-        <div className="text-sm text-tertiary">
-          Goal: {goal}
-        </div>
-        <div className="text-sm text-tertiary">
-          Remaining: {remaining}
-        </div>
+      <div className="flex items-baseline gap-1 mb-4">
+        <span className="text-4xl font-bold text-primary">{current}</span>
+        <span className="text-lg text-muted font-medium">/ {goal}</span>
+        <span className="text-sm text-muted ml-1">recurring clients</span>
       </div>
 
-      {/* Progress bar */}
-      <div className="w-full h-2 rounded-full bg-surface-alt overflow-hidden">
+      <div className="w-full h-3 rounded-full bg-surface-alt overflow-hidden">
         <div
           className="h-full rounded-full bg-brand transition-all duration-500"
           style={{ width: `${progressPct}%` }}
         />
       </div>
-      <p className="text-[11px] text-muted mt-1.5">{Math.round(progressPct)}% of goal</p>
+      <p className="text-xs text-muted mt-2">{Math.round(progressPct)}% of goal</p>
     </div>
   );
 }

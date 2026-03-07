@@ -109,7 +109,7 @@ async function getJobberToken() {
   return tokenData.access_token;
 }
 
-async function jobberQuery(query, variables = {}) {
+async function jobberQuery(query, variables = {}, retried = false) {
   const token = await getJobberToken();
   if (!token) throw new Error('Missing JOBBER_API_TOKEN. Connect Jobber at /api/jobber-auth');
 
@@ -122,6 +122,18 @@ async function jobberQuery(query, variables = {}) {
     },
     body: JSON.stringify({ query, variables }),
   });
+
+  if (res.status === 401 && !retried) {
+    // Token rejected — force refresh and retry once
+    console.log('[Jobber] 401 received, forcing token refresh...');
+    const tokenData = await readTokenData();
+    if (tokenData) {
+      tokenData.expires_at = 0; // Force expiry
+      refreshPromise = null;
+      const newToken = await refreshAccessToken(tokenData);
+      if (newToken) return jobberQuery(query, variables, true);
+    }
+  }
 
   if (!res.ok) {
     const text = await res.text();
@@ -137,7 +149,7 @@ async function jobberQuery(query, variables = {}) {
 
 // ── Fetch All Quotes (paginated) ──
 
-async function fetchLeadClients() {
+async function fetchRequests() {
   const allNodes = [];
   let cursor = null;
   let hasNext = true;
@@ -145,25 +157,25 @@ async function fetchLeadClients() {
   while (hasNext) {
     const after = cursor ? `, after: "${cursor}"` : '';
     const query = `{
-      clients(first: 100, filter: { isLead: true }${after}) {
+      requests(first: 100${after}) {
         nodes {
           id
-          firstName
-          lastName
           createdAt
-          sourceAttribution {
-            displayLeadSource
-            sourceText
+          source
+          requestStatus
+          client {
+            firstName
+            lastName
           }
         }
         pageInfo { hasNextPage endCursor }
       }
     }`;
     const data = await jobberQuery(query);
-    const nodes = data.clients?.nodes || [];
+    const nodes = data.requests?.nodes || [];
     allNodes.push(...nodes);
-    hasNext = data.clients?.pageInfo?.hasNextPage || false;
-    cursor = data.clients?.pageInfo?.endCursor || null;
+    hasNext = data.requests?.pageInfo?.hasNextPage || false;
+    cursor = data.requests?.pageInfo?.endCursor || null;
   }
   return allNodes;
 }
@@ -295,14 +307,14 @@ async function getJobberData() {
     return cachedData;
   }
   console.log('[Commander] Fetching fresh data from Jobber...');
-  const [leadClients, quotes, recurringJobs] = await Promise.all([
-    fetchLeadClients(),
+  const [requests, quotes, recurringJobs] = await Promise.all([
+    fetchRequests(),
     fetchAllQuotes(),
     fetchRecurringJobs(),
   ]);
-  cachedData = { leadClients, quotes, recurringJobs };
+  cachedData = { requests, quotes, recurringJobs };
   cacheTime = Date.now();
-  console.log(`[Commander] Got ${leadClients.length} lead clients, ${quotes.length} quotes, ${recurringJobs.length} recurring jobs`);
+  console.log(`[Commander] Got ${requests.length} requests, ${quotes.length} quotes, ${recurringJobs.length} recurring jobs`);
   return cachedData;
 }
 
@@ -310,10 +322,7 @@ async function getJobberData() {
 
 export default async function handler(req, res) {
   try {
-    const { start, end, refresh } = req.query;
-    if (!start || !end) {
-      return res.status(400).json({ error: 'start and end query params required (YYYY-MM-DD)' });
-    }
+    const { start, end, refresh, view } = req.query;
 
     // Bust cache if requested
     if (refresh === '1') {
@@ -321,14 +330,32 @@ export default async function handler(req, res) {
       cacheTime = 0;
     }
 
-    const rangeStart = `${start}T00:00:00.000Z`;
-    const rangeEnd = `${end}T00:00:00.000Z`;
+    // Pipeline view — returns current state of all open requests & quotes
+    if (view === 'pipeline') {
+      try {
+        return await handlePipeline(req, res);
+      } catch (err) {
+        console.error('[Pipeline] Error:', err);
+        return res.status(500).json({ error: err.message });
+      }
+    }
 
-    const { leadClients, quotes, recurringJobs } = await getJobberData();
+    if (!start || !end) {
+      return res.status(400).json({ error: 'start and end query params required (YYYY-MM-DD)' });
+    }
 
-    // ── Process Lead Clients ──
-    const leadsInRange = leadClients.filter(c =>
-      c.createdAt && c.createdAt >= rangeStart && c.createdAt < rangeEnd
+    // Offset to Eastern Time: EDT (Mar–Nov) = UTC-4, EST (Nov–Mar) = UTC-5
+    // "midnight ET" = 4am or 5am UTC
+    const mo = parseInt(start.split('-')[1]);
+    const utcHour = (mo >= 3 && mo < 11) ? '04' : '05';
+    const rangeStart = `${start}T${utcHour}:00:00.000Z`;
+    const rangeEnd = `${end}T${utcHour}:00:00.000Z`;
+
+    const { requests, quotes, recurringJobs } = await getJobberData();
+
+    // ── Process Requests ──
+    const leadsInRange = requests.filter(r =>
+      r.createdAt && r.createdAt >= rangeStart && r.createdAt < rangeEnd
     );
 
     // ── Process Quotes ──
@@ -385,9 +412,7 @@ export default async function handler(req, res) {
     // ── Source Table ──
     const sourceGroups = {};
     for (const lead of leadsInRange) {
-      const rawSource = lead.sourceAttribution?.displayLeadSource
-        || lead.sourceAttribution?.sourceText
-        || 'Other';
+      const rawSource = lead.source || 'Other';
       const src = normalizeSource(rawSource);
       if (!sourceGroups[src]) {
         sourceGroups[src] = { source: src, leads: 0 };
@@ -403,8 +428,19 @@ export default async function handler(req, res) {
       estimatedMonthlyValue: 0,
     }));
 
+    // ── Pipeline Breakdown (requests in range by status) ──
+    const pipeline = { new: 0, scheduled: 0, converted: 0, archived: 0, newNames: [], scheduledNames: [] };
+    for (const r of leadsInRange) {
+      const s = r.requestStatus;
+      const name = `${r.client?.firstName || ''} ${r.client?.lastName || ''}`.trim() || 'Unknown';
+      if (s === 'new') { pipeline.new++; pipeline.newNames.push(name); }
+      else if (s === 'today' || s === 'upcoming') { pipeline.scheduled++; pipeline.scheduledNames.push(name); }
+      else if (s === 'converted') pipeline.converted++;
+      else if (s === 'archived') pipeline.archived++;
+    }
+
     // ── Trends: Last 12 Weeks ──
-    const trends = computeTrends(processedJobs, leadClients);
+    const trends = computeTrends(processedJobs, requests);
 
     return res.json({
       range: { start, end },
@@ -421,8 +457,11 @@ export default async function handler(req, res) {
         avgDaysToStart: null,
         startsMonthlyRevenue: Math.round(startsMonthlyRevenue * 100) / 100,
       },
+      pipeline,
       activeRecurringCount,
-      leadNames: leadsInRange.map(c => `${c.firstName || ''} ${c.lastName || ''}`.trim()).filter(Boolean),
+      leadNames: leadsInRange.map(r => `${r.client?.firstName || ''} ${r.client?.lastName || ''}`.trim() || 'Unknown').filter(Boolean),
+      quotesSentNames: quotesSentInRange.map(q => `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim()).filter(Boolean),
+      quotesApprovedNames: quotesApprovedInRange.map(q => `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim()).filter(Boolean),
       sourceTable,
       trends,
     });
@@ -432,7 +471,82 @@ export default async function handler(req, res) {
   }
 }
 
-function computeTrends(processedJobs, leadClients) {
+async function handlePipeline(req, res) {
+  const { requests, quotes } = await getJobberData();
+  const now = Date.now();
+
+  function daysSince(dateStr) {
+    if (!dateStr) return null;
+    return Math.floor((now - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  // Requests — group by stage
+  const requestCards = requests
+    .filter(r => r.requestStatus !== 'converted' && r.requestStatus !== 'archived')
+    .map(r => ({
+      id: r.id,
+      name: `${r.client?.firstName || ''} ${r.client?.lastName || ''}`.trim() || 'Unknown',
+      stage: r.requestStatus === 'new' ? 'new_request'
+        : (r.requestStatus === 'today' || r.requestStatus === 'upcoming') ? 'assessment_scheduled'
+        : 'new_request',
+      createdAt: r.createdAt,
+      daysInPipeline: daysSince(r.createdAt),
+      source: r.source || null,
+      type: 'request',
+    }));
+
+  // Quotes — only open ones
+  const quoteCards = quotes
+    .filter(q => q.quoteStatus === 'draft' || q.quoteStatus === 'awaiting_response' || q.quoteStatus === 'sent')
+    .map(q => ({
+      id: q.id,
+      name: `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim() || 'Unknown',
+      quoteNumber: q.quoteNumber,
+      stage: q.quoteStatus === 'draft' ? 'quote_draft'
+        : 'awaiting_response',
+      total: q.amounts?.total ? parseFloat(q.amounts.total) : 0,
+      sentAt: q.sentAt,
+      createdAt: q.createdAt,
+      daysSinceSent: daysSince(q.sentAt),
+      daysInPipeline: daysSince(q.createdAt),
+      type: 'quote',
+    }));
+
+  // Recently won (last 30 days)
+  const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const wonCards = quotes
+    .filter(q => {
+      const isWon = q.quoteStatus === 'approved' || q.quoteStatus === 'converted';
+      const approvedAt = q.lastTransitioned?.approvedAt || q.updatedAt;
+      return isWon && approvedAt >= thirtyDaysAgo;
+    })
+    .map(q => ({
+      id: q.id,
+      name: `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim() || 'Unknown',
+      quoteNumber: q.quoteNumber,
+      stage: 'won',
+      total: q.amounts?.total ? parseFloat(q.amounts.total) : 0,
+      approvedAt: q.lastTransitioned?.approvedAt || q.updatedAt,
+      type: 'quote',
+    }));
+
+  const stages = [
+    { id: 'new_request', label: 'New Requests', cards: requestCards.filter(c => c.stage === 'new_request') },
+    { id: 'assessment_scheduled', label: 'Assessment Scheduled', cards: requestCards.filter(c => c.stage === 'assessment_scheduled') },
+    { id: 'quote_draft', label: 'Quote Drafts', cards: quoteCards.filter(c => c.stage === 'quote_draft') },
+    { id: 'awaiting_response', label: 'Awaiting Response', cards: quoteCards.filter(c => c.stage === 'awaiting_response') },
+    { id: 'won', label: 'Won (Last 30d)', cards: wonCards },
+  ];
+
+  // Sort each stage: oldest first (stale leads bubble up)
+  for (const stage of stages) {
+    stage.cards.sort((a, b) => (b.daysInPipeline || 0) - (a.daysInPipeline || 0));
+  }
+
+  return res.json({ stages });
+}
+
+function computeTrends(processedJobs, requests) {
   const now = new Date();
   const day = now.getUTCDay();
   const diffToMonday = (day === 0 ? -6 : 1 - day);
@@ -460,7 +574,7 @@ function computeTrends(processedJobs, leadClients) {
     const wCancels = processedJobs.filter(j =>
       j.effectiveCanceledDate && j.effectiveCanceledDate >= w.weekStartISO && j.effectiveCanceledDate < w.weekEndISO
     ).length;
-    const wLeads = leadClients.filter(c =>
+    const wLeads = requests.filter(c =>
       c.createdAt && c.createdAt >= w.weekStartISO && c.createdAt < w.weekEndISO
     ).length;
     return {
