@@ -1,12 +1,26 @@
 import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
+import ghlWebhookRouter from './api/commander/ghlWebhook.js';
+import jobberSyncRouter from './api/commander/jobberSync.js';
+import commanderSummaryRouter from './api/commander/summary.js';
+import jobberAuth from './api/jobber-auth.js';
+import jobberCallback from './api/jobber-callback.js';
 
 config({ path: '.env.local' });
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+// Commander routes
+app.use('/api/webhooks/ghl', ghlWebhookRouter);
+app.use('/api/admin/jobber', jobberSyncRouter);
+app.use('/api/commander', commanderSummaryRouter);
+
+// Jobber OAuth
+app.get('/api/jobber-auth', jobberAuth);
+app.get('/api/jobber-callback', jobberCallback);
 
 app.post('/api/generate-playbook', async (req, res) => {
   const { serviceName, category, nonNegotiables } = req.body;

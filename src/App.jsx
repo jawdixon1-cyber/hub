@@ -24,6 +24,7 @@ import {
   LayoutGrid,
   ChevronDown,
   ShieldCheck,
+  Crosshair,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -52,6 +53,7 @@ const ExecutionDashboard = lazy(() => import('./pages/ExecutionDashboard'));
 const ReceiptTracker = lazy(() => import('./pages/ReceiptTracker'));
 const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
 const Standards = lazy(() => import('./pages/Standards'));
+const Commander = lazy(() => import('./pages/Commander'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -71,10 +73,8 @@ const TEAM_ITEMS = [
 ];
 
 const OWNER_ITEMS = [
-  { id: 'manage', path: '/owner-dashboard', label: 'Manage', icon: ClipboardList },
+  { id: 'commander', path: '/commander', label: 'Commander', icon: Crosshair },
   { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
-  { id: 'checklist-tracker', path: '/checklist-tracker', label: 'Checklists', icon: ClipboardCheck },
-  { id: 'team', path: '/team', label: 'Team', icon: UserCog },
 ];
 
 const EXTERNAL_APPS = [
@@ -364,7 +364,7 @@ function AppShell() {
       {ownerMode && !needsOnboarding && (
         <>
           <div className="h-px bg-border-subtle my-3 mx-2" />
-          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Owner</p>}
+          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Owner Tools</p>}
           {OWNER_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
@@ -544,6 +544,7 @@ function AppShell() {
                 <Route path="/p/:slug" element={<PlaybookDetail ownerMode={ownerMode} />} />
                 <Route path="/equipment" element={<EquipmentIdeas />} />
                 <Route path="/hr" element={<HRPolicies />} />
+                <Route path="/commander" element={<Commander />} />
                 <Route path="/quoting" element={<Quoting />} />
                 <Route path="/team" element={<TeamManagement />} />
                 <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />

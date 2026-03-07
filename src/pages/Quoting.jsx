@@ -24,7 +24,7 @@ const SERVICE_SECTIONS = [
     label: 'MAINTENANCE',
     services: [
       { id: 'lawn', label: 'Lawn Maintenance', icon: Sprout, color: 'green' },
-      { id: 'bushes', label: 'Bush Maintenance', icon: Shrub, color: 'green' },
+      { id: 'bushes', label: 'Bushes', icon: Shrub, color: 'green' },
       { id: 'leafMaint', label: 'Leaf Maintenance', icon: Leaf, color: 'amber' },
     ],
   },
@@ -33,7 +33,6 @@ const SERVICE_SECTIONS = [
     services: [
       { id: 'aeration', label: 'Aeration', icon: CircleDot, color: 'green' },
       { id: 'overgrownLawn', label: 'Overgrown Lawn', icon: Fence, color: 'orange' },
-      { id: 'overgrownBushes', label: 'Overgrown Bushes', icon: Shrub, color: 'orange' },
       { id: 'leafCleanup', label: 'Leaf Cleanup', icon: Leaf, color: 'amber' },
     ],
   },
@@ -260,6 +259,66 @@ function calcBushes(b, settings) {
 
   const quote = perVisit;
   return { smallTotal, mediumTotal, largeTotal, xlTotal, totalCount, perVisit, monthly, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote };
+}
+
+const DEFAULT_OVERGROWN_MULTIPLIER = 2;
+
+function calcOvergrownBushes(b, settings) {
+  // Override mode
+  if (b.override) {
+    const quote = num(b.overridePrice);
+    return { smallTotal: 0, mediumTotal: 0, largeTotal: 0, xlTotal: 0, totalCount: 0, overgrownCount: 0, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote, override: true };
+  }
+
+  const sm = num(b.small);
+  const md = num(b.medium);
+  const lg = num(b.large);
+  const xlg = num(b.xl);
+  const overgrown = num(b.overgrown);
+  const totalCount = sm + md + lg + xlg;
+  if (totalCount <= 0) return { smallTotal: 0, mediumTotal: 0, largeTotal: 0, xlTotal: 0, totalCount: 0, overgrownCount: 0, quote: 0, material: 0, delivery: 0, equipment: 0, tax: 0, labor: 0 };
+
+  const prices = settings?.bushPrices || DEFAULT_BUSH_PRICES;
+  const multiplier = num(settings?.overgrownMultiplier) || DEFAULT_OVERGROWN_MULTIPLIER;
+
+  const smallTotal = sm * (num(prices.small) || DEFAULT_BUSH_PRICES.small);
+  const mediumTotal = md * (num(prices.medium) || DEFAULT_BUSH_PRICES.medium);
+  const largeTotal = lg * (num(prices.large) || DEFAULT_BUSH_PRICES.large);
+  const xlTotal = xlg * (num(prices.xl) || DEFAULT_BUSH_PRICES.xl);
+  const basePrice = smallTotal + mediumTotal + largeTotal + xlTotal;
+
+  // Overgrown surcharge: overgrown count × average bush price × multiplier
+  const avgPrice = totalCount > 0 ? basePrice / totalCount : 0;
+  const overgrownSurcharge = overgrown * avgPrice * (multiplier - 1);
+
+  const quote = Math.max(basePrice + overgrownSurcharge, 50); // $50 minimum for one-time
+
+  return { smallTotal, mediumTotal, largeTotal, xlTotal, totalCount, overgrownCount: overgrown, overgrownSurcharge: Math.round(overgrownSurcharge * 100) / 100, quote: Math.round(quote * 100) / 100, material: 0, delivery: 0, equipment: 0, tax: 0, labor: Math.round(quote * 100) / 100 };
+}
+
+const DEFAULT_REMOVAL_PRICES = { small: 35, medium: 65, large: 125, xl: 250 };
+
+function calcBushRemoval(b) {
+  if (b.override) {
+    const quote = num(b.overridePrice);
+    return { totalCount: 0, quote, material: 0, delivery: 0, equipment: 0, tax: 0, labor: quote, override: true };
+  }
+
+  const sm = num(b.small);
+  const md = num(b.medium);
+  const lg = num(b.large);
+  const xlg = num(b.xl);
+  const totalCount = sm + md + lg + xlg;
+  if (totalCount <= 0) return { totalCount: 0, quote: 0, material: 0, delivery: 0, equipment: 0, tax: 0, labor: 0 };
+
+  const smallTotal = sm * (num(b.smallPrice) || DEFAULT_REMOVAL_PRICES.small);
+  const mediumTotal = md * (num(b.mediumPrice) || DEFAULT_REMOVAL_PRICES.medium);
+  const largeTotal = lg * (num(b.largePrice) || DEFAULT_REMOVAL_PRICES.large);
+  const xlTotal = xlg * (num(b.xlPrice) || DEFAULT_REMOVAL_PRICES.xl);
+  const haulOff = num(b.haulOff);
+  const quote = Math.max(smallTotal + mediumTotal + largeTotal + xlTotal + haulOff, 75);
+
+  return { totalCount, smallTotal, mediumTotal, largeTotal, xlTotal, haulOff, quote: Math.round(quote * 100) / 100, material: 0, delivery: 0, equipment: 0, tax: 0, labor: Math.round(quote * 100) / 100 };
 }
 
 const DEFAULT_AERATION_BASE = 169;
@@ -554,7 +613,7 @@ export default function Quoting() {
 
   const makeDefaults = () => ({
     lawn: { sqft: '', difficulty: 'easy', override: false, overrideWeekly: '', overrideBiweekly: '', overrideDisplay: 'eow' },
-    bushes: { small: '', medium: '', large: '', xl: '', override: false, overridePerVisit: '' },
+    bushes: { small: '', medium: '', large: '', xl: '', override: false, overridePerVisit: '', modes: { trimming: true, overgrown: false, removal: false } },
     aeration: { sqft: '', override: false, overridePrice: '', includeOverseed: false, seedRate: '8', bagPrice: '190', ourBagCost: '84', overrideOverseed: false, overrideOverseedPrice: '' },
     mulch: { sqft: '', depth: '', materialCostPerYd: String(defaultMulchType.pricePerYd), chargePerYd: '80', difficulty: 'easy', mulchType: defaultMulchType.label, crewSize: '2', estHours: '', crewRate: '17' },
     rock: { sqft: '', depth: '3', materialCostPerYd: String(defaultRockType.pricePerYd), chargePerYd: '150', difficulty: 'easy', equipmentCost: '', rockType: defaultRockType.label, fabricRollCoverage: '900', fabricRollCost: '32.06', fabricChargePerSqft: '0.75', crewSize: '2', estHours: '', crewRate: '17' },
@@ -562,7 +621,9 @@ export default function Quoting() {
     pine: { bales: '', ourCost: '4.25', laborPerBale: '', delivery: '', override: false, overridePrice: '' },
     leafMaint: { perVisit: '', override: false, overridePerVisit: '' },
     leafCleanup: { yardSize: 'M', leafVolume: 'MED', fenceAccess: 'NONE', haulOff: false, haulLoads: '1', difficulty: 'NORMAL' },
-    other: { overgrownLawn: '', overgrownBushes: '' },
+    overgrownBushes: { small: '', medium: '', large: '', xl: '', overgrown: '', override: false, overridePrice: '' },
+    bushRemoval: { small: '', medium: '', large: '', xl: '', haulOff: '', override: false, overridePrice: '' },
+    other: { overgrownLawn: '' },
     annual: { enabled: false, lawnFrequency: 'weekly', mowingWeeks: '35', leafMaintVisits: '8', pineVisits: '1', leafVisits: '1', mulchVisits: '1', rockVisits: '1', edgingVisits: '1' },
   });
 
@@ -608,7 +669,7 @@ export default function Quoting() {
 
   // Calculations (only for selected services)
   const lawnCalc = has('lawn') ? calcLawn(data.lawn, settings) : ZERO_CALC;
-  const bushesCalc = has('bushes') ? calcBushes(data.bushes, settings) : ZERO_CALC;
+  const bushesCalc = (has('bushes') && data.bushes.modes?.trimming) ? calcBushes(data.bushes, settings) : ZERO_CALC;
   const aerationCalc = has('aeration') ? calcAeration(data.aeration, settings) : ZERO_CALC;
   const mulchCalc = has('mulch') ? calcMulch(data.mulch) : ZERO_CALC;
   const rockCalc = has('rock') ? calcRock(data.rock) : ZERO_CALC;
@@ -616,11 +677,13 @@ export default function Quoting() {
   const pineCalc = has('pine') ? calcPine(data.pine) : ZERO_CALC;
   const leafMaintCalc = has('leafMaint') ? calcLeafMaint(data.leafMaint) : ZERO_CALC;
   const leafCleanupCalc = has('leafCleanup') ? calcLeafCleanup(data.leafCleanup) : ZERO_CALC;
+  const overgrownBushesCalc = (has('bushes') && data.bushes.modes?.overgrown) ? calcOvergrownBushes(data.overgrownBushes, settings) : ZERO_CALC;
+  const bushRemovalCalc = (has('bushes') && data.bushes.modes?.removal) ? calcBushRemoval(data.bushRemoval) : ZERO_CALC;
   const otherCalcs = {
-    quote: (has('overgrownLawn') ? num(data.other.overgrownLawn) : 0) + (has('overgrownBushes') ? num(data.other.overgrownBushes) : 0),
+    quote: (has('overgrownLawn') ? num(data.other.overgrownLawn) : 0),
     materialCostTotal: 0, delivery: 0,
   };
-  const summary = calcSummary([lawnCalc, bushesCalc, leafMaintCalc, aerationCalc, mulchCalc, rockCalc, edgingCalc, pineCalc, leafCleanupCalc, otherCalcs]);
+  const summary = calcSummary([lawnCalc, bushesCalc, leafMaintCalc, aerationCalc, mulchCalc, rockCalc, edgingCalc, pineCalc, leafCleanupCalc, overgrownBushesCalc, bushRemovalCalc, otherCalcs]);
 
   // Compute annual total when annual contract is enabled
   const annualTotal = (() => {
@@ -645,7 +708,8 @@ export default function Quoting() {
     if (has('pine') && pineCalc.quote > 0) total += pineCalc.quote * (num(data.annual.pineVisits) || 1);
     if (has('leafCleanup') && leafCleanupCalc.quote > 0) total += leafCleanupCalc.quote * (num(data.annual.leafVisits) || 1);
     if (has('overgrownLawn')) total += num(data.other.overgrownLawn);
-    if (has('overgrownBushes')) total += num(data.other.overgrownBushes);
+    if (overgrownBushesCalc.quote > 0) total += overgrownBushesCalc.quote;
+    if (bushRemovalCalc.quote > 0) total += bushRemovalCalc.quote;
     return total;
   })();
 
@@ -692,6 +756,8 @@ export default function Quoting() {
       edging: has('edging') ? { ...data.edging } : null,
       pineNeedles: has('pine') ? { ...data.pine } : null,
       leafCleanup: has('leafCleanup') ? { ...data.leafCleanup } : null,
+      overgrownBushes: (has('bushes') && data.bushes.modes?.overgrown) ? { ...data.overgrownBushes } : null,
+      bushRemoval: (has('bushes') && data.bushes.modes?.removal) ? { ...data.bushRemoval } : null,
       otherServices: { ...data.other },
       annual: data.annual.enabled ? { ...data.annual } : null,
       total: data.annual.enabled ? annualTotal : summary.totalQuote,
@@ -730,7 +796,8 @@ export default function Quoting() {
       if (q.bushes && (num(q.bushes.small) || num(q.bushes.medium) || num(q.bushes.large) || num(q.bushes.xl) || num(q.bushes.bushCount))) svcs.add('bushes');
       if (q.aeration && (num(q.aeration.sqft) || q.aeration.override)) svcs.add('aeration');
       if (num(q.otherServices?.overgrownLawn)) svcs.add('overgrownLawn');
-      if (num(q.otherServices?.overgrownBushes)) svcs.add('overgrownBushes');
+      // Overgrown/removal bushes are now sub-modes of 'bushes'
+      // They'll be restored via bushes.modes when loading
       // Backward compat: old "overgrown" → overgrownLawn
       if (num(q.otherServices?.overgrown)) svcs.add('overgrownLawn');
     }
@@ -746,6 +813,8 @@ export default function Quoting() {
       edging: { ...defs.edging, ...q.edging },
       pine: { ...defs.pine, ...q.pineNeedles },
       leafCleanup: { ...defs.leafCleanup, ...q.leafCleanup },
+      overgrownBushes: { ...defs.overgrownBushes, ...(q.overgrownBushes || {}) },
+      bushRemoval: { ...defs.bushRemoval, ...(q.bushRemoval || {}) },
       other: { ...defs.other, ...q.otherServices, overgrownLawn: q.otherServices?.overgrownLawn || q.otherServices?.overgrown || '' },
       annual: { ...defs.annual, ...(q.annual || {}) },
     });
@@ -1305,46 +1374,171 @@ export default function Quoting() {
             </div>
           )}
 
-          {/* ── Bushes ── */}
+          {/* ── Bushes (Trimming / Overgrown / Removal) ── */}
           {has('bushes') && (
-            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Shrub size={20} className="text-green-600" /> Bush Maintenance</h2>
-                <button
-                  onClick={() => update('bushes', 'override', !data.bushes.override)}
-                  className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
-                    data.bushes.override
-                      ? 'bg-brand-light text-brand-text-strong border-brand'
-                      : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
-                  }`}
-                >
-                  {data.bushes.override ? 'Override On' : 'Override'}
-                </button>
+            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-5">
+              <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Shrub size={20} className="text-green-600" /> Bushes</h2>
+
+              {/* Sub-mode toggles */}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: 'trimming', label: 'Trimming', color: 'green' },
+                  { key: 'overgrown', label: 'Overgrown', color: 'orange' },
+                  { key: 'removal', label: 'Removal', color: 'red' },
+                ].map((mode) => (
+                  <button
+                    key={mode.key}
+                    onClick={() => {
+                      const modes = { ...(data.bushes.modes || { trimming: true, overgrown: false, removal: false }), [mode.key]: !(data.bushes.modes || {})[mode.key] };
+                      update('bushes', 'modes', modes);
+                    }}
+                    className={`text-xs font-semibold px-4 py-2 rounded-full border transition-colors cursor-pointer ${
+                      (data.bushes.modes || {})[mode.key]
+                        ? `bg-${mode.color}-100 text-${mode.color}-700 border-${mode.color}-300 dark:bg-${mode.color}-900/40 dark:text-${mode.color}-300 dark:border-${mode.color}-700`
+                        : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                    }`}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
               </div>
-              <p className="text-[10px] text-muted">3× per year — Apr, Jul, Oct</p>
-              {data.bushes.override ? (
-                <>
-                  <p className="text-xs text-muted">Set your own per-visit price instead of using the calculator.</p>
-                  <InputField label="Per Visit Price" value={data.bushes.overridePerVisit} onChange={(v) => update('bushes', 'overridePerVisit', v)} placeholder="0" prefix="$" />
-                </>
-              ) : (
-                <>
-                  <div className="grid grid-cols-4 gap-3">
-                    <InputField label={`Small ($${settings?.bushPrices?.small || DEFAULT_BUSH_PRICES.small}/ea)`} value={data.bushes.small} onChange={(v) => update('bushes', 'small', v)} placeholder="0" />
-                    <InputField label={`Medium ($${settings?.bushPrices?.medium || DEFAULT_BUSH_PRICES.medium}/ea)`} value={data.bushes.medium} onChange={(v) => update('bushes', 'medium', v)} placeholder="0" />
-                    <InputField label={`Large ($${settings?.bushPrices?.large || DEFAULT_BUSH_PRICES.large}/ea)`} value={data.bushes.large} onChange={(v) => update('bushes', 'large', v)} placeholder="0" />
-                    <InputField label={`XL ($${settings?.bushPrices?.xl || DEFAULT_BUSH_PRICES.xl}/ea)`} value={data.bushes.xl} onChange={(v) => update('bushes', 'xl', v)} placeholder="0" />
+
+              {/* ── Trimming sub-section ── */}
+              {data.bushes.modes?.trimming && (
+                <div className="space-y-4 border-t border-border-subtle pt-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-primary flex items-center gap-2"><Scissors size={16} className="text-green-600" /> Trimming</h3>
+                    <button
+                      onClick={() => update('bushes', 'override', !data.bushes.override)}
+                      className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                        data.bushes.override
+                          ? 'bg-brand-light text-brand-text-strong border-brand'
+                          : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                      }`}
+                    >
+                      {data.bushes.override ? 'Override On' : 'Override'}
+                    </button>
                   </div>
-                  <div className="border-t border-border-subtle pt-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      <ReadonlyField label="Per Visit" value={`$${fmt(bushesCalc.perVisit)}`} />
-                      <ReadonlyField label="Total Bushes" value={String(bushesCalc.totalCount)} />
-                    </div>
-                    {bushesCalc.perVisit === 35 && bushesCalc.totalCount > 0 && (
-                      <p className="text-[10px] text-muted mt-2">$35 minimum applied</p>
-                    )}
+                  <p className="text-[10px] text-muted">3× per year — Apr, Jul, Oct</p>
+                  {data.bushes.override ? (
+                    <>
+                      <p className="text-xs text-muted">Set your own per-visit price.</p>
+                      <InputField label="Per Visit Price" value={data.bushes.overridePerVisit} onChange={(v) => update('bushes', 'overridePerVisit', v)} placeholder="0" prefix="$" />
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-4 gap-3">
+                        <InputField label={`Small ($${settings?.bushPrices?.small || DEFAULT_BUSH_PRICES.small}/ea)`} value={data.bushes.small} onChange={(v) => update('bushes', 'small', v)} placeholder="0" />
+                        <InputField label={`Medium ($${settings?.bushPrices?.medium || DEFAULT_BUSH_PRICES.medium}/ea)`} value={data.bushes.medium} onChange={(v) => update('bushes', 'medium', v)} placeholder="0" />
+                        <InputField label={`Large ($${settings?.bushPrices?.large || DEFAULT_BUSH_PRICES.large}/ea)`} value={data.bushes.large} onChange={(v) => update('bushes', 'large', v)} placeholder="0" />
+                        <InputField label={`XL ($${settings?.bushPrices?.xl || DEFAULT_BUSH_PRICES.xl}/ea)`} value={data.bushes.xl} onChange={(v) => update('bushes', 'xl', v)} placeholder="0" />
+                      </div>
+                      {bushesCalc.totalCount > 0 && (
+                        <div className="border-t border-border-subtle pt-4">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            <ReadonlyField label="Per Visit" value={`$${fmt(bushesCalc.perVisit)}`} />
+                            <ReadonlyField label="Total Bushes" value={String(bushesCalc.totalCount)} />
+                          </div>
+                          {bushesCalc.perVisit === 35 && bushesCalc.totalCount > 0 && (
+                            <p className="text-[10px] text-muted mt-2">$35 minimum applied</p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ── Overgrown sub-section ── */}
+              {data.bushes.modes?.overgrown && (
+                <div className="space-y-4 border-t border-border-subtle pt-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-primary flex items-center gap-2"><Shrub size={16} className="text-orange-500" /> Overgrown</h3>
+                    <button
+                      onClick={() => update('overgrownBushes', 'override', !data.overgrownBushes.override)}
+                      className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                        data.overgrownBushes.override
+                          ? 'bg-brand-light text-brand-text-strong border-brand'
+                          : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                      }`}
+                    >
+                      {data.overgrownBushes.override ? 'Override On' : 'Override'}
+                    </button>
                   </div>
-                </>
+                  <p className="text-[10px] text-muted">One-time — same bush sizes, mark which are overgrown for {DEFAULT_OVERGROWN_MULTIPLIER}× surcharge</p>
+                  {data.overgrownBushes.override ? (
+                    <>
+                      <p className="text-xs text-muted">Set your own total price for overgrown trimming.</p>
+                      <InputField label="Total Price" value={data.overgrownBushes.overridePrice} onChange={(v) => update('overgrownBushes', 'overridePrice', v)} placeholder="0" prefix="$" />
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-4 gap-3">
+                        <InputField label={`Small ($${settings?.bushPrices?.small || DEFAULT_BUSH_PRICES.small}/ea)`} value={data.overgrownBushes.small} onChange={(v) => update('overgrownBushes', 'small', v)} placeholder="0" />
+                        <InputField label={`Medium ($${settings?.bushPrices?.medium || DEFAULT_BUSH_PRICES.medium}/ea)`} value={data.overgrownBushes.medium} onChange={(v) => update('overgrownBushes', 'medium', v)} placeholder="0" />
+                        <InputField label={`Large ($${settings?.bushPrices?.large || DEFAULT_BUSH_PRICES.large}/ea)`} value={data.overgrownBushes.large} onChange={(v) => update('overgrownBushes', 'large', v)} placeholder="0" />
+                        <InputField label={`XL ($${settings?.bushPrices?.xl || DEFAULT_BUSH_PRICES.xl}/ea)`} value={data.overgrownBushes.xl} onChange={(v) => update('overgrownBushes', 'xl', v)} placeholder="0" />
+                      </div>
+                      <InputField label={`# Overgrown (${DEFAULT_OVERGROWN_MULTIPLIER}× surcharge)`} value={data.overgrownBushes.overgrown} onChange={(v) => update('overgrownBushes', 'overgrown', v)} placeholder="0" />
+                      {overgrownBushesCalc.totalCount > 0 && (
+                        <div className="border-t border-border-subtle pt-3">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            <ReadonlyField label="Total Bushes" value={String(overgrownBushesCalc.totalCount)} />
+                            {overgrownBushesCalc.overgrownSurcharge > 0 && <ReadonlyField label="Surcharge" value={`$${fmt(overgrownBushesCalc.overgrownSurcharge)}`} />}
+                            <ReadonlyField label="Quote" value={`$${fmt(overgrownBushesCalc.quote)}`} />
+                          </div>
+                          {overgrownBushesCalc.quote === 50 && <p className="text-[10px] text-muted mt-2">$50 minimum applied</p>}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ── Removal sub-section ── */}
+              {data.bushes.modes?.removal && (
+                <div className="space-y-4 border-t border-border-subtle pt-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-primary flex items-center gap-2"><Trash2 size={16} className="text-red-500" /> Removal</h3>
+                    <button
+                      onClick={() => update('bushRemoval', 'override', !data.bushRemoval.override)}
+                      className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                        data.bushRemoval.override
+                          ? 'bg-brand-light text-brand-text-strong border-brand'
+                          : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
+                      }`}
+                    >
+                      {data.bushRemoval.override ? 'Override On' : 'Override'}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-muted">One-time — physically removing bushes, roots and all</p>
+                  {data.bushRemoval.override ? (
+                    <>
+                      <p className="text-xs text-muted">Set your own total price for bush removal.</p>
+                      <InputField label="Total Price" value={data.bushRemoval.overridePrice} onChange={(v) => update('bushRemoval', 'overridePrice', v)} placeholder="0" prefix="$" />
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-4 gap-3">
+                        <InputField label={`Small ($${DEFAULT_REMOVAL_PRICES.small}/ea)`} value={data.bushRemoval.small} onChange={(v) => update('bushRemoval', 'small', v)} placeholder="0" />
+                        <InputField label={`Medium ($${DEFAULT_REMOVAL_PRICES.medium}/ea)`} value={data.bushRemoval.medium} onChange={(v) => update('bushRemoval', 'medium', v)} placeholder="0" />
+                        <InputField label={`Large ($${DEFAULT_REMOVAL_PRICES.large}/ea)`} value={data.bushRemoval.large} onChange={(v) => update('bushRemoval', 'large', v)} placeholder="0" />
+                        <InputField label={`XL ($${DEFAULT_REMOVAL_PRICES.xl}/ea)`} value={data.bushRemoval.xl} onChange={(v) => update('bushRemoval', 'xl', v)} placeholder="0" />
+                      </div>
+                      <InputField label="Haul-Off Fee" value={data.bushRemoval.haulOff} onChange={(v) => update('bushRemoval', 'haulOff', v)} placeholder="0" prefix="$" />
+                      {bushRemovalCalc.totalCount > 0 && (
+                        <div className="border-t border-border-subtle pt-3">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            <ReadonlyField label="Total Bushes" value={String(bushRemovalCalc.totalCount)} />
+                            {bushRemovalCalc.haulOff > 0 && <ReadonlyField label="Haul-Off" value={`$${fmt(bushRemovalCalc.haulOff)}`} />}
+                            <ReadonlyField label="Quote" value={`$${fmt(bushRemovalCalc.quote)}`} />
+                          </div>
+                          {bushRemovalCalc.quote === 75 && <p className="text-[10px] text-muted mt-2">$75 minimum applied</p>}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -1833,12 +2027,11 @@ export default function Quoting() {
           )}
 
           {/* ── Other services (flat $) ── */}
-          {(has('overgrownLawn') || has('overgrownBushes')) && (
+          {has('overgrownLawn') && (
             <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
               <h2 className="text-lg font-bold text-primary">Other Services</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {has('overgrownLawn') && <InputField label="Overgrown Lawn" value={data.other.overgrownLawn} onChange={(v) => update('other', 'overgrownLawn', v)} prefix="$" placeholder="0" />}
-                {has('overgrownBushes') && <InputField label="Overgrown Bushes" value={data.other.overgrownBushes} onChange={(v) => update('other', 'overgrownBushes', v)} prefix="$" placeholder="0" />}
               </div>
             </div>
           )}
@@ -1943,11 +2136,17 @@ export default function Quoting() {
                   ? { label: 'Overgrown Lawn', per: q, times: 1, timesLabel: '1×', quote: q, cost: 0 }
                   : { label: 'Overgrown Lawn', quote: q, cost: 0 });
               }
-              if (has('overgrownBushes') && num(data.other.overgrownBushes) > 0) {
-                const q = num(data.other.overgrownBushes);
+              if (overgrownBushesCalc.quote > 0) {
+                const q = overgrownBushesCalc.quote;
                 lines.push(isAnnual
-                  ? { label: 'Overgrown Bushes', per: q, times: 1, timesLabel: '1×', quote: q, cost: 0 }
-                  : { label: 'Overgrown Bushes', quote: q, cost: 0 });
+                  ? { label: `Overgrown Bushes${data.overgrownBushes.override ? ' (Override)' : ''}`, per: q, times: 1, timesLabel: '1×', quote: q, cost: 0 }
+                  : { label: `Overgrown Bushes${data.overgrownBushes.override ? ' (Override)' : ''}`, detail: overgrownBushesCalc.totalCount > 0 ? `${overgrownBushesCalc.totalCount} bushes (${overgrownBushesCalc.overgrownCount || 0} overgrown)` : null, quote: q, cost: 0 });
+              }
+              if (bushRemovalCalc.quote > 0) {
+                const q = bushRemovalCalc.quote;
+                lines.push(isAnnual
+                  ? { label: `Bush Removal${data.bushRemoval.override ? ' (Override)' : ''}`, per: q, times: 1, timesLabel: '1×', quote: q, cost: 0 }
+                  : { label: `Bush Removal${data.bushRemoval.override ? ' (Override)' : ''}`, detail: bushRemovalCalc.totalCount > 0 ? `${bushRemovalCalc.totalCount} bushes removed` : null, quote: q, cost: 0 });
               }
 
               const totalQuote = lines.reduce((s, l) => s + l.quote, 0);

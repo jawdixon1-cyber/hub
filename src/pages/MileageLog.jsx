@@ -51,7 +51,7 @@ export default function MileageLog() {
     { qbName: 'Toyota 4Runner', nickname: 'The Tank!', year: '2007', make: 'Toyota', model: '4Runner' },
     { qbName: 'Jeep Wrangler', nickname: "Braden's Jeep", year: '2020', make: 'Jeep', model: 'Wrangler' },
     { qbName: 'Lexus', nickname: "Pat's Lexus", year: '2020', make: 'Lexus', model: '' },
-    { qbName: '2016 Ford F150', nickname: 'Work Truck', year: '2016', make: 'Ford', model: 'F-150' },
+    { qbName: '2016 Ford F150', nickname: 'Company Truck', year: '2016', make: 'Ford', model: 'F-150' },
     { qbName: 'Honda Civic', nickname: "Luke's Honda", year: '2017', make: 'Honda', model: 'Civic' },
     { qbName: 'Kia Sportage', nickname: "Sara's Kia", year: '2021', make: 'Kia', model: 'Sportage' },
     { qbName: 'Mercedez', nickname: "Michele's Mercedes", year: '2010', make: 'Mercedes', model: '' },
@@ -60,7 +60,7 @@ export default function MileageLog() {
 
   // One-time data rectification: sync vehicles, fix entries, import CSV, remove dupes
   useEffect(() => {
-    if (localStorage.getItem('qb-rectified-v4')) return;
+    if (localStorage.getItem('qb-rectified-v5')) return;
     const lower = (s) => (s || '').toLowerCase();
 
     // ── Step 1: Build canonical vehicle list ──
@@ -270,7 +270,7 @@ export default function MileageLog() {
     // ── Step 6: Save everything ──
     setVehicles(finalVehicles);
     setMileageLog([...fixedLog, ...newEntries]);
-    localStorage.setItem('qb-rectified-v4', '1');
+    localStorage.setItem('qb-rectified-v5', '1');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Runtime vehicle dedup: merge duplicate vehicles (e.g. "Lexus" + "Pat's Lexus" → keep the one with nickname)

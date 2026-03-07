@@ -1,3 +1,6 @@
+# OAuth tokens
+.jobber-tokens.json
+
 # Logs
 logs
 *.log

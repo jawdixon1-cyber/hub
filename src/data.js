@@ -734,8 +734,8 @@ export const initialTeamChecklist = [
 ];
 
 export const initialVehicles = [
-  { id: 'v1', name: 'Ford F-150 #1' },
-  { id: 'v2', name: 'Chevy Silverado #2' },
+  { id: 'v1', name: '2016 Ford F150', nickname: 'Company Truck', year: '2016', make: 'Ford', model: 'F-150' },
+  { id: 'v2', name: '2022 Ford F-150', nickname: "Gene's Ford", year: '2022', make: 'Ford', model: 'F-150' },
 ];
 
 export const initialMileageLog = [];
