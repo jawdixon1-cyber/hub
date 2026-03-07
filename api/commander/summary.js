@@ -1,4 +1,3 @@
-import { Router } from 'express';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -6,8 +5,6 @@ import { getSupabaseAdmin } from '../../lib/supabaseAdmin.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TOKENS_PATH = join(__dirname, '..', '..', '.jobber-tokens.json');
-
-const router = Router();
 
 const JOBBER_GRAPHQL_URL = 'https://api.getjobber.com/api/graphql';
 
@@ -311,7 +308,7 @@ async function getJobberData() {
 
 // ── GET /api/commander/summary?start=YYYY-MM-DD&end=YYYY-MM-DD ──
 
-router.get('/summary', async (req, res) => {
+export default async function handler(req, res) {
   try {
     const { start, end, refresh } = req.query;
     if (!start || !end) {
@@ -432,7 +429,7 @@ router.get('/summary', async (req, res) => {
     console.error('[Commander Summary] Error:', err);
     return res.status(500).json({ error: err.message });
   }
-});
+}
 
 function computeTrends(processedJobs, leadClients) {
   const now = new Date();
@@ -476,5 +473,3 @@ function computeTrends(processedJobs, leadClients) {
 
   return { weeklyNetGrowth, leadsBySource: [] };
 }
-
-export default router;

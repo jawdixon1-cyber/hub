@@ -1,11 +1,8 @@
-import { Router } from 'express';
 import { getSupabaseAdmin } from '../../lib/supabaseAdmin.js';
 import { normalizeLeadSource } from '../../lib/leadSource.js';
 
-const router = Router();
-
-// POST /api/webhooks/ghl/lead
-router.post('/lead', async (req, res) => {
+// POST /api/commander/ghlWebhook
+export default async function handler(req, res) {
   // Verify shared secret
   const secret = process.env.GHL_WEBHOOK_SECRET;
   if (secret) {
@@ -118,6 +115,4 @@ router.post('/lead', async (req, res) => {
     console.error('[GHL Webhook] Error:', err.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
-});
-
-export default router;
+}

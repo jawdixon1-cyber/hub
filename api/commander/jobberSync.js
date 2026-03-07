@@ -1,4 +1,3 @@
-import { Router } from 'express';
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -6,8 +5,6 @@ import { getSupabaseAdmin } from '../../lib/supabaseAdmin.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TOKENS_PATH = join(__dirname, '..', '..', '.jobber-tokens.json');
-
-const router = Router();
 
 const JOBBER_GRAPHQL_URL = 'https://api.getjobber.com/api/graphql';
 
@@ -53,7 +50,6 @@ async function jobberQuery(query, variables = {}) {
   return json.data;
 }
 
-// Fetch all quotes from Jobber (paginated)
 async function fetchAllQuotes() {
   const allNodes = [];
   let cursor = null;
@@ -93,7 +89,6 @@ async function fetchAllQuotes() {
   return allNodes;
 }
 
-// Fetch all recurring jobs from Jobber
 async function fetchRecurringJobs() {
   const allNodes = [];
   let cursor = null;
@@ -137,36 +132,23 @@ async function fetchRecurringJobs() {
   return allNodes;
 }
 
-// Estimate monthly value from visit total and recurrence rule
 function estimateMonthlyValue(total, calendarRule) {
   if (!total || !calendarRule) return total || 0;
-
-  // Parse RRULE-style calendar rule
   const freqMatch = calendarRule.match(/FREQ=(\w+)/);
   const intervalMatch = calendarRule.match(/INTERVAL=(\d+)/);
   const freq = freqMatch ? freqMatch[1] : 'WEEKLY';
   const interval = intervalMatch ? parseInt(intervalMatch[1]) : 1;
 
-  // Calculate visits per month
   let visitsPerMonth;
   switch (freq) {
-    case 'WEEKLY':
-      visitsPerMonth = 4.33 / interval;
-      break;
-    case 'DAILY':
-      visitsPerMonth = 30 / interval;
-      break;
-    case 'MONTHLY':
-      visitsPerMonth = 1 / interval;
-      break;
-    default:
-      visitsPerMonth = 4.33; // default to weekly
+    case 'WEEKLY': visitsPerMonth = 4.33 / interval; break;
+    case 'DAILY': visitsPerMonth = 30 / interval; break;
+    case 'MONTHLY': visitsPerMonth = 1 / interval; break;
+    default: visitsPerMonth = 4.33;
   }
-
   return Math.round(total * visitsPerMonth * 100) / 100;
 }
 
-// Ensure contact exists for a Jobber client
 async function ensureContact(db, client) {
   if (!client) return null;
 
@@ -182,7 +164,6 @@ async function ensureContact(db, client) {
   const phones = (client.phones || []).map(p => p.number);
   const emails = (client.emails || []).map(e => e.address);
 
-  // Try matching by phone or email
   for (const phone of phones) {
     const clean = phone.replace(/\D/g, '').slice(-10);
     if (!clean) continue;
@@ -210,7 +191,6 @@ async function ensureContact(db, client) {
     }
   }
 
-  // Create new contact
   const { data: created, error } = await db.from('contacts').insert({
     name: [client.firstName, client.lastName].filter(Boolean).join(' '),
     phone: phones[0] || null,
@@ -225,13 +205,12 @@ async function ensureContact(db, client) {
   return created.id;
 }
 
-async function runSync() {
+export async function runSync() {
   const db = getSupabaseAdmin();
   const syncStart = new Date().toISOString();
   const stats = { quotes: 0, recurring: 0, contacts: 0, errors: [] };
 
   try {
-    // 1. Sync Quotes
     console.log('[Jobber Sync] Fetching quotes...');
     const quotes = await fetchAllQuotes();
     console.log(`[Jobber Sync] Got ${quotes.length} quotes`);
@@ -263,7 +242,6 @@ async function runSync() {
       }
     }
 
-    // 2. Sync Recurring Jobs
     console.log('[Jobber Sync] Fetching recurring jobs...');
     const recurringJobs = await fetchRecurringJobs();
     console.log(`[Jobber Sync] Got ${recurringJobs.length} recurring jobs`);
@@ -296,7 +274,6 @@ async function runSync() {
       }
     }
 
-    // Update sync cursor
     await db.from('commander_sync_state')
       .update({ value: { last_synced_at: syncStart }, updated_at: syncStart })
       .eq('key', 'jobber_last_sync');
@@ -310,8 +287,8 @@ async function runSync() {
   return stats;
 }
 
-// POST /api/admin/jobber/sync (manual trigger)
-router.post('/sync', async (req, res) => {
+// POST /api/commander/jobberSync
+export default async function handler(req, res) {
   const adminSecret = process.env.COMMANDER_ADMIN_SECRET;
   if (adminSecret) {
     const provided = req.headers['x-admin-secret'] || req.query.secret;
@@ -327,7 +304,4 @@ router.post('/sync', async (req, res) => {
     console.error('[Jobber Sync] Error:', err);
     return res.status(500).json({ error: err.message });
   }
-});
-
-export { runSync };
-export default router;
+}

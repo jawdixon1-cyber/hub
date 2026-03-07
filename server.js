@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
-import ghlWebhookRouter from './api/commander/ghlWebhook.js';
-import jobberSyncRouter from './api/commander/jobberSync.js';
-import commanderSummaryRouter from './api/commander/summary.js';
+import ghlWebhookHandler from './api/commander/ghlWebhook.js';
+import jobberSyncHandler from './api/commander/jobberSync.js';
+import commanderSummaryHandler from './api/commander/summary.js';
 import jobberAuth from './api/jobber-auth.js';
 import jobberCallback from './api/jobber-callback.js';
 
@@ -14,9 +14,9 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 // Commander routes
-app.use('/api/webhooks/ghl', ghlWebhookRouter);
-app.use('/api/admin/jobber', jobberSyncRouter);
-app.use('/api/commander', commanderSummaryRouter);
+app.post('/api/commander/ghlWebhook', ghlWebhookHandler);
+app.post('/api/commander/jobberSync', jobberSyncHandler);
+app.get('/api/commander/summary', commanderSummaryHandler);
 
 // Jobber OAuth
 app.get('/api/jobber-auth', jobberAuth);
