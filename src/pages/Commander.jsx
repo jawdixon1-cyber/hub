@@ -61,18 +61,43 @@ function getPresetRange(preset) {
       tomorrow7.setDate(tomorrow7.getDate() + 1);
       return { start: fmt(s), end: fmt(tomorrow7), label: 'Last 7 Days' };
     }
+    case 'last-14': {
+      const s = new Date(today);
+      s.setDate(s.getDate() - 13);
+      const e = new Date(today);
+      e.setDate(e.getDate() + 1);
+      return { start: fmt(s), end: fmt(e), label: 'Last 14 Days' };
+    }
     case 'last-30': {
       const s = new Date(today);
       s.setDate(s.getDate() - 29);
-      const tomorrow30 = new Date(today);
-      tomorrow30.setDate(tomorrow30.getDate() + 1);
-      return { start: fmt(s), end: fmt(tomorrow30), label: 'Last 30 Days' };
+      const e = new Date(today);
+      e.setDate(e.getDate() + 1);
+      return { start: fmt(s), end: fmt(e), label: 'Last 30 Days' };
+    }
+    case 'last-90': {
+      const s = new Date(today);
+      s.setDate(s.getDate() - 89);
+      const e = new Date(today);
+      e.setDate(e.getDate() + 1);
+      return { start: fmt(s), end: fmt(e), label: 'Last 90 Days' };
     }
     case 'this-month': {
       const s = new Date(today.getFullYear(), today.getMonth(), 1);
-      const tomorrow_m = new Date(today);
-      tomorrow_m.setDate(tomorrow_m.getDate() + 1);
-      return { start: fmt(s), end: fmt(tomorrow_m), label: 'This Month' };
+      const e = new Date(today);
+      e.setDate(e.getDate() + 1);
+      return { start: fmt(s), end: fmt(e), label: 'This Month' };
+    }
+    case 'last-month': {
+      const s = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const e = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { start: fmt(s), end: fmt(e), label: 'Last Month' };
+    }
+    case 'this-year': {
+      const s = new Date(today.getFullYear(), 0, 1);
+      const e = new Date(today);
+      e.setDate(e.getDate() + 1);
+      return { start: fmt(s), end: fmt(e), label: 'This Year' };
     }
     default:
       return null;
@@ -82,8 +107,12 @@ function getPresetRange(preset) {
 const PRESETS = [
   { id: 'this-week', label: 'This Week' },
   { id: 'last-7', label: 'Last 7 Days' },
+  { id: 'last-14', label: 'Last 14 Days' },
   { id: 'last-30', label: 'Last 30 Days' },
+  { id: 'last-90', label: 'Last 90 Days' },
   { id: 'this-month', label: 'This Month' },
+  { id: 'last-month', label: 'Last Month' },
+  { id: 'this-year', label: 'This Year' },
   { id: 'custom', label: 'Custom Range' },
 ];
 
