@@ -422,6 +422,7 @@ export default async function handler(req, res) {
         startsMonthlyRevenue: Math.round(startsMonthlyRevenue * 100) / 100,
       },
       activeRecurringCount,
+      leadNames: leadsInRange.map(c => `${c.firstName || ''} ${c.lastName || ''}`.trim()).filter(Boolean),
       sourceTable,
       trends,
     });

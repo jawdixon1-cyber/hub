@@ -45,6 +45,11 @@ function getPresetRange(preset) {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   switch (preset) {
+    case 'yesterday': {
+      const y = new Date(today);
+      y.setDate(y.getDate() - 1);
+      return { start: fmt(y), end: fmt(today), label: 'Yesterday' };
+    }
     case 'this-week': {
       const day = today.getDay();
       const diff = day === 0 ? -6 : 1 - day;
@@ -105,6 +110,7 @@ function getPresetRange(preset) {
 }
 
 const PRESETS = [
+  { id: 'yesterday', label: 'Yesterday' },
   { id: 'this-week', label: 'This Week' },
   { id: 'last-7', label: 'Last 7 Days' },
   { id: 'last-14', label: 'Last 14 Days' },
@@ -128,6 +134,7 @@ export default function Commander() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [retryKey, setRetryKey] = useState(0);
+  const [showLeadNames, setShowLeadNames] = useState(false);
 
   const range = useMemo(() => {
     if (preset === 'custom' && customStart && customEnd) {
@@ -141,6 +148,7 @@ export default function Commander() {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setShowLeadNames(false);
 
     const refreshParam = retryKey > 0 ? '&refresh=1' : '';
     fetch(`/api/commander/summary?start=${range.start}&end=${range.end}${refreshParam}`)
@@ -237,9 +245,19 @@ export default function Commander() {
         <>
           {/* 2. KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <KpiCard label="New Leads" icon={Users}>
-              <span className="text-2xl font-bold text-primary">{kpis.newLeads}</span>
-            </KpiCard>
+            <div className="relative">
+              <KpiCard label="New Leads" icon={Users} onClick={() => setShowLeadNames(v => !v)}>
+                <span className="text-2xl font-bold text-primary cursor-pointer">{kpis.newLeads}</span>
+              </KpiCard>
+              {showLeadNames && data?.leadNames?.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 z-20 bg-card border border-border-default rounded-lg shadow-lg p-3 min-w-[180px] max-h-60 overflow-y-auto">
+                  <p className="text-xs text-muted mb-2 font-medium">Leads in range:</p>
+                  {data.leadNames.map((name, i) => (
+                    <p key={i} className="text-sm text-primary py-0.5">{name}</p>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <KpiCard label="Quotes Sent" icon={FileText}>
               <span className="text-2xl font-bold text-primary">{kpis.quotesSent}</span>
@@ -315,11 +333,14 @@ export default function Commander() {
 
 /* ── KPI Card ── */
 
-function KpiCard({ label, icon: Icon, children, highlight, negative }) {
+function KpiCard({ label, icon: Icon, children, highlight, negative, onClick }) {
   return (
-    <div className={`bg-card rounded-xl border p-4 flex flex-col gap-1 ${
-      highlight ? 'border-brand/40' : negative ? 'border-red-300 dark:border-red-800' : 'border-border-subtle'
-    }`}>
+    <div
+      onClick={onClick}
+      className={`bg-card rounded-xl border p-4 flex flex-col gap-1 ${
+        highlight ? 'border-brand/40' : negative ? 'border-red-300 dark:border-red-800' : 'border-border-subtle'
+      } ${onClick ? 'cursor-pointer hover:border-brand/60 transition-colors' : ''}`}
+    >
       <div className="flex items-center justify-between mb-1">
         <span className="text-[11px] font-medium text-muted uppercase tracking-wide">{label}</span>
         <Icon size={14} className={`${negative ? 'text-red-500' : highlight ? 'text-brand-text' : 'text-muted'}`} />
