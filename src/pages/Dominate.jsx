@@ -150,7 +150,11 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
         className="w-full h-[500px]"
         style={{ background: '#0a0a0a' }}
         zoomControl={false}
+        dragging={!('ontouchstart' in window)}
+        tap={false}
       >
+        {/* Enable two-finger drag on mobile */}
+        {'ontouchstart' in window && <TwoFingerDrag useMap={leaflet.useMap} L={L} />}
         {satellite ? (
           <>
             <TileLayer url={SAT_TILES} maxZoom={19} attribution="&copy; Esri" />
@@ -375,6 +379,39 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
       )}
     </div>
   );
+}
+
+/* ── Two-finger drag for mobile (rendered inside MapContainer) ── */
+
+function TwoFingerDrag({ useMap, L }) {
+  const map = useMap();
+  useEffect(() => {
+    const el = map.getContainer();
+    let touching = 0;
+
+    function onTouchStart(e) {
+      touching = e.touches.length;
+      if (touching >= 2) {
+        map.dragging.enable();
+      }
+    }
+    function onTouchEnd() {
+      touching = 0;
+      // Small delay so the drag gesture completes
+      setTimeout(() => { map.dragging.disable(); }, 100);
+    }
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [map]);
+  return null;
 }
 
 /* ── Sign drop handler (rendered inside MapContainer) ── */
