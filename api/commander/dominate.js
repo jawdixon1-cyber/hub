@@ -10,13 +10,7 @@ const JOBBER_GRAPHQL_URL = 'https://api.getjobber.com/api/graphql';
 /* ── Token helpers (with auto-refresh, same as summary.js) ── */
 
 async function readTokenData() {
-  try {
-    if (existsSync(TOKENS_PATH)) {
-      const data = JSON.parse(readFileSync(TOKENS_PATH, 'utf8'));
-      if (data?.access_token) return data;
-    }
-  } catch {}
-
+  // Prefer Supabase (always up-to-date, works on Vercel)
   try {
     const { getSupabaseAdmin } = await import('../../lib/supabaseAdmin.js');
     const db = getSupabaseAdmin();
@@ -26,6 +20,14 @@ async function readTokenData() {
       .eq('key', 'jobber')
       .maybeSingle();
     if (data?.value?.access_token) return data.value;
+  } catch {}
+
+  // Fallback to local file (dev only)
+  try {
+    if (existsSync(TOKENS_PATH)) {
+      const data = JSON.parse(readFileSync(TOKENS_PATH, 'utf8'));
+      if (data?.access_token) return data;
+    }
   } catch {}
 
   return null;
@@ -62,11 +64,13 @@ async function refreshAccessToken(tokenData) {
   });
 
   if (!res.ok) {
-    console.error('[Dominate] Token refresh failed:', await res.text());
+    const errBody = await res.text();
+    console.error('[Dominate] Token refresh failed:', res.status, errBody);
     return null;
   }
 
   const tokens = await res.json();
+  console.log('[Dominate] Got new access token, expires_in:', tokens.expires_in);
   const updated = {
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token || tokenData.refresh_token,
@@ -96,8 +100,8 @@ async function getToken() {
   return tokenData.access_token;
 }
 
-async function jobberQuery(query, retried = false) {
-  const token = await getToken();
+async function jobberQuery(query, tokenOverride = null) {
+  const token = tokenOverride || await getToken();
   if (!token) throw new Error('No Jobber token');
 
   const res = await fetch(JOBBER_GRAPHQL_URL, {
@@ -110,18 +114,27 @@ async function jobberQuery(query, retried = false) {
     body: JSON.stringify({ query }),
   });
 
-  if (res.status === 401 && !retried) {
+  if (res.status === 401 && !tokenOverride) {
     console.log('[Dominate] 401 received, forcing token refresh...');
     const tokenData = await readTokenData();
     if (tokenData) {
-      tokenData.expires_at = 0;
       refreshPromise = null;
       const newToken = await refreshAccessToken(tokenData);
-      if (newToken) return jobberQuery(query, true);
+      if (newToken) {
+        console.log('[Dominate] Retrying with fresh token...');
+        return jobberQuery(query, newToken);
+      }
+      console.error('[Dominate] Token refresh returned null');
+    } else {
+      console.error('[Dominate] No token data found in storage');
     }
+    throw new Error('Jobber token expired and refresh failed');
   }
 
-  if (!res.ok) throw new Error(`Jobber ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Jobber ${res.status}: ${body.slice(0, 200)}`);
+  }
   const json = await res.json();
   if (json.errors?.length) throw new Error(json.errors[0].message);
   return json.data;
@@ -230,10 +243,24 @@ const CACHE_TTL = 30 * 60 * 1000; // 30 min (geocoding is slow)
 
 export default async function handler(req, res) {
   try {
-    const { refresh } = req.query;
+    const { refresh, debug } = req.query;
     if (refresh === '1') {
       cachedClients = null;
       cacheTime = 0;
+    }
+
+    // Debug mode: show token status
+    if (debug === '1') {
+      const tokenData = await readTokenData();
+      return res.json({
+        hasToken: !!tokenData?.access_token,
+        hasRefresh: !!tokenData?.refresh_token,
+        expiresAt: tokenData?.expires_at ? new Date(tokenData.expires_at).toISOString() : null,
+        now: new Date().toISOString(),
+        expired: tokenData?.expires_at ? Date.now() > tokenData.expires_at : null,
+        hasClientId: !!(process.env.JOBBER_CLIENT_ID || '').trim(),
+        hasClientSecret: !!(process.env.JOBBER_CLIENT_SECRET || '').trim(),
+      });
     }
 
     if (cachedClients && Date.now() - cacheTime < CACHE_TTL) {
@@ -261,6 +288,6 @@ export default async function handler(req, res) {
     return res.json({ clients: geocoded });
   } catch (err) {
     console.error('[Dominate] Error:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message, stack: err.stack?.split('\n').slice(0, 3) });
   }
 }

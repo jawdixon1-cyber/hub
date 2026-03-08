@@ -11,15 +11,7 @@ const JOBBER_GRAPHQL_URL = 'https://api.getjobber.com/api/graphql';
 // ── Token Management (file + Supabase fallback) ──
 
 async function readTokenData() {
-  // Try local file first (fastest, works in dev)
-  try {
-    if (existsSync(TOKENS_PATH)) {
-      const data = JSON.parse(readFileSync(TOKENS_PATH, 'utf8'));
-      if (data?.access_token) return data;
-    }
-  } catch {}
-
-  // Fall back to Supabase (works on Vercel)
+  // Prefer Supabase (always up-to-date, works on Vercel)
   try {
     const db = getSupabaseAdmin();
     const { data } = await db
@@ -28,6 +20,14 @@ async function readTokenData() {
       .eq('key', 'jobber')
       .maybeSingle();
     if (data?.value?.access_token) return data.value;
+  } catch {}
+
+  // Fallback to local file (dev only)
+  try {
+    if (existsSync(TOKENS_PATH)) {
+      const data = JSON.parse(readFileSync(TOKENS_PATH, 'utf8'));
+      if (data?.access_token) return data;
+    }
   } catch {}
 
   return null;

@@ -10,6 +10,9 @@
     "api/commander/summary.js": {
       "maxDuration": 30
     },
+    "api/commander/dominate.js": {
+      "maxDuration": 60
+    },
     "api/jobber-auth.js": {
       "maxDuration": 15
     },

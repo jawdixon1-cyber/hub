@@ -1,2 +1,3 @@
 api/commander/ghlWebhook.js
 api/commander/jobberSync.js
+.jobber-tokens.json
