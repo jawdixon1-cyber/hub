@@ -86,6 +86,9 @@
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 
+/* ─── Prevent page zoom on map touch ─── */
+.leaflet-container { touch-action: none; }
+
 /* ─── Dominate map tooltip ─── */
 .dominate-tooltip {
   background: #1f1f1f !important;

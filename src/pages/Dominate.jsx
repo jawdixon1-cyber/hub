@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { supabase } from '../lib/supabase';
 import {
   MapPin,
   Users,
@@ -30,19 +31,36 @@ const STATUS_CONFIG = {
   Pause:    { color: 'text-zinc-500', bg: 'bg-zinc-500/10', border: 'border-zinc-500/30', hex: '#71717a' },
 };
 
-/* ── Zone persistence (localStorage) ── */
+/* ── Zone & sign persistence (localStorage + Supabase sync) ── */
 
 const ZONES_KEY = 'dominate_zones';
+const SIGNS_KEY = 'dominate_signs';
 
-function loadZones() {
-  try {
-    const raw = localStorage.getItem(ZONES_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+function loadLocal(key) {
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); }
+  catch { return []; }
 }
 
-function saveZones(zones) {
-  localStorage.setItem(ZONES_KEY, JSON.stringify(zones));
+function saveLocal(key, data) {
+  localStorage.setItem(key, JSON.stringify(data));
+}
+
+async function loadFromSupabase(key) {
+  try {
+    const { data } = await supabase
+      .from('app_state')
+      .select('value')
+      .eq('key', key)
+      .maybeSingle();
+    if (data?.value && Array.isArray(data.value)) return data.value;
+  } catch {}
+  return null;
+}
+
+function saveToSupabase(key, value) {
+  supabase.from('app_state')
+    .upsert({ key, value }, { onConflict: 'key' })
+    .catch(() => {});
 }
 
 /* ── Generate actions from zone + client data ── */
@@ -758,7 +776,7 @@ function ZoneModal({ zone, onSave, onClose }) {
 /* ── Main Page ── */
 
 export default function Dominate() {
-  const [zones, setZones] = useState(loadZones);
+  const [zones, setZones] = useState(() => loadLocal(ZONES_KEY));
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -771,10 +789,7 @@ export default function Dominate() {
   const [drawnPolygon, setDrawnPolygon] = useState(null); // polygon just drawn, waiting for name
   const [pendingZone, setPendingZone] = useState(null); // existing zone being redrawn
   const [signMode, setSignMode] = useState(false);
-  const [signPins, setSignPins] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('dominate_signs') || '[]'); }
-    catch { return []; }
-  });
+  const [signPins, setSignPins] = useState(() => loadLocal(SIGNS_KEY));
   const [confirmDeleteSign, setConfirmDeleteSign] = useState(null); // index or null
   const [userLocation, setUserLocation] = useState(null); // { lat, lng }
   const [heading, setHeading] = useState(null); // compass degrees (0=north)
@@ -856,6 +871,22 @@ export default function Dominate() {
 
   useEffect(() => { fetchClients(); }, [fetchClients]);
 
+  // Sync zones & signs from Supabase on mount (overrides localStorage if newer data exists)
+  useEffect(() => {
+    loadFromSupabase(ZONES_KEY).then(remote => {
+      if (remote && remote.length > 0) {
+        setZones(remote);
+        saveLocal(ZONES_KEY, remote);
+      }
+    });
+    loadFromSupabase(SIGNS_KEY).then(remote => {
+      if (remote) {
+        setSignPins(remote);
+        saveLocal(SIGNS_KEY, remote);
+      }
+    });
+  }, []);
+
   // Count clients in each zone using polygon containment
   const zoneSummary = useMemo(() =>
     zones.map(z => ({
@@ -883,7 +914,8 @@ export default function Dominate() {
 
   function updateZones(newZones) {
     setZones(newZones);
-    saveZones(newZones);
+    saveLocal(ZONES_KEY, newZones);
+    saveToSupabase(ZONES_KEY, newZones);
   }
 
   // "Add Zone" → go straight to drawing mode
@@ -939,10 +971,14 @@ export default function Dominate() {
     setDrawingMode(false);
   }
 
-  function handleAddSign(pin) {
-    const updated = [...signPins, pin];
+  function updateSigns(updated) {
     setSignPins(updated);
-    localStorage.setItem('dominate_signs', JSON.stringify(updated));
+    saveLocal(SIGNS_KEY, updated);
+    saveToSupabase(SIGNS_KEY, updated);
+  }
+
+  function handleAddSign(pin) {
+    updateSigns([...signPins, pin]);
   }
 
   function handleRemoveSign(index) {
@@ -951,9 +987,7 @@ export default function Dominate() {
 
   function confirmRemoveSign() {
     if (confirmDeleteSign === null) return;
-    const updated = signPins.filter((_, i) => i !== confirmDeleteSign);
-    setSignPins(updated);
-    localStorage.setItem('dominate_signs', JSON.stringify(updated));
+    updateSigns(signPins.filter((_, i) => i !== confirmDeleteSign));
     setConfirmDeleteSign(null);
   }
 
