@@ -353,21 +353,25 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
         </div>
       )}
       {signMode && (
-        <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-1.5">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/90 text-black border border-brand">
-            <Flag size={13} />
-            Tap map to drop a yard sign pin
+        <>
+          <div className="absolute top-3 left-3 z-[1000]">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/90 text-black border border-brand">
+              <Flag size={13} />
+              Tap map to drop sign
+            </div>
           </div>
           {userLocation && (
-            <button
-              onClick={() => onAddSign({ lat: userLocation.lat, lng: userLocation.lng, createdAt: new Date().toISOString() })}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-brand text-black shadow-lg active:scale-95 transition-transform"
-            >
-              <LocateFixed size={14} />
-              Drop Sign At My Location
-            </button>
+            <div className="absolute bottom-3 left-3 right-3 z-[1000]">
+              <button
+                onClick={() => onAddSign({ lat: userLocation.lat, lng: userLocation.lng, createdAt: new Date().toISOString() })}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold rounded-xl bg-brand text-black shadow-lg active:scale-[0.98] transition-transform"
+              >
+                <LocateFixed size={16} />
+                Drop Sign Here
+              </button>
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );
@@ -407,7 +411,7 @@ function FollowLocation({ lat, lng, useMap, useMapEvents, followKey }) {
     const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
     if (prevRef.current !== key) {
       prevRef.current = key;
-      map.setView([lat, lng], Math.max(map.getZoom(), 15), { animate: true });
+      map.setView([lat, lng], Math.max(map.getZoom(), 17), { animate: true });
     }
   }, [lat, lng, map]);
   return null;
@@ -816,78 +820,77 @@ export default function Dominate() {
             followKey={followKey}
           />
         )}
-        <div className="px-4 py-2.5 border-t border-border-subtle flex items-center justify-between">
-          <div className="flex items-center gap-4 text-[11px] text-muted">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-brand inline-block" />
+        <div className="px-3 py-2 border-t border-border-subtle space-y-2">
+          {/* Legend row — hidden on small screens to save space */}
+          <div className="hidden sm:flex items-center gap-3 text-[11px] text-muted">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-brand inline-block" />
               Client
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-white border border-brand inline-block" />
-              Sign ({signPins.length})
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-white border border-brand inline-block" />
+              Sign
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm border border-brand/60 bg-brand/15 inline-block" />
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm border border-brand/60 bg-brand/15 inline-block" />
               Zone
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 rounded-full bg-brand text-[7px] font-extrabold text-black flex items-center justify-center leading-none inline-flex">HQ</span>
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-full bg-brand text-[6px] font-extrabold text-black flex items-center justify-center leading-none inline-flex">HQ</span>
               Shop
             </span>
             {userLocation && (
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 border border-white inline-block" />
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-blue-500 border border-white inline-block" />
                 You
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
             {drawingMode && (
               <button
                 onClick={() => { setDrawingMode(false); setPendingZone(null); setDrawnPolygon(null); setDrawingPointCount(0); }}
                 className="text-xs text-red-400 hover:text-red-300"
               >
-                Cancel Drawing
+                Cancel
               </button>
             )}
             {tracking ? (
               <div className="flex items-center gap-0.5">
                 <button
                   onClick={recenterOnMe}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-l-md bg-blue-500 text-white border border-blue-500 transition-colors"
-                  title="Re-center on my location"
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-l-md bg-blue-500 text-white border border-blue-500 transition-colors"
                 >
-                  <LocateFixed size={11} />
-                  Tracking
+                  <LocateFixed size={12} />
+                  Re-center
                 </button>
                 <button
                   onClick={toggleTracking}
-                  className="flex items-center px-1.5 py-1 text-xs font-medium rounded-r-md bg-blue-600 text-white border border-blue-600 hover:bg-blue-700 transition-colors"
-                  title="Stop tracking"
+                  className="flex items-center px-1.5 py-1.5 text-xs font-medium rounded-r-md bg-blue-600 text-white border border-blue-600 transition-colors"
                 >
-                  <X size={11} />
+                  <X size={12} />
                 </button>
               </div>
             ) : (
               <button
                 onClick={toggleTracking}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md text-muted hover:text-secondary border border-border-subtle transition-colors"
-                title="Follow my location"
+                className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md text-muted hover:text-secondary border border-border-subtle transition-colors"
               >
-                <LocateFixed size={11} />
+                <LocateFixed size={12} />
                 Locate Me
               </button>
             )}
             <button
               onClick={() => setSignMode(!signMode)}
-              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+              className={`flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 signMode
-                  ? 'bg-white text-black border border-white'
+                  ? 'bg-brand text-black border border-brand font-semibold'
                   : 'text-muted hover:text-secondary border border-border-subtle'
               }`}
             >
-              <Flag size={11} />
-              {signMode ? 'Done Placing' : 'Drop Sign'}
+              <Flag size={12} />
+              {signMode ? 'Done' : 'Drop Sign'}
             </button>
           </div>
         </div>
