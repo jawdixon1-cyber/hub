@@ -423,12 +423,24 @@ function DrawingCore({ onComplete, onPointsChange, useMapEvents, Polyline, Circl
   const [points, setPoints] = useState([]);
   const pointsRef = useRef([]);
   const onCompleteRef = useRef(onComplete);
+  const onPointsChangeRef = useRef(onPointsChange);
   onCompleteRef.current = onComplete;
+  onPointsChangeRef.current = onPointsChange;
 
   function doUpdate(newPoints) {
     pointsRef.current = newPoints;
     setPoints([...newPoints]);
-    onPointsChange(newPoints.length);
+    onPointsChangeRef.current(newPoints.length);
+  }
+
+  function finishDrawing() {
+    if (pointsRef.current.length < 3) return;
+    const polygon = [...pointsRef.current];
+    pointsRef.current = [];
+    setPoints([]);
+    onPointsChangeRef.current(0);
+    // Call onComplete last — it will unmount this component
+    onCompleteRef.current(polygon);
   }
 
   useMapEvents({
@@ -442,8 +454,7 @@ function DrawingCore({ onComplete, onPointsChange, useMapEvents, Polyline, Circl
           Math.pow(newPoint[0] - first[0], 2) + Math.pow(newPoint[1] - first[1], 2)
         );
         if (dist < 0.0005) {
-          onCompleteRef.current([...pointsRef.current]);
-          doUpdate([]);
+          finishDrawing();
           return;
         }
       }
@@ -454,12 +465,7 @@ function DrawingCore({ onComplete, onPointsChange, useMapEvents, Polyline, Circl
 
   // Expose finish/undo for buttons outside MapContainer
   useEffect(() => {
-    window.__drawingFinish = () => {
-      if (pointsRef.current.length >= 3) {
-        onCompleteRef.current([...pointsRef.current]);
-        doUpdate([]);
-      }
-    };
+    window.__drawingFinish = () => finishDrawing();
     window.__drawingUndo = () => {
       if (pointsRef.current.length > 0) {
         doUpdate(pointsRef.current.slice(0, -1));
