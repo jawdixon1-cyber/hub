@@ -871,18 +871,27 @@ export default function Dominate() {
 
   useEffect(() => { fetchClients(); }, [fetchClients]);
 
-  // Sync zones & signs from Supabase on mount (overrides localStorage if newer data exists)
+  // Sync zones & signs with Supabase on mount
   useEffect(() => {
+    // Zones: pull from Supabase, or push local if Supabase empty
     loadFromSupabase(ZONES_KEY).then(remote => {
+      const local = loadLocal(ZONES_KEY);
       if (remote && remote.length > 0) {
         setZones(remote);
         saveLocal(ZONES_KEY, remote);
+      } else if (local.length > 0) {
+        // Local has zones but Supabase doesn't — push up
+        saveToSupabase(ZONES_KEY, local);
       }
     });
+    // Signs: same pattern
     loadFromSupabase(SIGNS_KEY).then(remote => {
-      if (remote) {
+      const local = loadLocal(SIGNS_KEY);
+      if (remote && remote.length > 0) {
         setSignPins(remote);
         saveLocal(SIGNS_KEY, remote);
+      } else if (local.length > 0) {
+        saveToSupabase(SIGNS_KEY, local);
       }
     });
   }, []);
