@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { supabase } from '../lib/supabase';
 import {
   MapPin,
   Users,
@@ -47,20 +46,20 @@ function saveLocal(key, data) {
 
 async function loadFromSupabase(key) {
   try {
-    const { data } = await supabase
-      .from('app_state')
-      .select('value')
-      .eq('key', key)
-      .maybeSingle();
-    if (data?.value && Array.isArray(data.value)) return data.value;
+    const res = await fetch(`/api/app-state?key=${encodeURIComponent(key)}`);
+    if (!res.ok) return null;
+    const { value } = await res.json();
+    if (value && Array.isArray(value)) return value;
   } catch {}
   return null;
 }
 
 function saveToSupabase(key, value) {
-  supabase.from('app_state')
-    .upsert({ key, value }, { onConflict: 'key' })
-    .catch(() => {});
+  fetch(`/api/app-state?key=${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
+  }).catch(() => {});
 }
 
 /* ── Generate actions from zone + client data ── */

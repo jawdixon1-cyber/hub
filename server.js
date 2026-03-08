@@ -5,6 +5,7 @@ import ghlWebhookHandler from './api/commander/ghlWebhook.js';
 import jobberSyncHandler from './api/commander/jobberSync.js';
 import commanderSummaryHandler from './api/commander/summary.js';
 import dominateHandler from './api/commander/dominate.js';
+import appStateHandler from './api/app-state.js';
 import jobberAuth from './api/jobber-auth.js';
 import jobberCallback from './api/jobber-callback.js';
 
@@ -19,6 +20,7 @@ app.post('/api/commander/ghlWebhook', ghlWebhookHandler);
 app.post('/api/commander/jobberSync', jobberSyncHandler);
 app.get('/api/commander/summary', commanderSummaryHandler);
 app.get('/api/commander/dominate', dominateHandler);
+app.all('/api/app-state', appStateHandler);
 
 // Jobber OAuth
 app.get('/api/jobber-auth', jobberAuth);

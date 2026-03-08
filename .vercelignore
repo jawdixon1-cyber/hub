@@ -1,3 +1,4 @@
 api/commander/ghlWebhook.js
 api/commander/jobberSync.js
+api/qb-vehicles.js
 .jobber-tokens.json
