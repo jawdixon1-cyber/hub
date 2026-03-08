@@ -7,6 +7,15 @@
     "api/generate-playbook.js": {
       "maxDuration": 60
     },
+    "api/commander/summary.js": {
+      "maxDuration": 30
+    },
+    "api/jobber-auth.js": {
+      "maxDuration": 15
+    },
+    "api/jobber-callback.js": {
+      "maxDuration": 15
+    },
     "api/qb-callback.js": {
       "maxDuration": 15
     },

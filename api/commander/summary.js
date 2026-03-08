@@ -540,7 +540,11 @@ async function handlePipeline(req, res) {
 
   // Sort each stage: oldest first (stale leads bubble up)
   for (const stage of stages) {
-    stage.cards.sort((a, b) => (b.daysInPipeline || 0) - (a.daysInPipeline || 0));
+    if (stage.id === 'won') {
+      stage.cards.sort((a, b) => new Date(b.approvedAt || 0) - new Date(a.approvedAt || 0));
+    } else {
+      stage.cards.sort((a, b) => (b.daysInPipeline || 0) - (a.daysInPipeline || 0));
+    }
   }
 
   return res.json({ stages });

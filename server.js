@@ -4,6 +4,7 @@ import { config } from 'dotenv';
 import ghlWebhookHandler from './api/commander/ghlWebhook.js';
 import jobberSyncHandler from './api/commander/jobberSync.js';
 import commanderSummaryHandler from './api/commander/summary.js';
+import dominateHandler from './api/commander/dominate.js';
 import jobberAuth from './api/jobber-auth.js';
 import jobberCallback from './api/jobber-callback.js';
 
@@ -17,6 +18,7 @@ app.use(express.json({ limit: '10mb' }));
 app.post('/api/commander/ghlWebhook', ghlWebhookHandler);
 app.post('/api/commander/jobberSync', jobberSyncHandler);
 app.get('/api/commander/summary', commanderSummaryHandler);
+app.get('/api/commander/dominate', dominateHandler);
 
 // Jobber OAuth
 app.get('/api/jobber-auth', jobberAuth);

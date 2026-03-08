@@ -190,9 +190,6 @@ function PipelineCard({ card, stageId, config }) {
           <span className="text-muted/70">{card.source}</span>
         )}
 
-        {card.quoteNumber && (
-          <span className="text-muted/70">#{card.quoteNumber}</span>
-        )}
       </div>
 
       {/* Approved date for won */}
