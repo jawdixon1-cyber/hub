@@ -97,7 +97,7 @@ const SHOP = { lat: 34.95572, lng: -81.07870, label: 'Hey Jude\'s HQ — 832 Wre
 
 /* ── Map Component with satellite toggle + zone drawing ── */
 
-function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawingComplete, onDrawingPointsChange, signPins, signMode, onAddSign, onRemoveSign, userLocation, heading, tracking, followKey }) {
+function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawingComplete, onDrawingPointsChange, editingZone, onEditZoneUpdate, signPins, signMode, onAddSign, onRemoveSign, userLocation, heading, tracking, followKey }) {
   const [leaflet, setLeaflet] = useState(null);
   const [L, setL] = useState(null);
   const [satellite, setSatellite] = useState(false);
@@ -143,7 +143,7 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
   const SAT_LABELS = 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png';
 
   return (
-    <div className="relative">
+    <div className="relative z-0">
       <MapContainer
         center={[34.945, -81.035]}
         zoom={12}
@@ -167,6 +167,7 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
         {/* Zone polygons */}
         {zones.map((z, i) => {
           if (!z.polygon || z.polygon.length < 3) return null;
+          if (editingZone?.name === z.name) return null; // ZoneEditor renders its own
           const cfg = STATUS_CONFIG[z.status] || STATUS_CONFIG.Pause;
           return (
             <Polygon
@@ -260,6 +261,19 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
           />
         )}
 
+        {/* Zone boundary editor */}
+        {editingZone && editingZone.polygon?.length >= 3 && (
+          <ZoneEditor
+            zone={editingZone}
+            onUpdate={onEditZoneUpdate}
+            Marker={Marker}
+            CircleMarker={CircleMarker}
+            Polygon={Polygon}
+            Tooltip={Tooltip}
+            L={L}
+          />
+        )}
+
         {/* User GPS location with direction cone */}
         {userLocation && (() => {
           const hasHeading = heading !== null;
@@ -330,6 +344,14 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
       </div>
 
       {/* Mode indicators */}
+      {editingZone && (
+        <div className="absolute top-3 left-3 z-[1000]">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-brand/90 text-black">
+            <Pencil size={13} />
+            Editing: {editingZone.name} · drag to move · tap + to add
+          </div>
+        </div>
+      )}
       {drawingMode && (
         <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-1.5">
           <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-brand/90 text-black">
@@ -533,6 +555,141 @@ function DrawingCore({ onComplete, onPointsChange, useMapEvents, Polyline, Circl
   );
 }
 
+/* ── Zone boundary editor (rendered inside MapContainer) ── */
+
+function ZoneEditor({ zone, onUpdate, Marker, CircleMarker, Polygon, Tooltip, L }) {
+  const [points, setPoints] = useState([...zone.polygon]);
+  const [selectedVertex, setSelectedVertex] = useState(null);
+
+  // Sync if zone changes externally
+  useEffect(() => { setPoints([...zone.polygon]); }, [zone.name]);
+
+  function save(newPoints) {
+    setPoints(newPoints);
+    onUpdate(zone.name, newPoints);
+  }
+
+  function movePoint(index, lat, lng) {
+    const updated = [...points];
+    updated[index] = [lat, lng];
+    save(updated);
+  }
+
+  function addPoint(afterIndex) {
+    const a = points[afterIndex];
+    const b = points[(afterIndex + 1) % points.length];
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const updated = [...points];
+    updated.splice(afterIndex + 1, 0, mid);
+    save(updated);
+    setSelectedVertex(null);
+  }
+
+  function removePoint(index) {
+    if (points.length <= 3) return;
+    const updated = points.filter((_, i) => i !== index);
+    save(updated);
+    setSelectedVertex(null);
+  }
+
+  function vertexIcon(index) {
+    const isSelected = selectedVertex === index;
+    return L.divIcon({
+      className: '',
+      html: `<div style="
+        width:${isSelected ? 22 : 16}px;height:${isSelected ? 22 : 16}px;
+        background:${isSelected ? '#fff' : '#B0FF03'};
+        border:2px solid ${isSelected ? '#B0FF03' : '#000'};
+        border-radius:50%;
+        box-shadow:0 1px 4px rgba(0,0,0,0.5);
+        cursor:grab;
+        transition:all 0.15s;
+      "></div>`,
+      iconSize: [isSelected ? 22 : 16, isSelected ? 22 : 16],
+      iconAnchor: [isSelected ? 11 : 8, isSelected ? 11 : 8],
+    });
+  }
+
+  const midpointIcon = L.divIcon({
+    className: '',
+    html: `<div style="width:12px;height:12px;background:rgba(176,255,3,0.3);border:2px solid rgba(176,255,3,0.6);border-radius:50%;cursor:pointer;"></div>`,
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
+  });
+
+  const cfg = STATUS_CONFIG[zone.status] || STATUS_CONFIG.Pause;
+
+  return (
+    <>
+      {/* Zone polygon preview */}
+      <Polygon
+        positions={points}
+        pathOptions={{ color: cfg.hex, fillColor: cfg.hex, fillOpacity: 0.15, weight: 2, dashArray: '4 4' }}
+      />
+
+      {/* Draggable vertex markers */}
+      {points.map((p, i) => (
+        <Marker
+          key={'v-' + i + '-' + points.length}
+          position={p}
+          icon={vertexIcon(i)}
+          draggable
+          eventHandlers={{
+            dragend: (e) => {
+              const { lat, lng } = e.target.getLatLng();
+              movePoint(i, lat, lng);
+            },
+            click: () => setSelectedVertex(selectedVertex === i ? null : i),
+          }}
+        />
+      ))}
+
+      {/* Selected vertex actions — show remove button */}
+      {selectedVertex !== null && points.length > 3 && points[selectedVertex] && (() => {
+        const p = points[selectedVertex];
+        const removeIcon = L.divIcon({
+          className: '',
+          html: `<div style="
+            display:flex;align-items:center;justify-content:center;
+            width:28px;height:28px;
+            background:#ef4444;border-radius:50%;
+            border:2px solid #fff;
+            box-shadow:0 2px 6px rgba(0,0,0,0.5);
+            cursor:pointer;
+          "><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg></div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 38],
+        });
+        return (
+          <Marker
+            position={p}
+            icon={removeIcon}
+            eventHandlers={{ click: () => removePoint(selectedVertex) }}
+          />
+        );
+      })()}
+
+      {/* Midpoint markers — tap to add a new vertex */}
+      {points.map((p, i) => {
+        const next = points[(i + 1) % points.length];
+        const mid = [(p[0] + next[0]) / 2, (p[1] + next[1]) / 2];
+        return (
+          <Marker
+            key={'m-' + i + '-' + points.length}
+            position={mid}
+            icon={midpointIcon}
+            eventHandlers={{ click: () => addPoint(i) }}
+          >
+            <Tooltip direction="top" offset={[0, -8]} className="dominate-tooltip">
+              <span className="text-xs">Tap to add point</span>
+            </Tooltip>
+          </Marker>
+        );
+      })}
+    </>
+  );
+}
+
 /* ── Zone Name/Status Modal (shown after drawing is complete) ── */
 
 function ZoneModal({ zone, onSave, onClose }) {
@@ -608,6 +765,7 @@ export default function Dominate() {
   const [sortKey, setSortKey] = useState('clients');
   const [sortAsc, setSortAsc] = useState(false);
   const [editZone, setEditZone] = useState(null); // null | zone object (for editing existing)
+  const [editingZone, setEditingZone] = useState(null); // zone being boundary-edited on map
   const [drawingMode, setDrawingMode] = useState(false);
   const [drawingPointCount, setDrawingPointCount] = useState(0);
   const [drawnPolygon, setDrawnPolygon] = useState(null); // polygon just drawn, waiting for name
@@ -735,13 +893,6 @@ export default function Dominate() {
     setPendingZone(null);
   }
 
-  // "Redraw" on existing zone → draw mode, remember which zone
-  function startRedrawZone(zone) {
-    setEditZone(null);
-    setSignMode(false);
-    setPendingZone(zone);
-    setDrawingMode(true);
-  }
 
   // Drawing finished → show naming modal (or save redraw)
   function handleDrawingComplete(polygon) {
@@ -773,6 +924,19 @@ export default function Dominate() {
 
   function handleDeleteZone(name) {
     updateZones(zones.filter(z => z.name !== name));
+  }
+
+  function handleEditZoneUpdate(zoneName, newPolygon) {
+    const updated = zones.map(z => z.name === zoneName ? { ...z, polygon: newPolygon } : z);
+    updateZones(updated);
+    // Keep editingZone in sync with new polygon
+    setEditingZone(prev => prev ? { ...prev, polygon: newPolygon } : null);
+  }
+
+  function startEditBoundary(zone) {
+    setEditingZone(zone);
+    setSignMode(false);
+    setDrawingMode(false);
   }
 
   function handleAddSign(pin) {
@@ -853,6 +1017,8 @@ export default function Dominate() {
             drawingPointCount={drawingPointCount}
             onDrawingComplete={handleDrawingComplete}
             onDrawingPointsChange={setDrawingPointCount}
+            editingZone={editingZone}
+            onEditZoneUpdate={handleEditZoneUpdate}
             signPins={signPins}
             signMode={signMode}
             onAddSign={handleAddSign}
@@ -891,6 +1057,14 @@ export default function Dominate() {
           </div>
           {/* Action buttons */}
           <div className="flex items-center gap-2 flex-wrap">
+            {editingZone && (
+              <button
+                onClick={() => setEditingZone(null)}
+                className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-md bg-brand text-black transition-colors"
+              >
+                Done Editing
+              </button>
+            )}
             {drawingMode && (
               <button
                 onClick={() => { setDrawingMode(false); setPendingZone(null); setDrawnPolygon(null); setDrawingPointCount(0); }}
@@ -989,7 +1163,7 @@ export default function Dominate() {
                       <td className="text-center px-3 py-3">
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => setEditZone(z)} className="p-1 text-muted hover:text-secondary" title="Edit name/status"><Pencil size={13} /></button>
-                          <button onClick={() => startRedrawZone(z)} className="p-1 text-muted hover:text-brand" title="Redraw boundary"><Pentagon size={13} /></button>
+                          <button onClick={() => startEditBoundary(z)} className="p-1 text-muted hover:text-brand" title="Edit boundary"><Pentagon size={13} /></button>
                           <button onClick={() => handleDeleteZone(z.name)} className="p-1 text-muted hover:text-red-400" title="Delete zone"><Trash2 size={13} /></button>
                         </div>
                       </td>
