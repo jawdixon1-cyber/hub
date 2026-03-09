@@ -61,20 +61,22 @@ export default function MileageLog() {
 
   // One-time data rectification: sync vehicles, fix entries, import CSV, remove dupes
   useEffect(() => {
-    if (localStorage.getItem('qb-rectified-v5')) return;
+    if (localStorage.getItem('qb-rectified-v6')) return;
     const lower = (s) => (s || '').toLowerCase();
+
+    // Vehicle matcher — requires year match when make+model overlap (prevents F-150 merge)
+    const matchVehicle = (v, def) =>
+      lower(v.name) === lower(def.qbName) ||
+      lower(v.nickname) === lower(def.nickname) ||
+      lower(v.name) === lower(def.nickname) ||
+      lower(v.nickname) === lower(def.qbName) ||
+      (v.make && v.model && lower(v.make) === lower(def.make) && lower(v.model) === lower(def.model) && v.year === def.year) ||
+      (v.make && lower(v.make) === lower(def.make) && v.year === def.year);
 
     // ── Step 1: Build canonical vehicle list ──
     let finalVehicles = [...vehicles];
     for (const def of qbVehicleDefs) {
-      const match = finalVehicles.find((v) =>
-        lower(v.name) === lower(def.qbName) ||
-        lower(v.nickname) === lower(def.nickname) ||
-        lower(v.name) === lower(def.nickname) ||
-        lower(v.nickname) === lower(def.qbName) ||
-        (v.make && v.model && lower(v.make) === lower(def.make) && lower(v.model) === lower(def.model)) ||
-        (v.make && lower(v.make) === lower(def.make) && v.year === def.year)
-      );
+      const match = finalVehicles.find((v) => matchVehicle(v, def));
       if (match) {
         finalVehicles = finalVehicles.map((v) => v.id === match.id ? {
           ...v,
@@ -92,19 +94,11 @@ export default function MileageLog() {
     // Deduplicate vehicles: if multiple vehicles map to the same QB def, keep only the first
     const canonicalIds = new Map(); // qbName → winning vehicle id
     for (const def of qbVehicleDefs) {
-      const matches = finalVehicles.filter((v) =>
-        lower(v.name) === lower(def.qbName) ||
-        lower(v.nickname) === lower(def.nickname) ||
-        lower(v.name) === lower(def.nickname) ||
-        lower(v.nickname) === lower(def.qbName) ||
-        (v.make && v.model && lower(v.make) === lower(def.make) && lower(v.model) === lower(def.model)) ||
-        (v.make && lower(v.make) === lower(def.make) && v.year === def.year)
-      );
+      const matches = finalVehicles.filter((v) => matchVehicle(v, def));
       if (matches.length > 0) {
         const winner = matches[0];
         canonicalIds.set(lower(def.qbName), winner.id);
         canonicalIds.set(lower(def.nickname), winner.id);
-        // Map all duplicate IDs to the winner
         for (const m of matches) {
           canonicalIds.set(m.id, winner.id);
         }
@@ -117,10 +111,8 @@ export default function MileageLog() {
       const winnerId = canonicalIds.get(lower(def.qbName));
       if (winnerId) keepIds.add(winnerId);
     }
-    // Also keep vehicles that aren't QB-related at all
     finalVehicles = finalVehicles.filter((v) => {
       if (keepIds.has(v.id)) return true;
-      // Check if this vehicle is a duplicate of a QB one
       const isDupe = canonicalIds.has(v.id) && canonicalIds.get(v.id) !== v.id;
       return !isDupe;
     });
@@ -140,12 +132,9 @@ export default function MileageLog() {
     }
 
     const resolveVehicleId = (entry) => {
-      // Check if old vehicleId maps to a canonical one (handles merged duplicates)
       const remapped = canonicalIds.get(entry.vehicleId);
       if (remapped && finalVehicles.find((v) => v.id === remapped)) return remapped;
-      // If vehicleId already points to a valid vehicle, keep it
       if (finalVehicles.find((v) => v.id === entry.vehicleId)) return entry.vehicleId;
-      // Try by name
       const byName = nameToId[lower(entry.vehicleName)];
       if (byName) return byName;
       return entry.vehicleId;
@@ -161,7 +150,28 @@ export default function MileageLog() {
     // ── Step 3: Remove all old qb-import entries ──
     fixedLog = fixedLog.filter((e) => e.source !== 'qb-import');
 
-    // ── Step 4: Deduplicate existing entries (same date + vehicleId + miles = dupe) ──
+    // ── Step 4: F-150 cross-reference ──
+    // QB source of truth for Gene's 2022 F-150 entries (date + miles)
+    const qb2022F150 = new Set([
+      '2026-02-20|40', '2026-02-19|30', '2026-02-06|22', '2026-02-05|26',
+      '2026-01-22|16', '2026-01-20|28', '2026-01-19|45', '2026-01-15|42',
+      '2026-01-14|55', '2026-01-13|50', '2026-01-01|36',
+    ]);
+    const f150_2022_id = nameToId[lower('2022 Ford F-150')] || nameToId[lower("Gene's Ford")];
+    const f150_2016_id = nameToId[lower('2016 Ford F150')] || nameToId[lower('Company Truck')];
+
+    if (f150_2022_id && f150_2016_id) {
+      fixedLog = fixedLog.map((e) => {
+        if (e.vehicleId !== f150_2022_id) return e;
+        const qbKey = `${e.date}|${Number(e.odometer)}`;
+        if (qb2022F150.has(qbKey)) return e; // confirmed 2022 entry
+        // Not in QB as 2022 → team logged 2016 under wrong truck
+        const v2016 = finalVehicles.find((fv) => fv.id === f150_2016_id);
+        return { ...e, vehicleId: f150_2016_id, vehicleName: v2016 ? displayName(v2016) : '2016 Ford F150' };
+      });
+    }
+
+    // ── Step 5: Deduplicate (same date + vehicleId + miles = keep one) ──
     const seenKeys = new Set();
     fixedLog = fixedLog.filter((e) => {
       const key = `${e.date}|${e.vehicleId}|${Number(e.odometer)}`;
@@ -170,7 +180,7 @@ export default function MileageLog() {
       return true;
     });
 
-    // ── Step 5: Import CSV rows, skipping any that match existing entries ──
+    // ── Step 6: Import CSV rows, skipping any that match existing entries ──
     const csvRows = [
       { date: '2026-03-04', vehicle: 'Toyota 4Runner', miles: 39, notes: 'Servicing Clients' },
       { date: '2026-03-04', vehicle: 'Jeep Wrangler', miles: 8, notes: 'Servicing Clients' },
@@ -268,10 +278,10 @@ export default function MileageLog() {
       });
     }
 
-    // ── Step 6: Save everything ──
+    // ── Step 7: Save everything ──
     setVehicles(finalVehicles);
     setMileageLog([...fixedLog, ...newEntries]);
-    localStorage.setItem('qb-rectified-v5', '1');
+    localStorage.setItem('qb-rectified-v6', '1');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Runtime vehicle dedup: merge duplicate vehicles (e.g. "Lexus" + "Pat's Lexus" → keep the one with nickname)
@@ -286,6 +296,7 @@ export default function MileageLog() {
         lower(v.nickname) === lower(def.nickname) ||
         lower(v.name) === lower(def.nickname) ||
         lower(v.nickname) === lower(def.qbName) ||
+        (v.make && v.model && lower(v.make) === lower(def.make) && lower(v.model) === lower(def.model) && v.year === def.year) ||
         (v.make && lower(v.make) === lower(def.make) && v.year === def.year)
       );
       if (matches.length > 1) {

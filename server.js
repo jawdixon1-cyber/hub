@@ -8,6 +8,8 @@ import dominateHandler from './api/commander/dominate.js';
 import appStateHandler from './api/app-state.js';
 import jobberAuth from './api/jobber-auth.js';
 import jobberCallback from './api/jobber-callback.js';
+import mowingScheduleHandler from './api/mowing/schedule.js';
+import mowingNotifyHandler from './api/mowing/notify.js';
 
 config({ path: '.env.local' });
 
@@ -21,6 +23,10 @@ app.post('/api/commander/jobberSync', jobberSyncHandler);
 app.get('/api/commander/summary', commanderSummaryHandler);
 app.get('/api/commander/dominate', dominateHandler);
 app.all('/api/app-state', appStateHandler);
+
+// Mowing Schedule
+app.get('/api/mowing/schedule', mowingScheduleHandler);
+app.post('/api/mowing/notify', mowingNotifyHandler);
 
 // Jobber OAuth
 app.get('/api/jobber-auth', jobberAuth);

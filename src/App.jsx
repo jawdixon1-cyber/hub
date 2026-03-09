@@ -27,6 +27,7 @@ import {
   Crosshair,
   GitBranch,
   MapPinned,
+  CalendarDays,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -58,6 +59,7 @@ const Standards = lazy(() => import('./pages/Standards'));
 const Commander = lazy(() => import('./pages/Commander'));
 const SalesPipeline = lazy(() => import('./pages/SalesPipeline'));
 const Dominate = lazy(() => import('./pages/Dominate'));
+const MowingSchedule = lazy(() => import('./pages/MowingSchedule'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -77,6 +79,7 @@ const TEAM_ITEMS = [
 ];
 
 const OWNER_ITEMS = [
+  { id: 'mowing', path: '/mowing', label: 'Visit Reminders', icon: CalendarDays },
   { id: 'commander', path: '/commander', label: 'Commander', icon: Crosshair },
   { id: 'pipeline', path: '/pipeline', label: 'Sales Pipeline', icon: GitBranch },
   { id: 'dominate', path: '/dominate', label: 'Dominate', icon: MapPinned },
@@ -550,6 +553,7 @@ function AppShell() {
                 <Route path="/p/:slug" element={<PlaybookDetail ownerMode={ownerMode} />} />
                 <Route path="/equipment" element={<EquipmentIdeas />} />
                 <Route path="/hr" element={<HRPolicies />} />
+                <Route path="/mowing" element={<MowingSchedule />} />
                 <Route path="/commander" element={<Commander />} />
                 <Route path="/pipeline" element={<SalesPipeline />} />
                 <Route path="/dominate" element={<Dominate />} />

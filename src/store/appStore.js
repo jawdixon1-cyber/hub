@@ -25,6 +25,8 @@ import {
   initialQuotingSettings,
   initialReceiptLog,
   initialQuizLog,
+  initialMowingSettings,
+  initialMowingNotifications,
 } from '../data';
 
 const DATA_CACHE_KEY = 'greenteam-data-cache';
@@ -61,6 +63,8 @@ const STATE_KEYS = [
   { key: 'executionDashboard',  supaKey: 'greenteam-executionDashboard',  initial: null },
   { key: 'executionHistory',    supaKey: 'greenteam-executionHistory',    initial: [] },
   { key: 'quizLog',             supaKey: 'greenteam-quizLog',             initial: initialQuizLog },
+  { key: 'mowingSettings',      supaKey: 'greenteam-mowingSettings',      initial: initialMowingSettings },
+  { key: 'mowingNotifications', supaKey: 'greenteam-mowingNotifications', initial: initialMowingNotifications },
 ];
 
 function resolveInitial(cloudValue, initial) {

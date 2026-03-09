@@ -1013,6 +1013,14 @@ export const initialQuests = [
 
 export const initialQuizLog = [];
 
+export const initialMowingSettings = {
+  automationEnabled: false,
+  sendTiming: 'day-before',       // 'day-before', 'morning-of', '2-days-before'
+  messageTemplate: "Hi {{firstName}}, this is a reminder that Hey Jude's Lawn Care is scheduled to service your property on {{serviceDate}}. Thank you for choosing us!",
+};
+
+export const initialMowingNotifications = [];
+
 export const QUIZ_QUESTIONS = [
   // Core Values — scenario-based
   {
