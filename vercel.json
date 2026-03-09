@@ -19,11 +19,8 @@
     "api/jobber-callback.js": {
       "maxDuration": 15
     },
-    "api/qb-callback.js": {
-      "maxDuration": 15
-    },
-    "api/qb-mileage.js": {
-      "maxDuration": 15
+    "api/mowing.js": {
+      "maxDuration": 30
     }
   }
 }
