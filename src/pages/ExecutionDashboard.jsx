@@ -1453,7 +1453,7 @@ export default function ExecutionDashboard() {
         className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl border-2 border-dashed border-border-strong text-secondary text-sm font-semibold hover:bg-surface-alt hover:border-brand transition-all cursor-pointer"
       >
         <Moon size={18} />
-        Wrap Up My Day
+        Closing
       </button>
 
       {/* ─── Reset Day ─── */}

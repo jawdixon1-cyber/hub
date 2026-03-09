@@ -176,7 +176,7 @@ function QBConnectionPanel() {
       setErrorMsg(params.get('msg') || 'Connection failed');
     }
 
-    fetch('/api/qb-status')
+    fetch('/api/qb-data?action=status')
       .then((r) => r.json())
       .then(setStatus)
       .catch(() => setStatus({ connected: false }))

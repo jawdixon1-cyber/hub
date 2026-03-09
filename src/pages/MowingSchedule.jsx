@@ -92,7 +92,7 @@ export default function MowingSchedule() {
     setLoading(true);
     setError(null);
     try {
-      const url = `/api/mowing/schedule?weeks=1${refresh ? '&refresh=1' : ''}`;
+      const url = `/api/mowing?weeks=1${refresh ? '&refresh=1' : ''}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to load (${res.status})`);
       const data = await res.json();
@@ -134,14 +134,14 @@ export default function MowingSchedule() {
   const sendAll = async () => {
     setSending(true);
     try {
-      const res = await fetch('/api/mowing/notify', {
+      const res = await fetch('/api/mowing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'batch', visits: tomorrowVisits }),
       });
       const data = await res.json();
       // Refresh notification log
-      const logRes = await fetch('/api/mowing/notify', {
+      const logRes = await fetch('/api/mowing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'log' }),

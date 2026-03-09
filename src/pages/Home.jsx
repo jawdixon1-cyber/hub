@@ -447,7 +447,7 @@ export default function Home() {
           {[
             { label: 'Opening', done: openingDone, active: flowState === 'needs-opening' },
             { label: 'Working', done: flowState === 'needs-closing' || closingDone, active: flowState === 'working' },
-            { label: 'Wrap Up', done: closingDone, active: flowState === 'needs-closing' },
+            { label: 'Closing', done: closingDone, active: flowState === 'needs-closing' },
           ].map((step, i) => (
             <div key={i} className="flex-1 flex flex-col items-center gap-1">
               <div className={`w-full h-1.5 rounded-full transition-colors ${
@@ -515,7 +515,7 @@ export default function Home() {
           >
             <FlagTriangleRight size={18} />
             <span className="flex flex-col items-start leading-tight">
-              <span>Done for the day? Wrap Up</span>
+              <span>Done for the day? Closing</span>
               <span className="text-xs font-normal opacity-70">Complete your closing checklist</span>
             </span>
           </button>
