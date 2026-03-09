@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import MileageModal from '../components/MileageModal';
 import { genId } from '../data';
+import { getTodayInTimezone, toDateStringInTimezone } from '../utils/timezone';
 
 const IRS_RATE = 0.725;
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -392,7 +393,7 @@ export default function MileageLog() {
     const pad = (n) => String(n).padStart(2, '0');
     switch (dateRange) {
       case 'today': {
-        const today = now.toISOString().slice(0, 10);
+        const today = getTodayInTimezone();
         return { from: today, to: today };
       }
       case 'this-month':
@@ -404,9 +405,9 @@ export default function MileageLog() {
       case 'this-year':
         return { from: `${y}-01-01`, to: `${y}-12-31` };
       case 'last-30':
-        return { from: new Date(now - 30 * 86400000).toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
+        return { from: toDateStringInTimezone(new Date(now - 30 * 86400000)), to: getTodayInTimezone() };
       case 'last-90':
-        return { from: new Date(now - 90 * 86400000).toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
+        return { from: toDateStringInTimezone(new Date(now - 90 * 86400000)), to: getTodayInTimezone() };
       default:
         return { from: '', to: '' };
     }

@@ -27,6 +27,20 @@ export function getTodayInTimezone() {
 }
 
 /**
+ * Get a YYYY-MM-DD string for any Date object in the configured timezone.
+ */
+export function toDateStringInTimezone(date) {
+  const tz = getTimezone();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(date);
+}
+
+/**
  * Get current ISO timestamp adjusted for display purposes.
  * (Still returns full ISO string, but can be used alongside getTodayInTimezone)
  */

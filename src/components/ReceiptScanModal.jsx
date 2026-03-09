@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Camera, Loader2, Plus, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { genId } from '../data';
+import { getTodayInTimezone } from '../utils/timezone';
 
 // Compress image and return as blob for upload
 function compressImageToBlob(dataUrl, maxWidth = 800, quality = 0.6) {
@@ -50,7 +51,7 @@ function compressImage(dataUrl, maxWidth = 800, quality = 0.6) {
 }
 
 export default function ReceiptScanModal({ currentUser, onSubmit, onClose }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayInTimezone();
   const [imageData, setImageData] = useState(null);       // full res for scanning
   const [thumbnailData, setThumbnailData] = useState(null); // compressed for storage
   const [scanning, setScanning] = useState(false);

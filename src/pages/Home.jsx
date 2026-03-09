@@ -275,7 +275,7 @@ export default function Home() {
     const vehicle = vehicles.find((v) => v.id === vehicleId);
     const odometerNum = Number(odometer);
     const vehicleName = vehicle ? (vehicle.nickname || [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || vehicle.name || 'Unknown') : 'Unknown';
-    const todayISO = new Date().toISOString().slice(0, 10);
+    const todayISO = getTodayInTimezone();
 
     const prevEntry = [...mileageLog]
       .filter((e) => e.vehicleId === vehicleId)

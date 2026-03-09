@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, ChevronDown } from 'lucide-react';
+import { getTodayInTimezone } from '../utils/timezone';
 
 const dn = (v) => v.nickname || [v.year, v.make, v.model].filter(Boolean).join(' ') || v.name || '';
 const desc = (v) => {
@@ -62,7 +63,7 @@ function VehicleSelect({ vehicles, value, onChange }) {
 }
 
 export default function MileageModal({ vehicles, currentUser, onSubmit, onClose }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayInTimezone();
   const [form, setForm] = useState({
     vehicleId: '',
     odometer: '',
