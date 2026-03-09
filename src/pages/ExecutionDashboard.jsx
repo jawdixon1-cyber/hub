@@ -521,10 +521,29 @@ export default function ExecutionDashboard() {
 
   const [morningDismissed, setMorningDismissed] = useState(false);
   const [wrappingUp, setWrappingUp] = useState(false);
+  const [eodDismissedToday, setEodDismissedToday] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState(ownerNotes || '');
   const notesRef = useRef(null);
+
+  // ─── New-day reset: clear checklist done flags so the morning gate shows again ───
+  const lastResetDateRef = useRef(null);
+  useEffect(() => {
+    const storageKey = 'greenteam-owner-checklist-reset-date';
+    const saved = localStorage.getItem(storageKey);
+    if (saved === today || lastResetDateRef.current === today) return;
+    lastResetDateRef.current = today;
+    localStorage.setItem(storageKey, today);
+    // Reset morning checklist items
+    if (ownerStartChecklist.some((i) => i.type !== 'header' && i.done)) {
+      setOwnerStartChecklist(ownerStartChecklist.map((i) => ({ ...i, done: false })));
+    }
+    // Reset end-of-day checklist items
+    if (ownerEndChecklist.some((i) => i.type !== 'header' && i.done)) {
+      setOwnerEndChecklist(ownerEndChecklist.map((i) => ({ ...i, done: false })));
+    }
+  }, [today, ownerStartChecklist, setOwnerStartChecklist, ownerEndChecklist, setOwnerEndChecklist]);
 
   // Checklist completion status — use checklistLog (persisted) so refresh doesn't reset gate
   const startCheckable = ownerStartChecklist.filter((i) => i.type !== 'header');
@@ -533,6 +552,24 @@ export default function ExecutionDashboard() {
   const morningLogEntry = checklistLog.find((e) => e.date === today && e.checklistType === 'owner-start');
   const morningLogComplete = morningLogEntry && morningLogEntry.completedItems === morningLogEntry.totalItems;
   const morningComplete = morningItemsComplete || morningLogComplete;
+
+  // ─── End-of-day completion status ───
+  const endLogEntry = checklistLog.find((e) => e.date === today && e.checklistType === 'owner-end');
+  const endOfDayComplete = endLogEntry && endLogEntry.completedItems === endLogEntry.totalItems;
+
+  // ─── 6 PM auto-prompt for end-of-day wrap-up ───
+  useEffect(() => {
+    if (wrappingUp || endOfDayComplete || eodDismissedToday) return;
+    const check6PM = () => {
+      const now = new Date();
+      if (now.getHours() >= 18 && !wrappingUp && !endOfDayComplete) {
+        setWrappingUp(true);
+      }
+    };
+    check6PM(); // check immediately
+    const interval = setInterval(check6PM, 60_000); // re-check every minute
+    return () => clearInterval(interval);
+  }, [wrappingUp, endOfDayComplete, eodDismissedToday]);
 
   // Initialize or load dashboard — carry forward everything on date change
   const getDashboard = useCallback(() => {
@@ -961,7 +998,7 @@ export default function ExecutionDashboard() {
         checklistLog={checklistLog}
         setChecklistLog={setChecklistLog}
         onRoll={handleRollToTomorrow}
-        onClose={() => setWrappingUp(false)}
+        onClose={() => { setWrappingUp(false); setEodDismissedToday(true); }}
       />
     );
   }
