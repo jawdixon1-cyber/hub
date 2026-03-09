@@ -91,15 +91,20 @@ export function createAppStore(cloudData) {
     initialState[key] = value;
   }
 
+  // Track which keys the user has modified locally since store creation
+  const dirtyKeys = new Set();
+
   const store = createStore(
     subscribeWithSelector((set) => {
       const setters = {};
       for (const { key } of STATE_KEYS) {
         const setterName = 'set' + key[0].toUpperCase() + key.slice(1);
-        setters[setterName] = (valOrFn) =>
+        setters[setterName] = (valOrFn) => {
+          dirtyKeys.add(key);
           set((state) => ({
             [key]: typeof valOrFn === 'function' ? valOrFn(state[key]) : valOrFn,
           }));
+        };
       }
       return { ...initialState, ...setters };
     })
@@ -176,14 +181,14 @@ export function createAppStore(cloudData) {
     const state = store.getState();
     const updates = {};
     for (const { key, supaKey, initial } of STATE_KEYS) {
+      // Skip keys the user has already modified locally — don't overwrite their edits
+      if (dirtyKeys.has(key)) continue;
       let cloudValue = cloudData[supaKey];
       if (cloudValue !== undefined && cloudValue !== null) {
         // Seed any new default guides into cloud data
         if (key === 'guides' && Array.isArray(cloudValue)) {
           cloudValue = seedMissingGuides(cloudValue, allInitialGuides);
         }
-        // Only overwrite if the store still has the initial/cached value
-        // (i.e., user hasn't made local edits since load)
         const currentJSON = JSON.stringify(state[key]);
         const cloudJSON = JSON.stringify(cloudValue);
         if (currentJSON !== cloudJSON) {

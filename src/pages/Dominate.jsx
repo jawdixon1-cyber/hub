@@ -1009,8 +1009,33 @@ export default function Dominate() {
     return sortAsc ? <ChevronUp size={12} className="inline ml-0.5" /> : <ChevronDown size={12} className="inline ml-0.5" />;
   };
 
+  // Prevent page zoom on iOS (gesturestart) and multi-touch zoom outside the map
+  useEffect(() => {
+    const prevent = (e) => {
+      // Allow zoom inside the Leaflet map container
+      if (e.target.closest?.('.leaflet-container')) return;
+      e.preventDefault();
+    };
+    document.addEventListener('gesturestart', prevent, { passive: false });
+    document.addEventListener('gesturechange', prevent, { passive: false });
+    document.addEventListener('gestureend', prevent, { passive: false });
+    // Block pinch-zoom via touchmove with 2+ fingers outside the map
+    const preventPinch = (e) => {
+      if (e.touches.length > 1 && !e.target.closest?.('.leaflet-container')) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('touchmove', preventPinch, { passive: false });
+    return () => {
+      document.removeEventListener('gesturestart', prevent);
+      document.removeEventListener('gesturechange', prevent);
+      document.removeEventListener('gestureend', prevent);
+      document.removeEventListener('touchmove', preventPinch);
+    };
+  }, []);
+
   return (
-    <div className="space-y-5 pb-24">
+    <div className="space-y-5 pb-24" style={{ touchAction: 'manipulation' }}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
