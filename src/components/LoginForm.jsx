@@ -7,6 +7,7 @@ export default function LoginForm() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('remember-me') === 'true');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -14,6 +15,12 @@ export default function LoginForm() {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
+    if (rememberMe) {
+      localStorage.setItem('remember-me', 'true');
+    } else {
+      localStorage.removeItem('remember-me');
+    }
 
     const { error } = await signIn(email, password);
     if (error) {
@@ -54,6 +61,16 @@ export default function LoginForm() {
               placeholder="Your password"
             />
           </div>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="w-4 h-4 rounded border-border-strong accent-emerald-600"
+            />
+            <span className="text-sm text-secondary">Remember me</span>
+          </label>
 
           {error && (
             <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-2">{error}</p>

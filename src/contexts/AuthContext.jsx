@@ -8,6 +8,17 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // If user didn't check "Remember me", clear session on fresh tab open
+    const remembered = localStorage.getItem('remember-me') === 'true';
+    const tabKey = sessionStorage.getItem('active-tab');
+    if (!remembered && !tabKey) {
+      // Fresh browser open without remember me — sign out
+      supabase.auth.signOut().then(() => setLoading(false));
+      sessionStorage.setItem('active-tab', '1');
+      return;
+    }
+    sessionStorage.setItem('active-tab', '1');
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);

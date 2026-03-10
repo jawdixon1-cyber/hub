@@ -166,6 +166,10 @@ async function fetchRequests() {
           client {
             firstName
             lastName
+            createdAt
+            sourceAttribution {
+              displayLeadSource
+            }
           }
         }
         pageInfo { hasNextPage endCursor }
@@ -409,11 +413,30 @@ export default async function handler(req, res) {
 
     const activeRecurringCount = activeJobs.length;
 
-    // ── Source Table ──
+    // ── Source Table (from client's Lead Source field) ──
+    // New client = client created within 7 days of request
+    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
     const sourceGroups = {};
+    const missingSourceLeads = [];
     for (const lead of leadsInRange) {
-      const rawSource = lead.source || 'Other';
-      const src = normalizeSource(rawSource);
+      const name = `${lead.client?.firstName || ''} ${lead.client?.lastName || ''}`.trim() || 'Unknown';
+      const requestDate = new Date(lead.createdAt).getTime();
+      const clientDate = lead.client?.createdAt ? new Date(lead.client.createdAt).getTime() : 0;
+      const isNewClient = clientDate > 0 && Math.abs(requestDate - clientDate) <= SEVEN_DAYS;
+
+      let src;
+      if (!isNewClient) {
+        src = 'Returning Client';
+      } else {
+        const clientLeadSource = lead.client?.sourceAttribution?.displayLeadSource;
+        if (!clientLeadSource) {
+          missingSourceLeads.push(name);
+          src = 'No Source Set';
+        } else {
+          src = normalizeSource(clientLeadSource);
+        }
+      }
+
       if (!sourceGroups[src]) {
         sourceGroups[src] = { source: src, leads: 0 };
       }
@@ -463,6 +486,7 @@ export default async function handler(req, res) {
       quotesSentNames: quotesSentInRange.map(q => `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim()).filter(Boolean),
       quotesApprovedNames: quotesApprovedInRange.map(q => `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim()).filter(Boolean),
       sourceTable,
+      missingSourceLeads,
       trends,
     });
   } catch (err) {

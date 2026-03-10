@@ -42,6 +42,11 @@ function getPresetRange(preset) {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   switch (preset) {
+    case 'today': {
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return { start: fmt(today), end: fmt(tomorrow), label: 'Today' };
+    }
     case 'yesterday': {
       const y = new Date(today);
       y.setDate(y.getDate() - 1);
@@ -106,6 +111,7 @@ function getPresetRange(preset) {
 }
 
 const PRESETS = [
+  { id: 'today', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
   { id: 'this-week', label: 'This Week' },
   { id: 'last-7', label: 'Last 7 Days' },
@@ -308,7 +314,7 @@ export default function Commander() {
           </div>
 
           {/* 5. Where Leads Come From */}
-          <SourceTable data={sourceTable} />
+          <SourceTable data={sourceTable} missingSourceLeads={data?.missingSourceLeads || []} />
 
           {/* 6. Trends */}
           {trends && <TrendsChart trends={trends} />}
@@ -349,9 +355,15 @@ const SOURCE_COLORS = [
   'bg-orange-500',
 ];
 
-function SourceTable({ data }) {
+function SourceTable({ data, missingSourceLeads = [] }) {
+  const [showMissing, setShowMissing] = useState(false);
   const sorted = useMemo(() => {
-    return [...data].sort((a, b) => b.leads - a.leads);
+    // Put "No Source Set" last
+    return [...data].sort((a, b) => {
+      if (a.source === 'No Source Set') return 1;
+      if (b.source === 'No Source Set') return -1;
+      return b.leads - a.leads;
+    });
   }, [data]);
 
   const total = sorted.reduce((sum, r) => sum + r.leads, 0);
@@ -374,10 +386,11 @@ function SourceTable({ data }) {
         <div className="w-full h-6 rounded-lg overflow-hidden flex">
           {sorted.map((row, i) => {
             const pctWidth = total > 0 ? (row.leads / total) * 100 : 0;
+            const isMissing = row.source === 'No Source Set';
             return (
               <div
                 key={row.source}
-                className={`${SOURCE_COLORS[i % SOURCE_COLORS.length]} transition-all duration-500 relative group`}
+                className={`${isMissing ? 'bg-red-500/70' : SOURCE_COLORS[i % SOURCE_COLORS.length]} transition-all duration-500 relative group`}
                 style={{ width: `${pctWidth}%` }}
               >
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 rounded-lg bg-surface-strong text-primary text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
@@ -392,16 +405,37 @@ function SourceTable({ data }) {
         <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-3">
           {sorted.map((row, i) => {
             const pctWidth = total > 0 ? (row.leads / total) * 100 : 0;
+            const isMissing = row.source === 'No Source Set';
             return (
               <div key={row.source} className="flex items-center gap-2">
-                <span className={`w-2.5 h-2.5 rounded-sm ${SOURCE_COLORS[i % SOURCE_COLORS.length]}`} />
-                <span className="text-xs text-secondary">
+                <span className={`w-2.5 h-2.5 rounded-sm ${isMissing ? 'bg-red-500/70' : SOURCE_COLORS[i % SOURCE_COLORS.length]}`} />
+                <span className={`text-xs ${isMissing ? 'text-red-400 font-semibold' : 'text-secondary'}`}>
                   {row.source} <span className="text-muted">— {row.leads} ({Math.round(pctWidth)}%)</span>
                 </span>
               </div>
             );
           })}
         </div>
+
+        {/* Missing source warning */}
+        {missingSourceLeads.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-border-subtle">
+            <button
+              onClick={() => setShowMissing(v => !v)}
+              className="text-xs text-red-400 font-medium cursor-pointer hover:text-red-300 transition-colors"
+            >
+              {missingSourceLeads.length} request{missingSourceLeads.length > 1 ? 's' : ''} missing lead source — {showMissing ? 'hide' : 'tap to see who'}
+            </button>
+            {showMissing && (
+              <div className="mt-2 space-y-1">
+                {missingSourceLeads.map((name, i) => (
+                  <p key={i} className="text-xs text-red-300/80 pl-2">• {name}</p>
+                ))}
+                <p className="text-[10px] text-muted mt-2">Set their lead source in Jobber → Client → Lead Information</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
