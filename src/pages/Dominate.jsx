@@ -205,7 +205,7 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
     iconAnchor: [12, 12],
   });
 
-  const DARK_TILES = 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png';
+  const DARK_TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
   const SAT_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
   const SAT_LABELS = 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png';
 
@@ -228,7 +228,7 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
             <TileLayer url={SAT_LABELS} maxZoom={19} />
           </>
         ) : (
-          <TileLayer url={DARK_TILES} maxZoom={19} attribution="&copy; Stadia Maps &copy; OSM" />
+          <TileLayer url={DARK_TILES} maxZoom={19} attribution="&copy; OSM &copy; CARTO" />
         )}
 
         <InvalidateSize useMap={leaflet.useMap} fullscreen={fullscreen} />
