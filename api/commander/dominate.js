@@ -171,6 +171,7 @@ async function fetchRecurringClients() {
   // Dedupe by client ID, only active
   const seen = new Set();
   const clients = [];
+  const missingAddress = [];
   for (const j of allNodes) {
     if (j.jobStatus === 'cancelled' || j.jobStatus === 'archived') continue;
     const cid = j.client?.id;
@@ -185,27 +186,30 @@ async function fetchRecurringClients() {
         state: addr.province,
         zip: addr.postalCode,
       });
+    } else {
+      missingAddress.push({
+        name: `${j.client.firstName} ${j.client.lastName}`,
+      });
     }
   }
-  return clients;
+  return { clients, missingAddress };
 }
 
-/* ── Geocode: Nominatim first, US Census fallback ── */
+/* ── Geocode: Census primary (no rate limit), Nominatim fallback ── */
 
-async function geocodeNominatim(street, city, state, zip) {
+const GEOCODE_CACHE_PATH = join(__dirname, '..', '..', '.geocode-cache.json');
+
+function loadGeocodeCache() {
   try {
-    const q = encodeURIComponent(`${street}, ${city}, ${state} ${zip}`);
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`,
-      { headers: { 'User-Agent': 'HeyJudesLawnCareHub/1.0' } }
-    );
-    const text = await res.text();
-    const data = JSON.parse(text);
-    if (data.length > 0) {
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    if (existsSync(GEOCODE_CACHE_PATH)) {
+      return JSON.parse(readFileSync(GEOCODE_CACHE_PATH, 'utf8'));
     }
   } catch {}
-  return null;
+  return {};
+}
+
+function saveGeocodeCache(cache) {
+  try { writeFileSync(GEOCODE_CACHE_PATH, JSON.stringify(cache, null, 2)); } catch {}
 }
 
 async function geocodeCensus(street, city, state, zip) {
@@ -216,8 +220,7 @@ async function geocodeCensus(street, city, state, zip) {
       format: 'json',
     });
     const res = await fetch(`https://geocoding.geo.census.gov/geocoder/locations/address?${params}`);
-    const text = await res.text();
-    const data = JSON.parse(text);
+    const data = await res.json();
     const match = data.result?.addressMatches?.[0];
     if (match) {
       return { lat: match.coordinates.y, lng: match.coordinates.x };
@@ -226,18 +229,36 @@ async function geocodeCensus(street, city, state, zip) {
   return null;
 }
 
+async function geocodeNominatim(street, city, state, zip) {
+  try {
+    const q = encodeURIComponent(`${street}, ${city}, ${state} ${zip}`);
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`,
+      { headers: { 'User-Agent': 'HeyJudesLawnCareHub/1.0' } }
+    );
+    const data = await res.json();
+    if (data.length > 0) {
+      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    }
+  } catch {}
+  return null;
+}
+
 async function geocodeAddress(street, city, state, zip) {
-  const result = await geocodeNominatim(street, city, state, zip);
+  // Census first (no rate limit, fast)
+  const result = await geocodeCensus(street, city, state, zip);
   if (result) return result;
-  await new Promise(r => setTimeout(r, 300));
-  return geocodeCensus(street, city, state, zip);
+  // Nominatim fallback (rate-limited)
+  await new Promise(r => setTimeout(r, 1100));
+  return geocodeNominatim(street, city, state, zip);
 }
 
 /* ── Cache ── */
 
 let cachedClients = null;
+let cachedMissing = null;
 let cacheTime = 0;
-const CACHE_TTL = 30 * 60 * 1000; // 30 min (geocoding is slow)
+const CACHE_TTL = 30 * 60 * 1000; // 30 min
 
 /* ── Handler ── */
 
@@ -264,28 +285,53 @@ export default async function handler(req, res) {
     }
 
     if (cachedClients && Date.now() - cacheTime < CACHE_TTL) {
-      return res.json({ clients: cachedClients });
+      return res.json({ clients: cachedClients, missingAddress: cachedMissing || [] });
     }
 
-    const clients = await fetchRecurringClients();
+    const { clients, missingAddress } = await fetchRecurringClients();
 
-    // Geocode all (with 1s delay between requests for Nominatim)
+    // Use persistent file cache — only geocode new/unknown addresses
+    const geoCache = loadGeocodeCache();
     const geocoded = [];
+    const toGeocode = [];
+
     for (const c of clients) {
-      const coords = await geocodeAddress(c.street, c.city, c.state, c.zip);
-      if (coords) {
-        geocoded.push({ ...c, lat: coords.lat, lng: coords.lng });
+      const cacheKey = `${c.street}|${c.city}|${c.state}|${c.zip}`;
+      if (geoCache[cacheKey]) {
+        geocoded.push({ ...c, ...geoCache[cacheKey] });
       } else {
-        geocoded.push({ ...c, lat: null, lng: null });
+        toGeocode.push({ client: c, cacheKey });
       }
-      // Nominatim rate limit
-      await new Promise(r => setTimeout(r, 1100));
     }
+
+    console.log(`[Dominate] ${geocoded.length} cached, ${toGeocode.length} to geocode`);
+
+    // Geocode only new addresses (Census has no rate limit, batch 3 at a time)
+    for (let i = 0; i < toGeocode.length; i += 3) {
+      const batch = toGeocode.slice(i, i + 3);
+      const results = await Promise.all(
+        batch.map(({ client: c }) => geocodeAddress(c.street, c.city, c.state, c.zip))
+      );
+      for (let j = 0; j < batch.length; j++) {
+        const { client: c, cacheKey } = batch[j];
+        const coords = results[j];
+        if (coords) {
+          geoCache[cacheKey] = { lat: coords.lat, lng: coords.lng };
+          geocoded.push({ ...c, lat: coords.lat, lng: coords.lng });
+        } else {
+          geocoded.push({ ...c, lat: null, lng: null });
+        }
+      }
+    }
+
+    // Persist cache to disk
+    saveGeocodeCache(geoCache);
 
     cachedClients = geocoded;
+    cachedMissing = missingAddress;
     cacheTime = Date.now();
 
-    return res.json({ clients: geocoded });
+    return res.json({ clients: geocoded, missingAddress });
   } catch (err) {
     console.error('[Dominate] Error:', err);
     return res.status(500).json({ error: err.message, stack: err.stack?.split('\n').slice(0, 3) });

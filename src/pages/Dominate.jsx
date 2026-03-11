@@ -18,6 +18,9 @@ import {
   Map as MapIcon,
   Pentagon,
   LocateFixed,
+  Maximize2,
+  Minimize2,
+  Navigation,
 } from 'lucide-react';
 
 /* ── Status config ── */
@@ -112,9 +115,44 @@ function formatDate(dateStr) {
 /* ── Shop location ── */
 const SHOP = { lat: 34.95572, lng: -81.07870, label: 'Hey Jude\'s HQ — 832 Wren Dr' };
 
+/* ── Route optimizer (nearest-neighbor) ── */
+
+function optimizeRoute(start, stops) {
+  if (stops.length <= 1) return stops;
+  const remaining = [...stops];
+  const ordered = [];
+  let current = start;
+  while (remaining.length > 0) {
+    let closest = 0;
+    let closestDist = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const d = Math.pow(remaining[i].lat - current.lat, 2) + Math.pow(remaining[i].lng - current.lng, 2);
+      if (d < closestDist) { closestDist = d; closest = i; }
+    }
+    ordered.push(remaining[closest]);
+    current = remaining[closest];
+    remaining.splice(closest, 1);
+  }
+  return ordered;
+}
+
+function openIdealSpotsRoute(signPins, userLocation) {
+  const ideals = signPins.filter(s => s.type === 'ideal' && s.lat && s.lng);
+  if (ideals.length === 0) return;
+  const start = userLocation || SHOP;
+  const ordered = optimizeRoute(start, ideals);
+  // Google Maps directions URL with waypoints
+  const origin = `${start.lat},${start.lng}`;
+  const destination = `${ordered[ordered.length - 1].lat},${ordered[ordered.length - 1].lng}`;
+  const waypoints = ordered.slice(0, -1).map(s => `${s.lat},${s.lng}`).join('|');
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+  if (waypoints) url += `&waypoints=${waypoints}`;
+  window.open(url, '_blank');
+}
+
 /* ── Map Component with satellite toggle + zone drawing ── */
 
-function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawingComplete, onDrawingPointsChange, editingZone, onEditZoneUpdate, signPins, signMode, onAddSign, onRemoveSign, userLocation, heading, tracking, followKey }) {
+function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawingComplete, onDrawingPointsChange, editingZone, onEditZoneUpdate, signPins, signMode, onAddSign, onRemoveSign, userLocation, heading, tracking, following, setFollowing, followKey, fullscreen, onToggleFullscreen }) {
   const [leaflet, setLeaflet] = useState(null);
   const [L, setL] = useState(null);
   const [satellite, setSatellite] = useState(false);
@@ -140,9 +178,9 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
     );
   }
 
-  const { MapContainer, TileLayer, CircleMarker, Marker, Tooltip, Polygon, Polyline, useMapEvents } = leaflet;
+  const { MapContainer, TileLayer, CircleMarker, Marker, Tooltip, Popup, Polygon, Polyline, useMapEvents } = leaflet;
 
-  const signIcon = L.divIcon({
+  const signIconActive = L.divIcon({
     className: '',
     html: `<div style="
       display:flex;align-items:center;justify-content:center;
@@ -154,17 +192,29 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
     iconSize: [24, 24],
     iconAnchor: [12, 12],
   });
+  const signIconIdeal = L.divIcon({
+    className: '',
+    html: `<div style="
+      display:flex;align-items:center;justify-content:center;
+      width:24px;height:24px;
+      background:transparent;border-radius:4px;
+      border:2px dashed #B0FF03;
+      box-shadow:0 2px 6px rgba(0,0,0,0.4);
+    "><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#B0FF03" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22v-6"/><path d="M3 16V4a1 1 0 0 1 1-1h9.586a1 1 0 0 1 .707.293l2.414 2.414a1 1 0 0 1 .293.707V16H3z"/></svg></div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
 
-  const DARK_TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  const DARK_TILES = 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png';
   const SAT_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
   const SAT_LABELS = 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png';
 
   return (
-    <div className="relative z-0">
+    <div className={fullscreen ? 'fixed inset-0 z-[9999]' : 'relative z-0'}>
       <MapContainer
         center={[34.945, -81.035]}
         zoom={12}
-        className="w-full h-[500px]"
+        className={fullscreen ? 'w-full h-full' : 'w-full h-[500px]'}
         style={{ background: '#0a0a0a' }}
         zoomControl={false}
         dragging={!('ontouchstart' in window)}
@@ -178,8 +228,10 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
             <TileLayer url={SAT_LABELS} maxZoom={19} />
           </>
         ) : (
-          <TileLayer url={DARK_TILES} maxZoom={19} attribution="&copy; OSM &copy; CARTO" />
+          <TileLayer url={DARK_TILES} maxZoom={19} attribution="&copy; Stadia Maps &copy; OSM" />
         )}
+
+        <InvalidateSize useMap={leaflet.useMap} fullscreen={fullscreen} />
 
         {/* Zone polygons */}
         {zones.map((z, i) => {
@@ -252,15 +304,38 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
           <Marker
             key={'sign-' + i}
             position={[s.lat, s.lng]}
-            icon={signIcon}
-            eventHandlers={{ click: (e) => { L.DomEvent.stopPropagation(e); onRemoveSign(i); } }}
+            icon={s.type === 'ideal' ? signIconIdeal : signIconActive}
+            eventHandlers={s.type === 'ideal' ? {} : { click: (e) => { L.DomEvent.stopPropagation(e); onRemoveSign(i); } }}
           >
-            <Tooltip direction="top" offset={[0, -14]} className="dominate-tooltip">
-              <span className="text-xs font-medium">
-                Yard Sign
-                {s.createdAt ? <><br /><span style={{ opacity: 0.6 }}>Placed {new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span></> : ''}
-              </span>
-            </Tooltip>
+            {s.type === 'ideal' ? (
+              <Popup className="ideal-spot-popup">
+                <div style={{ textAlign: 'center', minWidth: 120 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>Ideal Location</div>
+                  {s.createdAt && <div style={{ opacity: 0.5, fontSize: 11, marginBottom: 8 }}>Marked {new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>}
+                  <a
+                    href={`https://maps.apple.com/?daddr=${s.lat},${s.lng}&dirflg=d`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ display: 'block', background: '#007AFF', color: '#fff', padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', marginBottom: 6 }}
+                  >
+                    Directions
+                  </a>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onRemoveSign(i); }}
+                    style={{ display: 'block', width: '100%', background: 'none', border: 'none', color: '#ef4444', fontSize: 11, cursor: 'pointer', padding: 2 }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </Popup>
+            ) : (
+              <Tooltip direction="top" offset={[0, -14]} className="dominate-tooltip">
+                <span className="text-xs font-medium">
+                  Yard Sign
+                  {s.createdAt ? <><br /><span style={{ opacity: 0.6 }}>Placed {new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span></> : ''}
+                </span>
+              </Tooltip>
+            )}
           </Marker>
         ))}
 
@@ -345,12 +420,18 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
 
         {/* Auto-pan to user location */}
         {tracking && userLocation && (
-          <FollowLocation lat={userLocation.lat} lng={userLocation.lng} useMap={leaflet.useMap} useMapEvents={leaflet.useMapEvents} followKey={followKey} />
+          <FollowLocation lat={userLocation.lat} lng={userLocation.lng} useMap={leaflet.useMap} useMapEvents={leaflet.useMapEvents} followKey={followKey} following={following} onStopFollowing={() => setFollowing(false)} />
         )}
       </MapContainer>
 
       {/* Map controls */}
       <div className="absolute top-3 right-3 z-[1000] flex gap-1.5">
+        <button
+          onClick={onToggleFullscreen}
+          className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors backdrop-blur-sm bg-card/80 border-border-subtle text-secondary hover:text-primary"
+        >
+          {fullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+        </button>
         <button
           onClick={() => setSatellite(!satellite)}
           className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors backdrop-blur-sm bg-card/80 border-border-subtle text-secondary hover:text-primary"
@@ -400,7 +481,7 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
           <div className="absolute top-3 left-3 z-[1000]">
             <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/90 text-black border border-brand">
               <Flag size={13} />
-              Tap map to drop sign
+              {signMode === 'ideal' ? 'Tap map to mark ideal location' : 'Tap map to drop sign'}
             </div>
           </div>
           {userLocation && (
@@ -410,7 +491,7 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold rounded-xl bg-brand text-black shadow-lg active:scale-[0.98] transition-transform"
               >
                 <LocateFixed size={16} />
-                Drop Sign Here
+                {signMode === 'ideal' ? 'Mark Here' : 'Drop Sign Here'}
               </button>
             </div>
           )}
@@ -466,30 +547,38 @@ function SignDropHandler({ onAddSign, useMapEvents }) {
 
 /* ── Follow user location (rendered inside MapContainer) ── */
 
-function FollowLocation({ lat, lng, useMap, useMapEvents, followKey }) {
+function FollowLocation({ lat, lng, useMap, useMapEvents, followKey, following, onStopFollowing }) {
   const map = useMap();
   const prevRef = useRef(null);
-  const followingRef = useRef(true);
 
-  // Pause auto-follow when user drags the map
+  // Stop following when user drags the map
   useMapEvents({
-    dragstart() { followingRef.current = false; },
+    dragstart() { if (following) onStopFollowing(); },
   });
 
-  // Re-enable follow when user taps "Locate Me" again (followKey bumps)
+  // Re-center when followKey bumps (user tapped re-center)
   useEffect(() => {
-    followingRef.current = true;
-    prevRef.current = null; // force re-center
-  }, [followKey]);
+    if (following) prevRef.current = null; // force re-center
+  }, [followKey, following]);
 
   useEffect(() => {
-    if (!followingRef.current) return;
+    if (!following) return;
     const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
     if (prevRef.current !== key) {
       prevRef.current = key;
       map.setView([lat, lng], Math.max(map.getZoom(), 17), { animate: true });
     }
-  }, [lat, lng, map]);
+  }, [lat, lng, map, following]);
+  return null;
+}
+
+/* ── Invalidate map size on fullscreen toggle ── */
+
+function InvalidateSize({ useMap, fullscreen }) {
+  const map = useMap();
+  useEffect(() => {
+    setTimeout(() => map.invalidateSize(), 100);
+  }, [fullscreen, map]);
   return null;
 }
 
@@ -777,6 +866,7 @@ function ZoneModal({ zone, onSave, onClose }) {
 export default function Dominate() {
   const [zones, setZones] = useState(() => loadLocal(ZONES_KEY));
   const [clients, setClients] = useState([]);
+  const [missingAddress, setMissingAddress] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sortKey, setSortKey] = useState('clients');
@@ -787,28 +877,27 @@ export default function Dominate() {
   const [drawingPointCount, setDrawingPointCount] = useState(0);
   const [drawnPolygon, setDrawnPolygon] = useState(null); // polygon just drawn, waiting for name
   const [pendingZone, setPendingZone] = useState(null); // existing zone being redrawn
-  const [signMode, setSignMode] = useState(false);
+  const [signMode, setSignMode] = useState(false); // false | 'sign' | 'ideal'
+  const [fullscreen, setFullscreen] = useState(false);
   const [signPins, setSignPins] = useState(() => loadLocal(SIGNS_KEY));
   const [confirmDeleteSign, setConfirmDeleteSign] = useState(null); // index or null
   const [userLocation, setUserLocation] = useState(null); // { lat, lng }
   const [heading, setHeading] = useState(null); // compass degrees (0=north)
   const [tracking, setTracking] = useState(false);
+  const [following, setFollowing] = useState(false); // auto-center on user
   const [followKey, setFollowKey] = useState(0); // bump to re-center after drag
   const watchIdRef = useRef(null);
+  const isMobile = typeof window !== 'undefined' && 'ontouchstart' in window;
 
-  // GPS location tracking
-  function toggleTracking() {
-    if (tracking) {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
-      }
-      setTracking(false);
-      setUserLocation(null);
-      setHeading(null);
-      return;
+  // Auto-start GPS on mobile
+  useEffect(() => {
+    if (isMobile && !tracking && navigator.geolocation) {
+      startTracking();
     }
-    if (!navigator.geolocation) return;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function startTracking() {
+    if (tracking) return;
     setTracking(true);
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
@@ -822,7 +911,6 @@ export default function Dominate() {
       window.addEventListener('deviceorientation', handleOrientation, true);
     }
     function handleOrientation(e) {
-      // webkitCompassHeading (iOS) or alpha (Android)
       let h = null;
       if (typeof e.webkitCompassHeading === 'number') {
         h = e.webkitCompassHeading;
@@ -840,8 +928,25 @@ export default function Dominate() {
     }
   }
 
-  // Re-center on me (when tracking but user dragged away)
+  function stopTracking() {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    setTracking(false);
+    setFollowing(false);
+    setUserLocation(null);
+    setHeading(null);
+  }
+
+  function toggleTracking() {
+    if (tracking) stopTracking();
+    else startTracking();
+  }
+
+  // Snap to my location and enable follow mode
   function recenterOnMe() {
+    setFollowing(true);
     setFollowKey(k => k + 1);
   }
 
@@ -861,6 +966,7 @@ export default function Dominate() {
       if (!res.ok) throw new Error('Failed to load clients');
       const data = await res.json();
       setClients(data.clients || []);
+      setMissingAddress(data.missingAddress || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -986,7 +1092,7 @@ export default function Dominate() {
   }
 
   function handleAddSign(pin) {
-    updateSigns([...signPins, pin]);
+    updateSigns([...signPins, { ...pin, type: pin.type || signMode || 'sign' }]);
   }
 
   function handleRemoveSign(index) {
@@ -1040,7 +1146,7 @@ export default function Dominate() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <Crosshair size={20} className="text-brand" />
-          <h1 className="text-lg font-semibold text-primary">Dominate</h1>
+          <h1 className="text-lg font-semibold text-primary">Territory</h1>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted hidden sm:block">Where should we concentrate this week?</span>
@@ -1058,25 +1164,24 @@ export default function Dominate() {
         <SummaryCard label="In Zones" value={totals.inZones} icon={Target} />
       </div>
 
-      {/* Map */}
-      <div className="bg-card rounded-xl border border-border-subtle overflow-hidden">
-        <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
-          <span className="text-sm font-medium text-primary">Recurring Clients &mdash; Rock Hill, SC</span>
-          <span className="text-xs text-muted">{clients.filter(c => c.lat).length} mapped &middot; {zones.length} zone{zones.length !== 1 ? 's' : ''}</span>
+      {/* Missing address warning */}
+      {missingAddress.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+          <p className="text-xs font-semibold text-amber-400 mb-1">
+            {missingAddress.length} client{missingAddress.length > 1 ? 's' : ''} missing address — can't show on map
+          </p>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+            {missingAddress.map((c, i) => (
+              <span key={i} className="text-xs text-amber-300/80">{c.name}</span>
+            ))}
+          </div>
+          <p className="text-[10px] text-amber-400/60 mt-1">Fix in Jobber → Client → Property address</p>
         </div>
-        {loading && clients.length === 0 ? (
-          <div className="w-full h-[500px] flex items-center justify-center">
-            <div className="text-center space-y-2">
-              <Loader2 size={24} className="text-brand animate-spin mx-auto" />
-              <p className="text-sm text-muted">Loading client locations from Jobber...</p>
-              <p className="text-xs text-muted">First load takes ~25s (geocoding addresses)</p>
-            </div>
-          </div>
-        ) : error ? (
-          <div className="w-full h-[500px] flex items-center justify-center">
-            <p className="text-sm text-red-400">{error}</p>
-          </div>
-        ) : (
+      )}
+
+      {/* Fullscreen map — rendered outside card to avoid overflow:hidden clipping */}
+      {fullscreen && !loading && !error && (
+        <>
           <DominateMap
             clients={clients}
             zones={zones}
@@ -1093,9 +1198,175 @@ export default function Dominate() {
             userLocation={userLocation}
             heading={heading}
             tracking={tracking}
+            following={following}
+            setFollowing={setFollowing}
             followKey={followKey}
+            fullscreen={fullscreen}
+            onToggleFullscreen={() => setFullscreen(f => !f)}
           />
-        )}
+          {/* Fullscreen toolbar */}
+          <div className="fixed bottom-0 left-0 right-0 z-[10000] bg-card/95 backdrop-blur-md border-t border-border-subtle px-3 py-2 space-y-2 max-h-[45vh] overflow-y-auto">
+            {/* Action buttons */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {editingZone && (
+                <button
+                  onClick={() => setEditingZone(null)}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-md bg-brand text-black transition-colors"
+                >
+                  Done Editing
+                </button>
+              )}
+              {drawingMode && (
+                <button
+                  onClick={() => { setDrawingMode(false); setPendingZone(null); setDrawnPolygon(null); setDrawingPointCount(0); }}
+                  className="text-xs text-red-400 hover:text-red-300"
+                >
+                  Cancel
+                </button>
+              )}
+              {tracking ? (
+                <div className="flex items-center gap-0.5">
+                  <button
+                    onClick={recenterOnMe}
+                    className={`flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-l-md transition-colors ${
+                      following
+                        ? 'bg-blue-500 text-white border border-blue-500'
+                        : 'text-blue-400 border border-blue-500/40 hover:bg-blue-500/10'
+                    }`}
+                  >
+                    <LocateFixed size={12} />
+                    {following ? 'Following' : 'Re-center'}
+                  </button>
+                  <button
+                    onClick={toggleTracking}
+                    className="flex items-center px-1.5 py-1.5 text-xs font-medium rounded-r-md bg-blue-600 text-white border border-blue-600 transition-colors"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={toggleTracking}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md text-muted hover:text-secondary border border-border-subtle transition-colors"
+                >
+                  <LocateFixed size={12} />
+                  Locate Me
+                </button>
+              )}
+              {signMode ? (
+                <button
+                  onClick={() => setSignMode(false)}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-md bg-brand text-black border border-brand transition-colors"
+                >
+                  <Flag size={12} />
+                  Done
+                </button>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setSignMode('sign')}
+                    className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md text-muted hover:text-secondary border border-border-subtle transition-colors"
+                  >
+                    <Flag size={12} />
+                    New Sign
+                  </button>
+                  <button
+                    onClick={() => setSignMode('ideal')}
+                    className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md text-muted hover:text-secondary border border-border-subtle border-dashed transition-colors"
+                  >
+                    <Target size={12} />
+                    Ideal Spot
+                  </button>
+                </div>
+              )}
+              {!drawingMode && !editingZone && (
+                <button
+                  onClick={startNewZone}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md text-muted hover:text-secondary border border-border-subtle transition-colors"
+                >
+                  <Plus size={12} />
+                  New Zone
+                </button>
+              )}
+              {signPins.filter(s => s.type === 'ideal').length > 0 && (
+                <button
+                  onClick={() => openIdealSpotsRoute(signPins, userLocation)}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md text-blue-400 hover:text-blue-300 border border-blue-500/30 transition-colors"
+                >
+                  <Navigation size={12} />
+                  Route to Ideal Spots
+                </button>
+              )}
+            </div>
+            {/* Zone list for editing */}
+            {zoneSummary.length > 0 && !drawingMode && !editingZone && (
+              <div className="border-t border-border-subtle pt-2 space-y-1">
+                <span className="text-[11px] text-muted uppercase tracking-wide">Zones</span>
+                {zoneSummary.map((z) => {
+                  const cfg = STATUS_CONFIG[z.status] || STATUS_CONFIG.Pause;
+                  return (
+                    <div key={z.name} className="flex items-center justify-between py-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-primary">{z.name}</span>
+                        <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded-full ${cfg.bg} ${cfg.color} border ${cfg.border}`}>{z.status}</span>
+                        <span className="text-[10px] text-muted">{z.clients} client{z.clients !== 1 ? 's' : ''}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => setEditZone(z)} className="p-1 text-muted hover:text-secondary" title="Edit name/status"><Pencil size={13} /></button>
+                        <button onClick={() => startEditBoundary(z)} className="p-1 text-muted hover:text-brand" title="Edit boundary"><Pentagon size={13} /></button>
+                        <button onClick={() => handleDeleteZone(z.name)} className="p-1 text-muted hover:text-red-400" title="Delete zone"><Trash2 size={13} /></button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Map */}
+      <div className={`bg-card rounded-xl border border-border-subtle overflow-hidden ${fullscreen ? 'hidden' : ''}`}>
+        <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
+          <span className="text-sm font-medium text-primary">Recurring Clients &mdash; Rock Hill, SC</span>
+          <span className="text-xs text-muted">{clients.filter(c => c.lat).length} mapped &middot; {zones.length} zone{zones.length !== 1 ? 's' : ''}</span>
+        </div>
+        {loading && clients.length === 0 ? (
+          <div className="w-full h-[500px] flex items-center justify-center">
+            <div className="text-center space-y-2">
+              <Loader2 size={24} className="text-brand animate-spin mx-auto" />
+              <p className="text-sm text-muted">Loading client locations from Jobber...</p>
+              <p className="text-xs text-muted">First load takes ~25s (geocoding addresses)</p>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="w-full h-[500px] flex items-center justify-center">
+            <p className="text-sm text-red-400">{error}</p>
+          </div>
+        ) : !fullscreen ? (
+          <DominateMap
+            clients={clients}
+            zones={zones}
+            drawingMode={drawingMode}
+            drawingPointCount={drawingPointCount}
+            onDrawingComplete={handleDrawingComplete}
+            onDrawingPointsChange={setDrawingPointCount}
+            editingZone={editingZone}
+            onEditZoneUpdate={handleEditZoneUpdate}
+            signPins={signPins}
+            signMode={signMode}
+            onAddSign={handleAddSign}
+            onRemoveSign={handleRemoveSign}
+            userLocation={userLocation}
+            heading={heading}
+            tracking={tracking}
+            following={following}
+            setFollowing={setFollowing}
+            followKey={followKey}
+            fullscreen={fullscreen}
+            onToggleFullscreen={() => setFullscreen(f => !f)}
+          />
+        ) : null}
         <div className="px-3 py-2 border-t border-border-subtle space-y-2">
           {/* Legend row — hidden on small screens to save space */}
           <div className="hidden sm:flex items-center gap-3 text-[11px] text-muted">
@@ -1104,8 +1375,12 @@ export default function Dominate() {
               Client
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-white border border-brand inline-block" />
+              <span className="w-2 h-2 rounded-sm bg-brand inline-block" />
               Sign
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm border border-dashed border-brand inline-block" />
+              Ideal
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-sm border border-brand/60 bg-brand/15 inline-block" />
@@ -1144,10 +1419,14 @@ export default function Dominate() {
               <div className="flex items-center gap-0.5">
                 <button
                   onClick={recenterOnMe}
-                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-l-md bg-blue-500 text-white border border-blue-500 transition-colors"
+                  className={`flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-l-md transition-colors ${
+                    following
+                      ? 'bg-blue-500 text-white border border-blue-500'
+                      : 'text-blue-400 border border-blue-500/40 hover:bg-blue-500/10'
+                  }`}
                 >
                   <LocateFixed size={12} />
-                  Re-center
+                  {following ? 'Following' : 'Re-center'}
                 </button>
                 <button
                   onClick={toggleTracking}
@@ -1165,17 +1444,41 @@ export default function Dominate() {
                 Locate Me
               </button>
             )}
-            <button
-              onClick={() => setSignMode(!signMode)}
-              className={`flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                signMode
-                  ? 'bg-brand text-black border border-brand font-semibold'
-                  : 'text-muted hover:text-secondary border border-border-subtle'
-              }`}
-            >
-              <Flag size={12} />
-              {signMode ? 'Done' : 'Drop Sign'}
-            </button>
+            {signMode ? (
+              <button
+                onClick={() => setSignMode(false)}
+                className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-md bg-brand text-black border border-brand transition-colors"
+              >
+                <Flag size={12} />
+                Done
+              </button>
+            ) : (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setSignMode('sign')}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md text-muted hover:text-secondary border border-border-subtle transition-colors"
+                >
+                  <Flag size={12} />
+                  New Sign
+                </button>
+                <button
+                  onClick={() => setSignMode('ideal')}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md text-muted hover:text-secondary border border-border-subtle border-dashed transition-colors"
+                >
+                  <Target size={12} />
+                  Ideal Spot
+                </button>
+              </div>
+            )}
+            {signPins.filter(s => s.type === 'ideal').length > 0 && (
+              <button
+                onClick={() => openIdealSpotsRoute(signPins, userLocation)}
+                className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md text-blue-400 hover:text-blue-300 border border-blue-500/30 transition-colors"
+              >
+                <Navigation size={12} />
+                Route to Ideal Spots
+              </button>
+            )}
           </div>
         </div>
       </div>

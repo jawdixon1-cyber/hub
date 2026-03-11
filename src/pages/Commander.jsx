@@ -185,7 +185,7 @@ export default function Commander() {
       {/* 1. Header + Date Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-primary">Commander</h1>
+          <h1 className="text-2xl font-bold text-primary">Know Your Numbers</h1>
           <p className="text-sm text-tertiary mt-1">{PRESETS.find(p => p.id === preset)?.label || 'Growth scorecard'}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -305,6 +305,13 @@ export default function Commander() {
               <span className={`text-xs ${kpis.startsMonthlyRevenue > 0 ? 'text-brand-text-strong' : 'text-tertiary'}`}>
                 {kpis.startsMonthlyRevenue > 0 ? `+${money(kpis.startsMonthlyRevenue)} / mo` : '$0 / mo'}
               </span>
+              {data?.recurringStartNames?.length > 0 && (
+                <div className="mt-1.5 pt-1.5 border-t border-border-subtle">
+                  {data.recurringStartNames.map((n, i) => (
+                    <span key={i} className="block text-xs text-secondary truncate">{n}</span>
+                  ))}
+                </div>
+              )}
             </KpiCard>
 
             <KpiCard label="Close Rate" icon={ArrowRight}>

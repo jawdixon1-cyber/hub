@@ -485,6 +485,7 @@ export default async function handler(req, res) {
       leadNames: leadsInRange.map(r => `${r.client?.firstName || ''} ${r.client?.lastName || ''}`.trim() || 'Unknown').filter(Boolean),
       quotesSentNames: quotesSentInRange.map(q => `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim()).filter(Boolean),
       quotesApprovedNames: quotesApprovedInRange.map(q => `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim()).filter(Boolean),
+      recurringStartNames: startsInRange.map(j => `${j.client?.firstName || ''} ${j.client?.lastName || ''}`.trim()).filter(Boolean),
       sourceTable,
       missingSourceLeads,
       trends,

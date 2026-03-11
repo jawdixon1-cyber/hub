@@ -32,3 +32,4 @@ dist-ssr
 *.sw?
 .vercel
 .env*.local
+.geocode-cache.json

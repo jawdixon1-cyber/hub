@@ -58,7 +58,7 @@ const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
 const Standards = lazy(() => import('./pages/Standards'));
 const Commander = lazy(() => import('./pages/Commander'));
 const SalesPipeline = lazy(() => import('./pages/SalesPipeline'));
-const Dominate = lazy(() => import('./pages/Dominate'));
+const Territory = lazy(() => import('./pages/Dominate'));
 const MowingSchedule = lazy(() => import('./pages/MowingSchedule'));
 
 const NAV_ITEMS = [
@@ -80,9 +80,9 @@ const TEAM_ITEMS = [
 
 const OWNER_ITEMS = [
   { id: 'mowing', path: '/mowing', label: 'Visit Reminders', icon: CalendarDays },
-  { id: 'commander', path: '/commander', label: 'Commander', icon: Crosshair },
+  { id: 'commander', path: '/commander', label: 'Know Your Numbers', icon: Crosshair },
   { id: 'pipeline', path: '/pipeline', label: 'Sales Pipeline', icon: GitBranch },
-  { id: 'dominate', path: '/dominate', label: 'Dominate', icon: MapPinned },
+  { id: 'territory', path: '/territory', label: 'Territory', icon: MapPinned },
   { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
 ];
 
@@ -556,7 +556,7 @@ function AppShell() {
                 <Route path="/mowing" element={<MowingSchedule />} />
                 <Route path="/commander" element={<Commander />} />
                 <Route path="/pipeline" element={<SalesPipeline />} />
-                <Route path="/dominate" element={<Dominate />} />
+                <Route path="/territory" element={<Territory />} />
                 <Route path="/quoting" element={<Quoting />} />
                 <Route path="/team" element={<TeamManagement />} />
                 <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
