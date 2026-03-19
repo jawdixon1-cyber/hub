@@ -7,6 +7,9 @@ import {
   ArrowRight,
   RefreshCw,
   Target,
+  ChevronDown,
+  ChevronUp,
+  ArrowUpDown,
 } from 'lucide-react';
 
 /* ── Helpers ── */
@@ -250,7 +253,7 @@ export default function Commander() {
       {!loading && !error && data && (
         <>
           {/* 1. Growth Target — North Star */}
-          <GrowthTarget current={activeRecurringCount} goal={GROWTH_TARGET} />
+          <GrowthTarget current={activeRecurringCount} goal={GROWTH_TARGET} clients={data?.recurringClientList || []} />
 
           {/* 2. KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -543,9 +546,56 @@ function TrendsChart({ trends }) {
 
 /* ── Growth Target ── */
 
-function GrowthTarget({ current, goal }) {
+const FREQ_ORDER = { 'Weekly': 1, 'Every 2 weeks': 2, 'Monthly': 3 };
+
+function freqSortVal(client) {
+  if (client.jobs.length === 1) return FREQ_ORDER[client.jobs[0].frequency] ?? 10;
+  return Math.min(...client.jobs.map(j => FREQ_ORDER[j.frequency] ?? 10));
+}
+
+function GrowthTarget({ current, goal, clients = [] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [sortKey, setSortKey] = useState('name'); // name | frequency | perVisit | monthly
+  const [sortDir, setSortDir] = useState('asc');
   const remaining = Math.max(goal - current, 0);
   const progressPct = goal > 0 ? Math.min((current / goal) * 100, 100) : 0;
+  const totalMonthly = clients.reduce((sum, c) => sum + c.monthly, 0);
+  const avgMonthly = clients.length > 0 ? totalMonthly / clients.length : 0;
+
+  const sorted = useMemo(() => {
+    const list = [...clients];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    list.sort((a, b) => {
+      switch (sortKey) {
+        case 'frequency': return (freqSortVal(a) - freqSortVal(b)) * dir;
+        case 'perVisit': return (a.perVisit - b.perVisit) * dir;
+        case 'monthly': return (a.monthly - b.monthly) * dir;
+        default: return a.name.localeCompare(b.name) * dir;
+      }
+    });
+    return list;
+  }, [clients, sortKey, sortDir]);
+
+  const toggleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'name' || key === 'frequency' ? 'asc' : 'desc');
+    }
+  };
+
+  const SortHeader = ({ field, children, align }) => (
+    <th
+      className={`pb-2 pr-3 cursor-pointer hover:text-primary transition-colors select-none ${align === 'right' ? 'text-right' : 'text-left'}`}
+      onClick={() => toggleSort(field)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {children}
+        <ArrowUpDown size={10} className={sortKey === field ? 'text-brand-text' : 'opacity-30'} />
+      </span>
+    </th>
+  );
 
   return (
     <div className="bg-card rounded-xl border border-brand/30 p-5">
@@ -557,10 +607,16 @@ function GrowthTarget({ current, goal }) {
         <span className="text-xs text-muted">{remaining} to go</span>
       </div>
 
-      <div className="flex items-baseline gap-1 mb-4">
+      <div className="flex items-baseline gap-1 mb-4 flex-wrap">
         <span className="text-4xl font-bold text-primary">{current}</span>
         <span className="text-lg text-muted font-medium">/ {goal}</span>
         <span className="text-sm text-muted ml-1">recurring clients</span>
+        {totalMonthly > 0 && (
+          <>
+            <span className="text-sm text-brand-text font-semibold ml-2">{money(totalMonthly)}/mo</span>
+            <span className="text-xs text-muted ml-1">({money(avgMonthly)} avg/client)</span>
+          </>
+        )}
       </div>
 
       <div className="w-full h-3 rounded-full bg-surface-alt overflow-hidden">
@@ -569,7 +625,72 @@ function GrowthTarget({ current, goal }) {
           style={{ width: `${progressPct}%` }}
         />
       </div>
-      <p className="text-xs text-muted mt-2">{Math.round(progressPct)}% of goal</p>
+      <div className="flex items-center justify-between mt-2">
+        <p className="text-xs text-muted">{Math.round(progressPct)}% of goal</p>
+        {clients.length > 0 && (
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="flex items-center gap-1 text-xs text-brand-text hover:text-brand-text-strong font-medium cursor-pointer transition-colors"
+          >
+            {expanded ? 'Hide' : 'View all'} clients
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        )}
+      </div>
+
+      {/* Expanded client roster */}
+      {expanded && clients.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-border-subtle">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] text-muted uppercase tracking-wide">
+                  <th className="pb-2 pr-3 text-left">#</th>
+                  <SortHeader field="name">Client</SortHeader>
+                  <SortHeader field="frequency">Frequency</SortHeader>
+                  <SortHeader field="perVisit" align="right">Per Visit</SortHeader>
+                  <SortHeader field="monthly" align="right">Monthly</SortHeader>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((client, i) => (
+                  <tr key={client.name} className="border-t border-border-subtle/50">
+                    <td className="py-2 pr-3 text-muted text-xs">{i + 1}</td>
+                    <td className="py-2 pr-3 text-primary font-medium">{client.name}</td>
+                    <td className="py-2 pr-3 text-secondary">
+                      {client.jobs.length === 1
+                        ? client.jobs[0].frequency
+                        : client.jobs.map((j, ji) => (
+                            <span key={ji} className="block text-xs">
+                              #{j.jobNumber}: {j.frequency}
+                            </span>
+                          ))}
+                    </td>
+                    <td className="py-2 pr-3 text-right text-secondary">{money(client.perVisit)}</td>
+                    <td className="py-2 text-right font-semibold text-brand-text">{money(client.monthly)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border-default">
+                  <td colSpan={2} className="py-2 text-xs font-semibold text-primary">
+                    Total ({clients.length} clients)
+                  </td>
+                  <td className="py-2 pr-3 text-xs text-muted text-right">
+                    avg {money(avgMonthly)}/client
+                  </td>
+                  <td className="py-2 text-right text-xs font-semibold text-primary">
+                    {money(clients.reduce((s, c) => s + c.perVisit, 0))}
+                  </td>
+                  <td className="py-2 text-right font-bold text-brand-text">
+                    {money(totalMonthly)}/mo
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

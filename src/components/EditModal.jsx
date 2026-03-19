@@ -1,4 +1,4 @@
-import { useState, useRef, Suspense, lazy } from 'react';
+import { useState, useRef, useCallback, Suspense, lazy } from 'react';
 import { X, Link as LinkIcon } from 'lucide-react';
 import { toSlug } from '../utils/slug';
 
@@ -10,6 +10,15 @@ export default function EditModal({ item, categories, onSave, onClose, title, ri
       ? { title: item.title || '', category: item.category || (categories?.[0]) || '', content: item.content || '', slug: item.slug || '' }
       : { title: '', category: (categories?.[0]) || '', content: '', slug: '' }
   );
+  const [initialForm] = useState(() => ({ ...form }));
+
+  const isDirty = form.title !== initialForm.title || form.category !== initialForm.category || form.content !== initialForm.content || form.slug !== initialForm.slug;
+
+  const confirmClose = useCallback(() => {
+    if (!isDirty || window.confirm('You have unsaved changes. Discard them?')) {
+      onClose();
+    }
+  }, [isDirty, onClose]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -24,7 +33,7 @@ export default function EditModal({ item, categories, onSave, onClose, title, ri
       onMouseDown={(e) => { mouseDownTarget.current = e.target; }}
       onMouseUp={(e) => {
         if (e.target === e.currentTarget && mouseDownTarget.current === e.currentTarget) {
-          onClose();
+          confirmClose();
         }
         mouseDownTarget.current = null;
       }}
@@ -34,7 +43,7 @@ export default function EditModal({ item, categories, onSave, onClose, title, ri
       >
         <div className="bg-gradient-to-r from-emerald-500 to-emerald-700 px-8 py-6 relative">
           <button
-            onClick={onClose}
+            onClick={confirmClose}
             className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"
           >
             <X size={24} />
@@ -108,7 +117,7 @@ export default function EditModal({ item, categories, onSave, onClose, title, ri
           <div className="flex gap-3 justify-end pt-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={confirmClose}
               className="px-5 py-2.5 rounded-lg border border-border-strong text-secondary font-medium hover:bg-surface transition-colors"
             >
               Cancel

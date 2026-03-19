@@ -6,7 +6,6 @@ export const Details = Node.create({
   group: 'block',
   content: 'detailsSummary block+',
   defining: true,
-  isolating: true,
 
   addAttributes() {
     return {

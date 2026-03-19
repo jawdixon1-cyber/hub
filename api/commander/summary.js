@@ -266,20 +266,38 @@ async function fetchRecurringJobs() {
 
 // ── Estimate monthly value from visit total and RRULE ──
 
-function estimateMonthlyValue(total, calendarRule) {
-  if (!total || !calendarRule) return total || 0;
+function parseFrequency(calendarRule) {
+  if (!calendarRule) return { label: 'Unknown', visitsPerMonth: 0 };
   const freqMatch = calendarRule.match(/FREQ=(\w+)/);
   const intervalMatch = calendarRule.match(/INTERVAL=(\d+)/);
   const freq = freqMatch ? freqMatch[1] : 'WEEKLY';
   const interval = intervalMatch ? parseInt(intervalMatch[1]) : 1;
 
   let visitsPerMonth;
+  let label;
   switch (freq) {
-    case 'WEEKLY': visitsPerMonth = 4.33 / interval; break;
-    case 'DAILY': visitsPerMonth = 30 / interval; break;
-    case 'MONTHLY': visitsPerMonth = 1 / interval; break;
-    default: visitsPerMonth = 4.33;
+    case 'WEEKLY':
+      visitsPerMonth = 4.33 / interval;
+      label = interval === 1 ? 'Weekly' : interval === 2 ? 'Every 2 weeks' : `Every ${interval} weeks`;
+      break;
+    case 'DAILY':
+      visitsPerMonth = 30 / interval;
+      label = interval === 1 ? 'Daily' : `Every ${interval} days`;
+      break;
+    case 'MONTHLY':
+      visitsPerMonth = 1 / interval;
+      label = interval === 1 ? 'Monthly' : `Every ${interval} months`;
+      break;
+    default:
+      visitsPerMonth = 4.33;
+      label = 'Weekly';
   }
+  return { label, visitsPerMonth };
+}
+
+function estimateMonthlyValue(total, calendarRule) {
+  if (!total || !calendarRule) return total || 0;
+  const { visitsPerMonth } = parseFrequency(calendarRule);
   return Math.round(total * visitsPerMonth * 100) / 100;
 }
 
@@ -411,7 +429,33 @@ export default async function handler(req, res) {
       .filter(j => j.monthlyValue)
       .reduce((sum, j) => sum + j.monthlyValue, 0);
 
-    const activeRecurringCount = activeJobs.length;
+    const activeRecurringClients = new Set(activeJobs.map(j => j.client?.id).filter(Boolean));
+    const activeRecurringCount = activeRecurringClients.size;
+
+    // Build detailed recurring client roster (deduplicate by client, aggregate jobs)
+    const clientRoster = {};
+    for (const job of activeJobs) {
+      const cid = job.client?.id;
+      if (!cid) continue;
+      const name = `${job.client.firstName || ''} ${job.client.lastName || ''}`.trim() || 'Unknown';
+      const calRule = job.visitSchedule?.recurrenceSchedule?.calendarRule;
+      const { label: freqLabel } = parseFrequency(calRule);
+      if (!clientRoster[cid]) {
+        clientRoster[cid] = { name, jobs: [], totalPerVisit: 0, totalMonthly: 0 };
+      }
+      clientRoster[cid].jobs.push({ jobNumber: job.jobNumber, frequency: freqLabel, perVisit: job.total || 0, monthly: job.monthlyValue || 0 });
+      clientRoster[cid].totalPerVisit += (job.total || 0);
+      clientRoster[cid].totalMonthly += (job.monthlyValue || 0);
+    }
+    const recurringClientList = Object.values(clientRoster)
+      .map(c => ({
+        name: c.name,
+        jobCount: c.jobs.length,
+        jobs: c.jobs,
+        perVisit: Math.round(c.totalPerVisit * 100) / 100,
+        monthly: Math.round(c.totalMonthly * 100) / 100,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     // ── Source Table (from client's Lead Source field) ──
     // New client = client created within 7 days of request
@@ -482,6 +526,7 @@ export default async function handler(req, res) {
       },
       pipeline,
       activeRecurringCount,
+      recurringClientList,
       leadNames: leadsInRange.map(r => `${r.client?.firstName || ''} ${r.client?.lastName || ''}`.trim() || 'Unknown').filter(Boolean),
       quotesSentNames: quotesSentInRange.map(q => `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim()).filter(Boolean),
       quotesApprovedNames: quotesApprovedInRange.map(q => `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim()).filter(Boolean),

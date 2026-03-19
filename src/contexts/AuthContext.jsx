@@ -12,20 +12,25 @@ export function AuthProvider({ children }) {
     const remembered = localStorage.getItem('remember-me') === 'true';
     const tabKey = sessionStorage.getItem('active-tab');
     if (!remembered && !tabKey) {
-      // Fresh browser open without remember me — sign out
       supabase.auth.signOut().then(() => setLoading(false));
       sessionStorage.setItem('active-tab', '1');
       return;
     }
     sessionStorage.setItem('active-tab', '1');
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Set up listener FIRST so we never miss a state change
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // Then check for existing session (fallback if onAuthStateChange doesn't
+    // fire INITIAL_SESSION quickly — e.g. Safari)
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      setLoading(false);
+    }).catch(() => {
+      setLoading(false);
     });
 
     return () => subscription.unsubscribe();

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Lightbulb,
   ClipboardList,
   CalendarOff,
   Megaphone,
@@ -37,13 +36,6 @@ export default function ManagementSection() {
         >
           <ClipboardList size={16} className="text-purple-500" />
           Repairs
-        </button>
-        <button
-          onClick={() => navigate('/ideas')}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border-default bg-card text-secondary text-sm font-semibold hover:bg-surface hover:border-border-strong transition-colors cursor-pointer shadow-sm"
-        >
-          <Lightbulb size={16} className="text-amber-500" />
-          Ideas
         </button>
         <button
           onClick={() => navigate('/hr')}

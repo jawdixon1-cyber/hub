@@ -14,6 +14,7 @@ export default function AIPlaybookModal({ onGenerated, onClose }) {
   const [form, setForm] = useState({
     serviceName: '',
     category: 'Field Team',
+    goal: '',
     nonNegotiables: '',
   });
 
@@ -21,7 +22,7 @@ export default function AIPlaybookModal({ onGenerated, onClose }) {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const canGenerate = form.serviceName.trim() && form.nonNegotiables.trim();
+  const canGenerate = form.serviceName.trim() && form.goal.trim() && form.nonNegotiables.trim();
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -32,8 +33,9 @@ export default function AIPlaybookModal({ onGenerated, onClose }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          serviceName: form.serviceName,
-          category: form.category,
+          title: form.serviceName,
+          goal: form.goal,
+          context: form.category,
           nonNegotiables: form.nonNegotiables,
         }),
       });
@@ -127,6 +129,19 @@ export default function AIPlaybookModal({ onGenerated, onClose }) {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-secondary mb-1.5">
+              Goal <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={form.goal}
+              onChange={(e) => updateForm('goal', e.target.value)}
+              placeholder="e.g., Train crew on proper mowing technique"
+              className="w-full rounded-lg border border-border-default bg-surface px-4 py-2.5 text-primary placeholder-placeholder-muted focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition"
+            />
           </div>
 
           <div>

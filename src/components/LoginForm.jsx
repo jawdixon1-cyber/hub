@@ -1,10 +1,8 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function LoginForm() {
   const { signIn } = useAuth();
-  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('remember-me') === 'true');
@@ -26,9 +24,9 @@ export default function LoginForm() {
     if (error) {
       setError(error.message);
       setSubmitting(false);
-    } else {
-      navigate('/', { replace: true });
     }
+    // Don't navigate — onAuthStateChange updates session automatically,
+    // which causes App.jsx to show the logged-in view.
   };
 
   return (

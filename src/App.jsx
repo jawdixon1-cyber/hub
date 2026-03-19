@@ -71,7 +71,6 @@ const TOOLS_ITEMS = [
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
-  { id: 'ideas', path: '/ideas', label: 'Ideas', icon: Lightbulb },
 ];
 
 const TEAM_ITEMS = [
@@ -323,7 +322,7 @@ function AppShell() {
       <div className="h-px bg-border-subtle my-3 mx-2" />
       {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Tools</p>}
 
-      {TOOLS_ITEMS.map((item) => {
+      {TOOLS_ITEMS.filter((item) => !item.ownerOnly || ownerMode).map((item) => {
         const Icon = needsOnboarding ? Lock : item.icon;
         const active = isActive(item.path);
         return (
@@ -564,7 +563,7 @@ function AppShell() {
                 <Route path="/mileage" element={<MileageLog />} />
                 <Route path="/receipts" element={<ReceiptTracker />} />
                 <Route path="/standards" element={<Standards />} />
-                <Route path="/ideas" element={<IdeasFeedback />} />
+                <Route path="/ideas" element={<Navigate to="/" replace />} />
                 <Route path="/daily-checklist" element={<DailyChecklist />} />
                 <Route path="/checklist-tracker" element={<ChecklistTrackerPage />} />
                 <Route path="/owner-dashboard" element={<OwnerDashboard />} />
