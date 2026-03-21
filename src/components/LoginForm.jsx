@@ -32,9 +32,7 @@ export default function LoginForm() {
   return (
     <div className="min-h-screen bg-surface flex items-center justify-center p-4">
       <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-8 max-w-sm w-full text-center">
-        <img src="/logo.png" alt="Lawn Care Hub" className="h-20 mx-auto mb-4" />
-        <h1 className="text-2xl font-bold text-primary mb-0.5">Lawn Care Hub</h1>
-        <p className="text-tertiary text-sm mb-8">Sign in to continue</p>
+        <img src="/logo.png" alt="Hey Jude's Lawn Care" className="h-20 mx-auto mb-6" />
 
         <form onSubmit={handleSubmit} className="space-y-4 text-left">
           <div>
@@ -65,7 +63,8 @@ export default function LoginForm() {
               type="checkbox"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
-              className="w-4 h-4 rounded border-border-strong accent-emerald-600"
+              className="w-4 h-4 rounded border-border-strong"
+              style={{ accentColor: '#B0FF03' }}
             />
             <span className="text-sm text-secondary">Remember me</span>
           </label>
@@ -77,7 +76,7 @@ export default function LoginForm() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-800 text-white font-semibold text-lg hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3 rounded-xl bg-brand text-on-brand font-semibold text-lg hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Signing in...' : 'Sign In'}
           </button>

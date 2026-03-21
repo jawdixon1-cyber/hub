@@ -115,22 +115,6 @@ export default function Profile() {
             </div>
           </div>
         </div>
-        {/* Owner Management */}
-        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-3">
-          <h2 className="text-sm font-bold text-secondary uppercase tracking-wide">Owner Management</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <button onClick={() => navigate('/owner-dashboard')} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-alt hover:bg-brand-light hover:text-brand-text-strong text-secondary font-medium text-sm transition-colors cursor-pointer border border-border-subtle">
-              <ClipboardList size={18} /> Manage
-            </button>
-            <button onClick={() => navigate('/checklist-tracker')} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-alt hover:bg-brand-light hover:text-brand-text-strong text-secondary font-medium text-sm transition-colors cursor-pointer border border-border-subtle">
-              <ClipboardCheck size={18} /> Checklists
-            </button>
-            <button onClick={() => navigate('/team')} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-alt hover:bg-brand-light hover:text-brand-text-strong text-secondary font-medium text-sm transition-colors cursor-pointer border border-border-subtle">
-              <UserCog size={18} /> Team
-            </button>
-          </div>
-        </div>
-
         <SettingsContent />
         <button
           onClick={handleSignOut}

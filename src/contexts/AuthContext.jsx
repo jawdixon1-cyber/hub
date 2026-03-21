@@ -8,23 +8,24 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // If user didn't check "Remember me", clear session on fresh tab open
-    const remembered = localStorage.getItem('remember-me') === 'true';
-    const tabKey = sessionStorage.getItem('active-tab');
-    if (!remembered && !tabKey) {
-      supabase.auth.signOut().then(() => setLoading(false));
-      sessionStorage.setItem('active-tab', '1');
-      return;
-    }
-    sessionStorage.setItem('active-tab', '1');
-
     // Set up listener FIRST so we never miss a state change
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setLoading(false);
     });
 
-    // Then check for existing session (fallback if onAuthStateChange doesn't
+    const remembered = localStorage.getItem('remember-me') === 'true';
+    const tabKey = sessionStorage.getItem('active-tab');
+
+    // If user didn't check "Remember me", clear session on fresh tab/window
+    if (!remembered && !tabKey) {
+      sessionStorage.setItem('active-tab', '1');
+      supabase.auth.signOut();
+      return () => subscription.unsubscribe();
+    }
+    sessionStorage.setItem('active-tab', '1');
+
+    // Check for existing session (fallback if onAuthStateChange doesn't
     // fire INITIAL_SESSION quickly — e.g. Safari)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -41,6 +42,7 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = () => {
+    localStorage.removeItem('remember-me');
     return supabase.auth.signOut();
   };
 

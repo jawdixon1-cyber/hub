@@ -63,8 +63,8 @@ const MowingSchedule = lazy(() => import('./pages/MowingSchedule'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
+  { id: 'myday', path: '/daily-checklist', label: 'My Day', icon: ClipboardCheck },
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
-  { id: 'standards', path: '/standards', label: 'What\'s Expected', icon: ShieldCheck },
 ];
 
 const TOOLS_ITEMS = [
@@ -78,11 +78,10 @@ const TEAM_ITEMS = [
 ];
 
 const OWNER_ITEMS = [
-  { id: 'mowing', path: '/mowing', label: 'Visit Reminders', icon: CalendarDays },
-  { id: 'commander', path: '/commander', label: 'Know Your Numbers', icon: Crosshair },
-  { id: 'pipeline', path: '/pipeline', label: 'Sales Pipeline', icon: GitBranch },
-  { id: 'territory', path: '/territory', label: 'Territory', icon: MapPinned },
   { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
+  { id: 'commander', path: '/commander', label: 'Know Your Numbers', icon: Crosshair },
+  { id: 'territory', path: '/territory', label: 'Territory', icon: MapPinned },
+  { id: 'pipeline', path: '/pipeline', label: 'Sales Pipeline', icon: GitBranch },
 ];
 
 const EXTERNAL_APPS = [

@@ -689,11 +689,13 @@ export const initialTimeOffRequests = [
 ];
 
 export const initialOwnerStartChecklist = [
-  { id: 'sd-h1', text: 'Communicate', type: 'header', indent: 0, done: false },
+  { id: 'sd-h1', text: 'Messages', type: 'header', indent: 0, done: false },
   { id: 'sd-1', text: 'Open [Gmail](https://mail.google.com/mail/u/0/#inbox) and [GHL Conversations](https://app.gohighlevel.com/v2/location/Umlo2UnfqbijiGqNU6g2/conversations/conversations)', type: 'item', indent: 0, done: false },
-  { id: 'sd-1a', text: 'Reply to messages in GHL', type: 'item', indent: 1, done: false },
-  { id: 'sd-1b', text: 'Reply to messages in Gmail', type: 'item', indent: 1, done: false },
+  { id: 'sd-1a', text: 'Reply to messages in GHL', type: 'item', indent: 0, done: false },
+  { id: 'sd-1b', text: 'Reply to messages in Gmail', type: 'item', indent: 0, done: false },
+  { id: 'sd-h2', text: 'Schedule', type: 'header', indent: 0, done: false },
   { id: 'sd-2', text: 'Review [Jobber Home](https://secure.getjobber.com/schedule/month/2026/1/17?unscheduled=off&map=hidden&nav_label=Schedule&nav_source=sidebar&displayMode=full&assignees=MjM3NjQwMw%3D%3D) and update accordingly', type: 'item', indent: 0, done: false },
+  { id: 'sd-h3', text: 'Sales', type: 'header', indent: 0, done: false },
   { id: 'sd-3', text: 'Open [Sales Pipeline](https://app.gohighlevel.com/v2/location/Umlo2UnfqbijiGqNU6g2/opportunities/list) and follow up', type: 'item', indent: 0, done: false },
 ];
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { ChevronRight, ChevronDown, Pencil, Sun, Moon, Clock, Globe, Settings as SettingsIcon, ClipboardList, ClipboardCheck, GraduationCap, Users, UserCog, X, Wrench, Plus, BookOpen, ArrowUp, ArrowDown, Trash2, Calculator } from 'lucide-react';
+import { ChevronRight, ChevronDown, Pencil, Sun, Moon, Clock, Globe, Settings as SettingsIcon, ClipboardList, ClipboardCheck, GraduationCap, Users, UserCog, X, Wrench, Plus, BookOpen, ArrowUp, ArrowDown, Trash2, Calculator, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
@@ -25,11 +25,7 @@ export function SettingsContent() {
   const navigate = useNavigate();
   const { ownerMode } = useAuth();
 
-  const { theme, themeMode, setThemeMode } = useTheme();
-  const [timezone, setTimezone] = useState(() => localStorage.getItem(TZ_STORAGE_KEY) || '');
   const [showChecklistEditor, setShowChecklistEditor] = useState(false);
-  const [showPrefs, setShowPrefs] = useState(false);
-  const [showOwnerSettings, setShowOwnerSettings] = useState(false);
   const [showTraining, setShowTraining] = useState(false);
 
   const equipmentCategories = useAppStore((s) => s.equipmentCategories);
@@ -61,15 +57,6 @@ export function SettingsContent() {
   const setOwnerStartChecklist = useAppStore((s) => s.setOwnerStartChecklist);
   const ownerEndChecklist = useAppStore((s) => s.ownerEndChecklist);
   const setOwnerEndChecklist = useAppStore((s) => s.setOwnerEndChecklist);
-
-  const handleTimezoneChange = (value) => {
-    setTimezone(value);
-    if (value) {
-      localStorage.setItem(TZ_STORAGE_KEY, value);
-    } else {
-      localStorage.removeItem(TZ_STORAGE_KEY);
-    }
-  };
 
   /* ── Module helpers ── */
 
@@ -166,83 +153,9 @@ export function SettingsContent() {
       <div>
         <div className="flex items-center gap-2 mb-4">
           <SettingsIcon size={22} className="text-brand-text" />
-          <h2 className="text-2xl font-bold text-primary">Settings</h2>
+          <h2 className="text-2xl font-bold text-primary">Owner Management</h2>
         </div>
 
-        <div className="bg-card rounded-2xl shadow-lg border border-border-subtle overflow-hidden">
-          <button
-            onClick={() => setShowPrefs(!showPrefs)}
-            className="w-full flex items-center justify-between p-6 cursor-pointer hover:bg-surface-alt/50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <SettingsIcon size={18} className="text-muted" />
-              <div className="text-left">
-                <p className="text-sm font-medium text-primary">Preferences</p>
-                <p className="text-xs text-tertiary">Appearance and time zone</p>
-              </div>
-            </div>
-            <ChevronDown size={16} className={`text-muted shrink-0 transition-transform duration-200 ${showPrefs ? 'rotate-180' : ''}`} />
-          </button>
-
-          {showPrefs && (
-            <div className="px-6 pb-6 space-y-6 border-t border-border-subtle pt-4">
-              {/* Theme */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {theme === 'dark' ? <Moon size={18} className="text-muted" /> : <Sun size={18} className="text-muted" />}
-                  <div>
-                    <p className="text-sm font-medium text-primary">Appearance</p>
-                    <p className="text-xs text-tertiary">
-                      {themeMode === 'auto'
-                        ? `Auto — currently ${theme} until ${theme === 'dark' ? '7:00 AM' : '8:00 PM'}`
-                        : theme === 'dark' ? 'Dark mode' : 'Light mode'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex rounded-lg border border-border-default overflow-hidden">
-                  {[
-                    { mode: 'light', icon: <Sun size={14} />, label: 'Light' },
-                    { mode: 'dark', icon: <Moon size={14} />, label: 'Dark' },
-                    { mode: 'auto', icon: <Clock size={14} />, label: 'Auto' },
-                  ].map(({ mode, icon, label }) => (
-                    <button
-                      key={mode}
-                      onClick={() => setThemeMode(mode)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
-                        themeMode === mode
-                          ? 'bg-brand text-on-brand'
-                          : 'bg-card text-secondary hover:bg-surface'
-                      }`}
-                    >
-                      {icon}
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Timezone */}
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <Globe size={18} className="text-muted" />
-                  <div>
-                    <p className="text-sm font-medium text-primary">Time Zone</p>
-                    <p className="text-xs text-tertiary">Used for dates and schedules</p>
-                  </div>
-                </div>
-                <select
-                  value={timezone}
-                  onChange={(e) => handleTimezoneChange(e.target.value)}
-                  className="rounded-lg border border-border-default bg-card px-3 py-2 text-sm text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition max-w-[220px]"
-                >
-                  {TIMEZONE_OPTIONS.map((tz) => (
-                    <option key={tz.value} value={tz.value}>{tz.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* ── Owner Quick Links ── */}
@@ -250,10 +163,11 @@ export function SettingsContent() {
         <div className="bg-card rounded-2xl shadow-lg border border-border-subtle overflow-hidden">
           <div className="p-4 grid grid-cols-2 gap-3">
             {[
-              { label: 'Manage', icon: ClipboardList, path: '/owner-dashboard' },
-              { label: 'Quoting', icon: Calculator, path: '/quoting' },
-              { label: 'Checklists', icon: ClipboardCheck, path: '/checklist-tracker' },
-              { label: 'Team', icon: UserCog, path: '/team' },
+              { label: 'Dashboard', desc: 'Daily overview', icon: ClipboardList, path: '/owner-dashboard' },
+              { label: 'Quoting', desc: 'Build estimates', icon: Calculator, path: '/quoting' },
+              { label: 'Checklists', desc: 'Daily task lists', icon: ClipboardCheck, path: '/checklist-tracker' },
+              { label: 'Team', desc: 'Manage employees', icon: UserCog, path: '/team' },
+              { label: 'Standards', desc: 'Team expectations', icon: ShieldCheck, path: '/standards' },
             ].map((item) => (
               <button
                 key={item.label}
@@ -262,93 +176,54 @@ export function SettingsContent() {
               >
                 <item.icon size={22} />
                 <span className="text-xs font-semibold">{item.label}</span>
+                <span className="text-[10px] text-muted -mt-1">{item.desc}</span>
               </button>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Owner Settings (toggle) ── */}
-      {ownerMode && (
-        <div>
-          <div className="bg-card rounded-2xl shadow-lg border border-border-subtle overflow-hidden">
             <button
-              onClick={() => setShowOwnerSettings(!showOwnerSettings)}
-              className="w-full flex items-center justify-between p-6 cursor-pointer hover:bg-surface-alt/50 transition-colors"
+              onClick={() => setShowChecklistEditor(true)}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl bg-surface-alt hover:bg-brand-light hover:text-brand-text-strong text-secondary transition-colors cursor-pointer"
             >
-              <div className="flex items-center gap-3">
-                <Wrench size={18} className="text-muted" />
-                <div className="text-left">
-                  <p className="text-sm font-medium text-primary">Owner Settings</p>
-                  <p className="text-xs text-tertiary">Checklists, training, equipment, and team management</p>
-                </div>
-              </div>
-              <ChevronDown size={16} className={`text-muted shrink-0 transition-transform duration-200 ${showOwnerSettings ? 'rotate-180' : ''}`} />
+              <Pencil size={22} />
+              <span className="text-xs font-semibold">Edit Checklists</span>
+              <span className="text-[10px] text-muted -mt-1">Customize daily lists</span>
+            </button>
+            <button
+              onClick={() => setShowTraining(!showTraining)}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl bg-surface-alt hover:bg-brand-light hover:text-brand-text-strong text-secondary transition-colors cursor-pointer"
+            >
+              <GraduationCap size={22} />
+              <span className="text-xs font-semibold">Training</span>
+              <span className="text-[10px] text-muted -mt-1">Manage modules</span>
+            </button>
+            <button
+              onClick={() => setShowCategories(!showCategories)}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl bg-surface-alt hover:bg-brand-light hover:text-brand-text-strong text-secondary transition-colors cursor-pointer"
+            >
+              <Wrench size={22} />
+              <span className="text-xs font-semibold">Equipment</span>
+              <span className="text-[10px] text-muted -mt-1">Manage categories</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Edit Checklists (owner only) ── */}
-      {ownerMode && showOwnerSettings && (
-        <div>
-          <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <ClipboardList size={18} className="text-muted" />
-                <div>
-                  <p className="text-sm font-medium text-primary">Checklists</p>
-                  <p className="text-xs text-tertiary">Edit team and owner daily checklists</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowChecklistEditor(true)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand font-medium text-sm hover:bg-brand-hover transition-colors"
-              >
-                <Pencil size={14} />
-                Edit Checklists
-              </button>
-            </div>
-          </div>
-
-          {showChecklistEditor && (
-            <Suspense fallback={null}>
-              <ChecklistEditorModal
-                onClose={() => setShowChecklistEditor(false)}
-                teamChecklist={teamChecklist}
-                setTeamChecklist={setTeamChecklist}
-                teamEndChecklist={teamEndChecklist}
-                setTeamEndChecklist={setTeamEndChecklist}
-                ownerStartChecklist={ownerStartChecklist}
-                setOwnerStartChecklist={setOwnerStartChecklist}
-                ownerEndChecklist={ownerEndChecklist}
-                setOwnerEndChecklist={setOwnerEndChecklist}
-              />
-            </Suspense>
-          )}
-        </div>
+      {/* Checklist Editor Modal */}
+      {showChecklistEditor && (
+        <Suspense fallback={null}>
+          <ChecklistEditorModal
+            onClose={() => setShowChecklistEditor(false)}
+            items={ownerStartChecklist}
+            setItems={setOwnerStartChecklist}
+            title="Edit Morning Checklist"
+          />
+        </Suspense>
       )}
 
       {/* ── Team Learning (owner only) ── */}
-      {ownerMode && showOwnerSettings && (
+      {ownerMode && showTraining && (
         <div>
           <div className="bg-card rounded-2xl shadow-lg border border-border-subtle overflow-hidden">
-            <button
-              onClick={() => setShowTraining(!showTraining)}
-              className="w-full flex items-center justify-between p-6 cursor-pointer hover:bg-surface-alt/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <GraduationCap size={18} className="text-muted" />
-                <div className="text-left">
-                  <p className="text-sm font-medium text-primary">Team Learning</p>
-                  <p className="text-xs text-tertiary">Edit content your team sees during test day, onboarding, and training</p>
-                </div>
-              </div>
-              <ChevronDown size={16} className={`text-muted shrink-0 transition-transform duration-200 ${showTraining ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showTraining && (
-              <div className="px-6 pb-6 border-t border-border-subtle pt-4 space-y-5">
+              <div className="px-6 py-6 space-y-5">
                 {LEARNING_SECTIONS.map((section) => {
                   const builtIn = builtInBySection[section.key] || [];
                   const custom = getModulesForSection(section.key);
@@ -538,31 +413,15 @@ export function SettingsContent() {
                   )}
                 </div>
               </div>
-            )}
           </div>
         </div>
       )}
 
       {/* ── Equipment Categories (owner only) ── */}
-      {ownerMode && showOwnerSettings && (
+      {ownerMode && showCategories && (
         <div>
           <div className="bg-card rounded-2xl shadow-lg border border-border-subtle overflow-hidden">
-            <button
-              onClick={() => setShowCategories(!showCategories)}
-              className="w-full flex items-center justify-between p-6 cursor-pointer hover:bg-surface-alt/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Wrench size={18} className="text-muted" />
-                <div className="text-left">
-                  <p className="text-sm font-medium text-primary">Equipment Categories</p>
-                  <p className="text-xs text-tertiary">Add custom equipment types</p>
-                </div>
-              </div>
-              <ChevronDown size={16} className={`text-muted shrink-0 transition-transform duration-200 ${showCategories ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showCategories && (
-              <div className="px-6 pb-6 border-t border-border-subtle pt-4 space-y-4">
+              <div className="px-6 py-6 space-y-4">
                 {equipmentCategories.length === 0 ? (
                   <p className="text-xs text-muted">No equipment types yet. Add one below.</p>
                 ) : (
@@ -619,28 +478,6 @@ export function SettingsContent() {
                   </button>
                 </div>
               </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Employee Management (owner only) ── */}
-      {ownerMode && showOwnerSettings && (
-        <div>
-          <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-6">
-            <button
-              onClick={() => navigate('/team')}
-              className="w-full flex items-center justify-between cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <Users size={18} className="text-muted" />
-                <div className="text-left">
-                  <p className="text-sm font-medium text-primary">Employee Management</p>
-                  <p className="text-xs text-tertiary">View team members, edit permissions, manage onboarding</p>
-                </div>
-              </div>
-              <ChevronRight size={16} className="text-muted shrink-0" />
-            </button>
           </div>
         </div>
       )}

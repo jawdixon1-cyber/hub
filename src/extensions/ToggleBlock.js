@@ -117,14 +117,13 @@ export const DetailsSummary = Node.create({
 
   addKeyboardShortcuts() {
     return {
-      // Enter in summary → expand if collapsed, then move cursor to content area
+      // Enter in summary → split text at cursor, keep left in summary, move right to new paragraph in content
       Enter: ({ editor }) => {
         const { state } = editor;
         const { $from } = state.selection;
 
         if ($from.parent.type.name !== 'detailsSummary') return false;
 
-        const afterSummary = $from.after();
         const tr = state.tr;
 
         // If parent details is collapsed, expand it first
@@ -137,7 +136,28 @@ export const DetailsSummary = Node.create({
           }
         }
 
-        tr.setSelection(TextSelection.create(tr.doc, afterSummary + 1));
+        // Get the end position of the summary content
+        const summaryEnd = $from.end();
+        const cursorPos = $from.pos;
+
+        if (cursorPos < summaryEnd) {
+          // There's text after the cursor — grab it as a slice
+          const slice = state.doc.slice(cursorPos, summaryEnd);
+
+          // Delete text after cursor from summary
+          tr.delete(cursorPos, summaryEnd);
+
+          // Insert a new paragraph with that content right after the summary
+          const afterSummary = tr.mapping.map($from.after());
+          const newPara = state.schema.nodes.paragraph.create(null, slice.content);
+          tr.insert(afterSummary, newPara);
+          tr.setSelection(TextSelection.create(tr.doc, afterSummary + 1));
+        } else {
+          // No text after cursor — just move to content area
+          const afterSummary = $from.after();
+          tr.setSelection(TextSelection.create(tr.doc, afterSummary + 1));
+        }
+
         editor.view.dispatch(tr);
         return true;
       },

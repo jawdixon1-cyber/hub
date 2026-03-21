@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Flame, Check, ArrowLeft } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import { Flame, Check, ArrowLeft, ChevronRight, RotateCcw, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/AppStoreContext';
 import { genId } from '../data';
@@ -7,7 +7,9 @@ import { getTodayInTimezone } from '../utils/timezone';
 import renderLinkedText from '../utils/renderLinkedText';
 import QuickLinks from '../components/QuickLinks';
 
-/* ─── Hooks (reused from MyDaySection pattern) ─── */
+const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
+
+/* ─── Hooks ─── */
 
 function useChecklistDay(items, setItems, checklistType) {
   const itemsRef = useRef(items);
@@ -109,21 +111,16 @@ function ProgressRing({ percent }) {
 /* ─── Streak Calculation ─── */
 
 function calculateStreak(checklistLog) {
-  // Group log entries by date
   const byDate = {};
   for (const entry of checklistLog) {
     if (!byDate[entry.date]) byDate[entry.date] = {};
     byDate[entry.date][entry.checklistType] = entry;
   }
 
-  // Sort dates descending
-  const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
   const today = getTodayInTimezone();
-
-  let streak = 0;
-  // Start from today and go backwards
   const startDate = new Date(today + 'T00:00:00');
 
+  let streak = 0;
   for (let i = 0; i < 365; i++) {
     const d = new Date(startDate);
     d.setDate(d.getDate() - i);
@@ -131,21 +128,18 @@ function calculateStreak(checklistLog) {
     const dayEntries = byDate[dateStr];
 
     if (!dayEntries) {
-      // If it's today and we haven't completed yet, skip today and check yesterday
       if (i === 0) continue;
       break;
     }
 
     const startEntry = dayEntries['owner-start'];
     const endEntry = dayEntries['owner-end'];
-
     const startComplete = startEntry && startEntry.completedItems === startEntry.totalItems && startEntry.totalItems > 0;
     const endComplete = endEntry && endEntry.completedItems === endEntry.totalItems && endEntry.totalItems > 0;
 
     if (startComplete && endComplete) {
       streak++;
     } else {
-      // If it's today and in progress, skip
       if (i === 0) continue;
       break;
     }
@@ -154,120 +148,7 @@ function calculateStreak(checklistLog) {
   return streak;
 }
 
-/* ─── Hold-to-Check Item ─── */
-
-function ChecklistItem({ item, onToggle }) {
-  const [holding, setHolding] = useState(false);
-  const [fillProgress, setFillProgress] = useState(0);
-  const [justCompleted, setJustCompleted] = useState(false);
-  const timerRef = useRef(null);
-  const animRef = useRef(null);
-  const startTimeRef = useRef(null);
-
-  const HOLD_DURATION = 400;
-
-  const startHold = useCallback((e) => {
-    // If already done, single tap to uncheck
-    if (item.done) {
-      onToggle(item.id);
-      return;
-    }
-
-    // Prevent text selection on long press
-    e.preventDefault();
-    setHolding(true);
-    startTimeRef.current = Date.now();
-
-    const animate = () => {
-      const elapsed = Date.now() - startTimeRef.current;
-      const progress = Math.min(elapsed / HOLD_DURATION, 1);
-      setFillProgress(progress);
-
-      if (progress < 1) {
-        animRef.current = requestAnimationFrame(animate);
-      } else {
-        // Complete!
-        setJustCompleted(true);
-        onToggle(item.id);
-        setTimeout(() => setJustCompleted(false), 600);
-      }
-    };
-
-    animRef.current = requestAnimationFrame(animate);
-
-    timerRef.current = setTimeout(() => {
-      // Handled by animation frame
-    }, HOLD_DURATION);
-  }, [item.done, item.id, onToggle]);
-
-  const cancelHold = useCallback(() => {
-    if (!item.done && holding) {
-      setHolding(false);
-      setFillProgress(0);
-      if (timerRef.current) clearTimeout(timerRef.current);
-      if (animRef.current) cancelAnimationFrame(animRef.current);
-    }
-  }, [holding, item.done]);
-
-  useEffect(() => {
-    if (item.done && !justCompleted) {
-      setHolding(false);
-      setFillProgress(0);
-    }
-  }, [item.done, justCompleted]);
-
-  return (
-    <div
-      className={`relative overflow-hidden rounded-xl px-4 py-3 select-none transition-all duration-300 ${
-        item.done
-          ? 'bg-brand-light/50 cursor-pointer'
-          : 'bg-card hover:bg-surface-alt cursor-pointer active:scale-[0.98]'
-      } ${item.indent ? 'ml-6' : ''}`}
-      onPointerDown={startHold}
-      onPointerUp={cancelHold}
-      onPointerLeave={cancelHold}
-      onPointerCancel={cancelHold}
-      role="button"
-      tabIndex={0}
-    >
-      {/* Hold fill bar */}
-      {holding && !item.done && (
-        <div
-          className="absolute inset-0 bg-brand/15 dc-hold-fill"
-          style={{ transform: `scaleX(${fillProgress})`, transformOrigin: 'left' }}
-        />
-      )}
-
-      {/* Green sweep on complete */}
-      {justCompleted && (
-        <div className="absolute inset-0 dc-sweep-fill" />
-      )}
-
-      <div className="relative flex items-center gap-3">
-        {/* Checkbox */}
-        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all duration-300 ${
-          item.done
-            ? 'bg-brand border-brand'
-            : 'border-border-strong'
-        }`}>
-          {item.done && (
-            <Check size={14} className={`text-on-brand ${justCompleted ? 'dc-check-appear' : ''}`} />
-          )}
-        </div>
-
-        {/* Text */}
-        <span className={`text-sm transition-all duration-300 ${
-          item.done ? 'text-muted line-through' : 'text-primary'
-        }`}>
-          {renderLinkedText(item.text)}
-          <QuickLinks links={item.links} />
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Confetti Particle ─── */
+/* ─── Confetti Particles ─── */
 
 function ConfettiParticles() {
   const particles = useMemo(() => {
@@ -324,14 +205,58 @@ function CompletionBanner({ tabLabel, onDismiss }) {
   );
 }
 
+/* ─── Section Step Dots ─── */
+
+function SectionDots({ groups, activeIndex }) {
+  return (
+    <div className="flex items-center justify-center gap-2 my-4">
+      {groups.map((group, i) => {
+        const groupItems = group.items;
+        const doneCount = groupItems.filter((it) => it.done).length;
+        const allGroupDone = groupItems.length > 0 && doneCount === groupItems.length;
+
+        return (
+          <div
+            key={i}
+            className={`rounded-full transition-all duration-300 ${
+              i === activeIndex
+                ? 'w-8 h-2.5 bg-brand'
+                : allGroupDone
+                  ? 'w-2.5 h-2.5 bg-brand/60'
+                  : 'w-2.5 h-2.5 bg-border-default'
+            }`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 /* ─── Main Page ─── */
 
 export default function DailyChecklist() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('morning');
-  const [showBanner, setShowBanner] = useState(null); // 'morning' | 'evening' | null
+  const [showBanner, setShowBanner] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [dismissing, setDismissing] = useState(new Set());
+  const [showEditor, setShowEditor] = useState(false);
   const prevAllDoneRef = useRef({ morning: false, evening: false });
+
+  // Field work toggle — persisted per day
+  const [fieldWork, setFieldWork] = useState(() => {
+    const today = getTodayInTimezone();
+    const saved = localStorage.getItem('greenteam-fieldwork');
+    if (saved) {
+      try { const p = JSON.parse(saved); if (p.date === today) return p.value; } catch {}
+    }
+    return null; // null = not answered yet
+  });
+
+  const setFieldWorkDay = (val) => {
+    setFieldWork(val);
+    localStorage.setItem('greenteam-fieldwork', JSON.stringify({ date: getTodayInTimezone(), value: val }));
+  };
 
   // Store
   const ownerStartChecklist = useAppStore((s) => s.ownerStartChecklist);
@@ -372,26 +297,26 @@ export default function DailyChecklist() {
   // Streak
   const streak = useMemo(() => calculateStreak(checklistLog), [checklistLog]);
 
-  // Toggle handler
-  const handleToggle = useCallback((itemId) => {
-    setActiveItems((prev) =>
-      prev.map((i) => (i.id === itemId ? { ...i, done: !i.done } : i))
-    );
-  }, [setActiveItems]);
+  // Filter out field-work-only items when no field work
+  const filteredItems = useMemo(() => {
+    if (fieldWork === false) {
+      return activeItems.filter((i) => !i.fieldWorkOnly);
+    }
+    return activeItems;
+  }, [activeItems, fieldWork]);
 
   // Group items by headers
   const groups = useMemo(() => {
     const result = [];
     let currentGroup = null;
 
-    for (const item of activeItems) {
+    for (const item of filteredItems) {
       if (item.type === 'header') {
         if (currentGroup) result.push(currentGroup);
         currentGroup = { header: item.text, items: [] };
       } else if (currentGroup) {
         currentGroup.items.push(item);
       } else {
-        // Items before any header
         if (!result.length || result[result.length - 1].header !== null) {
           result.push({ header: null, items: [] });
         }
@@ -399,8 +324,47 @@ export default function DailyChecklist() {
       }
     }
     if (currentGroup) result.push(currentGroup);
-    return result;
-  }, [activeItems]);
+    // Remove empty sections (all items were field-work-only)
+    return result.filter((g) => g.items.length > 0);
+  }, [filteredItems]);
+
+  // Find the first section that isn't fully done
+  const activeSectionIndex = useMemo(() => {
+    for (let i = 0; i < groups.length; i++) {
+      const items = groups[i].items;
+      if (items.some((it) => !it.done)) return i;
+    }
+    return groups.length - 1; // all done, show last
+  }, [groups]);
+
+  const activeGroup = groups[activeSectionIndex];
+
+  // Toggle handler — animate out then mark done
+  const handleToggle = useCallback((itemId) => {
+    // If already done, just uncheck
+    const item = activeItems.find((i) => i.id === itemId);
+    if (item?.done) {
+      setActiveItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, done: false } : i))
+      );
+      return;
+    }
+
+    // Animate dismissal
+    setDismissing((prev) => new Set(prev).add(itemId));
+
+    // After animation, mark done
+    setTimeout(() => {
+      setActiveItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, done: true } : i))
+      );
+      setDismissing((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }, 350);
+  }, [activeItems, setActiveItems]);
 
   // Today's formatted date
   const todayFormatted = useMemo(() => {
@@ -408,6 +372,9 @@ export default function DailyChecklist() {
     const d = new Date(today + 'T12:00:00');
     return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   }, []);
+
+  // Remaining items in current section (not done)
+  const remainingItems = activeGroup ? activeGroup.items.filter((it) => !it.done) : [];
 
   return (
     <div className="max-w-lg mx-auto pb-12">
@@ -420,100 +387,173 @@ export default function DailyChecklist() {
       )}
 
       {/* Header */}
-      <div className="flex items-center gap-3 mb-1">
-        <button
-          onClick={() => navigate('/')}
-          className="p-2 -ml-2 rounded-xl text-secondary hover:bg-surface-alt transition-colors cursor-pointer"
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-primary">My Day</h1>
-          <p className="text-sm text-muted">{todayFormatted}</p>
-        </div>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex-1" />
 
-        {/* Streak badge */}
-        {streak > 0 && (
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800 ${
-            streak >= 3 ? 'dc-streak-glow' : ''
-          }`}>
-            <Flame size={16} className={`text-orange-500 ${streak >= 3 ? 'dc-flame-flicker' : ''}`} />
-            <span className="text-xs font-bold text-orange-600 dark:text-orange-400">{streak} day{streak !== 1 ? 's' : ''}</span>
-          </div>
+        {done > 0 && (
+          <button
+            onClick={() => {
+              setActiveItems((prev) =>
+                prev.map((i) => (i.type === 'header' ? i : { ...i, done: false }))
+              );
+            }}
+            className="p-2 rounded-xl text-muted hover:text-secondary hover:bg-surface-alt transition-colors cursor-pointer"
+            title="Reset"
+          >
+            <RotateCcw size={16} />
+          </button>
         )}
+
+        <button
+          onClick={() => setShowEditor(true)}
+          className="p-2 rounded-xl text-muted hover:text-secondary hover:bg-surface-alt transition-colors cursor-pointer"
+          title="Edit"
+        >
+          <Pencil size={18} />
+        </button>
       </div>
 
-      {/* Progress ring + tab switcher */}
-      <div className="flex items-center gap-5 mt-4 mb-6">
-        <div className="relative">
-          <ProgressRing percent={percent} />
-          {showConfetti && <ConfettiParticles />}
-        </div>
+      {/* Checklist Editor Modal */}
+      {showEditor && (
+        <Suspense fallback={null}>
+          <ChecklistEditorModal
+            onClose={() => setShowEditor(false)}
+            items={activeItems}
+            setItems={setActiveItems}
+            title={activeTab === 'morning' ? 'Edit Morning' : 'Edit End of Day'}
+          />
+        </Suspense>
+      )}
 
-        <div className="flex-1">
-          {/* Pill toggle */}
-          <div className="inline-flex bg-surface-alt rounded-xl p-1">
+      {/* Tab switcher */}
+      <div className="flex items-center justify-center gap-4 mb-4">
+        <button
+          onClick={() => setActiveTab('morning')}
+          className={`text-xs font-semibold transition-colors cursor-pointer ${
+            activeTab === 'morning' ? 'text-primary' : 'text-muted hover:text-secondary'
+          }`}
+        >
+          Morning
+        </button>
+        <div className="w-px h-3 bg-border-default" />
+        <button
+          onClick={() => setActiveTab('evening')}
+          className={`text-xs font-semibold transition-colors cursor-pointer ${
+            activeTab === 'evening' ? 'text-primary' : 'text-muted hover:text-secondary'
+          }`}
+        >
+          End of Day
+        </button>
+      </div>
+
+      {showConfetti && <div className="relative"><ConfettiParticles /></div>}
+
+      {/* Field work prompt */}
+      {fieldWork === null && (
+        <div className="bg-card rounded-2xl border border-border-subtle p-5 mb-4 text-center">
+          <p className="text-sm font-medium text-primary mb-3">Field work today?</p>
+          <div className="flex gap-3 justify-center">
             <button
-              onClick={() => setActiveTab('morning')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer ${
-                activeTab === 'morning'
-                  ? 'bg-card text-primary shadow-sm'
-                  : 'text-muted hover:text-secondary'
-              }`}
+              onClick={() => setFieldWorkDay(true)}
+              className="px-6 py-2 rounded-xl bg-brand text-on-brand text-sm font-semibold hover:bg-brand-hover cursor-pointer"
             >
-              Morning
+              Yes
             </button>
             <button
-              onClick={() => setActiveTab('evening')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer ${
-                activeTab === 'evening'
-                  ? 'bg-card text-primary shadow-sm'
-                  : 'text-muted hover:text-secondary'
-              }`}
+              onClick={() => setFieldWorkDay(false)}
+              className="px-6 py-2 rounded-xl bg-surface-alt text-secondary text-sm font-semibold hover:bg-surface-strong cursor-pointer"
             >
-              End of Day
+              No
             </button>
           </div>
-
-          <p className="text-xs text-muted mt-2">
-            {done}/{checkable.length} completed
-          </p>
         </div>
-      </div>
+      )}
 
-      {/* Grouped checklist items */}
-      <div className="space-y-5">
-        {groups.map((group, gi) => (
-          <div key={gi} className="bg-card rounded-2xl border border-border-subtle overflow-hidden shadow-sm">
-            {group.header && (
-              <div className="px-4 py-3 border-b border-border-subtle">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
-                  {renderLinkedText(group.header)}
-                </h3>
+      {/* Change field work answer */}
+      {fieldWork !== null && (
+        <button
+          onClick={() => setFieldWorkDay(fieldWork ? false : true)}
+          className="text-[10px] text-muted hover:text-secondary cursor-pointer mb-3 block mx-auto"
+        >
+          {fieldWork ? 'No field work today?' : 'Actually, field work today'}
+        </button>
+      )}
+
+      {/* Active section */}
+      {!allDone && activeGroup && (
+        <div className="mt-4">
+          {/* Section header */}
+          {activeGroup.header && (
+            <h2 className="text-sm font-bold uppercase tracking-wider text-muted mb-3">
+              {activeGroup.header}
+            </h2>
+          )}
+
+          {/* Items — only show remaining (undone) */}
+          <div className="space-y-2">
+            {remainingItems.map((item) => (
+              <div
+                key={item.id}
+                onClick={() => handleToggle(item.id)}
+                className={`relative overflow-hidden rounded-xl px-4 py-3.5 select-none cursor-pointer
+                  bg-card border border-border-subtle hover:bg-surface-alt active:scale-[0.98]
+                  transition-all duration-300 ease-out
+                  ${dismissing.has(item.id) ? 'opacity-0 translate-x-8 scale-95' : 'opacity-100'}
+                  ${item.indent ? 'ml-6' : ''}
+                `}
+                role="button"
+                tabIndex={0}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full border-2 border-border-strong flex items-center justify-center shrink-0">
+                    {dismissing.has(item.id) && (
+                      <Check size={14} className="text-brand dc-check-appear" />
+                    )}
+                  </div>
+                  <span className="text-sm text-primary flex-1">
+                    {renderLinkedText(item.text)}
+                    <QuickLinks links={item.links} />
+                  </span>
+                  <ChevronRight size={14} className="text-muted shrink-0" />
+                </div>
               </div>
-            )}
-            <div className="p-2 space-y-1">
-              {group.items.map((item) => (
-                <ChecklistItem
-                  key={item.id}
-                  item={item}
-                  onToggle={handleToggle}
-                />
-              ))}
-            </div>
+            ))}
           </div>
-        ))}
-      </div>
+
+          {/* Section complete — auto-advances, but show a brief message */}
+          {remainingItems.length === 0 && !allDone && (
+            <div className="text-center py-8">
+              <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-brand-light text-brand-text-strong font-semibold text-sm">
+                <Check size={18} />
+                Section complete!
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* All done state */}
       {allDone && (
-        <div className="mt-8 text-center">
+        <div className="mt-8 text-center space-y-4">
           <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-brand-light text-brand-text-strong font-semibold text-sm">
             <Check size={18} />
             All tasks complete
           </div>
+
+          {/* Undo button */}
+          <button
+            onClick={() => {
+              setActiveItems((prev) =>
+                prev.map((i) => (i.type === 'header' ? i : { ...i, done: false }))
+              );
+            }}
+            className="block mx-auto text-xs text-muted hover:text-secondary underline cursor-pointer"
+          >
+            Reset checklist
+          </button>
         </div>
       )}
+
     </div>
   );
 }
