@@ -9,6 +9,9 @@ import appStateHandler from './api/app-state.js';
 import jobberAuth from './api/jobber-auth.js';
 import jobberCallback from './api/jobber-callback.js';
 import mowingHandler from './api/mowing.js';
+import qbAuth from './api/qb-auth.js';
+import qbCallback from './api/qb-callback.js';
+import qbData from './api/qb-data.js';
 
 config({ path: '.env.local' });
 
@@ -29,6 +32,11 @@ app.all('/api/mowing', mowingHandler);
 // Jobber OAuth
 app.get('/api/jobber-auth', jobberAuth);
 app.get('/api/jobber-callback', jobberCallback);
+
+// QuickBooks OAuth + Data
+app.get('/api/qb-auth', qbAuth);
+app.get('/api/qb-callback', qbCallback);
+app.all('/api/qb-data', qbData);
 
 app.post('/api/generate-playbook', async (req, res) => {
   const { serviceName, category, nonNegotiables } = req.body;

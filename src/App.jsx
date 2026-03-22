@@ -28,6 +28,7 @@ import {
   GitBranch,
   MapPinned,
   CalendarDays,
+  DollarSign,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -60,6 +61,7 @@ const Commander = lazy(() => import('./pages/Commander'));
 const SalesPipeline = lazy(() => import('./pages/SalesPipeline'));
 const Territory = lazy(() => import('./pages/Dominate'));
 const MowingSchedule = lazy(() => import('./pages/MowingSchedule'));
+const Finance = lazy(() => import('./pages/Finance'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -82,6 +84,7 @@ const OWNER_ITEMS = [
   { id: 'commander', path: '/commander', label: 'Know Your Numbers', icon: Crosshair },
   { id: 'territory', path: '/territory', label: 'Territory', icon: MapPinned },
   { id: 'pipeline', path: '/pipeline', label: 'Sales Pipeline', icon: GitBranch },
+  { id: 'finance', path: '/finance', label: 'Finance', icon: DollarSign },
 ];
 
 const EXTERNAL_APPS = [
@@ -554,6 +557,7 @@ function AppShell() {
                 <Route path="/mowing" element={<MowingSchedule />} />
                 <Route path="/commander" element={<Commander />} />
                 <Route path="/pipeline" element={<SalesPipeline />} />
+                <Route path="/finance" element={<Finance />} />
                 <Route path="/territory" element={<Territory />} />
                 <Route path="/quoting" element={<Quoting />} />
                 <Route path="/team" element={<TeamManagement />} />
