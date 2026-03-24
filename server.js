@@ -12,6 +12,8 @@ import mowingHandler from './api/mowing.js';
 import qbAuth from './api/qb-auth.js';
 import qbCallback from './api/qb-callback.js';
 import qbData from './api/qb-data.js';
+import jobberClientsHandler from './api/jobber-clients.js';
+import laborDataHandler from './api/labor-data.js';
 
 config({ path: '.env.local' });
 
@@ -37,6 +39,12 @@ app.get('/api/jobber-callback', jobberCallback);
 app.get('/api/qb-auth', qbAuth);
 app.get('/api/qb-callback', qbCallback);
 app.all('/api/qb-data', qbData);
+
+// Jobber client search
+app.get('/api/jobber-clients', jobberClientsHandler);
+
+// Labor efficiency data
+app.get('/api/labor-data', laborDataHandler);
 
 app.post('/api/generate-playbook', async (req, res) => {
   const { serviceName, category, nonNegotiables } = req.body;

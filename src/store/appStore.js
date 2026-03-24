@@ -55,6 +55,7 @@ const STATE_KEYS = [
   { key: 'userXP',              supaKey: 'greenteam-userXP',              initial: {} },
   { key: 'vehicles',            supaKey: 'greenteam-vehicles',            initial: initialVehicles },
   { key: 'mileageLog',          supaKey: 'greenteam-mileageLog',          initial: initialMileageLog },
+  { key: 'agreements',           supaKey: 'greenteam-agreements',           initial: [] },
   { key: 'quotes',              supaKey: 'greenteam-quotes',              initial: initialQuotes },
   { key: 'quotingSettings',     supaKey: 'greenteam-quotingSettings',     initial: initialQuotingSettings },
   { key: 'receiptLog',          supaKey: 'greenteam-receiptLog',          initial: initialReceiptLog },

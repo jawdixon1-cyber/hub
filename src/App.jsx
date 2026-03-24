@@ -29,6 +29,8 @@ import {
   MapPinned,
   CalendarDays,
   DollarSign,
+  FileText,
+  TrendingUp,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -59,9 +61,11 @@ const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
 const Standards = lazy(() => import('./pages/Standards'));
 const Commander = lazy(() => import('./pages/Commander'));
 const SalesPipeline = lazy(() => import('./pages/SalesPipeline'));
+const ServiceAgreement = lazy(() => import('./pages/ServiceAgreement'));
 const Territory = lazy(() => import('./pages/Dominate'));
 const MowingSchedule = lazy(() => import('./pages/MowingSchedule'));
 const Finance = lazy(() => import('./pages/Finance'));
+const LaborEfficiency = lazy(() => import('./pages/LaborEfficiency'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -80,9 +84,11 @@ const TEAM_ITEMS = [
 ];
 
 const OWNER_ITEMS = [
+  { id: 'agreements', path: '/agreements', label: 'Agreements', icon: FileText },
   { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
   { id: 'commander', path: '/commander', label: 'Know Your Numbers', icon: Crosshair },
   { id: 'territory', path: '/territory', label: 'Territory', icon: MapPinned },
+  { id: 'labor', path: '/labor', label: 'Labor', icon: TrendingUp },
   { id: 'pipeline', path: '/pipeline', label: 'Sales Pipeline', icon: GitBranch },
   { id: 'finance', path: '/finance', label: 'Finance', icon: DollarSign },
 ];
@@ -559,7 +565,9 @@ function AppShell() {
                 <Route path="/pipeline" element={<SalesPipeline />} />
                 <Route path="/finance" element={<Finance />} />
                 <Route path="/territory" element={<Territory />} />
+                <Route path="/labor" element={<LaborEfficiency />} />
                 <Route path="/quoting" element={<Quoting />} />
+                <Route path="/agreements" element={<ServiceAgreement />} />
                 <Route path="/team" element={<TeamManagement />} />
                 <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
                 <Route path="/profile" element={<Profile />} />
