@@ -1,8 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
-import ghlWebhookHandler from './api/commander/ghlWebhook.js';
-import jobberSyncHandler from './api/commander/jobberSync.js';
+import ghlWebhookHandler from './lib/commander/ghlWebhook.js';
+import jobberSyncHandler from './lib/commander/jobberSync.js';
 import commanderSummaryHandler from './api/commander/summary.js';
 import dominateHandler from './api/commander/dominate.js';
 import appStateHandler from './api/app-state.js';
@@ -12,8 +12,7 @@ import mowingHandler from './api/mowing.js';
 import qbAuth from './api/qb-auth.js';
 import qbCallback from './api/qb-callback.js';
 import qbData from './api/qb-data.js';
-import jobberClientsHandler from './api/jobber-clients.js';
-import laborDataHandler from './api/labor-data.js';
+import jobberDataHandler from './api/jobber-data.js';
 
 config({ path: '.env.local' });
 
@@ -40,11 +39,12 @@ app.get('/api/qb-auth', qbAuth);
 app.get('/api/qb-callback', qbCallback);
 app.all('/api/qb-data', qbData);
 
-// Jobber client search
-app.get('/api/jobber-clients', jobberClientsHandler);
+// Jobber data (clients search + labor data)
+app.get('/api/jobber-data', jobberDataHandler);
 
-// Labor efficiency data
-app.get('/api/labor-data', laborDataHandler);
+// Backwards compat routes
+app.get('/api/jobber-clients', (req, res) => { req.query.action = 'clients'; jobberDataHandler(req, res); });
+app.get('/api/labor-data', (req, res) => { req.query.action = 'labor'; jobberDataHandler(req, res); });
 
 app.post('/api/generate-playbook', async (req, res) => {
   const { serviceName, category, nonNegotiables } = req.body;
