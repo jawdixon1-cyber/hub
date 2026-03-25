@@ -29,9 +29,12 @@ export default async function handler(req, res) {
       return res.redirect(`${appUrl}/commander?jobber=error&msg=${encodeURIComponent('Jobber credentials not configured on server')}`);
     }
 
-    const redirectUri = `${process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL
-      : process.env.APP_URL || 'http://localhost:3001'}/api/jobber-callback`;
+    const baseUrl = process.env.JOBBER_REDIRECT_URI
+      ? 'https://' + process.env.JOBBER_REDIRECT_URI
+      : process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL
+        : process.env.APP_URL || 'http://localhost:3001';
+    const redirectUri = `${baseUrl}/api/jobber-callback`;
 
     // Exchange authorization code for tokens
     const tokenRes = await fetch('https://api.getjobber.com/api/oauth/token', {

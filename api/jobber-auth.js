@@ -4,9 +4,12 @@ export default function handler(req, res) {
     const clientId = (process.env.JOBBER_CLIENT_ID || '').trim();
     if (!clientId) return res.status(500).json({ error: 'JOBBER_CLIENT_ID not configured' });
 
-    const redirectUri = `${process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL
-      : process.env.APP_URL || 'http://localhost:3001'}/api/jobber-callback`;
+    const baseUrl = process.env.JOBBER_REDIRECT_URI
+      ? 'https://' + process.env.JOBBER_REDIRECT_URI
+      : process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL
+        : process.env.APP_URL || 'http://localhost:3001';
+    const redirectUri = `${baseUrl}/api/jobber-callback`;
 
     const scope = 'read_clients read_quotes read_jobs';
     const state = Math.random().toString(36).substring(2) + Date.now().toString(36);
