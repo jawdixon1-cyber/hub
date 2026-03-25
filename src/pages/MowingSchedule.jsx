@@ -4,18 +4,20 @@ import {
   CalendarDays, Settings, X, Bell, BellOff,
 } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
+import { getTodayInTimezone, getTimezone } from '../utils/timezone';
 
 /* ── Helpers ── */
 
 function getTomorrowStr() {
-  const d = new Date();
+  const todayStr = getTodayInTimezone();
+  const d = new Date(todayStr + 'T12:00:00');
   d.setDate(d.getDate() + 1);
   return d.toISOString().split('T')[0];
 }
 
 function formatDateNice(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: getTimezone() });
 }
 
 /* ── Settings Modal ── */

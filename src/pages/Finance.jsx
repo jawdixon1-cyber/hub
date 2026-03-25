@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { getTimezone, getTodayInTimezone } from '../utils/timezone';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -22,7 +23,7 @@ function fmt(num) {
 function fmtDate(dateStr) {
   if (!dateStr) return '—';
   const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: getTimezone() });
 }
 
 // ─── P&L row parser ───
@@ -100,7 +101,7 @@ export default function Finance() {
   // Date range for P&L
   const currentYear = new Date().getFullYear();
   const [pnlStart, setPnlStart] = useState(`${currentYear}-01-01`);
-  const [pnlEnd, setPnlEnd] = useState(new Date().toISOString().split('T')[0]);
+  const [pnlEnd, setPnlEnd] = useState(getTodayInTimezone());
 
   // Check connection
   useEffect(() => {

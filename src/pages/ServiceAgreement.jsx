@@ -5,6 +5,7 @@ import { genId } from '../data';
 import { generateAgreementHTML } from '../utils/generateAgreement';
 import { getNetSqft, computeNetTotals } from '../components/PropertyMapper/mapUtils';
 import useAddressAutocomplete from '../components/PropertyMapper/useAddressAutocomplete';
+import { getTimezone } from '../utils/timezone';
 
 const MapView = lazy(() => import('../components/PropertyMapper/MapView'));
 const MeasurementList = lazy(() => import('../components/PropertyMapper/MeasurementList'));
@@ -78,11 +79,11 @@ function calcTerm(startDateStr) {
   // Contract ends 12 months later, last day of the month before
   const contractEnd = new Date(startYear + 1, startMonth, 0); // day 0 = last day of prev month
 
-  const startFmt = contractStart.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  const endFmt = contractEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const startFmt = contractStart.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: getTimezone() });
+  const endFmt = contractEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: getTimezone() });
 
   // First billing date is the actual start date
-  const firstBilling = start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const firstBilling = start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: getTimezone() });
 
   return { startFmt, endFmt, firstBilling, months: 12 };
 }
@@ -414,12 +415,12 @@ export default function ServiceAgreement() {
   const endDate = useMemo(() => {
     if (!startDate) return '';
     const d = new Date(startDate + 'T00:00:00'); d.setMonth(d.getMonth() + termMonths); d.setDate(d.getDate() - 1);
-    return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: getTimezone() });
   }, [startDate, termMonths]);
 
   const startDateFmt = useMemo(() => {
     if (!startDate) return '';
-    return new Date(startDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    return new Date(startDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: getTimezone() });
   }, [startDate]);
 
   const selectClient = (c) => {
@@ -513,7 +514,7 @@ export default function ServiceAgreement() {
             {agreements.map((a) => (
               <div key={a.id} className="bg-card rounded-2xl border border-border-subtle p-5 flex items-center justify-between">
                 <div><p className="text-sm font-bold text-primary">{a.clientName}</p><p className="text-xs text-muted">{a.clientAddress}</p></div>
-                <div className="text-right"><p className="text-sm font-bold text-brand-text">${a.monthlyPrice}/mo</p><p className="text-xs text-muted">{new Date(a.createdAt).toLocaleDateString()}</p></div>
+                <div className="text-right"><p className="text-sm font-bold text-brand-text">${a.monthlyPrice}/mo</p><p className="text-xs text-muted">{new Date(a.createdAt).toLocaleDateString('en-US', { timeZone: getTimezone() })}</p></div>
               </div>
             ))}
           </div>

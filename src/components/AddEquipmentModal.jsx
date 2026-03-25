@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { EQUIPMENT_TYPES, genId } from '../data';
+import { getTodayInTimezone } from '../utils/timezone';
 
 export default function AddEquipmentModal({ onSave, onClose, equipmentCategories = [] }) {
   const allTypes = equipmentCategories.length > 0 ? equipmentCategories : EQUIPMENT_TYPES;
@@ -27,7 +28,7 @@ export default function AddEquipmentModal({ onSave, onClose, equipmentCategories
         id: genId(),
         issue: form.reportedIssue,
         reportedBy: 'Owner',
-        reportedDate: new Date().toLocaleDateString('en-US'),
+        reportedDate: getTodayInTimezone(),
         urgency: 'critical',
         photo: null,
       }];

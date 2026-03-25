@@ -64,7 +64,8 @@ export default function ChecklistTracker({ checklistLog }) {
   };
 
   const weekLabel = () => {
-    const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const tz = getTimezone();
+    const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: tz });
     return `${fmt(weekDates[0])} - ${fmt(weekDates[6])}`;
   };
 

@@ -10,6 +10,7 @@ import { useAppStore } from '../store/AppStoreContext';
 import { ONBOARDING_STEPS, RichContent, isOnboardingComplete } from './Training';
 import { genId } from '../data';
 import SignaturePad from '../components/SignaturePad';
+import { getTodayInTimezone } from '../utils/timezone';
 
 const RichTextEditor = lazy(() => import('../components/RichTextEditor'));
 
@@ -209,7 +210,7 @@ export default function OnboardingStep() {
     } else {
       saveCompletion(itemId, {
         completed: true,
-        date: new Date().toLocaleDateString('en-US'),
+        date: getTodayInTimezone(),
       });
     }
   };
@@ -318,7 +319,7 @@ export default function OnboardingStep() {
     if (!acceptingPolicy) return;
     saveCompletion(acceptingPolicy.id, {
       completed: true,
-      date: new Date().toLocaleDateString('en-US'),
+      date: getTodayInTimezone(),
       signature: dataUrl,
     });
     showToast('Policy accepted and signed');
@@ -328,7 +329,7 @@ export default function OnboardingStep() {
   /* ── Mark Complete ── */
 
   const handleMarkComplete = () => {
-    const today = new Date().toLocaleDateString('en-US');
+    const today = getTodayInTimezone();
     setSuggestions([
       {
         id: genId(),

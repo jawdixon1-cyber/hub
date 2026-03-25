@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { genId } from '../data';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
+import { getTodayInTimezone } from '../utils/timezone';
 
 /* ─── Onboarding steps (prerequisite before training modules) ─── */
 /* Core completion-check logic lives in ../utils/onboarding.js for lightweight imports */
@@ -96,7 +97,7 @@ export default function Training() {
   const handleSubmitProgress = (e) => {
     e.preventDefault();
     if (!progressNote.trim()) return;
-    const today = new Date().toLocaleDateString('en-US');
+    const today = getTodayInTimezone();
     setSuggestions([
       {
         id: genId(),

@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { ONBOARDING_STEPS } from './Training';
 import { getActiveRepairs } from '../data';
+import { getTodayInTimezone } from '../utils/timezone';
 
 const PLAYBOOK_OPTIONS = [
   { key: 'service', label: 'Team Member', color: 'bg-emerald-100 text-emerald-700' },
@@ -286,7 +287,7 @@ export default function TeamMemberDetail() {
       handleStatus(step1Status.id, 'Approved');
     } else {
       // No submission yet but all items done — create an approved submission
-      const today = new Date().toLocaleDateString('en-US');
+      const today = getTodayInTimezone();
       setSuggestions([
         ...suggestions,
         {

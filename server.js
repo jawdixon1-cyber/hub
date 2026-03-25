@@ -42,9 +42,9 @@ app.all('/api/qb-data', qbData);
 // Jobber data (clients search + labor data)
 app.get('/api/jobber-data', jobberDataHandler);
 
-// Backwards compat routes
-app.get('/api/jobber-clients', (req, res) => { req.query.action = 'clients'; jobberDataHandler(req, res); });
-app.get('/api/labor-data', (req, res) => { req.query.action = 'labor'; jobberDataHandler(req, res); });
+// Backwards compat routes (Express 5: req.query is read-only, so redirect instead)
+app.get('/api/jobber-clients', (req, res) => res.redirect(`/api/jobber-data?action=clients&${new URL(req.url, 'http://x').search.slice(1)}`));
+app.get('/api/labor-data', (req, res) => res.redirect(`/api/jobber-data?action=labor&${new URL(req.url, 'http://x').search.slice(1)}`));
 
 app.post('/api/generate-playbook', async (req, res) => {
   const { serviceName, category, nonNegotiables } = req.body;

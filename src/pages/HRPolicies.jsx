@@ -5,6 +5,7 @@ import EditModal from '../components/EditModal';
 import { genId, initialPolicies } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
+import { getTodayInTimezone, getTimezone } from '../utils/timezone';
 
 const SEED_POLICY_IDS = ['54', '55', '56', '57'];
 
@@ -68,12 +69,12 @@ export default function HRPolicies() {
     const start = new Date(form.startDate + 'T00:00');
     const end = new Date(form.endDate + 'T00:00');
     const days = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
-    const today = new Date().toLocaleDateString('en-US');
+    const today = getTodayInTimezone();
     const entry = {
       id: genId(),
       name: currentUser,
-      startDate: start.toLocaleDateString('en-US'),
-      endDate: end.toLocaleDateString('en-US'),
+      startDate: start.toLocaleDateString('en-US', { timeZone: getTimezone() }),
+      endDate: end.toLocaleDateString('en-US', { timeZone: getTimezone() }),
       days,
       reason: form.reason,
       requestedDate: today,

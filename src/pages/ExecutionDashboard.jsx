@@ -24,6 +24,7 @@ import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useChecklistDay, useChecklistLog } from '../components/owner/MyDaySection';
 import renderLinkedText from '../utils/renderLinkedText';
+import { getTimezone, getTodayInTimezone, toDateStringInTimezone } from '../utils/timezone';
 import QuickLinks from '../components/QuickLinks';
 import { ChecklistSection } from '../components/ChecklistEditorModal';
 
@@ -83,7 +84,7 @@ function createFreshDay(date, keepOutcomes, keepTimeBlocks, keepWins, keepParkin
 }
 
 function getTodayStr() {
-  return new Date().toISOString().split('T')[0];
+  return getTodayInTimezone();
 }
 
 function isSameWeek(dateA, dateB) {
@@ -92,18 +93,18 @@ function isSameWeek(dateA, dateB) {
   const getMonday = (d) => {
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(d.getFullYear(), d.getMonth(), diff).toISOString().split('T')[0];
+    return toDateStringInTimezone(new Date(d.getFullYear(), d.getMonth(), diff));
   };
   return getMonday(a) === getMonday(b);
 }
 
 function formatDisplayDate(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: getTimezone() });
 }
 
 function getGreeting() {
-  const h = new Date().getHours();
+  const h = parseInt(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: getTimezone() }).format(new Date()), 10);
   if (h < 12) return 'Good morning';
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
@@ -971,7 +972,7 @@ export default function ExecutionDashboard() {
 
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      const tomorrowStr = toDateStringInTimezone(tomorrow);
 
       // Only change date and clear journal — everything else stays
       return {

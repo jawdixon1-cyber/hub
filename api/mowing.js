@@ -128,7 +128,8 @@ function generateUpcomingDates(startDate, rrule, weeksAhead = 4) {
   const start = new Date(startStr + 'T12:00:00');
 
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(now);
+  const today = new Date(todayStr + 'T00:00:00');
   const endWindow = new Date(today);
   endWindow.setDate(endWindow.getDate() + weeksAhead * 7);
 
@@ -247,7 +248,7 @@ function buildSchedule(jobs, weeksAhead = 4) {
         title: job.title || 'Lawn Maintenance',
         notes: job.instructions || null,
         total: job.total,
-        dayOfWeek: new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' }),
+        dayOfWeek: new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/New_York' }),
       });
     }
   }
@@ -347,7 +348,7 @@ function renderTemplate(template, vars) {
 
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York' });
 }
 
 async function sendVisitNotification(visit, settings = {}) {
@@ -427,7 +428,7 @@ async function handleNotify(req, res) {
       const template = settings.messageTemplate || DEFAULT_TEMPLATE;
       const message = renderTemplate(template, {
         firstName: 'Jude',
-        serviceDate: formatDate(new Date().toISOString().split('T')[0]),
+        serviceDate: formatDate(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())),
         companyName: "Hey Jude's Lawn Care",
         address: '123 Test St',
       });

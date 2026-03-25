@@ -1,10 +1,11 @@
 const TZ_STORAGE_KEY = 'greenteam-timezone';
+const DEFAULT_TZ = 'America/New_York';
 
 /**
- * Get the configured timezone from localStorage, or fall back to device default.
+ * Get the configured timezone from localStorage, or fall back to Eastern Time.
  */
 export function getTimezone() {
-  return localStorage.getItem(TZ_STORAGE_KEY) || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return localStorage.getItem(TZ_STORAGE_KEY) || DEFAULT_TZ;
 }
 
 /**

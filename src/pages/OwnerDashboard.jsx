@@ -22,9 +22,10 @@ import ManagementSection from '../components/owner/ManagementSection';
 import AnnouncementEditorModal from '../components/AnnouncementEditorModal';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
+import { getTimezone, getTodayInTimezone, toDateStringInTimezone } from '../utils/timezone';
 
 function getGreeting() {
-  const h = new Date().getHours();
+  const h = parseInt(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: getTimezone() }).format(new Date()), 10);
   if (h < 12) return 'Good morning';
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
@@ -80,10 +81,10 @@ export default function OwnerDashboard() {
 
   // ─── Greeting ───
   const firstName = currentUser?.split(' ')[0] || 'Boss';
-  const formattedDate = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const formattedDate = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: getTimezone() });
 
   // ─── Team out today ───
-  const today = new Date();
+  const today = new Date(getTodayInTimezone() + 'T00:00:00');
   const teamOutToday = timeOffRequests.filter((r) => {
     if (r.status !== 'approved') return false;
     const start = parseMMDDYYYY(r.startDate);
@@ -93,7 +94,7 @@ export default function OwnerDashboard() {
 
   // ─── Team availability (this week / next week) ───
   const getWeekBounds = (weekOffset) => {
-    const now = new Date();
+    const now = new Date(getTodayInTimezone() + 'T00:00:00');
     const day = now.getDay();
     const mondayOffset = day === 0 ? -6 : 1 - day;
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset + weekOffset * 7);
@@ -128,7 +129,7 @@ export default function OwnerDashboard() {
   };
 
   const handleMarkRepairFixed = (eqId, repairId, fixDesc) => {
-    const today = new Date().toLocaleDateString('en-US');
+    const today = new Date().toLocaleDateString('en-US', { timeZone: getTimezone() });
     const eq = equipment.find((e) => e.id === eqId);
     if (!eq) return;
 

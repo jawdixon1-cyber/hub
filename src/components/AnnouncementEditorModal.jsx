@@ -12,6 +12,7 @@ import {
   Users,
 } from 'lucide-react';
 import { genId } from '../data';
+import { getTodayInTimezone, getTimezone } from '../utils/timezone';
 
 export default function AnnouncementEditorModal({
   onClose,
@@ -33,7 +34,7 @@ export default function AnnouncementEditorModal({
 
   const handlePost = (e) => {
     e.preventDefault();
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayInTimezone();
     setAnnouncements([
       {
         id: genId(),
@@ -159,7 +160,7 @@ export default function AnnouncementEditorModal({
                 <Check size={10} className="text-emerald-500 shrink-0" />
                 <span className="font-medium text-primary">{acked[email].name || email}</span>
                 <span className="text-muted">
-                  {new Date(acked[email].at).toLocaleString()}
+                  {new Date(acked[email].at).toLocaleString('en-US', { timeZone: getTimezone() })}
                 </span>
               </div>
             ))}

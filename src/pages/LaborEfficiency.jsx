@@ -1,459 +1,316 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { TrendingUp, Loader2, AlertCircle, DollarSign, Clock, RefreshCw } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw, Fuel, ChevronDown, ChevronUp } from 'lucide-react';
+import { getTimezone, getTodayInTimezone } from '../utils/timezone';
+import { useAppStore } from '../store/AppStoreContext';
 
-// ── Helper: format date as "Mon, Mar 20" ──
-function formatDateLabel(dateStr) {
-  const d = new Date(dateStr + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-}
+const FUEL_COST_PER_MILE = 0.25;
 
-// ── Helper: get Monday of current week ──
-function getMonday(d) {
-  const date = new Date(d);
-  const day = date.getDay();
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-  date.setDate(diff);
-  return date;
-}
+// ── Date helpers ──
 
-// ── Helper: format YYYY-MM-DD ──
 function toDateStr(d) {
-  return d.toISOString().split('T')[0];
+  return new Intl.DateTimeFormat('en-CA', { timeZone: getTimezone(), year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 }
-
-// ── Helper: get all dates in a range ──
+function getMonday(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const day = d.getDay();
+  d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+  return d;
+}
 function getDateRange(start, end) {
   const dates = [];
   const cur = new Date(start + 'T12:00:00');
   const endD = new Date(end + 'T12:00:00');
-  while (cur <= endD) {
-    dates.push(toDateStr(cur));
-    cur.setDate(cur.getDate() + 1);
-  }
+  while (cur <= endD) { dates.push(toDateStr(cur)); cur.setDate(cur.getDate() + 1); }
   return dates;
 }
 
-// ── Helper: labor cost % color (lower is better) ──
-function laborPctColor(pct) {
-  if (pct <= 33) return 'text-emerald-600';
-  if (pct <= 50) return 'text-amber-600';
-  return 'text-red-600';
+// ── Colors ──
+
+function prodColor(p) { return p === 0 ? 'text-muted' : p <= 35 ? 'text-emerald-500' : p <= 45 ? 'text-amber-500' : 'text-red-500'; }
+function prodBg(p) { return p <= 35 ? 'bg-emerald-500/10 border-emerald-500/30' : p <= 45 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-red-500/10 border-red-500/30'; }
+function prodDot(p) { return p <= 35 ? 'bg-emerald-500' : p <= 45 ? 'bg-amber-500' : 'bg-red-500'; }
+function trueColor(p) { return p === 0 ? 'text-muted' : p < 40 ? 'text-emerald-500' : p <= 50 ? 'text-amber-500' : 'text-red-500'; }
+function genColor(p) { return p === 0 ? 'text-muted' : p < 20 ? 'text-emerald-500' : p <= 25 ? 'text-amber-500' : 'text-red-500'; }
+function rphColor(v) { return v === 0 ? 'text-muted' : v > 80 ? 'text-emerald-500' : v >= 65 ? 'text-amber-500' : 'text-red-500'; }
+
+// ── Diagnosis ──
+
+function diagnose(m) {
+  if (m.revenue === 0) return 'No revenue data yet.';
+  const p = [];
+  if (m.prodLaborPct <= 35 && m.prodLaborPct > 0) p.push('jobs are priced well');
+  else if (m.prodLaborPct > 45) p.push('jobs are underpriced or taking too long');
+  else if (m.prodLaborPct > 35) p.push('job pricing is borderline');
+  if (m.generalPct > 25) p.push('too much general time is killing efficiency');
+  else if (m.generalPct > 20) p.push('general time could be tighter');
+  if (m.trueLaborPct > 50) p.push('labor is eating the profit');
+  else if (m.trueLaborPct < 40 && m.generalPct < 20 && p.length === 0) p.push('strong day with solid margins');
+  if (p.length === 0) return 'Metrics are within acceptable range.';
+  const s = p.join(', but ') + '.';
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function laborPctBg(pct) {
-  if (pct <= 33) return 'bg-emerald-500/10 border-emerald-500/30';
-  if (pct <= 50) return 'bg-amber-500/10 border-amber-500/30';
-  return 'bg-red-500/10 border-red-500/30';
+// ── Actions ──
+
+function getActions(m, problems) {
+  const a = [];
+  if (problems.length > 0) a.push(`Raise ${problems[0].client} to $${Math.ceil(problems[0].laborCost / 0.35)} or drop`);
+  if (m.generalPct > 25) a.push('Cut morning startup — crew on first job by 9:15');
+  else if (m.generalPct > 20) a.push('Tighten transitions between jobs');
+  if (m.prodLaborPct > 45 && problems.length >= 2) a.push('Batch review pricing on red jobs this week');
+  if (m.revPerHour < 65 && m.revPerHour > 0) a.push('Target higher-value properties');
+  if (a.length === 0) a.push('Stay the course — all metrics healthy');
+  return a.slice(0, 3);
 }
 
-// ── localStorage helpers for manual entries ──
-const STORAGE_KEY = 'labor-efficiency-entries';
+// ── Expandable job row ──
 
-function loadEntries() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveEntries(entries) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-  } catch {}
-}
-
-// ── Stable input components (defined OUTSIDE main component) ──
-
-function CurrencyInput({ label, value, onChange, placeholder }) {
-  return (
-    <div className="flex-1 min-w-0">
-      <label className="block text-[11px] font-medium text-muted mb-1">{label}</label>
-      <div className="relative">
-        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span>
-        <input
-          type="number"
-          step="0.01"
-          min="0"
-          value={value}
-          onChange={onChange}
-          placeholder={placeholder || '0.00'}
-          className="w-full pl-7 pr-3 py-2 text-sm rounded-lg border border-border-subtle bg-surface focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-        />
-      </div>
-    </div>
-  );
-}
-
-function HoursInput({ value, onChange }) {
-  return (
-    <div className="flex-1 min-w-0">
-      <label className="block text-[11px] font-medium text-muted mb-1">Hours</label>
-      <div className="relative">
-        <Clock size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-        <input
-          type="number"
-          step="0.25"
-          min="0"
-          value={value}
-          onChange={onChange}
-          placeholder="0"
-          className="w-full pl-8 pr-3 py-2 text-sm rounded-lg border border-border-subtle bg-surface focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-        />
-      </div>
-    </div>
-  );
-}
-
-function CrewRateInput({ value, onChange }) {
-  return (
-    <div className="flex items-center gap-2">
-      <label className="text-sm font-medium text-secondary whitespace-nowrap">Crew Rate</label>
-      <div className="relative w-24">
-        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span>
-        <input
-          type="number"
-          step="0.50"
-          min="0"
-          value={value}
-          onChange={onChange}
-          className="w-full pl-7 pr-3 py-1.5 text-sm rounded-lg border border-border-subtle bg-surface focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-        />
-      </div>
-      <span className="text-xs text-muted">/hr</span>
-    </div>
-  );
-}
-
-// ── DayCard component ──
-
-function DayCard({ dateStr, revenue, visits, labor, entry, crewRate, onEntryChange }) {
-  const expenses = parseFloat(entry.expenses) || 0;
-  // Use Jobber timesheet hours, fall back to manual
-  const jobberHours = labor?.totalHours || 0;
-  const manualHours = parseFloat(entry.hours) || 0;
-  const hours = jobberHours > 0 ? jobberHours : manualHours;
-  const laborOverride = parseFloat(entry.laborCost) || 0;
-  const laborCost = laborOverride > 0 ? laborOverride : hours * crewRate;
-  const laborPct = revenue > 0 ? (laborCost / revenue) * 100 : 0;
-  const netProfit = revenue - expenses - laborCost;
-  const byPerson = labor?.byPerson || {};
+function JobRow({ job }) {
+  const [open, setOpen] = useState(false);
+  const bp = job.byPerson || {};
+  const hasPeople = Object.keys(bp).length > 0;
 
   return (
-    <div className={`rounded-xl border p-4 ${laborCost > 0 ? laborPctBg(laborPct) : 'bg-card border-border-subtle'}`}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-primary">{formatDateLabel(dateStr)}</h3>
-        <div className="text-right">
-          <p className="text-lg font-bold text-primary">${revenue.toFixed(2)}</p>
-          <p className="text-[11px] text-muted">{visits.length} visit{visits.length !== 1 ? 's' : ''}</p>
-        </div>
-      </div>
-
-      {/* Visit list */}
-      {visits.length > 0 && (
-        <div className="mb-3 space-y-1">
-          {visits.map((v) => (
-            <div key={v.id} className="flex items-center justify-between text-xs text-secondary">
-              <span className="truncate mr-2">{v.client}</span>
-              <span className="font-medium shrink-0">${(v.jobTotal || 0).toFixed(2)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Jobber labor hours */}
-      {jobberHours > 0 && (
-        <div className="mb-3 p-2.5 rounded-lg bg-surface-alt/50 space-y-1">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-muted">LABOR (from Jobber)</span>
-            <span className="text-xs font-bold text-primary">{jobberHours.toFixed(1)} hrs · ${(laborCost).toFixed(2)}</span>
-          </div>
-          {Object.entries(byPerson).map(([name, hrs]) => (
-            <div key={name} className="flex items-center justify-between text-xs text-secondary">
-              <span>{name}</span>
-              <span>{hrs.toFixed(1)} hrs</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Manual inputs (expenses always, hours only if no Jobber data) */}
-      <div className="flex gap-2 mb-2">
-        <CurrencyInput
-          label="Expenses"
-          value={entry.expenses}
-          onChange={(e) => onEntryChange(dateStr, 'expenses', e.target.value)}
-          placeholder="0.00"
-        />
-        {jobberHours <= 0 && (
-          <HoursInput
-            value={entry.hours}
-            onChange={(e) => onEntryChange(dateStr, 'hours', e.target.value)}
-          />
-        )}
-        <CurrencyInput
-          label="Labor $ Override"
-          value={entry.laborCost}
-          onChange={(e) => onEntryChange(dateStr, 'laborCost', e.target.value)}
-          placeholder={hours > 0 ? (hours * crewRate).toFixed(2) : '0.00'}
-        />
-      </div>
-
-      {/* Labor Cost % */}
-      {laborCost > 0 && (
-        <div className="flex items-center justify-between pt-2 border-t border-black/10">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted">Labor Cost:</span>
-            <span className={`text-sm font-bold ${laborPctColor(laborPct)}`}>
-              {laborPct.toFixed(0)}%
-            </span>
-          </div>
-          <div className="text-right">
-            <span className="text-xs text-muted mr-1">Net:</span>
-            <span className={`text-sm font-bold ${netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              ${netProfit.toFixed(2)}
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Main page component ──
-
-export default function LaborEfficiency() {
-  const today = new Date();
-  const monday = getMonday(today);
-
-  const [startDate, setStartDate] = useState(toDateStr(monday));
-  const [endDate, setEndDate] = useState(toDateStr(today));
-  const [crewRate, setCrewRate] = useState(() => {
-    try { return parseFloat(localStorage.getItem('labor-crew-rate')) || 15; } catch { return 15; }
-  });
-  const [data, setData] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [entries, setEntries] = useState(loadEntries);
-
-  // Fetch data
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/labor-data?start=${startDate}&end=${endDate}`);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Failed to fetch' }));
-        throw new Error(err.error || `HTTP ${res.status}`);
-      }
-      const json = await res.json();
-      setData(json);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [startDate, endDate]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  // Save crew rate
-  useEffect(() => {
-    try { localStorage.setItem('labor-crew-rate', String(crewRate)); } catch {}
-  }, [crewRate]);
-
-  // Entry change handler
-  const handleEntryChange = useCallback((dateStr, field, value) => {
-    setEntries((prev) => {
-      const updated = {
-        ...prev,
-        [dateStr]: { ...prev[dateStr], [field]: value },
-      };
-      saveEntries(updated);
-      return updated;
-    });
-  }, []);
-
-  // Date range presets
-  const setThisWeek = () => {
-    setStartDate(toDateStr(getMonday(today)));
-    setEndDate(toDateStr(today));
-  };
-
-  const setLastWeek = () => {
-    const lastMonday = getMonday(today);
-    lastMonday.setDate(lastMonday.getDate() - 7);
-    const lastSunday = new Date(lastMonday);
-    lastSunday.setDate(lastSunday.getDate() + 6);
-    setStartDate(toDateStr(lastMonday));
-    setEndDate(toDateStr(lastSunday));
-  };
-
-  const setThisMonth = () => {
-    const first = new Date(today.getFullYear(), today.getMonth(), 1);
-    setStartDate(toDateStr(first));
-    setEndDate(toDateStr(today));
-  };
-
-  // Compute dates and summary
-  const dates = useMemo(() => getDateRange(startDate, endDate), [startDate, endDate]);
-
-  const summary = useMemo(() => {
-    let totalRevenue = 0;
-    let totalExpenses = 0;
-    let totalLabor = 0;
-    let daysWithLabor = 0;
-    let efficiencySum = 0;
-
-    for (const dateStr of dates) {
-      const dayData = data[dateStr];
-      const entry = entries[dateStr] || {};
-      const revenue = dayData?.revenue || 0;
-      const expenses = parseFloat(entry.expenses) || 0;
-      const jobberHours = dayData?.labor?.totalHours || 0;
-      const manualHours = parseFloat(entry.hours) || 0;
-      const hours = jobberHours > 0 ? jobberHours : manualHours;
-      const laborOverride = parseFloat(entry.laborCost) || 0;
-      const laborCost = laborOverride > 0 ? laborOverride : hours * crewRate;
-
-      totalRevenue += revenue;
-      totalExpenses += expenses;
-      totalLabor += laborCost;
-
-      if (laborCost > 0 && revenue > 0) {
-        daysWithLabor++;
-        efficiencySum += (laborCost / revenue) * 100;
-      }
-    }
-
-    const avgLaborPct = daysWithLabor > 0 ? efficiencySum / daysWithLabor : 0;
-    const netProfit = totalRevenue - totalExpenses - totalLabor;
-
-    return { totalRevenue, totalExpenses, totalLabor, avgLaborPct, netProfit, daysWithLabor };
-  }, [dates, data, entries, crewRate]);
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-brand-light flex items-center justify-center">
-            <TrendingUp size={20} className="text-brand" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-primary">Labor Efficiency</h1>
-            <p className="text-sm text-muted">Track revenue vs. labor costs</p>
-          </div>
-        </div>
-        <button
-          onClick={fetchData}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand text-on-brand text-sm font-semibold hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
-      </div>
-
-      {/* Quick select + date range */}
-      <div className="flex flex-wrap gap-2">
-        <button onClick={() => { const t = toDateStr(new Date()); setStartDate(t); setEndDate(t); }} className={`px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer transition-colors ${startDate === endDate && startDate === toDateStr(new Date()) ? 'bg-brand text-on-brand' : 'bg-surface-alt text-secondary hover:bg-brand-light hover:text-brand-text-strong'}`}>Today</button>
-        <button onClick={() => { const y = new Date(); y.setDate(y.getDate() - 1); const ys = toDateStr(y); setStartDate(ys); setEndDate(ys); }} className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface-alt text-secondary hover:bg-brand-light hover:text-brand-text-strong cursor-pointer transition-colors">Yesterday</button>
-        <button onClick={setThisWeek} className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface-alt text-secondary hover:bg-brand-light hover:text-brand-text-strong cursor-pointer transition-colors">This Week</button>
-        <button onClick={setLastWeek} className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface-alt text-secondary hover:bg-brand-light hover:text-brand-text-strong cursor-pointer transition-colors">Last Week</button>
-        <button onClick={setThisMonth} className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface-alt text-secondary hover:bg-brand-light hover:text-brand-text-strong cursor-pointer transition-colors">This Month</button>
-      </div>
-
-      {/* Custom date range */}
-      <div className="flex items-center gap-3">
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-          className="px-3 py-1.5 text-sm rounded-lg border border-border-subtle bg-card text-primary focus:outline-none focus:ring-2 focus:ring-brand/30" />
-        <span className="text-xs text-muted">to</span>
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-          className="px-3 py-1.5 text-sm rounded-lg border border-border-subtle bg-card text-primary focus:outline-none focus:ring-2 focus:ring-brand/30" />
-        <div className="flex items-center gap-1.5 ml-auto">
-          <span className="text-xs text-muted">Hourly Rate</span>
-          <div className="relative w-20">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted text-xs">$</span>
-            <input type="number" step="0.50" min="0" value={crewRate}
-              onChange={(e) => setCrewRate(parseFloat(e.target.value) || 0)}
-              className="w-full pl-5 pr-2 py-1.5 text-sm rounded-lg border border-border-subtle bg-card text-primary focus:outline-none focus:ring-2 focus:ring-brand/30" />
-          </div>
-        </div>
-      </div>
-
-      {/* Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <div className="bg-card rounded-xl border border-border-subtle p-4 text-center">
-          <p className="text-[11px] font-medium text-muted mb-1">Revenue</p>
-          <p className="text-lg font-bold text-primary">${summary.totalRevenue.toFixed(2)}</p>
-        </div>
-        <div className="bg-card rounded-xl border border-border-subtle p-4 text-center">
-          <p className="text-[11px] font-medium text-muted mb-1">Expenses</p>
-          <p className="text-lg font-bold text-primary">${summary.totalExpenses.toFixed(2)}</p>
-        </div>
-        <div className="bg-card rounded-xl border border-border-subtle p-4 text-center">
-          <p className="text-[11px] font-medium text-muted mb-1">Labor</p>
-          <p className="text-lg font-bold text-primary">${summary.totalLabor.toFixed(2)}</p>
-        </div>
-        <div className="bg-card rounded-xl border border-border-subtle p-4 text-center">
-          <p className="text-[11px] font-medium text-muted mb-1">Avg Labor %</p>
-          <p className={`text-lg font-bold ${summary.daysWithLabor > 0 ? laborPctColor(summary.avgLaborPct) : 'text-muted'}`}>
-            {summary.daysWithLabor > 0 ? `${summary.avgLaborPct.toFixed(0)}%` : '--'}
-          </p>
-        </div>
-        <div className="bg-card rounded-xl border border-border-subtle p-4 text-center col-span-2 sm:col-span-1">
-          <p className="text-[11px] font-medium text-muted mb-1">Net Profit</p>
-          <p className={`text-lg font-bold ${summary.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-            ${summary.netProfit.toFixed(2)}
-          </p>
-        </div>
-      </div>
-
-      {/* Loading / Error */}
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 size={24} className="animate-spin text-brand" />
-          <span className="ml-2 text-sm text-muted">Loading visit data...</span>
-        </div>
-      )}
-
-      {error && (
-        <div className="flex items-center gap-3 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700">
-          <AlertCircle size={18} />
-          <span className="text-sm">{error}</span>
-        </div>
-      )}
-
-      {/* Daily cards */}
-      {!loading && (
-        <div className="space-y-3">
-          {dates.map((dateStr) => {
-            const dayData = data[dateStr] || { visits: [], revenue: 0 };
-            const entry = entries[dateStr] || {};
+    <div className={`rounded-lg border ${job.laborCost > 0 ? prodBg(job.laborPct) : 'bg-surface-alt/30 border-border-subtle'}`}>
+      <button onClick={() => hasPeople && setOpen(!open)} className="w-full flex items-center gap-2 px-3 py-2 cursor-pointer">
+        <span className={`w-2 h-2 rounded-full shrink-0 ${job.laborCost > 0 ? prodDot(job.laborPct) : 'bg-gray-400'}`} />
+        <span className="text-xs font-semibold text-primary truncate flex-1 text-left">{job.client}</span>
+        <span className="text-xs font-bold text-primary shrink-0">${job.revenue.toFixed(0)}</span>
+        <span className={`text-xs font-bold shrink-0 w-12 text-right ${prodColor(job.laborPct)}`}>{job.laborPct > 0 ? `${job.laborPct.toFixed(0)}%` : '--'}</span>
+        <span className={`text-xs font-bold shrink-0 w-14 text-right ${rphColor(job.revPerHour)}`}>{job.revPerHour > 0 ? `$${job.revPerHour.toFixed(0)}/hr` : ''}</span>
+        {hasPeople && (open ? <ChevronUp size={12} className="text-muted shrink-0" /> : <ChevronDown size={12} className="text-muted shrink-0" />)}
+      </button>
+      {open && hasPeople && (
+        <div className="px-3 pb-2 space-y-0.5">
+          {Object.entries(bp).map(([name, info]) => {
+            const hrs = typeof info === 'object' ? info.hours : info;
+            const rate = typeof info === 'object' ? info.rate : 0;
+            const cost = typeof info === 'object' ? info.cost : 0;
             return (
-              <DayCard
-                key={dateStr}
-                dateStr={dateStr}
-                revenue={dayData.revenue}
-                visits={dayData.visits}
-                labor={dayData.labor}
-                entry={entry}
-                crewRate={crewRate}
-                onEntryChange={handleEntryChange}
-              />
+              <div key={name} className="flex items-center justify-between text-[11px] text-muted">
+                <span>{name}</span>
+                <span>{hrs.toFixed(1)}h × ${rate} = ${cost.toFixed(2)}</span>
+              </div>
             );
           })}
         </div>
       )}
+    </div>
+  );
+}
 
-      {!loading && !error && dates.length === 0 && (
-        <div className="text-center py-12 text-muted text-sm">
-          Select a date range to view labor efficiency data.
+// ── Main ──
+
+export default function LaborEfficiency() {
+  const todayStr = getTodayInTimezone();
+  const [startDate, setStartDate] = useState(todayStr);
+  const [endDate, setEndDate] = useState(todayStr);
+  const [data, setData] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [crewOpen, setCrewOpen] = useState(false);
+  const mileageLog = useAppStore((s) => s.mileageLog);
+  const vehicles = useAppStore((s) => s.vehicles);
+
+  const companyTruckId = useMemo(() => {
+    const v = (vehicles || []).find(v => v.nickname === 'Company Truck' || (v.qbName || '').includes('2016 Ford F150'));
+    return v?.id;
+  }, [vehicles]);
+
+  const milesByDate = useMemo(() => {
+    const map = {};
+    (mileageLog || []).forEach(e => {
+      if (!e.date) return;
+      const n = (e.vehicleName || '').toLowerCase();
+      if (!n.includes('company truck') && !n.includes('2016 ford f150') && !n.includes('2016 ford f-150')) {
+        if (companyTruckId && e.vehicleId !== companyTruckId) return;
+        if (!companyTruckId) return;
+      }
+      const mi = parseFloat(e.odometer) || 0;
+      if (mi) map[e.date] = (map[e.date] || 0) + mi;
+    });
+    return map;
+  }, [mileageLog, companyTruckId]);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch(`/api/jobber-data?action=labor&start=${startDate}&end=${endDate}`);
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
+      setData(await res.json());
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  }, [startDate, endDate]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const dates = useMemo(() => getDateRange(startDate, endDate), [startDate, endDate]);
+
+  const analysis = useMemo(() => {
+    let revenue = 0, totalCost = 0, jobCost = 0, totalHrs = 0, genHrs = 0, fuel = 0, miles = 0;
+    const allJobs = [];
+    const crew = {};
+
+    for (const ds of dates) {
+      const day = data[ds];
+      if (!day) continue;
+      revenue += day.revenue || 0;
+      const l = day.labor || {};
+      totalCost += l.totalCost || 0;
+      jobCost += l.jobCost || 0;
+      totalHrs += l.totalHours || 0;
+      genHrs += l.generalHours || 0;
+      const dm = milesByDate[ds] || 0;
+      miles += dm; fuel += dm * FUEL_COST_PER_MILE;
+
+      // Crew summary
+      for (const [name, info] of Object.entries(l.byPerson || {})) {
+        if (typeof info !== 'object') continue;
+        if (!crew[name]) crew[name] = { hours: 0, cost: 0, jobHours: 0, generalHours: 0 };
+        crew[name].hours += info.hours;
+        crew[name].cost += info.cost;
+        crew[name].jobHours += info.jobHours || 0;
+        crew[name].generalHours += info.generalHours || 0;
+      }
+
+      for (const v of (day.visits || [])) {
+        const vl = v.labor || {};
+        const cost = vl.totalCost || 0;
+        const hrs = vl.totalHours || 0;
+        allJobs.push({
+          id: v.id + ds, client: v.client, revenue: v.jobTotal || 0,
+          laborCost: cost, hours: hrs,
+          laborPct: v.jobTotal > 0 && cost > 0 ? (cost / v.jobTotal) * 100 : 0,
+          revPerHour: hrs > 0 ? (v.jobTotal || 0) / hrs : 0,
+          byPerson: vl.byPerson || {},
+        });
+      }
+    }
+
+    // Sort worst to best
+    allJobs.sort((a, b) => b.laborPct - a.laborPct);
+    const problems = allJobs.filter(j => j.laborPct > 45 && j.laborCost > 0);
+
+    const m = {
+      revenue, totalCost, jobCost, totalHrs, fuel, miles,
+      trueLaborPct: revenue > 0 ? (totalCost / revenue) * 100 : 0,
+      prodLaborPct: revenue > 0 ? (jobCost / revenue) * 100 : 0,
+      generalPct: totalHrs > 0 ? (genHrs / totalHrs) * 100 : 0,
+      revPerHour: totalHrs > 0 ? revenue / totalHrs : 0,
+      netProfit: revenue - totalCost - fuel,
+    };
+
+    return { m, allJobs, crew, diagnosis: diagnose(m), actions: getActions(m, problems) };
+  }, [dates, data, milesByDate]);
+
+  const { m, allJobs, crew, diagnosis, actions } = analysis;
+
+  const setToday = () => { const t = getTodayInTimezone(); setStartDate(t); setEndDate(t); };
+  const setYesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); const s = toDateStr(d); setStartDate(s); setEndDate(s); };
+  const setThisWeek = () => { setStartDate(toDateStr(getMonday(todayStr))); setEndDate(todayStr); };
+  const setLastWeek = () => { const lm = getMonday(todayStr); lm.setDate(lm.getDate() - 7); const ls = new Date(lm); ls.setDate(ls.getDate() + 6); setStartDate(toDateStr(lm)); setEndDate(toDateStr(ls)); };
+  const setThisMonth = () => { const [y, mo] = todayStr.split('-'); setStartDate(toDateStr(new Date(Number(y), Number(mo) - 1, 1))); setEndDate(todayStr); };
+  const isToday = startDate === endDate && startDate === todayStr;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-black text-primary tracking-tight">COMMAND CENTER</h1>
+        <button onClick={fetchData} disabled={loading}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold hover:bg-brand-hover cursor-pointer disabled:opacity-50">
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+      {/* Date pills */}
+      <div className="flex flex-wrap gap-1.5">
+        {[['Today', setToday, isToday], ['Yesterday', setYesterday], ['Week', setThisWeek], ['Last Wk', setLastWeek], ['Month', setThisMonth]].map(([l, fn, a]) => (
+          <button key={l} onClick={fn} className={`px-2.5 py-1 text-[11px] font-bold rounded-md cursor-pointer ${a ? 'bg-brand text-on-brand' : 'bg-surface-alt text-secondary hover:bg-brand-light'}`}>{l}</button>
+        ))}
+        <div className="flex items-center gap-1.5 ml-auto text-[11px]">
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="px-1.5 py-0.5 rounded border border-border-subtle bg-card text-primary" />
+          <span className="text-muted">→</span>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="px-1.5 py-0.5 rounded border border-border-subtle bg-card text-primary" />
         </div>
+      </div>
+
+      {loading && <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-brand" /></div>}
+      {error && <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-xs"><AlertCircle size={14} />{error}</div>}
+
+      {!loading && !error && (
+        <>
+          {/* ═══ SCORECARD ═══ */}
+          <div className="grid grid-cols-5 gap-2">
+            {[
+              ['Revenue', `$${m.revenue.toFixed(0)}`, 'text-primary'],
+              ['Prod Labor', m.prodLaborPct > 0 ? `${m.prodLaborPct.toFixed(0)}%` : '--', prodColor(m.prodLaborPct)],
+              ['True Labor', m.trueLaborPct > 0 ? `${m.trueLaborPct.toFixed(0)}%` : '--', trueColor(m.trueLaborPct)],
+              ['General', m.generalPct > 0 ? `${m.generalPct.toFixed(0)}%` : '--', genColor(m.generalPct)],
+              ['$/Hr', m.revPerHour > 0 ? `$${m.revPerHour.toFixed(0)}` : '--', rphColor(m.revPerHour)],
+            ].map(([label, val, color]) => (
+              <div key={label} className="bg-card rounded-xl border border-border-subtle p-2.5 text-center">
+                <p className="text-[9px] font-bold text-muted uppercase tracking-wider">{label}</p>
+                <p className={`text-lg font-black ${color} leading-tight mt-0.5`}>{val}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Net + Fuel */}
+          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-card border border-border-subtle text-xs">
+            <div><span className="text-muted font-bold">NET </span><span className={`font-black ${m.netProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>${m.netProfit.toFixed(2)}</span></div>
+            {m.miles > 0 && <div className="text-muted flex items-center gap-1"><Fuel size={11} />{m.miles}mi · ${m.fuel.toFixed(2)}</div>}
+            <div className="text-muted">{m.totalHrs.toFixed(1)}h</div>
+          </div>
+
+          {/* Diagnosis */}
+          <p className="text-sm text-primary font-semibold">{diagnosis}</p>
+
+          {/* Actions */}
+          <div className="rounded-lg border-2 border-brand/30 bg-card p-3 space-y-1">
+            <p className="text-[10px] font-black text-brand uppercase tracking-widest">ACTIONS</p>
+            {actions.map((a, i) => (
+              <p key={i} className="text-xs text-primary"><span className="text-brand font-black mr-1.5">→</span>{a}</p>
+            ))}
+          </div>
+
+          {/* ═══ JOBS ═══ */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-black text-muted uppercase tracking-widest">JOBS</p>
+              <p className="text-[10px] text-muted">{allJobs.length} total</p>
+            </div>
+            {allJobs.map(j => <JobRow key={j.id} job={j} />)}
+          </div>
+
+          {/* ═══ CREW (collapsible) ═══ */}
+          {Object.keys(crew).length > 0 && (
+            <div className="rounded-lg bg-card border border-border-subtle">
+              <button onClick={() => setCrewOpen(!crewOpen)} className="w-full flex items-center justify-between px-3 py-2.5 cursor-pointer">
+                <p className="text-[10px] font-black text-muted uppercase tracking-widest">CREW</p>
+                {crewOpen ? <ChevronUp size={14} className="text-muted" /> : <ChevronDown size={14} className="text-muted" />}
+              </button>
+              {crewOpen && (
+                <div className="px-3 pb-3 space-y-2">
+                  {Object.entries(crew).map(([name, info]) => {
+                    const genPct = info.hours > 0 ? (info.generalHours / info.hours) * 100 : 0;
+                    return (
+                      <div key={name} className="space-y-0.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-primary">{name}</span>
+                          <span className="font-bold text-primary">{info.hours.toFixed(1)}h · ${info.cost.toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center gap-4 text-[11px] text-muted pl-2">
+                          <span>Job: {info.jobHours.toFixed(1)}h</span>
+                          <span className={genPct > 25 ? 'text-red-500 font-bold' : ''}>General: {info.generalHours.toFixed(1)}h ({genPct.toFixed(0)}%)</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

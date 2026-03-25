@@ -11,6 +11,7 @@ import {
   Send,
   Trophy,
 } from 'lucide-react';
+import { getTimezone } from '../utils/timezone';
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:3001' : '';
 
@@ -195,7 +196,7 @@ function PipelineCard({ card, stageId, config }) {
       {/* Approved date for won */}
       {stageId === 'won' && card.approvedAt && (
         <div className="text-xs text-emerald-400/70">
-          Won {new Date(card.approvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          Won {new Date(card.approvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: getTimezone() })}
         </div>
       )}
     </div>

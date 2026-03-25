@@ -4,6 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
+import { getTodayInTimezone } from '../utils/timezone';
 
 const STATUS_COLORS = {
   New: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
@@ -39,7 +40,7 @@ export function IdeasFeedbackContent({ filterByUser, compact, autoSubmit }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const today = new Date().toLocaleDateString('en-US');
+    const today = getTodayInTimezone();
     setSuggestions([
       {
         id: genId(),

@@ -11,16 +11,17 @@ import {
   ChevronUp,
   ArrowUpDown,
 } from 'lucide-react';
+import { getTimezone, getTodayInTimezone, toDateStringInTimezone } from '../utils/timezone';
 
 /* ── Helpers ── */
 
 function fmt(d) {
-  return d.toISOString().split('T')[0];
+  return toDateStringInTimezone(d);
 }
 
 function formatWeekLabel(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: getTimezone() });
 }
 
 function formatWeekShort(dateStr) {
@@ -41,8 +42,8 @@ function money(val) {
 /* ── Date range presets ── */
 
 function getPresetRange(preset) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayStr = getTodayInTimezone();
+  const today = new Date(todayStr + 'T00:00:00');
 
   switch (preset) {
     case 'today': {

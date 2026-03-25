@@ -3,7 +3,7 @@ import { Flame, Check, ArrowLeft, ChevronRight, RotateCcw, Pencil } from 'lucide
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/AppStoreContext';
 import { genId } from '../data';
-import { getTodayInTimezone } from '../utils/timezone';
+import { getTodayInTimezone, getTimezone } from '../utils/timezone';
 import renderLinkedText from '../utils/renderLinkedText';
 import QuickLinks from '../components/QuickLinks';
 
@@ -370,7 +370,7 @@ export default function DailyChecklist() {
   const todayFormatted = useMemo(() => {
     const today = getTodayInTimezone();
     const d = new Date(today + 'T12:00:00');
-    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: getTimezone() });
   }, []);
 
   // Remaining items in current section (not done)

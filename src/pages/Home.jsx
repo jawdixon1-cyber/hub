@@ -8,7 +8,7 @@ import ReceiptScanModal from '../components/ReceiptScanModal';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 import { genId, getActiveRepairs } from '../data';
-import { getTodayInTimezone } from '../utils/timezone';
+import { getTodayInTimezone, getTimezone } from '../utils/timezone';
 
 
 export default function Home() {
@@ -166,7 +166,7 @@ export default function Home() {
 
   // --- Modal submit handlers ---
   const handleRepairSubmit = (form) => {
-    const today = new Date().toLocaleDateString('en-US');
+    const today = getTodayInTimezone();
     setEquipment(
       equipment.map((eq) => {
         if (eq.id !== form.equipmentId) return eq;
@@ -251,7 +251,7 @@ export default function Home() {
 
   const handleIdeaSubmit = (e) => {
     e.preventDefault();
-    const today = new Date().toLocaleDateString('en-US');
+    const today = getTodayInTimezone();
     setSuggestions([
       {
         id: genId(),

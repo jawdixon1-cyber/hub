@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { getTimezone } from '../utils/timezone';
 import {
   MapPin,
   Users,
@@ -109,7 +110,7 @@ function daysSince(dateStr) {
 }
 
 function formatDate(dateStr) {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: getTimezone() });
 }
 
 /* ── Shop location ── */
@@ -311,7 +312,7 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
               <Popup className="ideal-spot-popup">
                 <div style={{ textAlign: 'center', minWidth: 120 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>Ideal Location</div>
-                  {s.createdAt && <div style={{ opacity: 0.5, fontSize: 11, marginBottom: 8 }}>Marked {new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>}
+                  {s.createdAt && <div style={{ opacity: 0.5, fontSize: 11, marginBottom: 8 }}>Marked {new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: getTimezone() })}</div>}
                   <a
                     href={`https://maps.apple.com/?daddr=${s.lat},${s.lng}&dirflg=d`}
                     target="_blank"
@@ -332,7 +333,7 @@ function DominateMap({ clients, zones, drawingMode, drawingPointCount, onDrawing
               <Tooltip direction="top" offset={[0, -14]} className="dominate-tooltip">
                 <span className="text-xs font-medium">
                   Yard Sign
-                  {s.createdAt ? <><br /><span style={{ opacity: 0.6 }}>Placed {new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span></> : ''}
+                  {s.createdAt ? <><br /><span style={{ opacity: 0.6 }}>Placed {new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: getTimezone() })}</span></> : ''}
                 </span>
               </Tooltip>
             )}
@@ -1590,7 +1591,7 @@ export default function Dominate() {
             <p className="text-xs text-tertiary">
               This will remove the yard sign pin
               {signPins[confirmDeleteSign]?.createdAt
-                ? ` placed on ${new Date(signPins[confirmDeleteSign].createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                ? ` placed on ${new Date(signPins[confirmDeleteSign].createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: getTimezone() })}`
                 : ''}.
             </p>
             <div className="flex gap-2">

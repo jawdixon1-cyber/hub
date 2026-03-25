@@ -20,6 +20,7 @@ import AddEquipmentModal from '../components/AddEquipmentModal';
 import ReportRepairModal from '../components/ReportRepairModal';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
+import { getTodayInTimezone } from '../utils/timezone';
 
 export default function EquipmentIdeas() {
   const navigate = useNavigate();
@@ -64,7 +65,7 @@ export default function EquipmentIdeas() {
   };
 
   const handleRepairSubmit = (form) => {
-    const today = new Date().toLocaleDateString('en-US');
+    const today = getTodayInTimezone();
     setEquipment(
       equipment.map((eq) => {
         if (eq.id !== form.equipmentId) return eq;
@@ -97,7 +98,7 @@ export default function EquipmentIdeas() {
   };
 
   const handleMarkRepairFixed = (eqId, repairId, fixDesc) => {
-    const today = new Date().toLocaleDateString('en-US');
+    const today = getTodayInTimezone();
     const eq = equipment.find((e) => e.id === eqId);
     if (!eq) return;
 
