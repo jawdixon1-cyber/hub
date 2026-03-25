@@ -30,6 +30,9 @@
     },
     "api/qb-data.js": {
       "maxDuration": 30
+    },
+    "api/jobber-data.js": {
+      "maxDuration": 30
     }
   }
 }
