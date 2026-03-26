@@ -11,7 +11,7 @@
  * @param {number}        opts.annualSavings - total annual savings vs individual pricing
  * @returns {string} Complete HTML document string
  */
-export function generateAgreementHTML({ client, services, plan, term, annualSavings = 0 }) {
+export function generateAgreementHTML({ client, services, plan, plans, term, annualSavings = 0 }) {
   // ── Helper: format price ─────────────────────────────────────────
   const fmtPrice = (n) => {
     if (n == null) return '0.00';
@@ -62,25 +62,29 @@ export function generateAgreementHTML({ client, services, plan, term, annualSavi
   <div style="font-size:10px;color:rgba(255,255,255,.35);margin-top:4px;font-weight:600;">compared to individual service pricing</div>
 </div>` : '';
 
-  // ── Plan section ───────────────────────────────────────────────────
-  const planSection = plan
-    ? `
-<h2>Your Selected Plan</h2>
-<div class="card-no-break" style="background:rgba(176,255,3,.12);border:2px solid #B0FF03;border-radius:12px;padding:20px;">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-    <div style="font-weight:900;font-size:14px;color:#fff;">${escapeHTML(plan.name)}</div>
-    <div style="font-size:14px;font-weight:900;color:#B0FF03;">${escapeHTML(plan.monthlyPrice)} <span style="font-size:10px;font-weight:600;color:rgba(255,255,255,.5);">/month</span></div>
-  </div>
-  ${plan.description ? `<p style="font-size:10px;color:rgba(255,255,255,.6);font-weight:600;margin-bottom:10px;">${escapeHTML(plan.description)}</p>` : ''}
-  ${
-    plan.extras && plan.extras.length
-      ? `<ul style="padding-left:16px;margin:0;">
-    ${plan.extras.map((e) => `<li>${escapeHTML(e)}</li>`).join('\n    ')}
-  </ul>`
-      : ''
-  }
-</div>`
-    : '';
+  // ── Plan section — show all tiers ───────────────────────────────────
+  const allPlans = plans || (plan ? [plan] : []);
+  const planSection = allPlans.length > 0 ? `
+<h2>Choose Your Plan</h2>
+<p style="margin-bottom:16px;font-size:10px;color:rgba(255,255,255,.5);font-weight:600;">All plans include the services listed above. Higher tiers add premium extras on top of everything in Total Care.</p>
+<div style="display:flex;flex-direction:column;gap:16px;margin:16px 0;">
+${allPlans.map((p) => {
+  const isPopular = p.popular;
+  const border = isPopular ? 'border:2px solid #B0FF03;background:rgba(176,255,3,.12)' : 'border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)';
+  return `
+  <div class="card-no-break" style="${border};border-radius:12px;padding:20px;position:relative;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="font-weight:900;font-size:14px;color:#fff;">${escapeHTML(p.name)}</div>
+        ${isPopular ? '<span style="font-size:9px;font-weight:800;color:#000;background:#B0FF03;padding:3px 12px;border-radius:4px;text-transform:uppercase;letter-spacing:1px;">Most Popular</span>' : ''}
+      </div>
+      <div style="font-size:14px;font-weight:900;color:#B0FF03;">${escapeHTML(p.monthlyPrice)} <span style="font-size:10px;font-weight:600;color:rgba(255,255,255,.5);">/month</span></div>
+    </div>
+    ${p.description ? `<p style="font-size:10px;color:rgba(255,255,255,.6);font-weight:600;margin-bottom:10px;">${escapeHTML(p.description)}</p>` : ''}
+    ${p.extras && p.extras.length ? `<ul style="padding-left:16px;margin:0;">${p.extras.map((e) => `<li><strong>${escapeHTML(e.split(':')[0])}:</strong>${escapeHTML(e.split(':').slice(1).join(':'))}</li>`).join('')}</ul>` : ''}
+  </div>`;
+}).join('\n')}
+</div>` : '';
 
   // ── Months label ───────────────────────────────────────────────────
   const monthsLabel =

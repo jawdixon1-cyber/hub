@@ -195,7 +195,7 @@ export function ChecklistSection({ items, setItems }) {
 
 /* ─── Full-screen editor ─── */
 
-export default function ChecklistEditorModal({ onClose, items, setItems, title }) {
+export default function ChecklistEditorModal({ onClose, items, setItems, title, extraHeader }) {
   return (
     <div className="fixed inset-0 z-50 bg-surface">
       <div className="h-full flex flex-col max-w-2xl mx-auto">
@@ -205,6 +205,7 @@ export default function ChecklistEditorModal({ onClose, items, setItems, title }
           </button>
           <h1 className="text-lg font-bold text-primary">{title || 'Edit'}</h1>
         </div>
+        {extraHeader}
         <div className="flex-1 min-h-0 px-5 pb-5 flex flex-col">
           <ChecklistSection items={items} setItems={setItems} />
         </div>

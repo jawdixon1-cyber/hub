@@ -26,6 +26,7 @@ export function SettingsContent() {
   const { ownerMode } = useAuth();
 
   const [showChecklistEditor, setShowChecklistEditor] = useState(false);
+  const [showTeamChecklist, setShowTeamChecklist] = useState(null); // 'start' | 'end' | null
   const [showTraining, setShowTraining] = useState(false);
 
   const equipmentCategories = useAppStore((s) => s.equipmentCategories);
@@ -184,8 +185,16 @@ export function SettingsContent() {
               className="flex flex-col items-center gap-2 p-4 rounded-xl bg-surface-alt hover:bg-brand-light hover:text-brand-text-strong text-secondary transition-colors cursor-pointer"
             >
               <Pencil size={22} />
-              <span className="text-xs font-semibold">Edit Checklists</span>
-              <span className="text-[10px] text-muted -mt-1">Customize daily lists</span>
+              <span className="text-xs font-semibold">My Checklists</span>
+              <span className="text-[10px] text-muted -mt-1">Owner daily lists</span>
+            </button>
+            <button
+              onClick={() => setShowTeamChecklist('start')}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl bg-surface-alt hover:bg-brand-light hover:text-brand-text-strong text-secondary transition-colors cursor-pointer"
+            >
+              <Users size={22} />
+              <span className="text-xs font-semibold">Team Checklists</span>
+              <span className="text-[10px] text-muted -mt-1">Team daily lists</span>
             </button>
             <button
               onClick={() => setShowTraining(!showTraining)}
@@ -207,7 +216,7 @@ export function SettingsContent() {
         </div>
       )}
 
-      {/* Checklist Editor Modal */}
+      {/* Owner Checklist Editor */}
       {showChecklistEditor && (
         <Suspense fallback={null}>
           <ChecklistEditorModal
@@ -215,6 +224,30 @@ export function SettingsContent() {
             items={ownerStartChecklist}
             setItems={setOwnerStartChecklist}
             title="Edit Morning Checklist"
+          />
+        </Suspense>
+      )}
+
+      {/* Team Checklist Editor */}
+      {showTeamChecklist && (
+        <Suspense fallback={null}>
+          <ChecklistEditorModal
+            onClose={() => setShowTeamChecklist(null)}
+            items={showTeamChecklist === 'start' ? teamChecklist : teamEndChecklist}
+            setItems={showTeamChecklist === 'start' ? setTeamChecklist : setTeamEndChecklist}
+            title={showTeamChecklist === 'start' ? 'Team Opening Checklist' : 'Team Closing Checklist'}
+            extraHeader={
+              <div className="flex gap-1 bg-surface-alt p-1 rounded-xl mx-5 mb-2">
+                <button onClick={() => setShowTeamChecklist('start')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${showTeamChecklist === 'start' ? 'bg-card text-primary shadow-sm' : 'text-tertiary hover:text-secondary'}`}>
+                  Opening
+                </button>
+                <button onClick={() => setShowTeamChecklist('end')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${showTeamChecklist === 'end' ? 'bg-card text-primary shadow-sm' : 'text-tertiary hover:text-secondary'}`}>
+                  Closing
+                </button>
+              </div>
+            }
           />
         </Suspense>
       )}

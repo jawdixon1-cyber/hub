@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
-import { ArrowLeft, ArrowRight, Search, Check, Plus, FileText, Loader2, Pencil, MapPin, CheckCircle, SkipForward } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Search, Check, Plus, FileText, Loader2, Pencil, MapPin, CheckCircle, SkipForward, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
 import { genId } from '../data';
 import { generateAgreementHTML } from '../utils/generateAgreement';
@@ -65,27 +65,120 @@ function calcPinePrice(bales, laborPerBale = 6, delivery = 50) {
 
 function fmt(n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
-/* ─── Term Calculator ─── */
+/* ─── Term & Proration ─── */
 
-// Contract always runs 12 months: 1st of start month → last day of month before
-function calcTerm(startDateStr) {
+// Fixed cycle: March 1 → February 28/29
+// Service seasons (0-indexed months)
+const SERVICE_SEASONS = {
+  lawn:     { months: [2,3,4,5,6,7,8,9], visitsPerMonth: 4 },       // Mar-Oct, weekly
+  leaf:     { months: [10,11,0,1], visitsPerMonth: 4 },               // Nov-Feb, weekly
+  hedge:    { months: [3,6,9], visitsPerMonth: null, onePerMonth: true }, // Apr,Jul,Oct — 1 visit each
+  aeration: { months: [8,9], oneTime: true },                          // Sep-Oct window
+  mulch:    { months: [2,3,4], oneTime: true },                        // Mar-May window
+  pine:     { months: [2,3,4], oneTime: true },                        // Mar-May window
+  sticks:   { months: [0,1,2,3,4,5,6,7,8,9,10,11] },                 // year-round, included
+};
+
+function calcTerm(startDateStr, services, getPrice, getVisitsForSvc) {
   if (!startDateStr) return null;
   const start = new Date(startDateStr + 'T00:00:00');
   const startMonth = start.getMonth();
   const startYear = start.getFullYear();
 
-  // Contract starts on 1st of the start month
-  const contractStart = new Date(startYear, startMonth, 1);
-  // Contract ends 12 months later, last day of the month before
-  const contractEnd = new Date(startYear + 1, startMonth, 0); // day 0 = last day of prev month
+  // Cycle: March 1 → February 28
+  // Find the current cycle's March 1
+  let cycleStartYear = startYear;
+  if (startMonth < 2) cycleStartYear -= 1; // Jan/Feb = still in previous year's cycle
+  const cycleStart = new Date(cycleStartYear, 2, 1); // March 1
+  const cycleEnd = new Date(cycleStartYear + 1, 1, 28); // Feb 28 (close enough)
 
-  const startFmt = contractStart.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: getTimezone() });
-  const endFmt = contractEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: getTimezone() });
+  const isFullCycle = startMonth === 2 && start.getDate() <= 7; // Starting in early March = full cycle
+  const remainingMs = cycleEnd - start;
+  const remainingMonths = Math.max(Math.round(remainingMs / (1000 * 60 * 60 * 24 * 30.44)), 1);
 
-  // First billing date is the actual start date
-  const firstBilling = start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: getTimezone() });
+  const fmtDate = (d) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const startFmt = fmtDate(cycleStart);
+  const endFmt = fmtDate(cycleEnd);
+  const firstBilling = fmtDate(start);
 
-  return { startFmt, endFmt, firstBilling, months: 12 };
+  // Calculate full year totals
+  let fullYearTotal = 0;
+  const breakdown = [];
+
+  for (const svc of services) {
+    if (svc.calcType === 'included') {
+      breakdown.push({ id: svc.id, name: svc.name, included: true, fullAnnual: 0, proratedAnnual: 0, fullVisits: 0, remainingVisits: 0, status: 'included' });
+      continue;
+    }
+
+    const price = getPrice(svc.id);
+    const fullVisits = getVisitsForSvc(svc);
+    const fullAnnual = svc.priceLabel === '/visit' ? price * fullVisits : price;
+    fullYearTotal += fullAnnual;
+
+    if (isFullCycle) {
+      breakdown.push({ id: svc.id, name: svc.name, included: false, fullAnnual, proratedAnnual: fullAnnual, fullVisits, remainingVisits: fullVisits, price, status: 'full' });
+      continue;
+    }
+
+    // Calculate remaining visits by walking months from start to cycle end
+    const season = SERVICE_SEASONS[svc.id];
+    if (!season) {
+      breakdown.push({ id: svc.id, name: svc.name, included: false, fullAnnual, proratedAnnual: fullAnnual, fullVisits, remainingVisits: fullVisits, price, status: 'full' });
+      continue;
+    }
+
+    let remainingVisits = 0;
+    let status = 'partial';
+
+    if (season.oneTime) {
+      // Check if any season month is still ahead
+      const hasWindow = season.months.some((m) => {
+        if (m > startMonth) return true;
+        if (m === startMonth && start.getDate() <= 15) return true;
+        // Months that wrap (e.g. Jan/Feb in a cycle starting March)
+        if (m < 2 && startMonth >= 2) return true; // Jan/Feb always ahead if we started Mar+
+        return false;
+      });
+      remainingVisits = hasWindow ? 1 : 0;
+      status = hasWindow ? 'remaining' : 'done';
+    } else if (season.onePerMonth) {
+      // Hedge: count remaining specific months
+      remainingVisits = season.months.filter((m) => {
+        if (m > startMonth) return true;
+        if (m === startMonth && start.getDate() <= 15) return true;
+        if (m < 2 && startMonth >= 2) return true;
+        return false;
+      }).length;
+      status = remainingVisits === season.months.length ? 'full' : remainingVisits > 0 ? 'partial' : 'done';
+    } else {
+      // Recurring: count remaining months in season × visits per month
+      const vpm = season.visitsPerMonth || 4;
+      let seasonMonthsLeft = 0;
+      season.months.forEach((m) => {
+        if (m > startMonth) seasonMonthsLeft++;
+        else if (m === startMonth && start.getDate() <= 15) seasonMonthsLeft++;
+        else if (m < 2 && startMonth >= 2) seasonMonthsLeft++; // Jan/Feb wrap
+      });
+      remainingVisits = seasonMonthsLeft * vpm;
+      status = remainingVisits >= fullVisits ? 'full' : remainingVisits > 0 ? 'partial' : 'done';
+    }
+
+    const proratedAnnual = svc.priceLabel === '/visit' ? price * remainingVisits : (remainingVisits > 0 ? price : 0);
+    breakdown.push({ id: svc.id, name: svc.name, included: false, fullAnnual, proratedAnnual, fullVisits, remainingVisits, price, status });
+  }
+
+  const proratedTotal = breakdown.reduce((s, b) => s + (b.proratedAnnual || 0), 0);
+  const fullMonthly = Math.round(fullYearTotal / 12);
+  const proratedMonthly = remainingMonths > 0 ? Math.round(proratedTotal / remainingMonths) : 0;
+
+  return {
+    startFmt, endFmt, firstBilling, months: 12,
+    isFullCycle, remainingMonths, breakdown,
+    fullYearTotal: Math.round(fullYearTotal * 100) / 100,
+    proratedTotal: Math.round(proratedTotal * 100) / 100,
+    fullMonthly, proratedMonthly,
+  };
 }
 
 /* ─── Service Definitions ─── */
@@ -148,10 +241,79 @@ const FULL_BULLETS = {
 };
 
 const PLAN_TIERS = [
-  { id: 'total-care', name: 'Total Care', description: 'All selected services bundled into one predictable monthly payment', extras: [] },
-  { id: 'total-care-plus', name: 'Total Care Plus', description: 'Includes everything in Total Care +', extras: ['Leaf Upgrade (Nov-Feb): Haul off all leaves instead of mulching', 'Seasonal Bed Refresh (Fall): Turn and fluff existing mulch'] },
-  { id: 'total-care-premium', name: 'Total Care Premium', description: 'Includes everything in Total Care Plus +', extras: ['Up to 2 priority touch-up visits per year', 'Up to 3 storm cleanup visits per year', '48-hour priority requests'] },
+  { id: 'total-care', name: 'Total Care', addonPerMonth: 0, description: 'All selected services bundled into one predictable monthly payment', extras: [] },
+  { id: 'total-care-plus', name: 'Total Care Plus', addonPerMonth: 100, popular: true, description: 'Includes everything in Total Care +', extras: ['Leaf Upgrade (Nov–Feb): Haul off all leaves instead of mulching', 'Seasonal Bed Refresh (Fall): Turn and fluff existing mulch'] },
+  { id: 'total-care-premium', name: 'Total Care Premium', addonPerMonth: 220, description: 'Includes everything in Total Care Plus +', extras: ['Up to 2 priority touch-up visits per year', 'Up to 3 storm cleanup visits per year', '48-hour priority requests'] },
 ];
+
+/* ─── Agreement Card (list view) ─── */
+
+function AgreementCard({ agreement: a, onDelete, onRegenerate, onEdit }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="bg-card rounded-2xl border border-border-subtle overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)} className="w-full text-left p-5 flex items-center justify-between cursor-pointer hover:bg-surface-alt/30 transition-colors">
+        <div>
+          <p className="text-sm font-bold text-primary">{a.clientName}</p>
+          <p className="text-xs text-muted">{a.clientAddress}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-sm font-bold text-brand-text">${a.monthlyPrice}/mo</p>
+            <p className="text-xs text-muted">{new Date(a.createdAt).toLocaleDateString()}</p>
+          </div>
+          <ChevronDown size={14} className={`text-muted transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-5 pb-5 space-y-3 border-t border-border-subtle/50">
+          {/* Services */}
+          {a.services?.length > 0 && (
+            <div className="pt-3 space-y-1">
+              {a.services.map((s, i) => (
+                <div key={i} className="flex justify-between text-xs">
+                  <span className="text-secondary">{s.name}</span>
+                  <span className="font-semibold text-primary">${Number(s.price || 0).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Plan + term */}
+          <div className="text-xs text-muted space-y-1">
+            {a.planTier && <p>Plan: {a.planTier.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</p>}
+            {a.annualTotal && <p>Annual: ${Number(a.annualTotal).toFixed(2)}</p>}
+            {a.termStart && <p>Started: {a.termStart}</p>}
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => onEdit(a)}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover cursor-pointer"
+            >
+              <Pencil size={13} /> Edit
+            </button>
+            <button
+              onClick={() => onRegenerate(a)}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-brand/30 text-brand-text text-xs font-semibold hover:bg-brand-light/20 cursor-pointer"
+            >
+              <RefreshCw size={13} /> PDF
+            </button>
+            <button
+              onClick={() => { if (confirm(`Delete agreement for ${a.clientName}?`)) onDelete(a.id); }}
+              className="px-4 py-2 rounded-xl border border-red-500/30 text-red-500 text-xs font-semibold hover:bg-red-500/10 cursor-pointer"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ─── Client Search Hook ─── */
 
@@ -273,6 +435,9 @@ export default function ServiceAgreement() {
   const search = useJobberSearch();
   const addressAutocomplete = useAddressAutocomplete();
 
+  // Editing existing agreement
+  const [editingId, setEditingId] = useState(null);
+
   // Client
   const [client, setClient] = useState({ name: '', phone: '', email: '', address: '', cityStateZip: 'Rock Hill, SC 29732' });
   const [clientLatLng, setClientLatLng] = useState(null);
@@ -321,7 +486,7 @@ export default function ServiceAgreement() {
   const [monthlyPrice, setMonthlyPrice] = useState('');
   const [autoMonthly, setAutoMonthly] = useState(true);
   const [termMonths, setTermMonths] = useState(12);
-  const [startDate, setStartDate] = useState('');
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   const toggle = (id) => setEnabledIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const isOn = (id) => enabledIds.has(id);
@@ -405,12 +570,21 @@ export default function ServiceAgreement() {
 
   const annualSavings = anchorAnnualTotal - annualTotal;
 
-  // Auto-monthly = annual / 12
+  // Auto-monthly — uses proration if mid-cycle
   useEffect(() => {
-    if (autoMonthly && annualTotal > 0) {
+    if (!autoMonthly) return;
+    if (startDate && annualTotal > 0) {
+      const enabledSvcs = [...ALL_SERVICES.filter((s) => isOn(s.id)), ...(enabledIds.size > 0 ? [ALWAYS_INCLUDED] : [])];
+      const term = calcTerm(startDate, enabledSvcs, getPrice, getVisits);
+      if (term) {
+        setMonthlyPrice(String(term.isFullCycle ? term.fullMonthly : term.proratedMonthly));
+      } else {
+        setMonthlyPrice(String(Math.round(annualTotal / 12)));
+      }
+    } else if (annualTotal > 0) {
       setMonthlyPrice(String(Math.round(annualTotal / 12)));
     }
-  }, [annualTotal, autoMonthly]);
+  }, [annualTotal, autoMonthly, startDate]);
 
   const endDate = useMemo(() => {
     if (!startDate) return '';
@@ -453,9 +627,9 @@ export default function ServiceAgreement() {
   const handleGenerate = () => {
     const enabled = [...ALL_SERVICES.filter((s) => isOn(s.id)), ...(enabledIds.size > 0 ? [ALWAYS_INCLUDED] : [])];
     const plan = PLAN_TIERS.find((p) => p.id === selectedPlan);
-    const term = calcTerm(startDate);
+    const term = calcTerm(startDate, enabled, getPrice, getVisits);
     const termEndDate = term ? term.endFmt : '';
-    const termMonthsActual = 12;
+    const termMonthsActual = term ? (term.isFullCycle ? 12 : term.remainingMonths) : 12;
     const termStartFmt = term ? term.startFmt : '';
 
     const html = generateAgreementHTML({
@@ -467,21 +641,45 @@ export default function ServiceAgreement() {
         anchorPrice: s.calcType !== 'included' ? Math.round(getPrice(s.id) * ANCHOR_MARKUP * 100) / 100 : null,
         visitsPerYear: getVisits(s), calcType: s.calcType,
       })),
-      plan: plan ? { name: plan.name, monthlyPrice: `$${fmt(parseFloat(monthlyPrice) || 0)}`, description: plan.description, extras: plan.extras } : null,
+      plans: PLAN_TIERS.map((p) => ({
+        name: p.name,
+        monthlyPrice: `$${fmt(Math.round(annualTotal / 12) + p.addonPerMonth)}`,
+        description: p.description,
+        extras: p.extras,
+        popular: p.popular || false,
+      })),
       term: { startDate: termStartFmt, endDate: termEndDate, months: termMonthsActual },
       annualSavings: Math.round(annualSavings * 100) / 100,
     });
     const win = window.open('', '_blank'); win.document.write(html); win.document.close();
-    setAgreements([{
-      id: genId(), clientName: client.name, clientAddress: client.address,
-      services: enabled.map((s) => ({ name: s.name, price: getPrice(s.id) })),
+    const agreementData = {
+      id: editingId || genId(),
+      clientName: client.name, clientPhone: client.phone, clientEmail: client.email,
+      clientAddress: client.address, clientCityStateZip: client.cityStateZip,
+      services: enabled.map((s) => ({
+        id: s.id, name: s.name, price: getPrice(s.id), priceLabel: s.priceLabel,
+        frequency: s.frequency, season: s.season, visitsPerYear: getVisits(s), calcType: s.calcType,
+      })),
       planTier: selectedPlan, monthlyPrice: parseFloat(monthlyPrice) || 0,
-      termStart: startDate, termMonths: termMonthsActual, annualTotal: Math.round(annualTotal * 100) / 100,
-      createdAt: new Date().toISOString(),
-    }, ...(agreements || [])]);
+      termStart: startDate, termMonths: termMonthsActual,
+      annualTotal: Math.round(annualTotal * 100) / 100,
+      annualSavings: Math.round(annualSavings * 100) / 100,
+      createdAt: editingId ? ((agreements || []).find((a) => a.id === editingId)?.createdAt || new Date().toISOString()) : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (editingId) {
+      // Update existing
+      setAgreements((agreements || []).map((a) => a.id === editingId ? agreementData : a));
+    } else {
+      // Create new
+      setAgreements([agreementData, ...(agreements || [])]);
+    }
+    setEditingId(null);
   };
 
   const startNew = () => {
+    setEditingId(null);
     setClient({ name: '', phone: '', email: '', address: '', cityStateZip: 'Rock Hill, SC 29732' });
     setClientLatLng(null);
     setEnabledIds(new Set());
@@ -489,9 +687,31 @@ export default function ServiceAgreement() {
     setMapCenter(null);
     setCalc({ lawnSqftManual: '', difficulty: 'easy', lawnPriceType: 'weekly', leafPerVisit: '', seedRate: '8', bagPrice: '200', bushesSmall: '', bushesMedium: '', bushesLarge: '', bushesXl: '', mulchSqft: '', mulchDepth: '3', mulchMaterialCost: '40', mulchChargePerYd: '35', pineBales: '', pineLaborPerBale: '6', pineDelivery: '50' });
     setOverrides({ lawn: { enabled: false, price: '' }, leaf: { enabled: false, price: '' }, aeration: { enabled: false, price: '' }, hedge: { enabled: false, price: '' }, mulch: { enabled: false, price: '' }, pine: { enabled: false, price: '' } });
-    setSelectedPlan('total-care'); setMonthlyPrice(''); setAutoMonthly(true); setStartDate(''); setTermMonths(12);
+    setSelectedPlan('total-care'); setMonthlyPrice(''); setAutoMonthly(true); setStartDate(new Date().toISOString().split('T')[0]); setTermMonths(12);
     addressAutocomplete.clear();
     setStep('client');
+  };
+
+  // Load an existing agreement for editing
+  const loadAgreement = (a) => {
+    setEditingId(a.id);
+    setClient({ name: a.clientName || '', phone: a.clientPhone || '', email: a.clientEmail || '', address: a.clientAddress || '', cityStateZip: a.clientCityStateZip || 'Rock Hill, SC 29732' });
+    // Enable the services that were in the agreement
+    const ids = new Set((a.services || []).map((s) => s.id).filter(Boolean));
+    setEnabledIds(ids);
+    // Set overrides from saved prices
+    const newOverrides = {};
+    for (const s of (a.services || [])) {
+      if (s.id && s.price != null) {
+        newOverrides[s.id] = { enabled: true, price: String(s.price), weeklyOverride: String(s.price), eowOverride: '' };
+      }
+    }
+    setOverrides((prev) => ({ ...prev, ...newOverrides }));
+    setSelectedPlan(a.planTier || 'total-care');
+    setMonthlyPrice(String(a.monthlyPrice || ''));
+    setAutoMonthly(false);
+    setStartDate(a.termStart || new Date().toISOString().split('T')[0]);
+    setStep('calculate');
   };
 
   // ─── LIST ───
@@ -512,10 +732,22 @@ export default function ServiceAgreement() {
         ) : (
           <div className="space-y-3">
             {agreements.map((a) => (
-              <div key={a.id} className="bg-card rounded-2xl border border-border-subtle p-5 flex items-center justify-between">
-                <div><p className="text-sm font-bold text-primary">{a.clientName}</p><p className="text-xs text-muted">{a.clientAddress}</p></div>
-                <div className="text-right"><p className="text-sm font-bold text-brand-text">${a.monthlyPrice}/mo</p><p className="text-xs text-muted">{new Date(a.createdAt).toLocaleDateString('en-US', { timeZone: getTimezone() })}</p></div>
-              </div>
+              <AgreementCard key={a.id} agreement={a} onEdit={loadAgreement} onDelete={(id) => setAgreements((agreements || []).filter((x) => x.id !== id))} onRegenerate={(ag) => {
+                const plan = PLAN_TIERS.find((p) => p.id === ag.planTier);
+                const termStart = ag.termStart ? new Date(ag.termStart + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '';
+                const html = generateAgreementHTML({
+                  client: { name: ag.clientName, phone: ag.clientPhone || '', email: ag.clientEmail || '', address: ag.clientAddress || '', cityStateZip: ag.clientCityStateZip || 'Rock Hill, SC 29732' },
+                  services: (ag.services || []).map((s) => ({
+                    name: s.name, frequency: s.frequency || '', season: s.season || '', bullets: FULL_BULLETS[s.id] || [s.name],
+                    price: s.price, priceLabel: s.priceLabel || '', anchorPrice: s.price ? Math.round(s.price * ANCHOR_MARKUP * 100) / 100 : null,
+                    visitsPerYear: s.visitsPerYear || 1, calcType: s.calcType || 'item',
+                  })),
+                  plans: PLAN_TIERS.map((p) => ({ name: p.name, monthlyPrice: `$${fmt(Math.round((ag.annualTotal || 0) / 12) + p.addonPerMonth)}`, description: p.description, extras: p.extras, popular: p.popular || false })),
+                  term: { startDate: termStart, endDate: '', months: ag.termMonths || 12 },
+                  annualSavings: ag.annualSavings || 0,
+                });
+                const win = window.open('', '_blank'); win.document.write(html); win.document.close();
+              }} />
             ))}
           </div>
         )}
@@ -992,56 +1224,108 @@ export default function ServiceAgreement() {
           </div>
         </div>
 
-        {/* ── Plan ── */}
-        <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-4">
-          <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Plan</p>
-          <div className="space-y-2">
-            {PLAN_TIERS.map((plan) => (
-              <button key={plan.id} onClick={() => setSelectedPlan(plan.id)}
-                className={`w-full text-left px-4 py-3 rounded-xl border cursor-pointer ${selectedPlan === plan.id ? 'border-brand bg-brand-light/20' : 'border-border-subtle hover:border-border-strong'}`}>
-                <p className="text-sm font-bold text-primary">{plan.name}</p>
-                {plan.extras.length > 0 && <p className="text-[10px] text-muted">+ {plan.extras.length} extras</p>}
-              </button>
-            ))}
-          </div>
-          <div>
-            <label className="block text-[11px] font-medium text-muted mb-1">Monthly Price</label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted">$</span>
-              <input type="number" value={monthlyPrice} onChange={(e) => { setMonthlyPrice(e.target.value); setAutoMonthly(false); }}
-                className="w-32 rounded-lg border border-border-default px-3 py-2 text-sm font-bold text-primary outline-none focus:ring-2 focus:ring-brand" />
-              <span className="text-xs text-muted">/month</span>
-              {!autoMonthly && <button onClick={() => setAutoMonthly(true)} className="text-[10px] text-muted underline cursor-pointer">auto</button>}
-            </div>
-          </div>
+        {/* ── Plan Preview (all 3 shown to client on the agreement) ── */}
+        <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-3">
+          <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Plans on Agreement</p>
+          <p className="text-[10px] text-muted">All 3 options will be shown to the client. They choose one.</p>
+          {PLAN_TIERS.map((plan) => {
+            const baseMonthly = Math.round(annualTotal / 12);
+            const planMonthly = baseMonthly + plan.addonPerMonth;
+            return (
+              <div key={plan.id} className={`rounded-xl p-3 ${plan.popular ? 'border-2 border-brand bg-brand-light/10' : 'border border-border-subtle/50'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold text-primary">{plan.name}</p>
+                    {plan.popular && <span className="text-[8px] font-bold bg-brand text-on-brand px-1.5 py-0.5 rounded-full uppercase">Most Popular</span>}
+                  </div>
+                  <p className="text-sm font-bold text-brand-text">${fmt(planMonthly)}/mo</p>
+                </div>
+                {plan.extras.length > 0 && (
+                  <p className="text-[10px] text-muted mt-1">+ {plan.extras.map((e) => e.split(':')[0]).join(', ')}</p>
+                )}
+              </div>
+            );
+          })}
         </div>
 
-        {/* ── Term ── */}
+        {/* ── Term & Proration ── */}
         <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-4">
           <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Term</p>
           <FormInput label="Start Date" value={startDate} onChange={(v) => setStartDate(v)} type="date" />
 
           {startDate && (() => {
-            const term = calcTerm(startDate);
+            const enabledSvcs = [...ALL_SERVICES.filter((s) => isOn(s.id)), ...(enabledIds.size > 0 ? [ALWAYS_INCLUDED] : [])];
+            const term = calcTerm(startDate, enabledSvcs, getPrice, getVisits);
             if (!term) return null;
+
             return (
-              <div className="rounded-xl bg-surface-alt/50 p-4 space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-xs text-muted">Contract period</span>
-                  <span className="text-xs font-semibold text-primary">{term.startFmt} → {term.endFmt}</span>
+              <div className="space-y-4">
+                {/* Contract info */}
+                <div className="rounded-xl bg-surface-alt/50 p-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-xs text-muted">Cycle</span>
+                    <span className="text-xs font-semibold text-primary">{term.startFmt} → {term.endFmt}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-xs text-muted">First billing</span>
+                    <span className="text-xs font-semibold text-primary">{term.firstBilling}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-xs text-muted">Duration</span>
-                  <span className="text-xs font-semibold text-primary">12 months</span>
+
+                {/* Full year rate */}
+                <div className="rounded-xl bg-surface-alt/50 p-4 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-muted">Full annual rate</span>
+                    <span className="text-sm font-bold text-primary">${fmt(term.fullYearTotal)}/yr (${fmt(term.fullMonthly)}/mo)</span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-xs text-muted">First billing</span>
-                  <span className="text-xs font-semibold text-primary">{term.firstBilling}</span>
-                </div>
-                <div className="flex justify-between items-center pt-2 border-t border-border-subtle">
-                  <span className="text-xs text-muted">Monthly price</span>
-                  <span className="text-lg font-bold text-brand-text">${fmt(parseFloat(monthlyPrice) || 0)}/mo</span>
-                </div>
+
+                {/* Proration — only show if mid-cycle */}
+                {!term.isFullCycle && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+                    <p className="text-[11px] font-bold text-amber-500 uppercase tracking-widest">Prorated Year 1</p>
+                    <p className="text-xs text-muted">Since we're starting mid-cycle, here's what's left this year:</p>
+
+                    {term.breakdown.filter((b) => !b.included).map((b) => (
+                      <div key={b.id} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${b.status === 'done' ? 'bg-muted/30' : b.status === 'full' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                          <span className={b.status === 'done' ? 'text-muted/50 line-through' : 'text-secondary'}>{b.name}</span>
+                        </div>
+                        <div className="text-right">
+                          {b.status === 'done' ? (
+                            <span className="text-muted/50">Already passed</span>
+                          ) : (
+                            <span className="font-semibold text-primary">
+                              {b.remainingVisits} visit{b.remainingVisits !== 1 ? 's' : ''} · ${fmt(b.proratedAnnual)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    <div className="border-t border-amber-500/20 pt-2 space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-xs font-semibold text-primary">Year 1 total ({term.remainingMonths} months)</span>
+                        <span className="text-xs font-bold text-brand-text">${fmt(term.proratedTotal)}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-muted">Year 1 monthly</span>
+                        <span className="text-lg font-bold text-brand-text">${fmt(term.proratedMonthly)}/mo</span>
+                      </div>
+                    </div>
+
+                    <p className="text-[10px] text-muted">Renews March 1 at ${fmt(term.fullMonthly)}/mo for the full year</p>
+                  </div>
+                )}
+
+                {/* Full cycle monthly */}
+                {term.isFullCycle && (
+                  <div className="flex justify-between items-center rounded-xl bg-brand-light/20 p-4">
+                    <span className="text-xs font-semibold text-primary">Monthly price</span>
+                    <span className="text-lg font-bold text-brand-text">${fmt(term.fullMonthly)}/mo</span>
+                  </div>
+                )}
               </div>
             );
           })()}
