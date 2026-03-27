@@ -486,16 +486,36 @@ export default function TeamManagement() {
                       {(() => {
                         const p = (presence || {})[member.email];
                         const isOnline = p?.status === 'online' && p?.lastSeen && (Date.now() - new Date(p.lastSeen).getTime()) < 300000;
+
+                        const fmtTime = (iso) => {
+                          if (!iso) return '';
+                          const d = new Date(iso);
+                          return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+                        };
+
+                        const fmtDuration = (startIso) => {
+                          if (!startIso) return '';
+                          const mins = Math.round((Date.now() - new Date(startIso).getTime()) / 60000);
+                          if (mins < 1) return 'just now';
+                          if (mins < 60) return `${mins}m`;
+                          const hrs = Math.floor(mins / 60);
+                          const rm = mins % 60;
+                          return rm > 0 ? `${hrs}h ${rm}m` : `${hrs}h`;
+                        };
+
                         if (isOnline) {
-                          return <p className="text-[10px] text-emerald-500 font-semibold mt-1">Active now</p>;
+                          return (
+                            <p className="text-[10px] text-emerald-500 font-semibold mt-1">
+                              Active now · {fmtDuration(p.sessionStart)} {p.sessionStart ? `(since ${fmtTime(p.sessionStart)})` : ''}
+                            </p>
+                          );
                         }
                         if (p?.lastSeen) {
-                          const last = new Date(p.lastSeen);
-                          const mins = Math.round((Date.now() - last.getTime()) / 60000);
-                          const timeStr = mins < 60 ? `${mins}m ago` : mins < 1440 ? `${Math.round(mins / 60)}h ago` : formatDate(p.lastSeen);
-                          return <p className="text-[10px] text-muted mt-1">Last active: {timeStr}</p>;
+                          return <p className="text-[10px] text-muted mt-1">Last active: {fmtTime(p.lastSeen)}</p>;
                         }
-                        if (authUser) return <p className="text-[10px] text-muted mt-1">Last login: {formatDate(authUser.lastSignIn)}</p>;
+                        if (authUser?.lastSignIn) {
+                          return <p className="text-[10px] text-muted mt-1">Last login: {fmtTime(authUser.lastSignIn)}</p>;
+                        }
                         return null;
                       })()}
                     </div>

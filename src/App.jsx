@@ -240,9 +240,13 @@ function AppShell() {
   useEffect(() => {
     if (!userEmail) return;
 
-    // Mark online
+    // Mark online — track when session started
     const goOnline = () => {
-      setPresence((prev) => ({ ...prev, [userEmail]: { name: currentUser, status: 'online', lastSeen: new Date().toISOString() } }));
+      setPresence((prev) => {
+        const existing = prev[userEmail];
+        const sessionStart = existing?.status === 'online' && existing?.sessionStart ? existing.sessionStart : new Date().toISOString();
+        return { ...prev, [userEmail]: { name: currentUser, status: 'online', lastSeen: new Date().toISOString(), sessionStart } };
+      });
     };
 
     // Mark offline
