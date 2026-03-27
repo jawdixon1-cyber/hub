@@ -372,6 +372,87 @@ function BigMoves({ moves, setMoves }) {
   );
 }
 
+/* ─── Team Activity Widget (outside main component) ─── */
+
+function TeamActivity() {
+  const presence = useAppStore((s) => s.presence);
+  const permissions = useAppStore((s) => s.permissions);
+
+  const members = Object.entries(permissions || {}).map(([email, data]) => {
+    const p = (presence || {})[email];
+    const isOnline = p?.status === 'online' && p?.lastSeen && (Date.now() - new Date(p.lastSeen).getTime()) < 300000;
+    return { email, name: data.name, isOnline, lastSeen: p?.lastSeen, sessionStart: p?.sessionStart };
+  });
+
+  // Sort: online first, then by last seen
+  members.sort((a, b) => {
+    if (a.isOnline && !b.isOnline) return -1;
+    if (!a.isOnline && b.isOnline) return 1;
+    return (b.lastSeen || '').localeCompare(a.lastSeen || '');
+  });
+
+  if (members.length === 0) return null;
+
+  const fmtTime = (iso) => {
+    if (!iso) return '';
+    return new Date(iso).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
+  const fmtDuration = (startIso) => {
+    if (!startIso) return '';
+    const mins = Math.round((Date.now() - new Date(startIso).getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    const rm = mins % 60;
+    return rm > 0 ? `${hrs}h ${rm}m` : `${hrs}h`;
+  };
+
+  const fmtLastSeen = (iso) => {
+    if (!iso) return 'Never';
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now - d;
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const getInitials = (name) => {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    return parts.length === 1 ? parts[0][0].toUpperCase() : (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  return (
+    <div className="bg-card rounded-2xl border border-border-subtle p-4">
+      <p className="text-[11px] font-bold text-muted uppercase tracking-widest mb-3">Team</p>
+      <div className="space-y-2">
+        {members.map((m) => (
+          <div key={m.email} className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold bg-brand-light text-brand-text-strong">
+                {getInitials(m.name)}
+              </div>
+              <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card ${m.isOnline ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-primary truncate">{m.name}</p>
+              {m.isOnline ? (
+                <p className="text-[10px] text-emerald-500">Active · {fmtDuration(m.sessionStart)}</p>
+              ) : (
+                <p className="text-[10px] text-muted">{fmtLastSeen(m.lastSeen)}</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Today's Schedule Widget (outside main component) ─── */
 
 function TodaySchedule() {
@@ -879,6 +960,9 @@ export default function DailyChecklist() {
       </div>
 
       {/* 2. Big Moves */}
+      {/* Team activity */}
+      <TeamActivity />
+
       <BigMoves moves={bigMoves} setMoves={setBigMoves} />
 
       {/* 3. Today's Schedule */}
