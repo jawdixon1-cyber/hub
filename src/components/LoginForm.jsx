@@ -6,6 +6,7 @@ export default function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('remember-me') === 'true');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -48,14 +49,23 @@ export default function LoginForm() {
           </div>
           <div>
             <label className="block text-sm font-semibold text-secondary mb-1">Password</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
-              placeholder="Your password"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-border-strong px-4 py-2.5 pr-10 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
+                placeholder="Your password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-secondary cursor-pointer"
+              >
+                <span className="text-xs font-medium">{showPassword ? 'Hide' : 'Show'}</span>
+              </button>
+            </div>
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer">

@@ -1,12 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ArrowLeft, ChevronRight, ChevronUp, Plus,
   Users, Shield, CheckSquare,
   ClipboardCheck, UserCheck, FileCheck,
-  Check, Clock, Eye, EyeOff, Trash2, AlertCircle,
+  Check, Clock, Eye, EyeOff, Trash2, AlertCircle, KeyRound, X,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { createSignUpClient } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { ONBOARDING_STEPS } from './Training';
@@ -64,8 +63,31 @@ export default function TeamManagement() {
   const [showPassword, setShowPassword] = useState(false);
   const [selectedPlaybooks, setSelectedPlaybooks] = useState(['service']);
   const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
   const [formLoading, setFormLoading] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(null);
+  const [removeLoading, setRemoveLoading] = useState(false);
+
+  // Auth user list (for last sign-in info)
+  const [authUsers, setAuthUsers] = useState([]);
+
+  // Reset password state — keyed by member email
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
+
+  // Fetch auth user list on mount
+  useEffect(() => {
+    fetch('/api/team-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list' }),
+    })
+      .then((r) => r.json())
+      .then((d) => { if (d.users) setAuthUsers(d.users); })
+      .catch(() => {});
+  }, []);
 
   if (!ownerMode) {
     return (
@@ -84,6 +106,10 @@ export default function TeamManagement() {
     playbooks: data.playbooks || [],
   }));
 
+  // Helper to find auth user by email
+  const getAuthUser = (memberEmail) =>
+    authUsers.find((u) => u.email?.toLowerCase() === memberEmail?.toLowerCase());
+
   /* ── Add member helpers ── */
 
   const resetForm = () => {
@@ -93,6 +119,7 @@ export default function TeamManagement() {
     setShowPassword(false);
     setSelectedPlaybooks(['service']);
     setFormError('');
+    setFormSuccess('');
   };
 
   const togglePlaybook = (key) => {
@@ -104,6 +131,7 @@ export default function TeamManagement() {
   const handleAddMember = async (e) => {
     e.preventDefault();
     setFormError('');
+    setFormSuccess('');
 
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedName = name.trim();
@@ -118,36 +146,55 @@ export default function TeamManagement() {
 
     setFormLoading(true);
     try {
-      const signUpClient = createSignUpClient();
-      const { error } = await signUpClient.auth.signUp({
-        email: trimmedEmail,
-        password,
-        options: { data: { display_name: trimmedName, role: 'member' } },
+      const res = await fetch('/api/team-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          email: trimmedEmail,
+          password,
+          displayName: trimmedName,
+        }),
       });
+      const data = await res.json();
 
-      if (error) {
-        if (error.message?.includes('already registered')) {
+      if (data.error) {
+        // If user already exists in auth, still add to permissions
+        if (data.error.includes('already been registered') || data.error.includes('already exists')) {
           setPermissions({
             ...permissions,
             [trimmedEmail]: { name: trimmedName, playbooks: selectedPlaybooks },
           });
+          setFormSuccess(`${trimmedName} added (auth account already existed).`);
           resetForm();
           setShowForm(false);
           return;
-        } else if (error.message?.includes('password')) {
-          setFormError('Password is too weak. Use at least 6 characters.');
-        } else {
-          setFormError(error.message || 'Failed to create account.');
         }
+        setFormError(data.error);
         return;
       }
 
+      // Add to permissions store
       setPermissions({
         ...permissions,
         [trimmedEmail]: { name: trimmedName, playbooks: selectedPlaybooks },
       });
+
+      // Add to local auth users list
+      if (data.user) {
+        setAuthUsers((prev) => [...prev, {
+          id: data.user.id,
+          email: trimmedEmail,
+          name: trimmedName,
+          role: 'member',
+          createdAt: new Date().toISOString(),
+          lastSignIn: null,
+        }]);
+      }
+
+      setFormSuccess(`${trimmedName} created successfully!`);
       resetForm();
-      setShowForm(false);
+      setTimeout(() => { setShowForm(false); setFormSuccess(''); }, 1500);
     } catch {
       setFormError('Network error. Please try again.');
     } finally {
@@ -155,11 +202,68 @@ export default function TeamManagement() {
     }
   };
 
-  const removeMember = (memberEmail) => {
+  const removeMember = async (memberEmail) => {
+    setRemoveLoading(true);
+    try {
+      // Try to delete the auth user too
+      const authUser = getAuthUser(memberEmail);
+      if (authUser?.id) {
+        await fetch('/api/team-auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'delete', userId: authUser.id }),
+        });
+        // Remove from local auth users
+        setAuthUsers((prev) => prev.filter((u) => u.id !== authUser.id));
+      }
+    } catch {
+      // Continue even if auth delete fails — still remove from permissions
+    }
+
+    // Remove from permissions store
     const next = { ...permissions };
     delete next[memberEmail];
     setPermissions(next);
     setConfirmRemove(null);
+    setRemoveLoading(false);
+  };
+
+  const handleResetPassword = async (memberEmail) => {
+    if (!resetPassword || resetPassword.length < 6) {
+      setResetMsg('Password must be at least 6 characters.');
+      return;
+    }
+
+    const authUser = getAuthUser(memberEmail);
+    if (!authUser?.id) {
+      setResetMsg('Could not find auth account for this user.');
+      return;
+    }
+
+    setResetLoading(true);
+    setResetMsg('');
+    try {
+      const res = await fetch('/api/team-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'resetPassword',
+          userId: authUser.id,
+          newPassword: resetPassword,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setResetMsg(data.error);
+      } else {
+        setResetMsg('Password reset successfully!');
+        setTimeout(() => { setResetTarget(null); setResetPassword(''); setResetMsg(''); }, 1500);
+      }
+    } catch {
+      setResetMsg('Network error.');
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   /* ── Onboarding helpers ── */
@@ -214,6 +318,12 @@ export default function TeamManagement() {
     return hasAny && !isFullyOnboarded(m.name);
   }).length;
   const notStarted = totalMembers - fullyOnboarded - inProgress;
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'Never';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
 
   return (
     <div className="space-y-6">
@@ -314,6 +424,9 @@ export default function TeamManagement() {
             {formError && (
               <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{formError}</p>
             )}
+            {formSuccess && (
+              <p className="text-sm text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">{formSuccess}</p>
+            )}
 
             <button
               type="submit"
@@ -353,6 +466,7 @@ export default function TeamManagement() {
           {members.map((member) => {
             const onboarded = isFullyOnboarded(member.name);
             const pendingHire = needsHiringDecision(member.name, member.email);
+            const authUser = getAuthUser(member.email);
 
             // Step status dots
             const stepOverview = ONBOARDING_STEPS.map((step) => {
@@ -368,81 +482,145 @@ export default function TeamManagement() {
               return acc;
             }, { total: 0, done: 0 });
 
+            const isResetOpen = resetTarget === member.email;
+
             return (
-              <div key={member.email} className="flex items-center gap-2">
-                <button
-                  onClick={() => navigate(`/team/${encodeURIComponent(member.email)}`)}
-                  className="flex-1 bg-card rounded-2xl shadow-sm border border-border-subtle overflow-hidden flex items-center gap-3 p-4 sm:p-5 text-left cursor-pointer hover:border-border-strong hover:shadow-md transition-all group"
-                >
-                  {/* Avatar */}
-                  <div className={`w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
-                    onboarded ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-light text-brand-text-strong'
-                  }`}>
-                    {getInitials(member.name)}
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-semibold text-primary truncate">{member.name}</h3>
-                      {onboarded && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                          Onboarded
-                        </span>
-                      )}
-                      {pendingHire && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
-                          <AlertCircle size={10} />
-                          Hiring Decision
-                        </span>
-                      )}
+              <div key={member.email} className="space-y-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => navigate(`/team/${encodeURIComponent(member.email)}`)}
+                    className="flex-1 bg-card rounded-2xl shadow-sm border border-border-subtle overflow-hidden flex items-center gap-3 p-4 sm:p-5 text-left cursor-pointer hover:border-border-strong hover:shadow-md transition-all group"
+                  >
+                    {/* Avatar */}
+                    <div className={`w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                      onboarded ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-light text-brand-text-strong'
+                    }`}>
+                      {getInitials(member.name)}
                     </div>
-                    <p className="text-xs text-tertiary truncate">{member.email}</p>
-                    {/* Team badges + action progress */}
-                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      {member.playbooks.map((key) => {
-                        const opt = PLAYBOOK_OPTIONS.find((o) => o.key === key);
-                        return opt ? (
-                          <span key={key} className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${opt.color}`}>
-                            {opt.label}
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-primary truncate">{member.name}</h3>
+                        {onboarded && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                            Onboarded
                           </span>
-                        ) : null;
-                      })}
-                      {totalActions.total > 0 && (
-                        <span className="text-[10px] text-muted">
-                          {totalActions.done}/{totalActions.total} actions
-                        </span>
-                      )}
+                        )}
+                        {pendingHire && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                            <AlertCircle size={10} />
+                            Hiring Decision
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-tertiary truncate">{member.email}</p>
+                      {/* Team badges + action progress + last sign-in */}
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        {member.playbooks.map((key) => {
+                          const opt = PLAYBOOK_OPTIONS.find((o) => o.key === key);
+                          return opt ? (
+                            <span key={key} className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${opt.color}`}>
+                              {opt.label}
+                            </span>
+                          ) : null;
+                        })}
+                        {totalActions.total > 0 && (
+                          <span className="text-[10px] text-muted">
+                            {totalActions.done}/{totalActions.total} actions
+                          </span>
+                        )}
+                        {authUser && (
+                          <span className="text-[10px] text-muted">
+                            Last login: {formatDate(authUser.lastSignIn)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Step status dots */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {stepOverview.map((s) => (
-                      <div
-                        key={s.stepId}
-                        className={`w-3 h-3 rounded-full ${
-                          s.status === 'Approved'
-                            ? 'bg-emerald-500'
-                            : s.status
-                              ? 'bg-amber-400'
-                              : 'bg-gray-200 dark:bg-gray-700'
-                        }`}
+                    {/* Step status dots */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {stepOverview.map((s) => (
+                        <div
+                          key={s.stepId}
+                          className={`w-3 h-3 rounded-full ${
+                            s.status === 'Approved'
+                              ? 'bg-emerald-500'
+                              : s.status
+                                ? 'bg-amber-400'
+                                : 'bg-gray-200 dark:bg-gray-700'
+                          }`}
+                        />
+                      ))}
+                    </div>
+
+                    <ChevronRight size={18} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />
+                  </button>
+
+                  {/* Action buttons */}
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <button
+                      onClick={() => {
+                        if (isResetOpen) {
+                          setResetTarget(null);
+                          setResetPassword('');
+                          setResetMsg('');
+                        } else {
+                          setResetTarget(member.email);
+                          setResetPassword('');
+                          setResetMsg('');
+                        }
+                      }}
+                      className="p-2.5 rounded-xl text-muted hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                      title="Reset password"
+                    >
+                      <KeyRound size={16} />
+                    </button>
+                    <button
+                      onClick={() => setConfirmRemove(member.email)}
+                      className="p-2.5 rounded-xl text-muted hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                      title="Remove member"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Inline Reset Password */}
+                {isResetOpen && (
+                  <div className="ml-13 mt-2 mb-1 bg-blue-50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800 p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-semibold text-blue-700 dark:text-blue-300">Reset Password for {member.name}</h4>
+                      <button
+                        onClick={() => { setResetTarget(null); setResetPassword(''); setResetMsg(''); }}
+                        className="text-blue-400 hover:text-blue-600 cursor-pointer"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={resetPassword}
+                        onChange={(e) => setResetPassword(e.target.value)}
+                        placeholder="New password (min 6 chars)"
+                        className="flex-1 rounded-lg border border-blue-200 dark:border-blue-700 px-3 py-2 text-sm text-primary bg-white dark:bg-gray-900 placeholder-placeholder-muted focus:ring-2 focus:ring-blue-400 outline-none"
                       />
-                    ))}
+                      <button
+                        onClick={() => handleResetPassword(member.email)}
+                        disabled={resetLoading}
+                        className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 cursor-pointer"
+                      >
+                        {resetLoading ? '...' : 'Reset'}
+                      </button>
+                    </div>
+                    {resetMsg && (
+                      <p className={`mt-2 text-xs ${resetMsg.includes('success') ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {resetMsg}
+                      </p>
+                    )}
                   </div>
-
-                  <ChevronRight size={18} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />
-                </button>
-
-                {/* Remove button */}
-                <button
-                  onClick={() => setConfirmRemove(member.email)}
-                  className="p-2.5 rounded-xl text-muted hover:text-red-600 hover:bg-red-50 transition-colors shrink-0 cursor-pointer"
-                  title="Remove member"
-                >
-                  <Trash2 size={16} />
-                </button>
+                )}
               </div>
             );
           })}
@@ -464,7 +642,7 @@ export default function TeamManagement() {
               Remove <span className="font-semibold">{permissions[confirmRemove]?.name}</span> from the team?
             </p>
             <p className="text-xs text-muted mb-4">
-              They will see "Access Denied" on their next login. Their auth account cannot be deleted from here.
+              This will remove their team access and delete their auth account.
             </p>
             <div className="flex gap-3 justify-end">
               <button
@@ -475,9 +653,10 @@ export default function TeamManagement() {
               </button>
               <button
                 onClick={() => removeMember(confirmRemove)}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors cursor-pointer"
+                disabled={removeLoading}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 cursor-pointer"
               >
-                Remove
+                {removeLoading ? 'Removing...' : 'Remove'}
               </button>
             </div>
           </div>

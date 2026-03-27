@@ -5,6 +5,16 @@ import { useAppStore } from '../store/AppStoreContext';
 
 const FUEL_COST_PER_MILE = 0.25;
 
+// ── Format hours as Xh Ym ──
+function fmtHrs(decimalHours) {
+  if (!decimalHours || decimalHours <= 0) return '0m';
+  const h = Math.floor(decimalHours);
+  const m = Math.round((decimalHours - h) * 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 // ── Date helpers ──
 
 function toDateStr(d) {
@@ -89,7 +99,7 @@ function JobRow({ job }) {
             return (
               <div key={name} className="flex items-center justify-between text-[11px] text-muted">
                 <span>{name}</span>
-                <span>{hrs.toFixed(1)}h × ${rate} = ${cost.toFixed(2)}</span>
+                <span>{fmtHrs(hrs)} × ${rate} = ${cost.toFixed(2)}</span>
               </div>
             );
           })}
@@ -182,12 +192,13 @@ export default function LaborEfficiency() {
           laborPct: v.jobTotal > 0 && cost > 0 ? (cost / v.jobTotal) * 100 : 0,
           revPerHour: hrs > 0 ? (v.jobTotal || 0) / hrs : 0,
           byPerson: vl.byPerson || {},
+          completedAt: v.completedAt || '',
         });
       }
     }
 
-    // Sort worst to best
-    allJobs.sort((a, b) => b.laborPct - a.laborPct);
+    // Sort by completion time (earliest first)
+    allJobs.sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
     const problems = allJobs.filter(j => j.laborPct > 45 && j.laborCost > 0);
 
     const m = {
@@ -259,7 +270,7 @@ export default function LaborEfficiency() {
           <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-card border border-border-subtle text-xs">
             <div><span className="text-muted font-bold">NET </span><span className={`font-black ${m.netProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>${m.netProfit.toFixed(2)}</span></div>
             {m.miles > 0 && <div className="text-muted flex items-center gap-1"><Fuel size={11} />{m.miles}mi · ${m.fuel.toFixed(2)}</div>}
-            <div className="text-muted">{m.totalHrs.toFixed(1)}h</div>
+            <div className="text-muted">{fmtHrs(m.totalHrs)}</div>
           </div>
 
           {/* Diagnosis */}
@@ -297,11 +308,11 @@ export default function LaborEfficiency() {
                       <div key={name} className="space-y-0.5">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-bold text-primary">{name}</span>
-                          <span className="font-bold text-primary">{info.hours.toFixed(1)}h · ${info.cost.toFixed(2)}</span>
+                          <span className="font-bold text-primary">{fmtHrs(info.hours)} · ${info.cost.toFixed(2)}</span>
                         </div>
                         <div className="flex items-center gap-4 text-[11px] text-muted pl-2">
-                          <span>Job: {info.jobHours.toFixed(1)}h</span>
-                          <span className={genPct > 25 ? 'text-red-500 font-bold' : ''}>General: {info.generalHours.toFixed(1)}h ({genPct.toFixed(0)}%)</span>
+                          <span>Job: {fmtHrs(info.jobHours)}</span>
+                          <span className={genPct > 25 ? 'text-red-500 font-bold' : ''}>General: {fmtHrs(info.generalHours)} ({genPct.toFixed(0)}%)</span>
                         </div>
                       </div>
                     );

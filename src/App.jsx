@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import {
   Home as HomeIcon,
@@ -6,8 +6,6 @@ import {
   Users,
   LogOut,
   RefreshCw,
-  Lock,
-  Unlock,
   Wrench,
   Calculator,
   Menu,
@@ -16,18 +14,11 @@ import {
   ChevronRight,
   Gauge,
   Receipt,
-  Lightbulb,
-  UserCog,
-  ClipboardCheck,
-  ClipboardList,
-  CalendarCheck,
   LayoutGrid,
   ChevronDown,
-  ShieldCheck,
   Crosshair,
   GitBranch,
   MapPinned,
-  CalendarDays,
   DollarSign,
   FileText,
   TrendingUp,
@@ -37,7 +28,6 @@ import { supabase } from './lib/supabase';
 import { useAuth } from './contexts/AuthContext';
 import { AppStoreProvider, useAppStore } from './store/AppStoreContext';
 import LoginForm from './components/LoginForm';
-import { isOnboardingComplete, isOnboardingEffectivelyComplete } from './utils/onboarding';
 
 /* ─── Lazy-loaded pages (code-split per route) ─── */
 const Home = lazy(() => import('./pages/Home'));
@@ -45,12 +35,9 @@ const HowToGuides = lazy(() => import('./pages/HowToGuides'));
 const EquipmentIdeas = lazy(() => import('./pages/EquipmentIdeas'));
 const HRPolicies = lazy(() => import('./pages/HRPolicies'));
 const Profile = lazy(() => import('./pages/Profile'));
-const OnboardingStep = lazy(() => import('./pages/OnboardingStep'));
-const OnboardingHub = lazy(() => import('./pages/OnboardingHub'));
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'));
 const TeamManagement = lazy(() => import('./pages/TeamManagement'));
 const TeamMemberDetail = lazy(() => import('./pages/TeamMemberDetail'));
-const IdeasFeedback = lazy(() => import('./pages/IdeasFeedback'));
 const MileageLog = lazy(() => import('./pages/MileageLog'));
 const ChecklistTrackerPage = lazy(() => import('./pages/ChecklistTrackerPage'));
 const Quoting = lazy(() => import('./pages/Quoting'));
@@ -69,7 +56,6 @@ const LaborEfficiency = lazy(() => import('./pages/LaborEfficiency'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
-  { id: 'myday', path: '/daily-checklist', label: 'My Day', icon: ClipboardCheck },
   { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
 ];
 
@@ -239,14 +225,10 @@ function AppShell() {
   const location = useLocation();
 
   const permissions = useAppStore((s) => s.permissions);
-  const suggestions = useAppStore((s) => s.suggestions);
-  const trainingConfig = useAppStore((s) => s.trainingConfig);
   const userEmail = user?.email?.toLowerCase();
   const allowedPlaybooks = ownerMode
     ? ['service', 'sales', 'strategy']
     : (permissions[userEmail]?.playbooks || ['service']);
-
-  const needsOnboarding = !ownerMode && !isOnboardingEffectivelyComplete(suggestions, currentUser, userEmail, trainingConfig, permissions);
 
   // Sidebar state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -263,29 +245,6 @@ function AppShell() {
     });
   };
 
-  // Unlock animation
-  const [showUnlockAnimation, setShowUnlockAnimation] = useState(false);
-  const [unlockPhase, setUnlockPhase] = useState('idle');
-  const prevNeedsOnboarding = useRef(needsOnboarding);
-  const hasPlayedUnlock = useRef(false);
-
-  useEffect(() => {
-    if (!hasPlayedUnlock.current && prevNeedsOnboarding.current === true && needsOnboarding === false && !ownerMode) {
-      hasPlayedUnlock.current = true;
-      prevNeedsOnboarding.current = false;
-      setShowUnlockAnimation(true);
-      setUnlockPhase('animating');
-      const fadeTimer = setTimeout(() => setUnlockPhase('fading'), 2800);
-      const removeTimer = setTimeout(() => {
-        setShowUnlockAnimation(false);
-        setUnlockPhase('idle');
-        navigate('/');
-      }, 3400);
-      return () => { clearTimeout(fadeTimer); clearTimeout(removeTimer); };
-    }
-    prevNeedsOnboarding.current = needsOnboarding;
-  }, [needsOnboarding, ownerMode, navigate]);
-
   // Close mobile sidebar on navigation
   useEffect(() => {
     setMobileSidebarOpen(false);
@@ -297,7 +256,7 @@ function AppShell() {
   };
 
   const handleNav = (path) => {
-    if (!needsOnboarding) navigate(path);
+    navigate(path);
   };
 
   const isProfileActive = location.pathname === '/profile';
@@ -306,7 +265,7 @@ function AppShell() {
   const renderSidebarNav = (collapsed) => (
     <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
       {NAV_ITEMS.filter((item) => !item.ownerOnly || ownerMode).map((item) => {
-        const Icon = needsOnboarding ? Lock : item.icon;
+        const Icon = item.icon;
         const active = isActive(item.path);
         return (
           <button
@@ -314,11 +273,9 @@ function AppShell() {
             onClick={() => handleNav(item.path)}
             title={collapsed ? item.label : undefined}
             className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-              needsOnboarding
-                ? 'opacity-40 cursor-not-allowed text-muted'
-                : active
-                  ? 'bg-brand-light text-brand-text-strong'
-                  : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+              active
+                ? 'bg-brand-light text-brand-text-strong'
+                : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
             }`}
           >
             <Icon size={20} className="shrink-0" />
@@ -331,7 +288,7 @@ function AppShell() {
       {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Tools</p>}
 
       {TOOLS_ITEMS.filter((item) => !item.ownerOnly || ownerMode).map((item) => {
-        const Icon = needsOnboarding ? Lock : item.icon;
+        const Icon = item.icon;
         const active = isActive(item.path);
         return (
           <button
@@ -339,11 +296,9 @@ function AppShell() {
             onClick={() => handleNav(item.path)}
             title={collapsed ? item.label : undefined}
             className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-              needsOnboarding
-                ? 'opacity-40 cursor-not-allowed text-muted'
-                : active
-                  ? 'bg-brand-light text-brand-text-strong'
-                  : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+              active
+                ? 'bg-brand-light text-brand-text-strong'
+                : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
             }`}
           >
             <Icon size={20} className="shrink-0" />
@@ -356,7 +311,7 @@ function AppShell() {
       {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Human Resources</p>}
 
       {TEAM_ITEMS.map((item) => {
-        const Icon = needsOnboarding ? Lock : item.icon;
+        const Icon = item.icon;
         const active = isActive(item.path);
         return (
           <button
@@ -364,11 +319,9 @@ function AppShell() {
             onClick={() => handleNav(item.path)}
             title={collapsed ? item.label : undefined}
             className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-              needsOnboarding
-                ? 'opacity-40 cursor-not-allowed text-muted'
-                : active
-                  ? 'bg-brand-light text-brand-text-strong'
-                  : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+              active
+                ? 'bg-brand-light text-brand-text-strong'
+                : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
             }`}
           >
             <Icon size={20} className="shrink-0" />
@@ -377,7 +330,7 @@ function AppShell() {
         );
       })}
 
-      {ownerMode && !needsOnboarding && (
+      {ownerMode && (
         <>
           <div className="h-px bg-border-subtle my-3 mx-2" />
           {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Owner Tools</p>}
@@ -450,20 +403,18 @@ function AppShell() {
         {/* Profile */}
         <div className="border-t border-border-subtle p-2 shrink-0">
           <button
-            onClick={() => !needsOnboarding && navigate('/profile')}
+            onClick={() => navigate('/profile')}
             title={sidebarCollapsed ? currentUser : undefined}
             className={`w-full flex items-center gap-3 ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-              needsOnboarding
-                ? 'opacity-40 cursor-not-allowed'
-                : isProfileActive
-                  ? 'bg-brand-light text-brand-text-strong'
-                  : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+              isProfileActive
+                ? 'bg-brand-light text-brand-text-strong'
+                : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
             }`}
           >
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
               isProfileActive ? 'bg-brand text-on-brand' : 'bg-brand-light text-brand-text-strong'
             }`}>
-              {needsOnboarding ? <Lock size={14} /> : getInitials(currentUser)}
+              {getInitials(currentUser)}
             </div>
             {!sidebarCollapsed && <span className="truncate">{currentUser}</span>}
           </button>
@@ -486,16 +437,14 @@ function AppShell() {
           </button>
           <span className="font-bold text-primary text-sm">Hey Jude's Lawn Care</span>
           <button
-            onClick={() => !needsOnboarding && navigate('/profile')}
+            onClick={() => navigate('/profile')}
             className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-              needsOnboarding
-                ? 'opacity-40 cursor-not-allowed bg-brand-light text-brand-text-strong'
-                : isProfileActive
-                  ? 'bg-brand text-on-brand ring-2 ring-brand ring-offset-2 ring-offset-card'
-                  : 'bg-brand-light text-brand-text-strong'
+              isProfileActive
+                ? 'bg-brand text-on-brand ring-2 ring-brand ring-offset-2 ring-offset-card'
+                : 'bg-brand-light text-brand-text-strong'
             }`}
           >
-            {needsOnboarding ? <Lock size={12} /> : getInitials(currentUser)}
+            {getInitials(currentUser)}
           </button>
         </div>
       </nav>
@@ -519,19 +468,17 @@ function AppShell() {
           {renderSidebarNav(false)}
           <div className="border-t border-border-subtle p-2 shrink-0">
             <button
-              onClick={() => { if (!needsOnboarding) navigate('/profile'); }}
+              onClick={() => navigate('/profile')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                needsOnboarding
-                  ? 'opacity-40 cursor-not-allowed'
-                  : isProfileActive
-                    ? 'bg-brand-light text-brand-text-strong'
-                    : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                isProfileActive
+                  ? 'bg-brand-light text-brand-text-strong'
+                  : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
               }`}
             >
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
                 isProfileActive ? 'bg-brand text-on-brand' : 'bg-brand-light text-brand-text-strong'
               }`}>
-                {needsOnboarding ? <Lock size={14} /> : getInitials(currentUser)}
+                {getInitials(currentUser)}
               </div>
               <span className="truncate">{currentUser}</span>
             </button>
@@ -547,14 +494,8 @@ function AppShell() {
               <div className="w-8 h-8 border-4 border-brand-light border-t-brand rounded-full animate-spin" />
             </div>
           }>
-            {needsOnboarding ? (
               <Routes>
-                <Route path="/training/onboard/:stepId" element={<OnboardingStep />} />
-                <Route path="*" element={<OnboardingHub />} />
-              </Routes>
-            ) : (
-              <Routes>
-                <Route path="/" element={ownerMode ? <ExecutionDashboard /> : <Home />} />
+                <Route path="/" element={ownerMode ? <DailyChecklist /> : <Home />} />
                 <Route path="/guides" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
                 <Route path="/guides/:id" element={<PlaybookDetail ownerMode={ownerMode} />} />
                 <Route path="/p/:slug" element={<PlaybookDetail ownerMode={ownerMode} />} />
@@ -574,67 +515,16 @@ function AppShell() {
                 <Route path="/mileage" element={<MileageLog />} />
                 <Route path="/receipts" element={<ReceiptTracker />} />
                 <Route path="/standards" element={<Standards />} />
-                <Route path="/ideas" element={<Navigate to="/" replace />} />
                 <Route path="/daily-checklist" element={<DailyChecklist />} />
                 <Route path="/checklist-tracker" element={<ChecklistTrackerPage />} />
                 <Route path="/owner-dashboard" element={<OwnerDashboard />} />
                 <Route path="/settings" element={<Navigate to="/profile" replace />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
-            )}
           </Suspense>
         </div>
       </main>
 
-      {/* Unlock Animation Overlay */}
-      {showUnlockAnimation && (
-        <div
-          className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-emerald-900/90 backdrop-blur-sm ${
-            unlockPhase === 'fading' ? 'unlock-overlay-out' : 'unlock-overlay-in'
-          }`}
-        >
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-24 h-24 rounded-full border-4 border-emerald-400/40 unlock-ring-1 opacity-0" />
-          </div>
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-24 h-24 rounded-full border-4 border-emerald-300/30 unlock-ring-2 opacity-0" />
-          </div>
-          {[...Array(8)].map((_, i) => {
-            const angle = (i / 8) * 360;
-            const rad = (angle * Math.PI) / 180;
-            const tx = Math.cos(rad) * 120;
-            const ty = Math.sin(rad) * 120;
-            return (
-              <div
-                key={i}
-                className="absolute w-2 h-2 rounded-full bg-emerald-400 opacity-0"
-                style={{
-                  animation: `unlock-particle 1s ${0.8 + i * 0.05}s ease-out forwards`,
-                  left: '50%',
-                  top: '50%',
-                  marginLeft: '-4px',
-                  marginTop: '-4px',
-                  '--px': `${tx}px`,
-                  '--py': `${ty}px`,
-                }}
-              />
-            );
-          })}
-          <div className="relative">
-            <div className="unlock-icon-shake">
-              <div className="unlock-icon-burst">
-                <Unlock size={64} className="text-emerald-400 drop-shadow-lg" strokeWidth={2.5} />
-              </div>
-            </div>
-          </div>
-          <p className="unlock-text text-2xl font-bold text-white mt-8 tracking-wide">
-            Welcome to the team!
-          </p>
-          <p className="unlock-text text-emerald-300/80 text-sm mt-2" style={{ animationDelay: '1.4s' }}>
-            All features unlocked
-          </p>
-        </div>
-      )}
     </div>
   );
 }

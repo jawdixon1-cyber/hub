@@ -1,8 +1,7 @@
-import { useState } from 'react';
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   LogOut, Shield, ArrowRight, ChevronDown, Trash2, Gauge, Link2, Check,
-  ClipboardList, ClipboardCheck, UserCog,
+  ClipboardList, ClipboardCheck, UserCog, KeyRound, Eye, EyeOff,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -91,6 +90,130 @@ function QBConnectionPanel() {
   );
 }
 
+function ChangePasswordSection({ userId }) {
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [showNew, setShowNew] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [msgType, setMsgType] = useState(''); // 'success' or 'error'
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setMsg('');
+
+    if (!currentPw || !newPw || !confirmPw) {
+      setMsg('All fields are required.');
+      setMsgType('error');
+      return;
+    }
+    if (newPw.length < 6) {
+      setMsg('New password must be at least 6 characters.');
+      setMsgType('error');
+      return;
+    }
+    if (newPw !== confirmPw) {
+      setMsg('New passwords do not match.');
+      setMsgType('error');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/team-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'changePassword',
+          userId,
+          newPassword: newPw,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setMsg(data.error);
+        setMsgType('error');
+      } else {
+        setMsg('Password changed successfully!');
+        setMsgType('success');
+        setCurrentPw('');
+        setNewPw('');
+        setConfirmPw('');
+      }
+    } catch {
+      setMsg('Network error. Please try again.');
+      setMsgType('error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <KeyRound size={18} className="text-brand-text-strong" />
+        <h3 className="text-sm font-bold text-primary">Change Password</h3>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <label className="block text-xs font-medium text-secondary mb-1">Current Password</label>
+          <input
+            type="password"
+            value={currentPw}
+            onChange={(e) => setCurrentPw(e.target.value)}
+            placeholder="Enter current password"
+            className="w-full rounded-xl border border-border-default px-4 py-2.5 text-sm text-primary placeholder-placeholder-muted focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-secondary mb-1">New Password</label>
+          <div className="relative">
+            <input
+              type={showNew ? 'text' : 'password'}
+              value={newPw}
+              onChange={(e) => setNewPw(e.target.value)}
+              placeholder="Min 6 characters"
+              className="w-full rounded-xl border border-border-default px-4 py-2.5 pr-10 text-sm text-primary placeholder-placeholder-muted focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
+            />
+            <button
+              type="button"
+              onClick={() => setShowNew(!showNew)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-secondary"
+            >
+              {showNew ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-secondary mb-1">Confirm New Password</label>
+          <input
+            type="password"
+            value={confirmPw}
+            onChange={(e) => setConfirmPw(e.target.value)}
+            placeholder="Re-enter new password"
+            className="w-full rounded-xl border border-border-default px-4 py-2.5 text-sm text-primary placeholder-placeholder-muted focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
+          />
+        </div>
+        {msg && (
+          <p className={`text-xs rounded-lg px-3 py-2 ${
+            msgType === 'success' ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50'
+          }`}>
+            {msg}
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-2.5 rounded-xl bg-brand text-on-brand font-semibold hover:bg-brand-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+        >
+          {loading ? 'Changing...' : 'Change Password'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function Profile() {
   const navigate = useNavigate();
   const { currentUser, user, ownerMode, signOut } = useAuth();
@@ -160,6 +283,9 @@ export default function Profile() {
           </div>
         </div>
       </div>
+
+      {/* ── Change Password ── */}
+      {user?.id && <ChangePasswordSection userId={user.id} />}
 
       {/* ── Sign Out ── */}
       <button

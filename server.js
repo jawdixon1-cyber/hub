@@ -13,6 +13,7 @@ import qbAuth from './api/qb-auth.js';
 import qbCallback from './api/qb-callback.js';
 import qbData from './api/qb-data.js';
 import jobberDataHandler from './api/jobber-data.js';
+import teamAuthHandler from './lib/teamAuth.js';
 
 config({ path: '.env.local' });
 
@@ -41,6 +42,9 @@ app.all('/api/qb-data', qbData);
 
 // Jobber data (clients search + labor data)
 app.get('/api/jobber-data', jobberDataHandler);
+
+// Team auth management
+app.post('/api/team-auth', teamAuthHandler);
 
 // Backwards compat routes (Express 5: req.query is read-only, so redirect instead)
 app.get('/api/jobber-clients', (req, res) => res.redirect(`/api/jobber-data?action=clients&${new URL(req.url, 'http://x').search.slice(1)}`));

@@ -86,23 +86,46 @@ async function fetchTimesheets(start, end) {
   return all;
 }
 
+async function fetchExpenses(start, end) {
+  const startISO = new Date(start + 'T00:00:00').toISOString();
+  const endPlusOne = new Date(end + 'T00:00:00');
+  endPlusOne.setDate(endPlusOne.getDate() + 1);
+  const endISO = endPlusOne.toISOString();
+
+  const all = [];
+  let cursor = null, hasNext = true;
+  while (hasNext) {
+    const after = cursor ? `, after: "${cursor}"` : '';
+    const data = await jobberQuery(`{ expenses(first: 100${after}, filter: { date: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title total date description linkedJob { id jobNumber } paidBy { name { full } } } pageInfo { hasNextPage endCursor } } }`);
+    all.push(...(data.expenses?.nodes || []));
+    hasNext = data.expenses?.pageInfo?.hasNextPage || false;
+    cursor = data.expenses?.pageInfo?.endCursor || null;
+    if (all.length > 500) break;
+  }
+  return all;
+}
+
 async function handleLaborData(req, res) {
   const { start, end } = req.query;
   if (!start || !end) return res.status(400).json({ error: 'start and end required' });
 
-  const [visits, timesheets] = await Promise.all([fetchVisits(start, end), fetchTimesheets(start, end)]);
+  const [visits, timesheets, expenses] = await Promise.all([fetchVisits(start, end), fetchTimesheets(start, end), fetchExpenses(start, end)]);
 
   const grouped = {};
   const cur = new Date(start + 'T00:00:00');
   const endDate = new Date(end + 'T00:00:00');
-  while (cur <= endDate) { const ds = cur.toISOString().split('T')[0]; grouped[ds] = { visits: [], revenue: 0, labor: { totalHours: 0, totalCost: 0, byPerson: {} } }; cur.setDate(cur.getDate() + 1); }
+  while (cur <= endDate) { const ds = cur.toISOString().split('T')[0]; grouped[ds] = { visits: [], revenue: 0, expenses: { total: 0, items: [] }, labor: { totalHours: 0, totalCost: 0, byPerson: {} } }; cur.setDate(cur.getDate() + 1); }
 
+  // First pass: collect all visits with their raw job totals
+  const allVisitRefs = []; // { dateStr, visitObj, jobId, rawTotal }
   for (const visit of visits) {
     const dateStr = (visit.completedAt || visit.startAt || '').split('T')[0];
     if (!dateStr || !grouped[dateStr]) continue;
-    const revenue = parseFloat(visit.job?.total) || 0;
-    grouped[dateStr].visits.push({ id: visit.id, title: visit.title, completedAt: visit.completedAt, jobId: visit.job?.id, jobNumber: visit.job?.jobNumber, jobTotal: revenue, client: visit.job?.client ? `${visit.job.client.firstName || ''} ${visit.job.client.lastName || ''}`.trim() : 'Unknown', labor: { totalHours: 0, totalCost: 0, byPerson: {} } });
-    grouped[dateStr].revenue += revenue;
+    const rawTotal = parseFloat(visit.job?.total) || 0;
+    const jobId = visit.job?.id || null;
+    const visitObj = { id: visit.id, title: visit.title, completedAt: visit.completedAt, jobId, jobNumber: visit.job?.jobNumber, jobTotal: rawTotal, client: visit.job?.client ? `${visit.job.client.firstName || ''} ${visit.job.client.lastName || ''}`.trim() : 'Unknown', labor: { totalHours: 0, totalCost: 0, byPerson: {} } };
+    grouped[dateStr].visits.push(visitObj);
+    allVisitRefs.push({ dateStr, visitObj, jobId, rawTotal });
   }
 
   for (const entry of timesheets) {
@@ -141,9 +164,59 @@ async function handleLaborData(req, res) {
     }
   }
 
+  // ── Expenses ──
+  for (const exp of expenses) {
+    const dateStr = (exp.date || '').split('T')[0];
+    if (!dateStr || !grouped[dateStr]) continue;
+    const amount = parseFloat(exp.total) || 0;
+    grouped[dateStr].expenses.total += amount;
+    grouped[dateStr].expenses.items.push({
+      id: exp.id, title: exp.title, amount, description: exp.description || '',
+      jobId: exp.linkedJob?.id || null, jobNumber: exp.linkedJob?.jobNumber || null,
+      paidBy: exp.paidBy?.name?.full || null,
+    });
+  }
+
+  // ── Distribute multi-visit job revenue proportionally by labor hours ──
+  // Group visits by jobId to find jobs with multiple visits
+  const visitsByJob = {};
+  for (const ref of allVisitRefs) {
+    if (!ref.jobId) continue;
+    if (!visitsByJob[ref.jobId]) visitsByJob[ref.jobId] = [];
+    visitsByJob[ref.jobId].push(ref);
+  }
+
+  // For multi-visit jobs: distribute total proportionally by hours
+  for (const [jobId, refs] of Object.entries(visitsByJob)) {
+    if (refs.length <= 1) {
+      // Single visit — revenue = job total as-is
+      grouped[refs[0].dateStr].revenue += refs[0].rawTotal;
+      continue;
+    }
+
+    const jobTotal = refs[0].rawTotal;
+    const totalHours = refs.reduce((s, r) => s + (r.visitObj.labor.totalHours || 0), 0);
+
+    for (const ref of refs) {
+      if (totalHours > 0) {
+        const proportion = (ref.visitObj.labor.totalHours || 0) / totalHours;
+        ref.visitObj.jobTotal = jobTotal * proportion;
+      } else {
+        ref.visitObj.jobTotal = jobTotal / refs.length;
+      }
+      grouped[ref.dateStr].revenue += ref.visitObj.jobTotal;
+    }
+  }
+
+  // Add revenue for visits without a jobId
+  for (const ref of allVisitRefs) {
+    if (!ref.jobId) grouped[ref.dateStr].revenue += ref.rawTotal;
+  }
+
   const r2 = v => Math.round(v * 100) / 100;
   for (const date of Object.keys(grouped)) {
     grouped[date].revenue = r2(grouped[date].revenue);
+    grouped[date].expenses.total = r2(grouped[date].expenses.total);
     grouped[date].labor.totalHours = r2(grouped[date].labor.totalHours);
     grouped[date].labor.totalCost = r2(grouped[date].labor.totalCost);
     grouped[date].labor.jobHours = r2(grouped[date].labor.jobHours || 0);

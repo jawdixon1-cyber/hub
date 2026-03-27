@@ -33,6 +33,9 @@
     },
     "api/jobber-data.js": {
       "maxDuration": 30
+    },
+    "api/team-auth.js": {
+      "maxDuration": 15
     }
   }
 }

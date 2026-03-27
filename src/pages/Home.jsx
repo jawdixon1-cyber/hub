@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Megaphone, ChevronRight, AlertCircle, Lightbulb, Check, ClipboardCheck, FlagTriangleRight, PartyPopper, ArrowLeft, ShieldCheck, BookOpen, Receipt, Gauge, Wrench, X, MessageSquare, CheckCircle } from 'lucide-react';
+import { Megaphone, ChevronRight, AlertCircle, Check, ClipboardCheck, FlagTriangleRight, PartyPopper, ArrowLeft, ShieldCheck, BookOpen, Receipt, Gauge, Wrench, X, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ChecklistPanel from '../components/ChecklistPanel';
 import ReportRepairModal from '../components/ReportRepairModal';
@@ -30,16 +30,12 @@ export default function Home() {
   const equipmentCategories = useAppStore((s) => s.equipmentCategories);
   const receiptLog = useAppStore((s) => s.receiptLog);
   const setReceiptLog = useAppStore((s) => s.setReceiptLog);
-  const suggestions = useAppStore((s) => s.suggestions);
-  const setSuggestions = useAppStore((s) => s.setSuggestions);
 
   // Modal states for quick actions
   const [showRepairModal, setShowRepairModal] = useState(false);
   const [showMileageModal, setShowMileageModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [showIdeaModal, setShowIdeaModal] = useState(false);
   const [successToast, setSuccessToast] = useState(null);
-  const [ideaForm, setIdeaForm] = useState({ type: 'idea', title: '', description: '' });
 
   const [closingMode, setClosingMode] = useState(false);
   const [startedDay, setStartedDay] = useState(false);
@@ -146,7 +142,14 @@ export default function Home() {
 
   const firstName = currentUser?.split(' ')[0] || 'Team Member';
 
-  const unacknowledged = announcements.filter((a) => !a.acknowledgedBy?.[userEmail]);
+  // Only show announcements posted after the user's account was created
+  const userCreatedAt = user?.created_at ? new Date(user.created_at).getTime() : 0;
+  const unacknowledged = announcements.filter((a) => {
+    if (a.acknowledgedBy?.[userEmail]) return false;
+    // Parse announcement date — try createdAt ISO first, then date string
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : a.date ? new Date(a.date).getTime() : 0;
+    return aTime > userCreatedAt;
+  });
 
   const handleAcknowledge = (id) => {
     setAnnouncements(
@@ -249,28 +252,6 @@ export default function Home() {
     setTimeout(() => setSuccessToast(null), 4000);
   };
 
-  const handleIdeaSubmit = (e) => {
-    e.preventDefault();
-    const today = getTodayInTimezone();
-    setSuggestions([
-      {
-        id: genId(),
-        type: ideaForm.type,
-        title: ideaForm.title.trim(),
-        description: ideaForm.description.trim(),
-        submittedBy: currentUser,
-        submittedByEmail: user?.email?.toLowerCase(),
-        date: today,
-        status: 'New',
-      },
-      ...suggestions,
-    ]);
-    setShowIdeaModal(false);
-    setIdeaForm({ type: 'idea', title: '', description: '' });
-    setSuccessToast('Thanks for your submission! It\'s been sent to the general manager.');
-    setTimeout(() => setSuccessToast(null), 4000);
-  };
-
   const handleInlineMileage = ({ vehicleId, odometer }) => {
     const vehicle = vehicles.find((v) => v.id === vehicleId);
     const odometerNum = Number(odometer);
@@ -370,15 +351,6 @@ export default function Home() {
             </div>
             <span className="text-sm font-semibold text-primary">Report Repair</span>
           </button>
-          <button
-            onClick={() => { setShowIdeaModal(true); setIdeaForm({ type: 'idea', title: '', description: '' }); }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
-          >
-            <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center shrink-0">
-              <Lightbulb size={16} className="text-amber-500" />
-            </div>
-            <span className="text-sm font-semibold text-primary">Submit Idea</span>
-          </button>
         </div>
       </div>
     </div>
@@ -386,7 +358,7 @@ export default function Home() {
 
   return (
     <div ref={containerRef} className="flex flex-col h-[calc(100svh-9rem)] overflow-y-auto md:h-auto md:overflow-visible">
-      {/* Blocking announcement modal */}
+      {/* Blocking announcement modal — only show announcements posted after user was created */}
       {unacknowledged.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
@@ -412,11 +384,6 @@ export default function Home() {
                     {a.priority === 'high' && (
                       <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
                         HIGH
-                      </span>
-                    )}
-                    {a.priority === 'normal' && (
-                      <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-surface-alt text-secondary">
-                        NORMAL
                       </span>
                     )}
                   </div>
@@ -591,91 +558,6 @@ export default function Home() {
           onSubmit={handleReceiptSubmit}
           onClose={() => setShowReceiptModal(false)}
         />
-      )}
-
-      {/* Submit Idea Modal */}
-      {showIdeaModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowIdeaModal(false)}>
-          <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-gradient-to-r from-amber-500 to-yellow-500 px-8 py-6 relative">
-              <button
-                onClick={() => setShowIdeaModal(false)}
-                className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors cursor-pointer"
-              >
-                <X size={24} />
-              </button>
-              <h2 className="text-2xl font-bold text-white">Submit Idea</h2>
-            </div>
-            <form onSubmit={handleIdeaSubmit} className="p-8 overflow-y-auto space-y-5">
-              <div>
-                <label className="block text-sm font-semibold text-secondary mb-2">What type?</label>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIdeaForm({ ...ideaForm, type: 'idea' })}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
-                      ideaForm.type === 'idea'
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-surface-alt text-secondary hover:bg-surface-strong'
-                    }`}
-                  >
-                    <Lightbulb size={16} />
-                    Business Idea
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIdeaForm({ ...ideaForm, type: 'feedback' })}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
-                      ideaForm.type === 'feedback'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-surface-alt text-secondary hover:bg-surface-strong'
-                    }`}
-                  >
-                    <MessageSquare size={16} />
-                    Software Idea
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-secondary mb-1">Title</label>
-                <input
-                  type="text"
-                  required
-                  value={ideaForm.title}
-                  onChange={(e) => setIdeaForm({ ...ideaForm, title: e.target.value })}
-                  className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition"
-                  placeholder={ideaForm.type === 'idea' ? "What's your idea?" : 'What could be better?'}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-secondary mb-1">Description</label>
-                <textarea
-                  required
-                  rows={4}
-                  value={ideaForm.description}
-                  onChange={(e) => setIdeaForm({ ...ideaForm, description: e.target.value })}
-                  className="w-full rounded-lg border border-border-strong px-4 py-2.5 text-primary focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition resize-y"
-                  placeholder={ideaForm.type === 'idea' ? 'Describe your idea and how it helps the business...' : "Describe the issue or what you'd like to see improved..."}
-                />
-              </div>
-              <div className="flex gap-3 justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowIdeaModal(false)}
-                  className="px-5 py-2.5 rounded-lg border border-border-strong text-secondary font-medium hover:bg-surface transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-lg bg-amber-500 text-white font-medium hover:bg-amber-600 transition-colors cursor-pointer"
-                >
-                  Submit
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
       )}
 
       {/* Success toast */}
