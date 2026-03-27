@@ -483,7 +483,21 @@ export default function TeamManagement() {
                         {activeStrikeCount >= 3 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-500">3 STRIKES</span>}
                       </div>
                       <p className="text-xs text-muted truncate">{member.email}</p>
-                      {authUser && <p className="text-[10px] text-muted mt-1">Last login: {formatDate(authUser.lastSignIn)}</p>}
+                      {(() => {
+                        const p = (presence || {})[member.email];
+                        const isOnline = p?.status === 'online' && p?.lastSeen && (Date.now() - new Date(p.lastSeen).getTime()) < 300000;
+                        if (isOnline) {
+                          return <p className="text-[10px] text-emerald-500 font-semibold mt-1">Active now</p>;
+                        }
+                        if (p?.lastSeen) {
+                          const last = new Date(p.lastSeen);
+                          const mins = Math.round((Date.now() - last.getTime()) / 60000);
+                          const timeStr = mins < 60 ? `${mins}m ago` : mins < 1440 ? `${Math.round(mins / 60)}h ago` : formatDate(p.lastSeen);
+                          return <p className="text-[10px] text-muted mt-1">Last active: {timeStr}</p>;
+                        }
+                        if (authUser) return <p className="text-[10px] text-muted mt-1">Last login: {formatDate(authUser.lastSignIn)}</p>;
+                        return null;
+                      })()}
                     </div>
 
                     <ChevronRight size={18} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />
