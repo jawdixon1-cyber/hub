@@ -164,32 +164,12 @@ export default function Settings() {
   if (!ownerMode) { navigate('/'); return null; }
 
   return (
-    <div className="flex gap-6 min-h-[calc(100vh-8rem)]">
-      {/* Left sidebar — desktop */}
-      <div className="w-48 shrink-0 hidden sm:block">
-        <h2 className="text-lg font-bold text-primary mb-4">Settings</h2>
-        <nav className="space-y-1">
-          {SETTINGS_NAV.map((item) => {
-            const Icon = item.icon;
-            const active = activeSection === item.id;
-            return (
-              <button key={item.id} onClick={() => setActiveSection(item.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary'
-                }`}>
-                <Icon size={16} className="shrink-0" />
-                <span className="truncate">{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </div>
-
+    <div className="space-y-4">
       {/* Mobile tab bar */}
-      <div className="sm:hidden flex gap-1 bg-surface-alt p-1 rounded-xl mb-4 w-full absolute top-0 left-0 right-0 mx-4">
+      <div className="sm:hidden flex gap-1 bg-surface-alt p-1 rounded-xl">
         {SETTINGS_NAV.map((item) => (
           <button key={item.id} onClick={() => setActiveSection(item.id)}
-            className={`flex-1 py-2 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+            className={`flex-1 py-2.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
               activeSection === item.id ? 'bg-card text-primary shadow-sm' : 'text-muted'
             }`}>
             {item.label}
@@ -197,8 +177,29 @@ export default function Settings() {
         ))}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0">
+      <div className="flex gap-6">
+        {/* Left sidebar — desktop */}
+        <div className="w-48 shrink-0 hidden sm:block">
+          <h2 className="text-lg font-bold text-primary mb-4">Settings</h2>
+          <nav className="space-y-1">
+            {SETTINGS_NAV.map((item) => {
+              const Icon = item.icon;
+              const active = activeSection === item.id;
+              return (
+                <button key={item.id} onClick={() => setActiveSection(item.id)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                    active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary'
+                  }`}>
+                  <Icon size={16} className="shrink-0" />
+                  <span className="truncate">{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
         {activeSection === 'checklists' && <ChecklistsSection />}
 
         {activeSection === 'team' && (
@@ -207,6 +208,7 @@ export default function Settings() {
           </Suspense>
         )}
 
+        </div>
       </div>
     </div>
   );
