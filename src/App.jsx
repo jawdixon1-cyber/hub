@@ -22,6 +22,7 @@ import {
   DollarSign,
   FileText,
   TrendingUp,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -46,6 +47,7 @@ const ExecutionDashboard = lazy(() => import('./pages/ExecutionDashboard'));
 const ReceiptTracker = lazy(() => import('./pages/ReceiptTracker'));
 const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
 const Standards = lazy(() => import('./pages/Standards'));
+const Settings = lazy(() => import('./pages/Settings'));
 const Commander = lazy(() => import('./pages/Commander'));
 const SalesPipeline = lazy(() => import('./pages/SalesPipeline'));
 const ServiceAgreement = lazy(() => import('./pages/ServiceAgreement'));
@@ -77,6 +79,7 @@ const OWNER_ITEMS = [
   { id: 'labor', path: '/labor', label: 'Labor', icon: TrendingUp },
   { id: 'pipeline', path: '/pipeline', label: 'Sales Pipeline', icon: GitBranch },
   { id: 'finance', path: '/finance', label: 'Finance', icon: DollarSign },
+  { id: 'settings', path: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 const EXTERNAL_APPS = [
@@ -229,6 +232,46 @@ function AppShell() {
   const allowedPlaybooks = ownerMode
     ? ['service', 'sales', 'strategy']
     : (permissions[userEmail]?.playbooks || ['service']);
+
+  // ── Presence — track open/close ──
+  const presence = useAppStore((s) => s.presence);
+  const setPresence = useAppStore((s) => s.setPresence);
+
+  useEffect(() => {
+    if (!userEmail) return;
+
+    // Mark online
+    const goOnline = () => {
+      setPresence((prev) => ({ ...prev, [userEmail]: { name: currentUser, status: 'online', lastSeen: new Date().toISOString() } }));
+    };
+
+    // Mark offline
+    const goOffline = () => {
+      setPresence((prev) => ({ ...prev, [userEmail]: { name: currentUser, status: 'offline', lastSeen: new Date().toISOString() } }));
+    };
+
+    // Go online immediately
+    goOnline();
+
+    // Heartbeat every 60s to stay fresh (in case Supabase sync is slow)
+    const interval = setInterval(goOnline, 60000);
+
+    // Tab close / navigate away — mark offline
+    window.addEventListener('beforeunload', goOffline);
+
+    // Also heartbeat on visibility change (coming back from background)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') goOnline();
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', goOffline);
+      document.removeEventListener('visibilitychange', onVis);
+      goOffline(); // cleanup on unmount (sign out)
+    };
+  }, [userEmail, currentUser]);
 
   // Sidebar state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -518,7 +561,7 @@ function AppShell() {
                 <Route path="/daily-checklist" element={<DailyChecklist />} />
                 <Route path="/checklist-tracker" element={<ChecklistTrackerPage />} />
                 <Route path="/owner-dashboard" element={<OwnerDashboard />} />
-                <Route path="/settings" element={<Navigate to="/profile" replace />} />
+                <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
           </Suspense>

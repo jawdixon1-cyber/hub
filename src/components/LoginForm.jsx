@@ -5,7 +5,6 @@ export default function LoginForm() {
   const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('remember-me') === 'true');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -15,19 +14,11 @@ export default function LoginForm() {
     setError(null);
     setSubmitting(true);
 
-    if (rememberMe) {
-      localStorage.setItem('remember-me', 'true');
-    } else {
-      localStorage.removeItem('remember-me');
-    }
-
     const { error } = await signIn(email, password);
     if (error) {
       setError(error.message);
       setSubmitting(false);
     }
-    // Don't navigate — onAuthStateChange updates session automatically,
-    // which causes App.jsx to show the logged-in view.
   };
 
   return (
@@ -55,7 +46,7 @@ export default function LoginForm() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg border border-border-strong px-4 py-2.5 pr-10 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
+                className="w-full rounded-lg border border-border-strong px-4 py-2.5 pr-14 text-primary focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition"
                 placeholder="Your password"
               />
               <button
@@ -67,17 +58,6 @@ export default function LoginForm() {
               </button>
             </div>
           </div>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              className="w-4 h-4 rounded border-border-strong"
-              style={{ accentColor: '#B0FF03' }}
-            />
-            <span className="text-sm text-secondary">Remember me</span>
-          </label>
 
           {error && (
             <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-2">{error}</p>

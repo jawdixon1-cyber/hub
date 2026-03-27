@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { Megaphone, ChevronRight, AlertCircle, Check, ClipboardCheck, FlagTriangleRight, PartyPopper, ArrowLeft, ShieldCheck, BookOpen, Receipt, Gauge, Wrench, X, CheckCircle } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Megaphone, ChevronRight, AlertCircle, Check, ClipboardCheck, FlagTriangleRight, PartyPopper, ArrowLeft, ShieldCheck, BookOpen, Receipt, Gauge, Wrench, X, CheckCircle, AlertOctagon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ChecklistPanel from '../components/ChecklistPanel';
 import ReportRepairModal from '../components/ReportRepairModal';
@@ -10,6 +10,215 @@ import { useAuth } from '../contexts/AuthContext';
 import { genId, getActiveRepairs } from '../data';
 import { getTodayInTimezone, getTimezone } from '../utils/timezone';
 
+
+/* ── Signature Pad Component (defined outside to prevent focus loss) ── */
+function SignaturePad({ onSignatureChange }) {
+  const canvasRef = useRef(null);
+  const isDrawingRef = useRef(false);
+  const lastPosRef = useRef({ x: 0, y: 0 });
+
+  const getPos = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: (clientX - rect.left) * (canvas.width / rect.width),
+      y: (clientY - rect.top) * (canvas.height / rect.height),
+    };
+  };
+
+  const startDraw = (e) => {
+    e.preventDefault();
+    isDrawingRef.current = true;
+    lastPosRef.current = getPos(e);
+  };
+
+  const draw = (e) => {
+    e.preventDefault();
+    if (!isDrawingRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastPosRef.current.x, lastPosRef.current.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    lastPosRef.current = pos;
+  };
+
+  const endDraw = () => {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
+    // Notify parent of signature data
+    if (onSignatureChange && canvasRef.current) {
+      onSignatureChange(canvasRef.current);
+    }
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (onSignatureChange) onSignatureChange(null);
+  };
+
+  useEffect(() => {
+    // Initialize white background
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  }, []);
+
+  return (
+    <div>
+      <canvas
+        ref={canvasRef}
+        width={500}
+        height={200}
+        className="w-full border border-border-default rounded-xl bg-white touch-none"
+        style={{ height: '160px' }}
+        onMouseDown={startDraw}
+        onMouseMove={draw}
+        onMouseUp={endDraw}
+        onMouseLeave={endDraw}
+        onTouchStart={startDraw}
+        onTouchMove={draw}
+        onTouchEnd={endDraw}
+      />
+      <button
+        type="button"
+        onClick={clearCanvas}
+        className="mt-2 text-xs text-red-500 hover:text-red-700 font-medium cursor-pointer"
+      >
+        Clear Signature
+      </button>
+    </div>
+  );
+}
+
+/* ── Strike Acknowledge Modal (defined outside to prevent focus loss) ── */
+function StrikeAcknowledgeModal({ strike, memberName, onAcknowledge }) {
+  const [confirmed, setConfirmed] = useState(false);
+  const [hasSignature, setHasSignature] = useState(false);
+  const canvasElRef = useRef(null);
+
+  const validateSignature = useCallback((canvas) => {
+    if (!canvas) {
+      setHasSignature(false);
+      canvasElRef.current = null;
+      return;
+    }
+    canvasElRef.current = canvas;
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    let nonWhitePixels = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      // Count pixels that aren't white (R<250 or G<250 or B<250)
+      if (data[i] < 250 || data[i + 1] < 250 || data[i + 2] < 250) {
+        nonWhitePixels++;
+      }
+    }
+    setHasSignature(nonWhitePixels >= 500);
+  }, []);
+
+  const handleSubmit = () => {
+    if (!hasSignature || !confirmed || !canvasElRef.current) return;
+    const dataUrl = canvasElRef.current.toDataURL('image/png');
+    onAcknowledge(strike.id, dataUrl);
+  };
+
+  const canSubmit = hasSignature && confirmed;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-red-500/30 bg-red-500/10 shrink-0">
+          <div className="flex items-center gap-2">
+            <AlertOctagon size={20} className="text-red-500" />
+            <h2 className="text-lg font-bold text-red-600 dark:text-red-400">You Have Received a Strike</h2>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Strike info */}
+          <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-red-500 uppercase tracking-wider">Strike Notice</span>
+              <span className="text-xs text-muted">
+                {new Date(strike.issuedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </span>
+            </div>
+            <p className="text-sm font-bold text-primary">{strike.reason}</p>
+            {strike.notes && <p className="text-xs text-secondary">{strike.notes}</p>}
+            <p className="text-xs text-muted">Issued by: {strike.issuedBy}</p>
+          </div>
+
+          {/* Policy notice */}
+          <div className="bg-surface border border-border-subtle rounded-xl p-4">
+            <p className="text-sm text-secondary leading-relaxed">
+              Per company policy, <span className="font-bold text-primary">3 strikes within 30 days may result in termination.</span> This strike is being documented and will remain on your record.
+            </p>
+          </div>
+
+          {/* Printed name */}
+          <div className="bg-surface border border-border-subtle rounded-xl p-4">
+            <p className="text-xs text-muted uppercase tracking-wider font-semibold mb-1">Sign as:</p>
+            <p className="text-lg font-bold text-primary">{memberName}</p>
+          </div>
+
+          {/* Signature pad */}
+          <div>
+            <label className="block text-sm font-semibold text-primary mb-2">Your Signature</label>
+            <SignaturePad onSignatureChange={validateSignature} />
+            {!hasSignature && (
+              <p className="text-xs text-muted mt-1">Please draw your signature above.</p>
+            )}
+          </div>
+
+          {/* Checkbox */}
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer"
+            />
+            <span className="text-sm text-secondary leading-relaxed">
+              I confirm this is my legal signature and I have read and understood this strike notice.
+            </span>
+          </label>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-border-subtle shrink-0">
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className={`w-full py-3 rounded-xl text-sm font-bold transition-colors ${
+              canSubmit
+                ? 'bg-red-600 text-white hover:bg-red-700 cursor-pointer'
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            I Acknowledge
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   const navigate = useNavigate();
@@ -30,6 +239,24 @@ export default function Home() {
   const equipmentCategories = useAppStore((s) => s.equipmentCategories);
   const receiptLog = useAppStore((s) => s.receiptLog);
   const setReceiptLog = useAppStore((s) => s.setReceiptLog);
+  const strikes = useAppStore((s) => s.strikes);
+  const setStrikes = useAppStore((s) => s.setStrikes);
+
+  // Check for unacknowledged strikes for the current user
+  const unacknowledgedStrike = useMemo(() => {
+    if (!userEmail || !strikes) return null;
+    return strikes.find((s) => s.memberEmail === userEmail && !s.acknowledged) || null;
+  }, [strikes, userEmail]);
+
+  const handleAcknowledgeStrike = useCallback((strikeId, signatureDataUrl) => {
+    setStrikes(
+      strikes.map((s) =>
+        s.id === strikeId
+          ? { ...s, acknowledged: true, acknowledgedAt: new Date().toISOString(), signatureDataUrl }
+          : s
+      )
+    );
+  }, [strikes, setStrikes]);
 
   // Modal states for quick actions
   const [showRepairModal, setShowRepairModal] = useState(false);
@@ -358,8 +585,17 @@ export default function Home() {
 
   return (
     <div ref={containerRef} className="flex flex-col h-[calc(100svh-9rem)] overflow-y-auto md:h-auto md:overflow-visible">
+      {/* Blocking strike acknowledge modal — shows BEFORE anything else */}
+      {unacknowledgedStrike && (
+        <StrikeAcknowledgeModal
+          strike={unacknowledgedStrike}
+          memberName={currentUser || 'Team Member'}
+          onAcknowledge={handleAcknowledgeStrike}
+        />
+      )}
+
       {/* Blocking announcement modal — only show announcements posted after user was created */}
-      {unacknowledged.length > 0 && (
+      {!unacknowledgedStrike && unacknowledged.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
             <div className="flex items-center gap-2 px-6 py-4 border-b border-border-subtle shrink-0">

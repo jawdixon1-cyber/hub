@@ -5,12 +5,13 @@ import {
   Check, ChevronRight, ChevronDown,
   Lightbulb, MessageSquare, GraduationCap, Trash2,
   Wrench, RotateCcw, AlertTriangle, UserCheck, UserX,
+  AlertOctagon,
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { ONBOARDING_STEPS } from './Training';
-import { getActiveRepairs } from '../data';
+import { getActiveRepairs, genId } from '../data';
 import { getTodayInTimezone } from '../utils/timezone';
 
 const PLAYBOOK_OPTIONS = [
@@ -82,8 +83,13 @@ export default function TeamMemberDetail() {
   const setPermissions = useAppStore((s) => s.setPermissions);
   const equipment = useAppStore((s) => s.equipment);
   const equipmentRepairLog = useAppStore((s) => s.equipmentRepairLog);
+  const strikes = useAppStore((s) => s.strikes);
+  const setStrikes = useAppStore((s) => s.setStrikes);
 
   const [signatureModal, setSignatureModal] = useState(null);
+  const [showStrikeForm, setShowStrikeForm] = useState(false);
+  const [strikeReason, setStrikeReason] = useState('');
+  const [strikeNotes, setStrikeNotes] = useState('');
   const [editPlaybooks, setEditPlaybooks] = useState(null); // null = not editing, array = editing
   const [editingRole, setEditingRole] = useState(false);
   const [roleInput, setRoleInput] = useState('');
@@ -428,13 +434,6 @@ export default function TeamMemberDetail() {
         {/* Action buttons */}
         <div className="flex justify-end gap-2 mt-3">
           <button
-            onClick={() => setConfirmResetTraining(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer"
-          >
-            <RotateCcw size={13} />
-            Reset Training
-          </button>
-          <button
             onClick={() => setConfirmRemove(true)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer"
           >
@@ -442,397 +441,189 @@ export default function TeamMemberDetail() {
             Remove from Team
           </button>
         </div>
-
-        {/* Summary stats row */}
-        <div className="grid grid-cols-4 gap-3 mt-5 pt-5 border-t border-border-subtle">
-          <div className="text-center">
-            <p className="text-lg font-bold text-primary">{allActionStats.done}/{allActionStats.total}</p>
-            <p className="text-[10px] text-tertiary font-medium">Actions Done</p>
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold text-primary">{allActionStats.signed}</p>
-            <p className="text-[10px] text-tertiary font-medium">Policies Signed</p>
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold text-primary">{ideasAndFeedback.length + trainingUpdates.length}</p>
-            <p className="text-[10px] text-tertiary font-medium">Submissions</p>
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold text-primary">{totalRepairs}</p>
-            <p className="text-[10px] text-tertiary font-medium">Repairs</p>
-          </div>
-        </div>
       </div>
 
-      {/* ── Hiring Decision Banner ── */}
-      {needsHiringDecision && (
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 rounded-2xl border-2 border-amber-300 dark:border-amber-700 p-5">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0">
-              <ClipboardCheck size={20} className="text-amber-600" />
-            </div>
-            <div className="flex-1">
-              <h3 className="font-bold text-primary text-lg">Hiring Decision Required</h3>
-              <p className="text-sm text-secondary mt-0.5">
-                <span className="font-semibold">{name}</span> has completed Test Day Prep.
-                {step1Submitted ? ' Their submission is awaiting your review.' : ' All action items are finished.'}
-              </p>
-              <p className="text-xs text-tertiary mt-1">
-                Hiring will unlock the remaining onboarding steps (Logins, Company Policies, Playbook Review).
-              </p>
-              <div className="flex flex-wrap gap-3 mt-4">
-                <button
-                  onClick={handleHire}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors cursor-pointer shadow-sm"
-                >
-                  <UserCheck size={16} />
-                  Hire — Unlock Onboarding
-                </button>
-                <button
-                  onClick={() => setConfirmDontHire(true)}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 text-sm font-semibold hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
-                >
-                  <UserX size={16} />
-                  Don't Hire
-                </button>
+      {/* ── Strikes / Discipline ── */}
+      {(() => {
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        const memberStrikes = (strikes || []).filter((s) => s.memberEmail === email);
+        const activeStrikes = memberStrikes.filter((s) => s.issuedAt >= thirtyDaysAgo);
+        const activeCount = activeStrikes.length;
+
+        const handleIssueStrike = () => {
+          if (!strikeReason.trim()) return;
+          const newStrike = {
+            id: genId(),
+            memberEmail: email,
+            memberName: name,
+            reason: strikeReason.trim(),
+            notes: strikeNotes.trim(),
+            issuedAt: new Date().toISOString(),
+            issuedBy: 'Jude Wilson',
+            acknowledged: false,
+            acknowledgedAt: null,
+            signatureDataUrl: null,
+          };
+          setStrikes([...(strikes || []), newStrike]);
+          setStrikeReason('');
+          setStrikeNotes('');
+          setShowStrikeForm(false);
+        };
+
+        return (
+          <div>
+            <h2 className="text-sm font-bold text-secondary uppercase tracking-wider mb-3">
+              Strikes / Discipline ({memberStrikes.length})
+            </h2>
+
+            {/* 3 strikes alert */}
+            {activeCount >= 3 && (
+              <div className="mb-3 bg-red-500/10 border-2 border-red-500/40 rounded-2xl p-4 flex items-center gap-3">
+                <AlertOctagon size={24} className="text-red-500 shrink-0" />
+                <div>
+                  <p className="text-sm font-bold text-red-600 dark:text-red-400">3 STRIKES — Termination Eligible</p>
+                  <p className="text-xs text-red-500/80">{name} has {activeCount} strike{activeCount !== 1 ? 's' : ''} within the last 30 days.</p>
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+            )}
 
-      {/* ── Onboarding Progress ── */}
-      <div>
-        <h2 className="text-sm font-bold text-secondary uppercase tracking-wider mb-3">Onboarding Progress</h2>
-        <div className="space-y-3">
-          {ONBOARDING_STEPS.map((step) => {
-            const StepIcon = STEP_ICONS[step.id] || ClipboardCheck;
-            const { status, date } = getStepStatus(step.id);
-            const items = getActionItems(step.id);
-            const completions = getCompletions(step.id);
-            const completedCount = items.filter((i) => completions[i.id]?.completed).length;
-            const isExpanded = expandedStep === step.id;
+            {/* 2 strikes warning */}
+            {activeCount === 2 && (
+              <div className="mb-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-center gap-3">
+                <AlertTriangle size={20} className="text-amber-500 shrink-0" />
+                <div>
+                  <p className="text-sm font-bold text-amber-600 dark:text-amber-400">Warning: 2 Active Strikes</p>
+                  <p className="text-xs text-amber-500/80">One more strike within 30 days may result in termination.</p>
+                </div>
+              </div>
+            )}
 
-            return (
-              <div key={step.id} className="bg-card rounded-2xl shadow-sm border border-border-subtle overflow-hidden">
-                {/* Step header - always visible */}
-                <button
-                  onClick={() => setExpandedStep(isExpanded ? null : step.id)}
-                  className="w-full flex items-center gap-3 p-4 text-left cursor-pointer hover:bg-surface-alt/50 transition-colors"
-                >
-                  <div className={`w-9 h-9 rounded-xl ${step.bg} ${step.borderColor} border flex items-center justify-center shrink-0`}>
-                    <StepIcon size={16} className={step.color} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm font-semibold text-primary">{step.title}</span>
-                    {items.length > 0 && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="flex-1 h-1.5 bg-surface-alt rounded-full overflow-hidden max-w-[120px]">
-                          <div
-                            className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all"
-                            style={{ width: `${items.length > 0 ? (completedCount / items.length) * 100 : 0}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] text-muted">{completedCount}/{items.length}</span>
+            {/* Issue strike button / form */}
+            {!showStrikeForm ? (
+              <button
+                onClick={() => setShowStrikeForm(true)}
+                className="mb-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30 text-sm font-semibold hover:bg-red-500/20 transition-colors cursor-pointer"
+              >
+                <AlertOctagon size={14} />
+                Issue Strike
+              </button>
+            ) : (
+              <div className="mb-3 bg-red-500/5 border border-red-500/20 rounded-2xl p-4 space-y-3">
+                <h3 className="text-sm font-bold text-red-600 dark:text-red-400">Issue New Strike</h3>
+                <div>
+                  <label className="block text-xs font-medium text-secondary mb-1">Reason</label>
+                  <input
+                    type="text"
+                    value={strikeReason}
+                    onChange={(e) => setStrikeReason(e.target.value)}
+                    placeholder="e.g. No call / no show"
+                    className="w-full rounded-xl border border-border-default px-4 py-2.5 text-sm text-primary placeholder-placeholder-muted focus:ring-2 focus:ring-red-400 focus:border-red-400 outline-none transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-secondary mb-1">Notes (optional)</label>
+                  <textarea
+                    value={strikeNotes}
+                    onChange={(e) => setStrikeNotes(e.target.value)}
+                    placeholder="Additional context..."
+                    rows={3}
+                    className="w-full rounded-xl border border-border-default px-4 py-2.5 text-sm text-primary placeholder-placeholder-muted focus:ring-2 focus:ring-red-400 focus:border-red-400 outline-none transition resize-none"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleIssueStrike}
+                    disabled={!strikeReason.trim()}
+                    className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Issue Strike
+                  </button>
+                  <button
+                    onClick={() => { setShowStrikeForm(false); setStrikeReason(''); setStrikeNotes(''); }}
+                    className="px-4 py-2 rounded-lg border border-border-strong text-secondary text-sm font-medium hover:bg-surface transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Strike history */}
+            {memberStrikes.length === 0 ? (
+              <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 text-center">
+                <AlertOctagon size={28} className="text-muted mx-auto mb-2" />
+                <p className="text-sm text-muted">No strikes on record.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {[...memberStrikes].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt)).map((strike) => {
+                  const isActive = strike.issuedAt >= thirtyDaysAgo;
+                  return (
+                    <div key={strike.id} className={`bg-card rounded-2xl shadow-sm border p-4 ${isActive ? 'border-red-200 dark:border-red-800' : 'border-border-subtle'}`}>
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <AlertOctagon size={14} className={isActive ? 'text-red-500' : 'text-muted'} />
+                        <span className="text-sm font-bold text-primary">{strike.reason}</span>
+                        {strike.acknowledged ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
+                            <Check size={10} />
+                            Signed
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                            Pending
+                          </span>
+                        )}
+                        {!isActive && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                            Expired
+                          </span>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  {status === 'Approved' ? (
-                    <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 shrink-0">
-                      <Check size={10} /> Complete
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 shrink-0">
-                      Not Started
-                    </span>
-                  )}
-                  <ChevronDown size={16} className={`text-muted shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                </button>
-
-                {/* Expanded action items */}
-                {isExpanded && (
-                  <div className="border-t border-border-subtle px-4 pb-4 pt-3">
-                    {status && status !== 'Approved' && (
-                      <div className="flex items-center justify-between mb-3">
-                        <p className="text-[11px] text-tertiary">Submitted: {date}</p>
+                      {strike.notes && (
+                        <p className="text-xs text-secondary mt-1">{strike.notes}</p>
+                      )}
+                      <div className="flex gap-3 mt-1 flex-wrap">
+                        <p className="text-[10px] text-muted">
+                          Issued: {new Date(strike.issuedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                        <p className="text-[10px] text-muted">By: {strike.issuedBy}</p>
+                        {strike.acknowledged && strike.acknowledgedAt && (
+                          <p className="text-[10px] text-muted">
+                            Acknowledged: {new Date(strike.acknowledgedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-2">
                         <button
-                          onClick={(e) => { e.stopPropagation(); handleStatus(getStepStatus(step.id).id, 'Approved'); }}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-white hover:bg-emerald-600 transition-colors cursor-pointer"
+                          onClick={() => { if (confirm('Delete this strike?')) setStrikes((strikes || []).filter((s) => s.id !== strike.id)); }}
+                          className="flex items-center gap-1 text-[11px] font-semibold text-red-500 hover:text-red-700 cursor-pointer"
                         >
-                          <Check size={12} />
-                          Approve
+                          <Trash2 size={11} /> Delete
                         </button>
-                      </div>
-                    )}
-                    {items.length > 0 ? (
-                      <div className="space-y-1.5">
-                        {items.map((item) => {
-                          const comp = completions[item.id];
-                          const done = comp?.completed;
-                          return (
-                            <div key={item.id} className="flex items-center gap-2 py-1">
-                              <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${
-                                done ? 'bg-emerald-500' : 'border border-gray-300 dark:border-gray-600'
-                              }`}>
-                                {done && <Check size={10} className="text-white" />}
-                              </div>
-                              {item.type === 'policy' ? (
-                                <Shield size={12} className={done ? 'text-emerald-600 shrink-0' : 'text-amber-500 shrink-0'} />
-                              ) : (
-                                <CheckSquare size={12} className={done ? 'text-emerald-600 shrink-0' : 'text-gray-400 shrink-0'} />
-                              )}
-                              <span className={`text-sm flex-1 ${done ? 'text-secondary line-through' : 'text-primary'}`}>
-                                {item.label}
-                              </span>
-                              <div className="flex items-center gap-2 shrink-0">
-                                {done && comp?.date && (
-                                  <span className="text-[11px] text-muted">{comp.date}</span>
-                                )}
-                                {done && comp?.signature && (
-                                  <button
-                                    onClick={() => setSignatureModal({ name: `${name} — ${item.label}`, dataUrl: comp.signature })}
-                                    className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
-                                  >
-                                    <FileSignature size={12} />
-                                    View Signature
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted">No action items configured for this step.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Ideas & Feedback ── */}
-      <div>
-        <h2 className="text-sm font-bold text-secondary uppercase tracking-wider mb-3">
-          Ideas &amp; Feedback ({ideasAndFeedback.length})
-        </h2>
-        {ideasAndFeedback.length === 0 ? (
-          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 text-center">
-            <Lightbulb size={28} className="text-muted mx-auto mb-2" />
-            <p className="text-sm text-muted">No ideas or feedback submitted yet.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {ideasAndFeedback.map((item) => {
-              const typeInfo = TYPE_ICON[item.type] || TYPE_ICON.idea;
-              const ItemIcon = typeInfo.Icon;
-              return (
-                <div key={item.id} className="bg-card rounded-2xl shadow-sm border border-border-subtle p-4">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <ItemIcon size={14} className={`${typeInfo.color} shrink-0`} />
-                    <h3 className="text-sm font-bold text-primary">{item.title}</h3>
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[item.status] || 'bg-surface-alt text-secondary'}`}>
-                      {item.status}
-                    </span>
-                  </div>
-                  <p className="text-xs text-secondary mt-1 whitespace-pre-line line-clamp-3">{item.description}</p>
-                  <p className="text-[10px] text-muted mt-2">{item.date}</p>
-                  {/* Owner status controls */}
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {['New', 'Reviewing', 'Approved', 'Implemented', 'Rejected']
-                      .filter((s) => s !== item.status)
-                      .map((s) => (
+                      {strike.acknowledged && strike.signatureDataUrl && (
                         <button
-                          key={s}
-                          onClick={() => handleStatus(item.id, s)}
-                          className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors cursor-pointer ${STATUS_COLORS[s]} hover:opacity-80`}
+                          onClick={() => setSignatureModal({ name: `${name} — Strike: ${strike.reason}`, dataUrl: strike.signatureDataUrl })}
+                          className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
                         >
-                          {s}
+                          <FileSignature size={12} />
+                          View Signature
                         </button>
-                      ))}
-                    <button
-                      onClick={() => handleDelete(item.id)}
-                      className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg bg-red-50 text-red-600 text-[10px] font-semibold hover:bg-red-100 transition-colors cursor-pointer"
-                    >
-                      <Trash2 size={10} />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── Training Updates ── */}
-      <div>
-        <h2 className="text-sm font-bold text-secondary uppercase tracking-wider mb-3">
-          Training Updates ({trainingUpdates.length})
-        </h2>
-        {trainingUpdates.length === 0 ? (
-          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 text-center">
-            <GraduationCap size={28} className="text-muted mx-auto mb-2" />
-            <p className="text-sm text-muted">No training updates submitted yet.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {trainingUpdates.map((update) => (
-              <div key={update.id} className="bg-card rounded-2xl shadow-sm border border-border-subtle p-4">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <GraduationCap size={14} className="text-teal-500 shrink-0" />
-                    <span className="text-sm font-semibold text-primary truncate">{update.title}</span>
-                  </div>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[update.status] || 'bg-surface-alt text-secondary'}`}>
-                    {update.status}
-                  </span>
-                </div>
-                <p className="text-[10px] text-muted">{update.date}</p>
-                {update.description && (
-                  <p className="text-xs text-secondary mt-1.5 whitespace-pre-wrap">{update.description}</p>
-                )}
-                {/* Owner status controls */}
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {['New', 'Reviewing', 'Approved', 'Implemented', 'Rejected']
-                    .filter((s) => s !== update.status)
-                    .map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => handleStatus(update.id, s)}
-                        className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors cursor-pointer ${STATUS_COLORS[s]} hover:opacity-80`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                </div>
+                      )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
-
-
-      {/* ── Equipment Repairs ── */}
-      <div>
-        <h2 className="text-sm font-bold text-secondary uppercase tracking-wider mb-3">
-          Equipment Repairs ({totalRepairs})
-        </h2>
-        {totalRepairs === 0 ? (
-          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 text-center">
-            <Wrench size={28} className="text-muted mx-auto mb-2" />
-            <p className="text-sm text-muted">No equipment repairs reported by this member.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {/* Active repair reports */}
-            {activeRepairs.map((item) => (
-              <div key={item.id} className="bg-card rounded-2xl shadow-sm border border-red-200 dark:border-red-800 p-4">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <Wrench size={14} className="text-red-500 shrink-0" />
-                  <span className="text-sm font-bold text-primary">{item.name}</span>
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400">
-                    Needs Repair
-                  </span>
-                  {item.urgency && (
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                      item.urgency === 'critical'
-                        ? 'bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400'
-                        : 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
-                    }`}>
-                      {item.urgency}
-                    </span>
-                  )}
-                </div>
-                {item.reportedIssue && (
-                  <p className="text-xs text-secondary mt-1">{item.reportedIssue}</p>
-                )}
-                {item.reportedDate && (
-                  <p className="text-[10px] text-muted mt-1">Reported: {item.reportedDate}</p>
-                )}
-              </div>
-            ))}
-
-            {/* Completed repair history */}
-            {repairHistory.map((entry) => (
-              <div key={entry.id} className="bg-card rounded-2xl shadow-sm border border-border-subtle p-4">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <Wrench size={14} className="text-emerald-500 shrink-0" />
-                  <span className="text-sm font-bold text-primary">{entry.equipmentName}</span>
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400">
-                    Repaired
-                  </span>
-                  {entry.urgency && (
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                      entry.urgency === 'critical'
-                        ? 'bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400'
-                        : 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
-                    }`}>
-                      {entry.urgency}
-                    </span>
-                  )}
-                </div>
-                {entry.issue && (
-                  <p className="text-xs text-secondary mt-1">{entry.issue}</p>
-                )}
-                <div className="flex gap-3 mt-1">
-                  {entry.reportedDate && (
-                    <p className="text-[10px] text-muted">Reported: {entry.reportedDate}</p>
-                  )}
-                  {entry.repairedDate && (
-                    <p className="text-[10px] text-muted">Repaired: {entry.repairedDate}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+        );
+      })()}
 
       {/* ── Toast ── */}
       {resetToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl bg-emerald-600 text-white text-sm font-medium shadow-lg flex items-center gap-2 max-w-sm text-center">
           <Check size={16} className="shrink-0" />
           {resetToast}
-        </div>
-      )}
-
-      {/* ── Confirm Reset Training Modal ── */}
-      {confirmResetTraining && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setConfirmResetTraining(false)}>
-          <div className="bg-card rounded-2xl shadow-2xl border border-border-subtle max-w-sm w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-950/30 flex items-center justify-center shrink-0">
-                <AlertTriangle size={20} className="text-amber-600" />
-              </div>
-              <div>
-                <h3 className="font-bold text-primary">Reset Training?</h3>
-                <p className="text-sm text-secondary">
-                  This will clear all onboarding and training progress for{' '}
-                  <span className="font-semibold">{name}</span>.
-                </p>
-              </div>
-            </div>
-            <p className="text-xs text-tertiary">
-              Action item completions, signatures, and submitted onboarding/training updates will be permanently removed.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setConfirmResetTraining(false)}
-                className="px-4 py-2 rounded-lg border border-border-strong text-secondary text-sm font-medium hover:bg-surface transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleResetTraining}
-                className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-colors cursor-pointer"
-              >
-                Reset Training
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
@@ -859,42 +650,6 @@ export default function TeamMemberDetail() {
                 className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors cursor-pointer"
               >
                 Remove
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Confirm Don't Hire Modal ── */}
-      {confirmDontHire && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setConfirmDontHire(false)}>
-          <div className="bg-card rounded-2xl shadow-2xl border border-border-subtle max-w-sm w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-950/30 flex items-center justify-center shrink-0">
-                <UserX size={20} className="text-red-600" />
-              </div>
-              <div>
-                <h3 className="font-bold text-primary">Don't Hire?</h3>
-                <p className="text-sm text-secondary">
-                  This will remove <span className="font-semibold">{name}</span> from the team.
-                </p>
-              </div>
-            </div>
-            <p className="text-xs text-tertiary">
-              They will lose access to the app and see "Access Denied" on their next login.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setConfirmDontHire(false)}
-                className="px-4 py-2 rounded-lg border border-border-strong text-secondary text-sm font-medium hover:bg-surface transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDontHire}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors cursor-pointer"
-              >
-                Remove from Team
               </button>
             </div>
           </div>

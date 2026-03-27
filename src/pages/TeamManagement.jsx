@@ -54,6 +54,8 @@ export default function TeamManagement() {
   const setPermissions = useAppStore((s) => s.setPermissions);
   const suggestions = useAppStore((s) => s.suggestions);
   const trainingConfig = useAppStore((s) => s.trainingConfig);
+  const strikes = useAppStore((s) => s.strikes);
+  const presence = useAppStore((s) => s.presence);
 
   // Add member form state
   const [showForm, setShowForm] = useState(false);
@@ -439,21 +441,6 @@ export default function TeamManagement() {
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-card rounded-xl border border-border-subtle p-4 text-center">
-          <p className="text-2xl font-bold text-emerald-600">{fullyOnboarded}</p>
-          <p className="text-[11px] text-tertiary font-medium">Fully Onboarded</p>
-        </div>
-        <div className="bg-card rounded-xl border border-border-subtle p-4 text-center">
-          <p className="text-2xl font-bold text-amber-600">{inProgress}</p>
-          <p className="text-[11px] text-tertiary font-medium">In Progress</p>
-        </div>
-        <div className="bg-card rounded-xl border border-border-subtle p-4 text-center">
-          <p className="text-2xl font-bold text-muted">{notStarted}</p>
-          <p className="text-[11px] text-tertiary font-medium">Not Started</p>
-        </div>
-      </div>
 
       {/* Member List */}
       {members.length === 0 ? (
@@ -464,24 +451,11 @@ export default function TeamManagement() {
       ) : (
         <div className="space-y-3">
           {members.map((member) => {
-            const onboarded = isFullyOnboarded(member.name);
-            const pendingHire = needsHiringDecision(member.name, member.email);
             const authUser = getAuthUser(member.email);
-
-            // Step status dots
-            const stepOverview = ONBOARDING_STEPS.map((step) => {
-              const { status } = getMemberStepStatus(member.name, step.id);
-              return { stepId: step.id, status };
-            });
-
-            // Overall action item progress
-            const totalActions = ONBOARDING_STEPS.reduce((acc, step) => {
-              const p = getActionItemsProgress(member.email, step.id);
-              acc.total += p.total;
-              acc.done += p.done;
-              return acc;
-            }, { total: 0, done: 0 });
-
+            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+            const activeStrikeCount = (strikes || []).filter(
+              (s) => s.memberEmail === member.email && s.issuedAt >= thirtyDaysAgo
+            ).length;
             const isResetOpen = resetTarget === member.email;
 
             return (
@@ -491,67 +465,25 @@ export default function TeamManagement() {
                     onClick={() => navigate(`/team/${encodeURIComponent(member.email)}`)}
                     className="flex-1 bg-card rounded-2xl shadow-sm border border-border-subtle overflow-hidden flex items-center gap-3 p-4 sm:p-5 text-left cursor-pointer hover:border-border-strong hover:shadow-md transition-all group"
                   >
-                    {/* Avatar */}
-                    <div className={`w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
-                      onboarded ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-light text-brand-text-strong'
-                    }`}>
-                      {getInitials(member.name)}
+                    <div className="relative">
+                      <div className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold shrink-0 bg-brand-light text-brand-text-strong">
+                        {getInitials(member.name)}
+                      </div>
+                      {(() => {
+                        const p = (presence || {})[member.email];
+                        const isOnline = p?.status === 'online' && p?.lastSeen && (Date.now() - new Date(p.lastSeen).getTime()) < 300000; // online + seen within 5 min
+                        return <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-card ${isOnline ? 'bg-emerald-500' : 'bg-gray-400'}`} />;
+                      })()}
                     </div>
-
-                    {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-semibold text-primary truncate">{member.name}</h3>
-                        {onboarded && (
-                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                            Onboarded
-                          </span>
-                        )}
-                        {pendingHire && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
-                            <AlertCircle size={10} />
-                            Hiring Decision
-                          </span>
-                        )}
+                        {activeStrikeCount === 1 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500">1 strike</span>}
+                        {activeStrikeCount === 2 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-500">2 strikes</span>}
+                        {activeStrikeCount >= 3 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-500">3 STRIKES</span>}
                       </div>
-                      <p className="text-xs text-tertiary truncate">{member.email}</p>
-                      {/* Team badges + action progress + last sign-in */}
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        {member.playbooks.map((key) => {
-                          const opt = PLAYBOOK_OPTIONS.find((o) => o.key === key);
-                          return opt ? (
-                            <span key={key} className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${opt.color}`}>
-                              {opt.label}
-                            </span>
-                          ) : null;
-                        })}
-                        {totalActions.total > 0 && (
-                          <span className="text-[10px] text-muted">
-                            {totalActions.done}/{totalActions.total} actions
-                          </span>
-                        )}
-                        {authUser && (
-                          <span className="text-[10px] text-muted">
-                            Last login: {formatDate(authUser.lastSignIn)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Step status dots */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {stepOverview.map((s) => (
-                        <div
-                          key={s.stepId}
-                          className={`w-3 h-3 rounded-full ${
-                            s.status === 'Approved'
-                              ? 'bg-emerald-500'
-                              : s.status
-                                ? 'bg-amber-400'
-                                : 'bg-gray-200 dark:bg-gray-700'
-                          }`}
-                        />
-                      ))}
+                      <p className="text-xs text-muted truncate">{member.email}</p>
+                      {authUser && <p className="text-[10px] text-muted mt-1">Last login: {formatDate(authUser.lastSignIn)}</p>}
                     </div>
 
                     <ChevronRight size={18} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />

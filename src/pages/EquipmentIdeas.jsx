@@ -28,6 +28,13 @@ export default function EquipmentIdeas() {
   const equipment = useAppStore((s) => s.equipment);
   const setEquipment = useAppStore((s) => s.setEquipment);
   const equipmentCategories = useAppStore((s) => s.equipmentCategories);
+  const setEquipmentCategories = useAppStore((s) => s.setEquipmentCategories);
+  const [newCategoryLabel, setNewCategoryLabel] = useState('');
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+
+  useEffect(() => {
+    if (equipmentCategories.length === 0) setEquipmentCategories([...EQUIPMENT_TYPES]);
+  }, []);
 
   const allTypes = equipmentCategories.length > 0 ? equipmentCategories : EQUIPMENT_TYPES;
   const TYPE_LABEL = Object.fromEntries(allTypes.map((t) => [t.value, t.label]));
@@ -225,6 +232,15 @@ export default function EquipmentIdeas() {
         <div className="flex items-center gap-2">
           {ownerMode && (
             <button
+              onClick={() => setShowCategoryManager(!showCategoryManager)}
+              className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted hover:text-secondary hover:bg-surface-alt rounded-lg cursor-pointer transition-colors"
+            >
+              <Wrench size={14} />
+              Categories
+            </button>
+          )}
+          {ownerMode && (
+            <button
               onClick={() => setAddingEquipment(true)}
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand text-on-brand text-sm font-semibold rounded-xl hover:bg-brand-hover transition-colors cursor-pointer"
             >
@@ -241,6 +257,31 @@ export default function EquipmentIdeas() {
           </button>
         </div>
       </div>
+
+      {/* Category Manager */}
+      {showCategoryManager && ownerMode && (
+        <div className="bg-card rounded-2xl border border-border-subtle p-4 space-y-3">
+          <p className="text-xs font-bold text-muted uppercase tracking-widest">Equipment Categories</p>
+          <div className="flex flex-wrap gap-2">
+            {allTypes.map((cat) => (
+              <span key={cat.value} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-surface-alt text-secondary border border-border-subtle">
+                {cat.label}
+                <button onClick={() => setEquipmentCategories(equipmentCategories.filter((c) => c.value !== cat.value))}
+                  className="ml-0.5 p-0.5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 transition-colors cursor-pointer">
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="text" value={newCategoryLabel} onChange={(e) => setNewCategoryLabel(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { const l = newCategoryLabel.trim(); if (!l) return; const v = l.toLowerCase().replace(/\s+/g, '-'); if (equipmentCategories.some((c) => c.value === v)) return; setEquipmentCategories([...equipmentCategories, { value: v, label: l }]); setNewCategoryLabel(''); } }}
+              placeholder="New category..." className="flex-1 rounded-lg border border-border-default bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-brand" />
+            <button onClick={() => { const l = newCategoryLabel.trim(); if (!l) return; const v = l.toLowerCase().replace(/\s+/g, '-'); if (equipmentCategories.some((c) => c.value === v)) return; setEquipmentCategories([...equipmentCategories, { value: v, label: l }]); setNewCategoryLabel(''); }}
+              className="px-4 py-2 rounded-lg bg-brand text-on-brand text-sm font-medium hover:bg-brand-hover cursor-pointer">Add</button>
+          </div>
+        </div>
+      )}
 
       {/* Wrapped card container */}
       <div className="bg-card rounded-2xl shadow-sm border border-border-subtle">

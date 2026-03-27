@@ -224,7 +224,7 @@ export default function Profile() {
   /* ── Owner view ── */
   if (ownerMode) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-6 max-w-lg">
         <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-6">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full bg-brand-light flex items-center justify-center text-brand-text-strong text-xl font-bold shrink-0">
@@ -238,7 +238,6 @@ export default function Profile() {
             </div>
           </div>
         </div>
-        <SettingsContent />
         <button
           onClick={handleSignOut}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors cursor-pointer"

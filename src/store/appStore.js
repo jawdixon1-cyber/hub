@@ -56,6 +56,8 @@ const STATE_KEYS = [
   { key: 'vehicles',            supaKey: 'greenteam-vehicles',            initial: initialVehicles },
   { key: 'mileageLog',          supaKey: 'greenteam-mileageLog',          initial: initialMileageLog },
   { key: 'agreements',           supaKey: 'greenteam-agreements',           initial: [] },
+  { key: 'strikes',              supaKey: 'greenteam-strikes',              initial: [] },
+  { key: 'presence',             supaKey: 'greenteam-presence',             initial: {} },
   { key: 'quotes',              supaKey: 'greenteam-quotes',              initial: initialQuotes },
   { key: 'quotingSettings',     supaKey: 'greenteam-quotingSettings',     initial: initialQuotingSettings },
   { key: 'receiptLog',          supaKey: 'greenteam-receiptLog',          initial: initialReceiptLog },
@@ -66,6 +68,7 @@ const STATE_KEYS = [
   { key: 'quizLog',             supaKey: 'greenteam-quizLog',             initial: initialQuizLog },
   { key: 'mowingSettings',      supaKey: 'greenteam-mowingSettings',      initial: initialMowingSettings },
   { key: 'mowingNotifications', supaKey: 'greenteam-mowingNotifications', initial: initialMowingNotifications },
+  { key: 'strikes',             supaKey: 'greenteam-strikes',             initial: [] },
 ];
 
 function resolveInitial(cloudValue, initial) {
