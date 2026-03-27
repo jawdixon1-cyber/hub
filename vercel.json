@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/team-auth", "destination": "/api/app-state?key=team-auth" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
