@@ -377,25 +377,32 @@ function BigMoves({ moves, setMoves }) {
 function TeamActivity() {
   const presence = useAppStore((s) => s.presence);
   const permissions = useAppStore((s) => s.permissions);
+  const [authUsers, setAuthUsers] = useState([]);
+
+  // Fetch auth users for last login fallback
+  useEffect(() => {
+    fetch('/api/team-auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'list' }) })
+      .then((r) => r.json()).then((d) => { if (d.users) setAuthUsers(d.users); }).catch(() => {});
+  }, []);
 
   const members = Object.entries(permissions || {}).map(([email, data]) => {
     const p = (presence || {})[email];
+    const auth = authUsers.find((u) => u.email?.toLowerCase() === email.toLowerCase());
     const isOnline = p?.status === 'online' && p?.lastSeen && (Date.now() - new Date(p.lastSeen).getTime()) < 300000;
-    return { email, name: data.name, isOnline, lastSeen: p?.lastSeen, sessionStart: p?.sessionStart };
+    return { email, name: data.name, isOnline, lastSeen: p?.lastSeen, sessionStart: p?.sessionStart, lastLogin: auth?.lastSignIn };
   });
 
-  // Sort: online first, then by last seen
   members.sort((a, b) => {
     if (a.isOnline && !b.isOnline) return -1;
     if (!a.isOnline && b.isOnline) return 1;
-    return (b.lastSeen || '').localeCompare(a.lastSeen || '');
+    return (b.lastSeen || b.lastLogin || '').localeCompare(a.lastSeen || a.lastLogin || '');
   });
 
   if (members.length === 0) return null;
 
-  const fmtTime = (iso) => {
-    if (!iso) return '';
-    return new Date(iso).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const fmtDateTime = (iso) => {
+    if (!iso) return null;
+    return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   };
 
   const fmtDuration = (startIso) => {
@@ -408,18 +415,6 @@ function TeamActivity() {
     return rm > 0 ? `${hrs}h ${rm}m` : `${hrs}h`;
   };
 
-  const fmtLastSeen = (iso) => {
-    if (!iso) return 'Never';
-    const d = new Date(iso);
-    const now = new Date();
-    const diffMs = now - d;
-    const mins = Math.round(diffMs / 60000);
-    if (mins < 1) return 'Just now';
-    if (mins < 60) return `${mins}m ago`;
-    if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
   const getInitials = (name) => {
     if (!name) return '?';
     const parts = name.trim().split(/\s+/);
@@ -429,21 +424,25 @@ function TeamActivity() {
   return (
     <div className="bg-card rounded-2xl border border-border-subtle p-4">
       <p className="text-[11px] font-bold text-muted uppercase tracking-widest mb-3">Team</p>
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {members.map((m) => (
           <div key={m.email} className="flex items-center gap-3">
             <div className="relative">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold bg-brand-light text-brand-text-strong">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold bg-brand-light text-brand-text-strong">
                 {getInitials(m.name)}
               </div>
-              <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card ${m.isOnline ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+              <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-card ${m.isOnline ? 'bg-emerald-500' : 'bg-gray-400'}`} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-primary truncate">{m.name}</p>
+              <p className="text-sm font-semibold text-primary truncate">{m.name}</p>
               {m.isOnline ? (
-                <p className="text-[10px] text-emerald-500">Active · {fmtDuration(m.sessionStart)}</p>
+                <p className="text-[10px] text-emerald-500 font-semibold">
+                  Active now · {fmtDuration(m.sessionStart)} {m.sessionStart ? `(since ${fmtDateTime(m.sessionStart)})` : ''}
+                </p>
               ) : (
-                <p className="text-[10px] text-muted">{fmtLastSeen(m.lastSeen)}</p>
+                <p className="text-[10px] text-muted">
+                  {fmtDateTime(m.lastSeen) ? `Last active: ${fmtDateTime(m.lastSeen)}` : fmtDateTime(m.lastLogin) ? `Last login: ${fmtDateTime(m.lastLogin)}` : 'No activity yet'}
+                </p>
               )}
             </div>
           </div>
@@ -899,7 +898,7 @@ export default function DailyChecklist() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto pb-12 space-y-4">
+    <div className="pb-12 space-y-4">
       {/* Checklist flow overlays */}
       {activeFlow === 'morning' && (
         <ChecklistFlow items={ownerStartChecklist} setItems={setOwnerStartChecklist} onClose={() => setActiveFlow(null)} title="Start Day" />
@@ -920,96 +919,105 @@ export default function DailyChecklist() {
         </Suspense>
       )}
 
-      {/* 1. Start / End Day buttons */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-card rounded-2xl border border-border-subtle overflow-hidden">
-          <button onClick={() => setActiveFlow('morning')}
-            className={`w-full px-5 py-4 text-left cursor-pointer transition-colors ${morningAllDone ? 'bg-brand-light/20' : 'hover:bg-surface-alt'}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-bold text-primary">Start Day</p>
-              {morningAllDone ? (
-                <span className="text-[10px] font-bold text-brand-text bg-brand-light px-2 py-0.5 rounded-full">Done</span>
-              ) : morningDone > 0 ? (
-                <span className="text-[10px] text-muted">{morningDone}/{morningItems.length}</span>
-              ) : null}
-            </div>
-          </button>
-          <button onClick={() => setShowEditor('morning')}
-            className="w-full px-5 py-2 border-t border-border-subtle/50 text-[10px] text-muted hover:text-secondary cursor-pointer hover:bg-surface-alt transition-colors">
-            Edit
-          </button>
-        </div>
+      {/* Two-column layout: main + sidebar */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
-        <div className="bg-card rounded-2xl border border-border-subtle overflow-hidden">
-          <button onClick={() => setActiveFlow('evening')}
-            className={`w-full px-5 py-4 text-left cursor-pointer transition-colors ${eveningAllDone ? 'bg-brand-light/20' : 'hover:bg-surface-alt'}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-bold text-primary">End Day</p>
-              {eveningAllDone ? (
-                <span className="text-[10px] font-bold text-brand-text bg-brand-light px-2 py-0.5 rounded-full">Done</span>
-              ) : eveningDone > 0 ? (
-                <span className="text-[10px] text-muted">{eveningDone}/{eveningItems.length}</span>
-              ) : null}
-            </div>
-          </button>
-          <button onClick={() => setShowEditor('evening')}
-            className="w-full px-5 py-2 border-t border-border-subtle/50 text-[10px] text-muted hover:text-secondary cursor-pointer hover:bg-surface-alt transition-colors">
-            Edit
-          </button>
-        </div>
-      </div>
-
-      {/* 2. Big Moves */}
-      {/* Team activity */}
-      <TeamActivity />
-
-      <BigMoves moves={bigMoves} setMoves={setBigMoves} />
-
-      {/* 3. Today's Schedule */}
-      <TodaySchedule />
-
-      {/* 4. Monthly profit calendar */}
-      <MonthlyProfit />
-
-      {/* 5. Dashboard widgets */}
-      <div className="space-y-3">
-        {widgets.map(renderWidget)}
-      </div>
-
-      {/* 6. Add widget / Edit toggle */}
-      <div className="flex items-center justify-center gap-3">
-        {editMode ? (
-          <>
-            <div className="relative">
-              <button onClick={() => setShowAddMenu(!showAddMenu)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover cursor-pointer">
-                <Plus size={14} /> Add
-              </button>
-              {showAddMenu && (
-                <div className="absolute bottom-full mb-2 left-0 bg-card border border-border-subtle rounded-xl shadow-lg overflow-hidden z-10">
-                  <button onClick={() => addWidget('note')} className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-primary hover:bg-surface-alt cursor-pointer">
-                    <StickyNote size={14} /> Note
-                  </button>
-                  <button onClick={() => addWidget('link')} className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-primary hover:bg-surface-alt cursor-pointer border-t border-border-subtle/50">
-                    <Link2 size={14} /> Link
-                  </button>
-                  <button onClick={() => addWidget('heading')} className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-primary hover:bg-surface-alt cursor-pointer border-t border-border-subtle/50">
-                    <Type size={14} /> Section Title
-                  </button>
+        {/* Left column — main content */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Start / End Day buttons */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-card rounded-2xl border border-border-subtle overflow-hidden">
+              <button onClick={() => setActiveFlow('morning')}
+                className={`w-full px-5 py-4 text-left cursor-pointer transition-colors ${morningAllDone ? 'bg-brand-light/20' : 'hover:bg-surface-alt'}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-bold text-primary">Start Day</p>
+                  {morningAllDone ? (
+                    <span className="text-[10px] font-bold text-brand-text bg-brand-light px-2 py-0.5 rounded-full">Done</span>
+                  ) : morningDone > 0 ? (
+                    <span className="text-[10px] text-muted">{morningDone}/{morningItems.length}</span>
+                  ) : null}
                 </div>
-              )}
+              </button>
+              <button onClick={() => setShowEditor('morning')}
+                className="w-full px-5 py-2 border-t border-border-subtle/50 text-[10px] text-muted hover:text-secondary cursor-pointer hover:bg-surface-alt transition-colors">
+                Edit
+              </button>
             </div>
-            <button onClick={() => { setEditMode(false); setShowAddMenu(false); }}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer">
-              Done
-            </button>
-          </>
-        ) : (
-          <button onClick={() => setEditMode(true)}
-            className="px-4 py-2 rounded-xl text-xs font-semibold text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer">
-            <Pencil size={12} className="inline mr-1" /> Customize
-          </button>
-        )}
+
+            <div className="bg-card rounded-2xl border border-border-subtle overflow-hidden">
+              <button onClick={() => setActiveFlow('evening')}
+                className={`w-full px-5 py-4 text-left cursor-pointer transition-colors ${eveningAllDone ? 'bg-brand-light/20' : 'hover:bg-surface-alt'}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-bold text-primary">End Day</p>
+                  {eveningAllDone ? (
+                    <span className="text-[10px] font-bold text-brand-text bg-brand-light px-2 py-0.5 rounded-full">Done</span>
+                  ) : eveningDone > 0 ? (
+                    <span className="text-[10px] text-muted">{eveningDone}/{eveningItems.length}</span>
+                  ) : null}
+                </div>
+              </button>
+              <button onClick={() => setShowEditor('evening')}
+                className="w-full px-5 py-2 border-t border-border-subtle/50 text-[10px] text-muted hover:text-secondary cursor-pointer hover:bg-surface-alt transition-colors">
+                Edit
+              </button>
+            </div>
+          </div>
+
+          {/* Big Moves */}
+          <BigMoves moves={bigMoves} setMoves={setBigMoves} />
+
+          {/* Today's Schedule */}
+          <TodaySchedule />
+
+          {/* Monthly profit calendar */}
+          <MonthlyProfit />
+
+          {/* Custom widgets */}
+          <div className="space-y-3">
+            {widgets.map(renderWidget)}
+          </div>
+
+          {/* Customize button */}
+          <div className="flex items-center justify-center gap-3">
+            {editMode ? (
+              <>
+                <div className="relative">
+                  <button onClick={() => setShowAddMenu(!showAddMenu)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover cursor-pointer">
+                    <Plus size={14} /> Add
+                  </button>
+                  {showAddMenu && (
+                    <div className="absolute bottom-full mb-2 left-0 bg-card border border-border-subtle rounded-xl shadow-lg overflow-hidden z-10">
+                      <button onClick={() => addWidget('note')} className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-primary hover:bg-surface-alt cursor-pointer">
+                        <StickyNote size={14} /> Note
+                      </button>
+                      <button onClick={() => addWidget('link')} className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-primary hover:bg-surface-alt cursor-pointer border-t border-border-subtle/50">
+                        <Link2 size={14} /> Link
+                      </button>
+                      <button onClick={() => addWidget('heading')} className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-primary hover:bg-surface-alt cursor-pointer border-t border-border-subtle/50">
+                        <Type size={14} /> Section Title
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => { setEditMode(false); setShowAddMenu(false); }}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer">
+                  Done
+                </button>
+              </>
+            ) : (
+              <button onClick={() => setEditMode(true)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer">
+                <Pencil size={12} className="inline mr-1" /> Customize
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Right column — team activity */}
+        <div className="space-y-4">
+          <TeamActivity />
+        </div>
       </div>
     </div>
   );
