@@ -696,6 +696,63 @@ function HeadingWidget({ widget, onUpdate, onDelete, editing }) {
   );
 }
 
+/* ─── Growth Goals ─── */
+
+function GrowthGoals() {
+  const CLIENT_GOAL = 200;
+  const REVENUE_GOAL = 300000;
+  const [stats, setStats] = useState(null);
+
+  useEffect(() => {
+    const today = getTodayInTimezone();
+    const yearStart = today.slice(0, 4) + '-01-01';
+    Promise.all([
+      fetch(`/api/commander/summary?start=${yearStart}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/jobber-data?action=ytd-revenue').then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([commander, ytd]) => {
+      setStats({
+        clients: commander?.activeRecurringCount || 0,
+        revenue: ytd?.ytdRevenue || 0,
+      });
+    });
+  }, []);
+
+  const clients = stats?.clients || 0;
+  const revenue = stats?.revenue || 0;
+  const clientPct = Math.min(100, Math.round((clients / CLIENT_GOAL) * 100));
+  const revenuePct = Math.min(100, Math.round((revenue / REVENUE_GOAL) * 100));
+
+  return (
+    <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-4">
+      <p className="text-sm font-black text-primary uppercase tracking-wider">Growth Goals</p>
+
+      {/* Clients */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-bold text-secondary">Recurring Clients</span>
+          <span className="font-black text-primary">{clients} <span className="text-muted font-normal">/ {CLIENT_GOAL}</span></span>
+        </div>
+        <div className="w-full h-3 rounded-full bg-surface-alt overflow-hidden">
+          <div className="h-full rounded-full bg-brand transition-all duration-500" style={{ width: `${clientPct}%` }} />
+        </div>
+        <p className="text-[10px] text-muted">{CLIENT_GOAL - clients > 0 ? `${CLIENT_GOAL - clients} to go` : 'Goal reached!'}</p>
+      </div>
+
+      {/* Revenue */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-bold text-secondary">YTD Revenue</span>
+          <span className="font-black text-primary">${(revenue / 1000).toFixed(0)}k <span className="text-muted font-normal">/ $300k</span></span>
+        </div>
+        <div className="w-full h-3 rounded-full bg-surface-alt overflow-hidden">
+          <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${revenuePct}%` }} />
+        </div>
+        <p className="text-[10px] text-muted">${((REVENUE_GOAL - revenue) / 1000).toFixed(0)}k to go</p>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Monthly Profit Calendar ─── */
 
 function MonthlyProfit() {
@@ -869,10 +926,6 @@ export default function DailyChecklist() {
   const [editMode, setEditMode] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
 
-  // Big moves state
-  const [bigMoves, setBigMoves] = useState(loadBigMoves);
-  useEffect(() => { saveBigMoves(bigMoves); }, [bigMoves]);
-
   useEffect(() => { saveWidgets(widgets); }, [widgets]);
 
   const addWidget = (type) => {
@@ -963,14 +1016,8 @@ export default function DailyChecklist() {
             </div>
           </div>
 
-          {/* Big Moves */}
-          <BigMoves moves={bigMoves} setMoves={setBigMoves} />
-
-          {/* Today's Schedule */}
-          <TodaySchedule />
-
-          {/* Monthly profit calendar */}
-          <MonthlyProfit />
+          {/* Growth Goals */}
+          <GrowthGoals />
 
           {/* Custom widgets */}
           <div className="space-y-3">

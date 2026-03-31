@@ -419,6 +419,34 @@ async function handleLaborData(req, res) {
   return res.json(grouped);
 }
 
+// ── YTD Revenue from Completed Visits ──
+
+async function handleYTDRevenue(req, res) {
+  const year = new Date().getFullYear();
+  const start = `${year}-01-01`;
+  const today = new Date().toISOString().split('T')[0];
+  const visits = await fetchVisits(start, today);
+
+  // Count each job only once — use the first completed visit date for the month
+  const jobsSeen = {}; // jobId -> { total, month }
+  for (const v of visits) {
+    const jobId = v.job?.id;
+    if (!jobId || jobsSeen[jobId]) continue;
+    const amt = parseFloat(v.job?.total) || 0;
+    const date = (v.completedAt || v.startAt || '').split('T')[0];
+    const month = date.slice(0, 7);
+    jobsSeen[jobId] = { total: amt, month };
+  }
+
+  let total = 0;
+  const byMonth = {};
+  for (const { total: amt, month } of Object.values(jobsSeen)) {
+    total += amt;
+    byMonth[month] = (byMonth[month] || 0) + amt;
+  }
+  return res.json({ ytdRevenue: Math.round(total * 100) / 100, jobCount: Object.keys(jobsSeen).length, byMonth });
+}
+
 // ── Router ──
 
 export default async function handler(req, res) {
@@ -426,7 +454,8 @@ export default async function handler(req, res) {
     const action = req.query.action;
     if (action === 'clients') return handleClientSearch(req, res);
     if (action === 'labor') return handleLaborData(req, res);
-    return res.status(400).json({ error: 'action param required: clients | labor' });
+    if (action === 'ytd-revenue') return handleYTDRevenue(req, res);
+    return res.status(400).json({ error: 'action param required: clients | labor | ytd-revenue' });
   } catch (err) {
     console.error('[Jobber Data] Error:', err.message);
     return res.status(500).json({ error: err.message });

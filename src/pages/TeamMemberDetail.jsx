@@ -90,6 +90,7 @@ export default function TeamMemberDetail() {
   const [showStrikeForm, setShowStrikeForm] = useState(false);
   const [strikeReason, setStrikeReason] = useState('');
   const [strikeNotes, setStrikeNotes] = useState('');
+  const [strikeDate, setStrikeDate] = useState(new Date().toISOString().split('T')[0]);
   const [editPlaybooks, setEditPlaybooks] = useState(null); // null = not editing, array = editing
   const [editingRole, setEditingRole] = useState(false);
   const [roleInput, setRoleInput] = useState('');
@@ -458,7 +459,7 @@ export default function TeamMemberDetail() {
             memberName: name,
             reason: strikeReason.trim(),
             notes: strikeNotes.trim(),
-            issuedAt: new Date().toISOString(),
+            issuedAt: new Date(strikeDate + 'T12:00:00').toISOString(),
             issuedBy: 'Jude Wilson',
             acknowledged: false,
             acknowledgedAt: null,
@@ -467,6 +468,7 @@ export default function TeamMemberDetail() {
           setStrikes([...(strikes || []), newStrike]);
           setStrikeReason('');
           setStrikeNotes('');
+          setStrikeDate(new Date().toISOString().split('T')[0]);
           setShowStrikeForm(false);
         };
 
@@ -511,6 +513,15 @@ export default function TeamMemberDetail() {
               <div className="mb-3 bg-red-500/5 border border-red-500/20 rounded-2xl p-4 space-y-3">
                 <h3 className="text-sm font-bold text-red-600 dark:text-red-400">Issue New Strike</h3>
                 <div>
+                  <label className="block text-xs font-medium text-secondary mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={strikeDate}
+                    onChange={(e) => setStrikeDate(e.target.value)}
+                    className="w-full rounded-xl border border-border-default px-4 py-2.5 text-sm text-primary focus:ring-2 focus:ring-red-400 focus:border-red-400 outline-none transition"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-medium text-secondary mb-1">Reason</label>
                   <input
                     type="text"
@@ -539,7 +550,7 @@ export default function TeamMemberDetail() {
                     Issue Strike
                   </button>
                   <button
-                    onClick={() => { setShowStrikeForm(false); setStrikeReason(''); setStrikeNotes(''); }}
+                    onClick={() => { setShowStrikeForm(false); setStrikeReason(''); setStrikeNotes(''); setStrikeDate(new Date().toISOString().split('T')[0]); }}
                     className="px-4 py-2 rounded-lg border border-border-strong text-secondary text-sm font-medium hover:bg-surface transition-colors cursor-pointer"
                   >
                     Cancel
