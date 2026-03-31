@@ -702,6 +702,7 @@ function GrowthGoals() {
   const CLIENT_GOAL = 200;
   const REVENUE_GOAL = 300000;
   const [stats, setStats] = useState(null);
+  const [byMonth, setByMonth] = useState({});
 
   useEffect(() => {
     const today = getTodayInTimezone();
@@ -714,8 +715,19 @@ function GrowthGoals() {
         clients: commander?.activeRecurringCount || 0,
         revenue: ytd?.ytdRevenue || 0,
       });
+      setByMonth(ytd?.byMonth || {});
     });
   }, []);
+
+  const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const year = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
+  const monthData = [];
+  for (let i = 0; i <= currentMonth; i++) {
+    const key = `${year}-${String(i + 1).padStart(2, '0')}`;
+    monthData.push({ label: MONTH_LABELS[i], value: byMonth[key] || 0 });
+  }
+  const maxMonth = Math.max(...monthData.map(m => m.value), 1);
 
   const clients = stats?.clients || 0;
   const revenue = stats?.revenue || 0;
@@ -749,6 +761,28 @@ function GrowthGoals() {
         </div>
         <p className="text-[10px] text-muted">${((REVENUE_GOAL - revenue) / 1000).toFixed(0)}k to go</p>
       </div>
+
+      {/* Monthly Revenue Chart */}
+      {monthData.length > 0 && (
+        <div className="space-y-2 pt-2 border-t border-border-subtle">
+          <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Monthly Revenue</p>
+          <div className="flex items-end gap-1.5" style={{ height: 120 }}>
+            {monthData.map((m, i) => {
+              const pct = maxMonth > 0 ? (m.value / maxMonth) * 100 : 0;
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-[9px] font-bold text-primary">{m.value > 0 ? `$${(m.value / 1000).toFixed(0)}k` : ''}</span>
+                  <div className="w-full flex-1 flex items-end">
+                    <div className={`w-full rounded-t-md transition-all duration-500 ${i === currentMonth ? 'bg-brand' : 'bg-emerald-500/60'}`}
+                      style={{ height: `${Math.max(pct, 2)}%` }} />
+                  </div>
+                  <span className="text-[9px] text-muted font-bold">{m.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
