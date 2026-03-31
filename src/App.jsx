@@ -34,7 +34,7 @@ import LoginForm from './components/LoginForm';
 const Home = lazy(() => import('./pages/Home'));
 const HowToGuides = lazy(() => import('./pages/HowToGuides'));
 const EquipmentIdeas = lazy(() => import('./pages/EquipmentIdeas'));
-const HRPolicies = lazy(() => import('./pages/HRPolicies'));
+const TeamAgreement = lazy(() => import('./pages/TeamAgreement'));
 const Profile = lazy(() => import('./pages/Profile'));
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'));
 const TeamManagement = lazy(() => import('./pages/TeamManagement'));
@@ -68,7 +68,7 @@ const TOOLS_ITEMS = [
 ];
 
 const TEAM_ITEMS = [
-  { id: 'hr', path: '/hr', label: 'HR', icon: Users },
+  { id: 'agreement', path: '/agreement', label: 'Agreement', icon: FileText },
 ];
 
 const OWNER_ITEMS = [
@@ -232,6 +232,23 @@ function AppShell() {
   const allowedPlaybooks = ownerMode
     ? ['service', 'sales', 'strategy']
     : (permissions[userEmail]?.playbooks || ['service']);
+
+  // ── Agreement gate for team members ──
+  const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
+  const agreementConfig = useAppStore((s) => s.agreementConfig);
+  const currentAgreementVersion = agreementConfig?.version || '1.0';
+
+  const hasSignedCurrent = ownerMode || signedAgreements.some(
+    (a) => a.memberEmail === userEmail && a.version === currentAgreementVersion
+  );
+  const needsAgreement = !ownerMode && !hasSignedCurrent;
+
+  // Force navigate to agreement page if not signed (allow profile for sign out)
+  useEffect(() => {
+    if (needsAgreement && location.pathname !== '/agreement' && location.pathname !== '/profile') {
+      navigate('/agreement');
+    }
+  }, [needsAgreement, location.pathname, navigate]);
 
   // ── Presence — track open/close ──
   const presence = useAppStore((s) => s.presence);
@@ -535,6 +552,17 @@ function AppShell() {
 
       {/* ─── Main Content ─── */}
       <main className={`${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60'} transition-all duration-200`}>
+        {needsAgreement && (
+          <div className="sticky top-0 z-40 bg-amber-500 text-black px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-black text-sm">⚠️ Agreement Required</span>
+              <span className="text-sm">— You must review and sign the team agreement to continue.</span>
+            </div>
+            <button onClick={() => navigate('/agreement')} className="px-4 py-1.5 rounded-lg bg-black text-amber-500 font-bold text-sm cursor-pointer hover:bg-black/80">
+              Go to Agreement
+            </button>
+          </div>
+        )}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8">
           <Suspense fallback={
             <div className="flex items-center justify-center py-20">
@@ -547,7 +575,7 @@ function AppShell() {
                 <Route path="/guides/:id" element={<PlaybookDetail ownerMode={ownerMode} />} />
                 <Route path="/p/:slug" element={<PlaybookDetail ownerMode={ownerMode} />} />
                 <Route path="/equipment" element={<EquipmentIdeas />} />
-                <Route path="/hr" element={<HRPolicies />} />
+                <Route path="/agreement" element={<TeamAgreement />} />
                 <Route path="/mowing" element={<MowingSchedule />} />
                 <Route path="/commander" element={<Commander />} />
                 <Route path="/pipeline" element={<SalesPipeline />} />

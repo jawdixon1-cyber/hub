@@ -57,6 +57,8 @@ const STATE_KEYS = [
   { key: 'mileageLog',          supaKey: 'greenteam-mileageLog',          initial: initialMileageLog },
   { key: 'agreements',           supaKey: 'greenteam-agreements',           initial: [] },
   { key: 'strikes',              supaKey: 'greenteam-strikes',              initial: [] },
+  { key: 'signedAgreements',    supaKey: 'greenteam-signedAgreements',    initial: [] },
+  { key: 'agreementConfig',    supaKey: 'greenteam-agreementConfig',    initial: null },
   { key: 'presence',             supaKey: 'greenteam-presence',             initial: {} },
   { key: 'quotes',              supaKey: 'greenteam-quotes',              initial: initialQuotes },
   { key: 'quotingSettings',     supaKey: 'greenteam-quotingSettings',     initial: initialQuotingSettings },

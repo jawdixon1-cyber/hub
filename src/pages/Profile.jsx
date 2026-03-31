@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import {
   LogOut, Shield, ArrowRight, ChevronDown, Trash2, Gauge, Link2, Check,
   ClipboardList, ClipboardCheck, UserCog, KeyRound, Eye, EyeOff,
+  FileText, AlertTriangle, AlertCircle, ChevronRight,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { SettingsContent } from './Settings';
+import { DEFAULT_AGREEMENT_VERSION, AGREEMENT_SECTIONS as DEFAULT_SECTIONS, FINAL_AGREEMENT_TEXT as DEFAULT_FINAL_TEXT } from '../data/employmentAgreement';
+
+const AgreementSigningFlow = lazy(() => import('../components/AgreementSigningFlow'));
 
 
 const PLAYBOOK_OPTIONS = [
@@ -218,11 +222,24 @@ export default function Profile() {
   const navigate = useNavigate();
   const { currentUser, user, ownerMode, signOut } = useAuth();
   const permissions = useAppStore((s) => s.permissions);
+  const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
+  const setSignedAgreements = useAppStore((s) => s.setSignedAgreements);
+  const strikes = useAppStore((s) => s.strikes) || [];
+  const storeAgreementConfig = useAppStore((s) => s.agreementConfig);
+  const AGREEMENT_VERSION = storeAgreementConfig?.version || DEFAULT_AGREEMENT_VERSION;
 
   const handleSignOut = async () => { await signOut(); };
+  const [previewTeamView, setPreviewTeamView] = useState(false);
+  const [previewEmail, setPreviewEmail] = useState('');
+  const [showSigning, setShowSigning] = useState(false);
+  const [viewingAgreement, setViewingAgreement] = useState(null);
+
+  // Get team member list for the dropdown
+  const allPermissions = useAppStore((s) => s.permissions) || {};
+  const teamMembers = Object.entries(allPermissions).filter(([email]) => email !== user?.email?.toLowerCase());
 
   /* ── Owner view ── */
-  if (ownerMode) {
+  if (ownerMode && !previewTeamView) {
     return (
       <div className="space-y-6 max-w-lg">
         <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-6">
@@ -238,6 +255,30 @@ export default function Profile() {
             </div>
           </div>
         </div>
+
+        {/* Preview as Team Member */}
+        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Eye size={18} className="text-brand-text-strong" />
+            <h3 className="text-sm font-bold text-primary">Preview Team Member View</h3>
+          </div>
+          {teamMembers.length > 0 ? (
+            <div className="space-y-2">
+              {teamMembers.map(([email, info]) => (
+                <button key={email} onClick={() => { setPreviewEmail(email); setPreviewTeamView(true); }}
+                  className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-surface-alt hover:bg-surface-alt/80 transition-colors cursor-pointer">
+                  <span className="text-sm font-medium text-primary">{info.name || email}</span>
+                  <ChevronRight size={14} className="text-muted" />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted">No team members added yet.</p>
+          )}
+        </div>
+
+        <QBConnectionPanel />
+
         <button
           onClick={handleSignOut}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors cursor-pointer"
@@ -248,23 +289,57 @@ export default function Profile() {
     );
   }
 
+  // If owner is previewing a team member, override the email/name
+  const isPreview = ownerMode && previewTeamView;
+
   /* ── Team member view ── */
 
-  const userEmail = user?.email?.toLowerCase();
+  const userEmail = isPreview ? previewEmail : user?.email?.toLowerCase();
+  const previewName = isPreview ? (allPermissions[previewEmail]?.name || previewEmail) : null;
   const myPlaybooks = permissions[userEmail]?.playbooks || [];
   const myRole = permissions[userEmail]?.role;
 
+  const myAgreements = signedAgreements.filter((a) => a.memberEmail === userEmail);
+  const latestAgreement = myAgreements.length > 0 ? myAgreements[myAgreements.length - 1] : null;
+  const needsNewVersion = !latestAgreement || latestAgreement.version !== AGREEMENT_VERSION;
+
+  const myStrikes = strikes.filter((s) => s.memberEmail === userEmail);
+  const activeStrikes = myStrikes.filter((s) => {
+    const issued = new Date(s.issuedAt);
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    return issued >= thirtyDaysAgo;
+  });
+
+  const handleSignComplete = (signedData) => {
+    setSignedAgreements([...signedAgreements, signedData]);
+    setShowSigning(false);
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 max-w-lg">
+      {/* ── Preview Banner ── */}
+      {isPreview && (
+        <div className="flex items-center justify-between p-3 rounded-xl bg-purple-500/10 border border-purple-500/30">
+          <div className="flex items-center gap-2">
+            <Eye size={14} className="text-purple-400" />
+            <span className="text-xs font-bold text-purple-400">Previewing as {previewName}</span>
+          </div>
+          <button onClick={() => setPreviewTeamView(false)} className="text-xs font-bold text-purple-400 hover:text-purple-300 cursor-pointer">
+            Back to Owner
+          </button>
+        </div>
+      )}
+
       {/* ── Profile Header ── */}
-      <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-6">
+      <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-5">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-brand-light flex items-center justify-center text-brand-text-strong text-xl font-bold shrink-0">
-            {getInitials(currentUser)}
+          <div className="w-14 h-14 rounded-full bg-brand-light flex items-center justify-center text-brand-text-strong text-lg font-bold shrink-0">
+            {getInitials(isPreview ? previewName : currentUser)}
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-primary">{currentUser || 'Team Member'}</h1>
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            <h1 className="text-xl font-bold text-primary">{isPreview ? previewName : (currentUser || 'Team Member')}</h1>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               {myRole && (
                 <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                   {myRole}
@@ -283,16 +358,116 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* ── Change Password ── */}
-      {user?.id && <ChangePasswordSection userId={user.id} />}
+      {/* ── Strikes ── */}
+      <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={18} className="text-brand-text-strong" />
+            <h3 className="text-sm font-bold text-primary">Strikes</h3>
+          </div>
+          {activeStrikes.length > 0 && (
+            <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+              activeStrikes.length >= 3 ? 'bg-red-500/20 text-red-400' :
+              activeStrikes.length === 2 ? 'bg-amber-500/20 text-amber-400' :
+              'bg-yellow-500/20 text-yellow-400'
+            }`}>
+              {activeStrikes.length} Active
+            </span>
+          )}
+        </div>
 
-      {/* ── Sign Out ── */}
-      <button
-        onClick={handleSignOut}
-        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors cursor-pointer"
-      >
-        <LogOut size={18} /> Sign Out
-      </button>
+        {activeStrikes.length >= 3 && (
+          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 mb-3">
+            <p className="text-xs text-red-400 font-bold">3+ active strikes — termination eligible</p>
+          </div>
+        )}
+        {activeStrikes.length === 2 && (
+          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 mb-3">
+            <p className="text-xs text-amber-400 font-bold">Final warning — 2 active strikes</p>
+          </div>
+        )}
+
+        {myStrikes.length === 0 ? (
+          <p className="text-xs text-muted">No strikes on record. Keep up the great work!</p>
+        ) : (
+          <div className="space-y-2">
+            {myStrikes.slice().reverse().map((strike) => {
+              const issued = new Date(strike.issuedAt);
+              const thirtyDaysAgo = new Date();
+              thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+              const isActive = issued >= thirtyDaysAgo;
+              return (
+                <div key={strike.id} className={`p-3 rounded-lg border ${isActive ? 'border-red-500/30 bg-red-500/5' : 'border-border-subtle bg-surface-alt/30 opacity-60'}`}>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-primary">{strike.reason}</p>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isActive ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}`}>
+                      {isActive ? 'Active' : 'Expired'}
+                    </span>
+                  </div>
+                  {strike.notes && <p className="text-[11px] text-muted mt-1">{strike.notes}</p>}
+                  <p className="text-[10px] text-muted mt-1">
+                    {issued.toLocaleDateString()} — by {strike.issuedBy || 'Management'}
+                    {strike.acknowledged && ' — Acknowledged'}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Change Password (not in preview) ── */}
+      {!isPreview && user?.id && <ChangePasswordSection userId={user.id} />}
+
+      {/* ── Sign Out (not in preview) ── */}
+      {!isPreview && (
+        <button
+          onClick={handleSignOut}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors cursor-pointer"
+        >
+          <LogOut size={18} /> Sign Out
+        </button>
+      )}
+
+      {/* ── Agreement Signing Modal ── */}
+      {showSigning && (
+        <Suspense fallback={null}>
+          <AgreementSigningFlow
+            onClose={() => setShowSigning(false)}
+            onComplete={handleSignComplete}
+            memberName={currentUser || ''}
+            memberEmail={userEmail}
+          />
+        </Suspense>
+      )}
+
+      {/* ── View Signed Agreement Modal ── */}
+      {viewingAgreement && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-start justify-center overflow-y-auto p-4">
+          <div className="bg-surface rounded-2xl border border-border-subtle max-w-lg w-full my-8 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-black text-primary">SIGNED AGREEMENT</h2>
+              <button onClick={() => setViewingAgreement(null)} className="p-1.5 rounded-lg hover:bg-surface-alt cursor-pointer">
+                <span className="text-muted text-sm">Close</span>
+              </button>
+            </div>
+            <div className="space-y-2 text-xs">
+              <p><span className="text-muted font-bold">Name:</span> <span className="text-primary">{viewingAgreement.memberName}</span></p>
+              <p><span className="text-muted font-bold">Phone:</span> <span className="text-primary">{viewingAgreement.phone}</span></p>
+              <p><span className="text-muted font-bold">Start Date:</span> <span className="text-primary">{viewingAgreement.startDate}</span></p>
+              <p><span className="text-muted font-bold">Version:</span> <span className="text-primary">v{viewingAgreement.version}</span></p>
+              <p><span className="text-muted font-bold">Signed:</span> <span className="text-primary">{new Date(viewingAgreement.signedAt).toLocaleString()}</span></p>
+            </div>
+            {viewingAgreement.signatureDataUrl && (
+              <div>
+                <p className="text-[10px] font-bold text-muted uppercase mb-1">Signature</p>
+                <img src={viewingAgreement.signatureDataUrl} alt="Signature" className="rounded-lg border border-border-subtle w-full" style={{ maxHeight: 120 }} />
+              </div>
+            )}
+            <p className="text-[10px] text-muted">Printed Name: {viewingAgreement.printedName}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

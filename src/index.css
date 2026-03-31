@@ -106,6 +106,16 @@
 .leaflet-container .leaflet-control-attribution { background: rgba(10,10,10,0.7) !important; color: #666 !important; font-size: 9px !important; }
 .leaflet-container .leaflet-control-attribution a { color: #888 !important; }
 
+/* ─── Agreement content ─── */
+.agreement-content h3 { font-size: 0.8125rem; font-weight: 800; color: var(--color-primary); margin-top: 1.25rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.agreement-content h3:first-child { margin-top: 0; }
+.agreement-content ul { list-style: disc; padding-left: 1.25rem; margin: 0.5rem 0; }
+.agreement-content li { margin: 0.25rem 0; }
+.agreement-content p { margin: 0.5rem 0; }
+.agreement-content table { width: 100%; margin: 0.5rem 0; }
+.agreement-content td { padding: 0.375rem 0.75rem; border-bottom: 1px solid var(--color-border-subtle); }
+.agreement-content strong { color: var(--color-primary); }
+
 /* ─── Toggle block (details/summary) ─── */
 .tiptap details,
 .playbook-view details {
