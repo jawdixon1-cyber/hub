@@ -94,6 +94,7 @@ async function fetchRecurringJobs() {
           startAt
           completedAt
           createdAt
+          endAt
           visitSchedule {
             startDate
             endDate
@@ -266,7 +267,8 @@ export default async function handler(req, res) {
     const cancelsInRange = processedJobs.filter(j =>
       j.effectiveCanceledDate && j.effectiveCanceledDate >= rangeStart && j.effectiveCanceledDate < rangeEnd
     );
-    const activeJobs = processedJobs.filter(j => !j.isCanceled);
+    const now = new Date();
+    const activeJobs = processedJobs.filter(j => !j.isCanceled && !(j.endAt && new Date(j.endAt) < now));
 
     // ── KPIs ──
     const newLeads = leadsInRange.length;

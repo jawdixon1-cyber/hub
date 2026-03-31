@@ -154,6 +154,7 @@ async function fetchRecurringClients() {
         nodes {
           id
           jobStatus
+          endAt
           client { id firstName lastName }
           property {
             address { street1 street2 city province postalCode }
@@ -173,7 +174,10 @@ async function fetchRecurringClients() {
   const clients = [];
   const missingAddress = [];
   for (const j of allNodes) {
-    if (j.jobStatus === 'cancelled' || j.jobStatus === 'archived') continue;
+    const activeStatuses = ['upcoming', 'today', 'late', 'action_required', 'requires_invoicing'];
+    if (!activeStatuses.includes(j.jobStatus)) continue;
+    // Skip jobs whose end date has passed
+    if (j.endAt && new Date(j.endAt) < new Date()) continue;
     const cid = j.client?.id;
     if (!cid || seen.has(cid)) continue;
     seen.add(cid);

@@ -55,6 +55,8 @@ const Territory = lazy(() => import('./pages/Dominate'));
 const MowingSchedule = lazy(() => import('./pages/MowingSchedule'));
 const Finance = lazy(() => import('./pages/Finance'));
 const LaborEfficiency = lazy(() => import('./pages/LaborEfficiency'));
+const Sales = lazy(() => import('./pages/Sales'));
+const Marketing = lazy(() => import('./pages/Marketing'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -72,12 +74,9 @@ const TEAM_ITEMS = [
 ];
 
 const OWNER_ITEMS = [
-  { id: 'agreements', path: '/agreements', label: 'Agreements', icon: FileText },
-  { id: 'quoting', path: '/quoting', label: 'Quoting', icon: Calculator },
-  { id: 'commander', path: '/commander', label: 'Know Your Numbers', icon: Crosshair },
-  { id: 'territory', path: '/territory', label: 'Territory', icon: MapPinned },
+  { id: 'marketing', path: '/marketing', label: 'Marketing', icon: MapPinned },
+  { id: 'sales', path: '/sales', label: 'Sales', icon: Crosshair },
   { id: 'labor', path: '/labor', label: 'Labor', icon: TrendingUp },
-  { id: 'pipeline', path: '/pipeline', label: 'Sales Pipeline', icon: GitBranch },
   { id: 'finance', path: '/finance', label: 'Finance', icon: DollarSign },
   { id: 'settings', path: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
@@ -577,13 +576,16 @@ function AppShell() {
                 <Route path="/equipment" element={<EquipmentIdeas />} />
                 <Route path="/agreement" element={<TeamAgreement />} />
                 <Route path="/mowing" element={<MowingSchedule />} />
-                <Route path="/commander" element={<Commander />} />
-                <Route path="/pipeline" element={<SalesPipeline />} />
+                <Route path="/sales" element={<Sales />} />
+                <Route path="/marketing" element={<Marketing />} />
                 <Route path="/finance" element={<Finance />} />
-                <Route path="/territory" element={<Territory />} />
                 <Route path="/labor" element={<LaborEfficiency />} />
-                <Route path="/quoting" element={<Quoting />} />
-                <Route path="/agreements" element={<ServiceAgreement />} />
+                {/* Redirects for old routes */}
+                <Route path="/commander" element={<Navigate to="/sales" replace />} />
+                <Route path="/pipeline" element={<Navigate to="/sales" replace />} />
+                <Route path="/quoting" element={<Navigate to="/sales" replace />} />
+                <Route path="/agreements" element={<Navigate to="/sales" replace />} />
+                <Route path="/territory" element={<Navigate to="/marketing" replace />} />
                 <Route path="/team" element={<TeamManagement />} />
                 <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
                 <Route path="/profile" element={<Profile />} />
