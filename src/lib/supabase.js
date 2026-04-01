@@ -8,6 +8,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     storageKey: 'greenteam-auth',
     autoRefreshToken: true,
+    detectSessionInUrl: false,
+    storage: globalThis.localStorage,
   },
 });
 

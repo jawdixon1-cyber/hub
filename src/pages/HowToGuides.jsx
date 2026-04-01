@@ -8,29 +8,29 @@ import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { toSlug } from '../utils/slug';
 
-const ALL_CATEGORIES = ['Services', 'Equipment', 'Software', 'Executive Assistant', 'General Manager'];
+const ALL_CATEGORIES = ['Field Team', 'General Manager'];
 
 const CATEGORY_TO_TYPE = {
-  'Services': 'service',
-  'Equipment': 'equipment',
-  'Software': 'software',
-  'Executive Assistant': 'sales',
+  'Field Team': 'service',
   'General Manager': 'strategy',
   // Backward compat for existing saved guides
-  'Field Team': 'service',
+  'Services': 'service',
   'Service': 'service',
-  'Sales Team': 'sales',
-  'Sales': 'sales',
+  'Equipment': 'service',
+  'Software': 'service',
+  'Executive Assistant': 'service',
+  'Sales Team': 'service',
+  'Sales': 'service',
   'Strategy': 'strategy',
 };
 
 const TYPE_TO_CATEGORY = {
-  'field-team': 'Services',
-  'service': 'Services',
-  'equipment': 'Equipment',
-  'software': 'Software',
-  'sales': 'Executive Assistant',
-  'pme': 'Executive Assistant',
+  'field-team': 'Field Team',
+  'service': 'Field Team',
+  'equipment': 'Field Team',
+  'software': 'Field Team',
+  'sales': 'Field Team',
+  'pme': 'Field Team',
   'strategy': 'General Manager',
   'owner': 'General Manager',
   'gm-rhythm': 'General Manager',
@@ -40,21 +40,9 @@ const TYPE_TO_CATEGORY = {
 
 const ALL_TABS = [
   { key: 'field-team', label: 'Field Team', activeColor: 'text-brand-text-strong', playbookKey: 'service' },
-  { key: 'sales', label: 'Exec Assistant', activeColor: 'text-purple-700 dark:text-purple-300', playbookKey: 'sales' },
   { key: 'strategy', label: 'General Manager', activeColor: 'text-blue-700 dark:text-blue-300', playbookKey: 'strategy' },
 ];
 
-const FIELD_TEAM_SUBTABS = [
-  { key: 'service', label: 'Services' },
-  { key: 'equipment', label: 'Equipment' },
-  { key: 'software', label: 'Software' },
-];
-
-const GM_SUBTABS = [
-  { key: 'gm-rhythm', label: 'Rhythm' },
-  { key: 'gm-people', label: 'People' },
-  { key: 'gm-sales', label: 'Sales' },
-];
 
 export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
   const defaultTab = 'field-team';
@@ -77,8 +65,6 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
     const preferred = returnTab || defaultTab;
     return visibleTabs.some((t) => t.key === preferred) ? preferred : (visibleTabs[0]?.key || 'field-team');
   });
-  const [subFilter, setSubFilter] = useState('service');
-  const [gmSubFilter, setGmSubFilter] = useState('gm-rhythm');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -89,29 +75,19 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
 
   const query = search.toLowerCase().trim();
 
-  const FIELD_TEAM_TYPES = ['service', 'equipment', 'software', 'field-team'];
+  const FIELD_TEAM_TYPES = ['service', 'equipment', 'software', 'field-team', 'sales', 'pme'];
+  const GM_TYPES = ['strategy', 'owner', 'gm-rhythm', 'gm-people', 'gm-sales'];
 
   const typeMatch = (itemType) => {
-    if (filter === 'field-team') {
-      if (subFilter === 'service') return itemType === 'service' || itemType === 'field-team';
-      return itemType === subFilter;
-    }
-    if (filter === 'strategy') {
-      // Existing guides with type 'strategy' or 'owner' show in both sub-tabs
-      if (itemType === 'strategy' || itemType === 'owner') return true;
-      return itemType === gmSubFilter;
-    }
-    if (itemType === filter) return true;
-    if (filter === 'sales') return itemType === 'pme';
-    return false;
+    if (filter === 'field-team') return FIELD_TEAM_TYPES.includes(itemType);
+    if (filter === 'strategy') return GM_TYPES.includes(itemType);
+    return itemType === filter;
   };
 
   const allowedTypeMatch = (itemType) => {
     return visibleTabs.some((t) => {
       if (t.key === 'field-team') return FIELD_TEAM_TYPES.includes(itemType);
-      if (t.key === itemType) return true;
-      if (t.key === 'sales') return itemType === 'pme';
-      if (t.key === 'strategy') return itemType === 'owner' || itemType === 'gm-rhythm' || itemType === 'gm-people' || itemType === 'gm-sales';
+      if (t.key === 'strategy') return GM_TYPES.includes(itemType);
       return false;
     });
   };
@@ -207,33 +183,6 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
         </div>
       )}
 
-      {filter === 'field-team' && (
-        <div className="mb-3">
-          <select
-            value={subFilter}
-            onChange={(e) => setSubFilter(e.target.value)}
-            className="rounded-xl border border-border-default px-4 py-2.5 text-sm font-semibold text-primary bg-card focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition cursor-pointer"
-          >
-            {FIELD_TEAM_SUBTABS.map((sub) => (
-              <option key={sub.key} value={sub.key}>{sub.label}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {filter === 'strategy' && (
-        <div className="mb-3">
-          <select
-            value={gmSubFilter}
-            onChange={(e) => setGmSubFilter(e.target.value)}
-            className="rounded-xl border border-border-default px-4 py-2.5 text-sm font-semibold text-primary bg-card focus:ring-2 focus:ring-ring-brand focus:border-border-brand outline-none transition cursor-pointer"
-          >
-            {GM_SUBTABS.map((sub) => (
-              <option key={sub.key} value={sub.key}>{sub.label}</option>
-            ))}
-          </select>
-        </div>
-      )}
 
       <div className="relative mb-4">
         <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />

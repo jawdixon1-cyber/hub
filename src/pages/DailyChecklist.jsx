@@ -700,46 +700,39 @@ function HeadingWidget({ widget, onUpdate, onDelete, editing }) {
 
 function GrowthGoals() {
   const CLIENT_GOAL = 200;
-  const REVENUE_GOAL = 300000;
   const [stats, setStats] = useState(null);
-  const [byMonth, setByMonth] = useState({});
 
   useEffect(() => {
     const today = getTodayInTimezone();
     const yearStart = today.slice(0, 4) + '-01-01';
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyStr = thirtyDaysAgo.toISOString().split('T')[0];
+
     Promise.all([
       fetch(`/api/commander/summary?start=${yearStart}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/commander/summary?start=${thirtyStr}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/jobber-data?action=ytd-revenue').then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([commander, ytd]) => {
+    ]).then(([yearData, thirtyData, ytd]) => {
+      const sent = thirtyData?.kpis?.quotesSent || 0;
+      const approved = thirtyData?.kpis?.quotesApproved || 0;
       setStats({
-        clients: commander?.activeRecurringCount || 0,
+        clients: yearData?.activeRecurringCount || 0,
+        closeRate: sent > 0 ? Math.round((approved / sent) * 100) : 0,
         revenue: ytd?.ytdRevenue || 0,
       });
-      setByMonth(ytd?.byMonth || {});
     });
   }, []);
 
-  const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const year = new Date().getFullYear();
-  const currentMonth = new Date().getMonth();
-  const monthData = [];
-  for (let i = 0; i <= currentMonth; i++) {
-    const key = `${year}-${String(i + 1).padStart(2, '0')}`;
-    monthData.push({ label: MONTH_LABELS[i], value: byMonth[key] || 0 });
-  }
-  const maxMonth = Math.max(...monthData.map(m => m.value), 1);
-
   const clients = stats?.clients || 0;
-  const revenue = stats?.revenue || 0;
   const clientPct = Math.min(100, Math.round((clients / CLIENT_GOAL) * 100));
-  const revenuePct = Math.min(100, Math.round((revenue / REVENUE_GOAL) * 100));
+  const closeRate = stats?.closeRate || 0;
+  const revenue = stats?.revenue || 0;
 
   return (
-    <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-4">
-      <p className="text-sm font-black text-primary uppercase tracking-wider">Growth Goals</p>
-
-      {/* Clients */}
-      <div className="space-y-1.5">
+    <div className="space-y-3">
+      {/* Recurring Clients */}
+      <div className="bg-card rounded-2xl border border-border-subtle p-4 space-y-2">
         <div className="flex items-center justify-between text-xs">
           <span className="font-bold text-secondary">Recurring Clients</span>
           <span className="font-black text-primary">{clients} <span className="text-muted font-normal">/ {CLIENT_GOAL}</span></span>
@@ -750,39 +743,19 @@ function GrowthGoals() {
         <p className="text-[10px] text-muted">{CLIENT_GOAL - clients > 0 ? `${CLIENT_GOAL - clients} to go` : 'Goal reached!'}</p>
       </div>
 
-      {/* Revenue */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-bold text-secondary">YTD Revenue</span>
-          <span className="font-black text-primary">${(revenue / 1000).toFixed(0)}k <span className="text-muted font-normal">/ $300k</span></span>
+      {/* Close Rate + YTD Revenue side by side */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-card rounded-2xl border border-border-subtle p-4 text-center">
+          <p className="text-[9px] font-bold text-muted uppercase tracking-wider">Close Rate</p>
+          <p className={`text-2xl font-black mt-1 ${closeRate >= 50 ? 'text-emerald-500' : closeRate >= 30 ? 'text-amber-500' : closeRate > 0 ? 'text-red-500' : 'text-muted'}`}>{closeRate > 0 ? `${closeRate}%` : '--'}</p>
+          <p className="text-[10px] text-muted mt-0.5">Last 30 days</p>
         </div>
-        <div className="w-full h-3 rounded-full bg-surface-alt overflow-hidden">
-          <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${revenuePct}%` }} />
+        <div className="bg-card rounded-2xl border border-border-subtle p-4 text-center">
+          <p className="text-[9px] font-bold text-muted uppercase tracking-wider">YTD Revenue</p>
+          <p className="text-2xl font-black text-primary mt-1">{revenue > 0 ? `$${(revenue / 1000).toFixed(0)}k` : '--'}</p>
+          <p className="text-[10px] text-muted mt-0.5">{new Date().getFullYear()}</p>
         </div>
-        <p className="text-[10px] text-muted">${((REVENUE_GOAL - revenue) / 1000).toFixed(0)}k to go</p>
       </div>
-
-      {/* Monthly Revenue Chart */}
-      {monthData.length > 0 && (
-        <div className="space-y-2 pt-2 border-t border-border-subtle">
-          <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Monthly Revenue</p>
-          <div className="flex items-end gap-1.5" style={{ height: 120 }}>
-            {monthData.map((m, i) => {
-              const pct = maxMonth > 0 ? (m.value / maxMonth) * 100 : 0;
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-[9px] font-bold text-primary">{m.value > 0 ? `$${(m.value / 1000).toFixed(0)}k` : ''}</span>
-                  <div className="w-full flex-1 flex items-end">
-                    <div className={`w-full rounded-t-md transition-all duration-500 ${i === currentMonth ? 'bg-brand' : 'bg-emerald-500/60'}`}
-                      style={{ height: `${Math.max(pct, 2)}%` }} />
-                  </div>
-                  <span className="text-[9px] text-muted font-bold">{m.label}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

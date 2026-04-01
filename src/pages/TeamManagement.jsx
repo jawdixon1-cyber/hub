@@ -8,7 +8,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
-import { ONBOARDING_STEPS } from './Training';
+import { ONBOARDING_STEPS } from '../utils/onboarding';
 
 const PLAYBOOK_OPTIONS = [
   { key: 'service', label: 'Team Member', color: 'bg-emerald-100 text-emerald-700' },

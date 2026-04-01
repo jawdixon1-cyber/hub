@@ -16,17 +16,17 @@ export default async function handler(req, res) {
     const { code, error: oauthError } = req.query;
 
     if (oauthError) {
-      return res.redirect(`${appUrl}/commander?jobber=error&msg=${encodeURIComponent(oauthError)}`);
+      return res.redirect(`${appUrl}/settings?jobber=error&msg=${encodeURIComponent(oauthError)}`);
     }
 
     if (!code) {
-      return res.redirect(`${appUrl}/commander?jobber=error&msg=${encodeURIComponent('Missing authorization code')}`);
+      return res.redirect(`${appUrl}/settings?jobber=error&msg=${encodeURIComponent('Missing authorization code')}`);
     }
 
     const clientId = (process.env.JOBBER_CLIENT_ID || '').trim();
     const clientSecret = (process.env.JOBBER_CLIENT_SECRET || '').trim();
     if (!clientId || !clientSecret) {
-      return res.redirect(`${appUrl}/commander?jobber=error&msg=${encodeURIComponent('Jobber credentials not configured on server')}`);
+      return res.redirect(`${appUrl}/settings?jobber=error&msg=${encodeURIComponent('Jobber credentials not configured on server')}`);
     }
 
     const baseUrl = process.env.JOBBER_REDIRECT_URI
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
     if (!tokenRes.ok) {
       const err = await tokenRes.text();
       console.error('[Jobber OAuth] Token exchange failed:', err);
-      return res.redirect(`${appUrl}/commander?jobber=error&msg=${encodeURIComponent('Token exchange failed: ' + err)}`);
+      return res.redirect(`${appUrl}/settings?jobber=error&msg=${encodeURIComponent('Token exchange failed: ' + err)}`);
     }
 
     const tokens = await tokenRes.json();
@@ -90,9 +90,9 @@ export default async function handler(req, res) {
     process.env.JOBBER_API_TOKEN = tokens.access_token;
 
     console.log('[Jobber OAuth] Connected successfully');
-    res.redirect(`${appUrl}/commander?jobber=connected`);
+    res.redirect(`${appUrl}/settings?jobber=connected`);
   } catch (err) {
     console.error('[Jobber OAuth] Error:', err);
-    res.redirect(`${appUrl}/commander?jobber=error&msg=${encodeURIComponent(err.message || 'Unknown error')}`);
+    res.redirect(`${appUrl}/settings?jobber=error&msg=${encodeURIComponent(err.message || 'Unknown error')}`);
   }
 }

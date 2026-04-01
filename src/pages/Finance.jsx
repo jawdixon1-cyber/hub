@@ -205,7 +205,7 @@ export default function Finance() {
         </div>
         <h1 className="text-2xl font-bold text-primary mb-3">Connect QuickBooks</h1>
         <p className="text-secondary mb-8">
-          Link your QuickBooks account to see invoices, expenses, profit & loss, and more — all inside Lawn Care Hub.
+          Link your QuickBooks account to see invoices, expenses, profit & loss, and more — all inside Hub.
         </p>
         <a
           href="/api/qb-auth"

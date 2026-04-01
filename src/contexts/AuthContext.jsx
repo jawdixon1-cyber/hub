@@ -8,17 +8,12 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Set up listener FIRST so we never miss a state change
+    // Rely solely on onAuthStateChange — it fires INITIAL_SESSION on mount
+    // which handles stored session restoration + token refresh automatically.
+    // Calling getSession() separately causes a race where an expired token
+    // sets session to null before the refresh completes.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      setLoading(false);
-    });
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    }).catch(() => {
       setLoading(false);
     });
 

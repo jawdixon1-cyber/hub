@@ -1,4 +1,4 @@
-import { jobberQuery } from '../lib/jobberClient.js';
+import { jobberQuery, jobberStatus, JobberDisconnectedError } from '../lib/jobberClient.js';
 
 // ── Pay Rate Overrides (actual pay, not Jobber billing rate) ──
 const PAY_RATE_OVERRIDES = {
@@ -57,15 +57,19 @@ async function fetchVisits(start, end) {
   endPlusOne.setDate(endPlusOne.getDate() + 1);
   const endISO = endPlusOne.toISOString();
 
+  // Only fetch visit lineItems for short ranges (≤3 days) to avoid Jobber rate limits
+  const daySpan = (new Date(end) - new Date(start)) / 86400000;
+  const lineItemsField = daySpan <= 3 ? ' lineItems { nodes { totalPrice } }' : '';
+
   const allVisits = [];
   let cursor = null, hasNext = true;
   while (hasNext) {
     const after = cursor ? `, after: "${cursor}"` : '';
     let data;
     try {
-      data = await jobberQuery(`{ visits(first: 100${after}, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title completedAt startAt endAt job { id jobNumber total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
+      data = await jobberQuery(`{ visits(first: 100${after}, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title completedAt startAt endAt${lineItemsField} job { id jobNumber total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
     } catch {
-      data = await jobberQuery(`{ visits(first: 100${after}) { nodes { id title completedAt startAt endAt job { id jobNumber total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
+      data = await jobberQuery(`{ visits(first: 100${after}) { nodes { id title completedAt startAt endAt${lineItemsField} job { id jobNumber total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
     }
     allVisits.push(...(data.visits?.nodes || []));
     hasNext = data.visits?.pageInfo?.hasNextPage || false;
@@ -129,11 +133,50 @@ async function fetchVisitsForJob(jobId) {
   return allVisits.filter(v => v.completedAt);
 }
 
+// Labor data cache — serve stale data when Jobber is throttled
+const laborCache = {};
+const LABOR_CACHE_TTL = 5 * 60 * 1000;
+let laborLastError = null;
+let laborLastErrorTime = 0;
+const LABOR_ERROR_COOLDOWN = 60 * 1000;
+
 async function handleLaborData(req, res) {
   const { start, end } = req.query;
   if (!start || !end) return res.status(400).json({ error: 'start and end required' });
 
-  const [visits, timesheets, expenses] = await Promise.all([fetchVisits(start, end), fetchTimesheets(start, end), fetchExpenses(start, end)]);
+  const cacheKey = `${start}|${end}`;
+  const cached = laborCache[cacheKey];
+  if (cached && Date.now() - cached.time < LABOR_CACHE_TTL) {
+    return res.json(cached.data);
+  }
+
+  // Don't hammer Jobber if we recently got an error
+  if (laborLastError && Date.now() - laborLastErrorTime < LABOR_ERROR_COOLDOWN) {
+    if (cached) return res.json(cached.data);
+    return res.status(429).json({ error: 'Jobber is busy — try again in a minute.', code: 'THROTTLED' });
+  }
+
+  let visits, timesheets, expenses;
+  try {
+    // Sequential to avoid Jobber rate limits
+    visits = await fetchVisits(start, end);
+    timesheets = await fetchTimesheets(start, end);
+    expenses = await fetchExpenses(start, end);
+    laborLastError = null;
+  } catch (err) {
+    console.error('[Labor] Fetch error:', err.message);
+    laborLastError = err;
+    laborLastErrorTime = Date.now();
+    // Serve stale cache if available
+    if (cached) {
+      console.log('[Labor] Serving stale cache due to error');
+      return res.json(cached.data);
+    }
+    if (err.message?.includes('Throttled')) {
+      return res.status(429).json({ error: 'Jobber is busy — try again in a minute.', code: 'THROTTLED' });
+    }
+    throw err;
+  }
 
   const grouped = {};
   const cur = new Date(start + 'T00:00:00');
@@ -145,7 +188,9 @@ async function handleLaborData(req, res) {
   for (const visit of visits) {
     const dateStr = (visit.completedAt || visit.startAt || '').split('T')[0];
     if (!dateStr || !grouped[dateStr]) continue;
-    const rawTotal = parseFloat(visit.job?.total) || 0;
+    // Use visit-level line items total if available (actual visit price), fall back to job total
+    const visitLineItemsTotal = (visit.lineItems?.nodes || []).reduce((s, li) => s + (parseFloat(li.totalPrice) || 0), 0);
+    const rawTotal = visitLineItemsTotal > 0 ? visitLineItemsTotal : (parseFloat(visit.job?.total) || 0);
     const jobId = visit.job?.id || null;
     // Compute visit duration from start/end for proportional hour allocation
     let visitDuration = 0;
@@ -153,7 +198,7 @@ async function handleLaborData(req, res) {
       visitDuration = (new Date(visit.endAt) - new Date(visit.startAt)) / 3600000;
       if (visitDuration < 0) visitDuration = 0;
     }
-    const visitObj = { id: visit.id, title: visit.title, completedAt: visit.completedAt, startAt: visit.startAt, endAt: visit.endAt, visitDuration, jobId, jobNumber: visit.job?.jobNumber, jobTotal: rawTotal, client: visit.job?.client ? `${visit.job.client.firstName || ''} ${visit.job.client.lastName || ''}`.trim() : 'Unknown', labor: { totalHours: 0, totalCost: 0, byPerson: {} } };
+    const visitObj = { id: visit.id, title: visit.title, completedAt: visit.completedAt, startAt: visit.startAt, endAt: visit.endAt, visitDuration, jobId, jobNumber: visit.job?.jobNumber, jobTotal: rawTotal, visitTotal: rawTotal, client: visit.job?.client ? `${visit.job.client.firstName || ''} ${visit.job.client.lastName || ''}`.trim() : 'Unknown', labor: { totalHours: 0, totalCost: 0, byPerson: {} } };
     grouped[dateStr].visits.push(visitObj);
     allVisitRefs.push({ dateStr, visitObj, jobId, rawTotal });
   }
@@ -416,6 +461,7 @@ async function handleLaborData(req, res) {
       }
     }
   }
+  laborCache[cacheKey] = { data: grouped, time: Date.now() };
   return res.json(grouped);
 }
 
@@ -447,17 +493,60 @@ async function handleYTDRevenue(req, res) {
   return res.json({ ytdRevenue: Math.round(total * 100) / 100, jobCount: Object.keys(jobsSeen).length, byMonth });
 }
 
+// ── Live Crew Status (who's clocked in right now) ──
+
+async function handleCrewStatus(req, res) {
+  const todayISO = new Date().toISOString().split('T')[0] + 'T00:00:00Z';
+  const data = await jobberQuery(`{ timeSheetEntries(first: 100, filter: { startAt: { after: "${todayISO}" } }) { nodes { startAt endAt duration user { name { full } } job { id jobNumber title client { firstName lastName } } } } }`);
+
+  const entries = data.timeSheetEntries?.nodes || [];
+  const active = [];
+  const completed = [];
+
+  for (const t of entries) {
+    const person = t.user?.name?.full || 'Unknown';
+    const client = t.job?.client ? `${t.job.client.firstName} ${t.job.client.lastName}`.trim() : null;
+    const jobTitle = t.job?.title || null;
+
+    if (!t.endAt) {
+      // Currently clocked in
+      const startMs = new Date(t.startAt).getTime();
+      const elapsedMin = Math.round((Date.now() - startMs) / 60000);
+      active.push({ person, client, jobTitle, startAt: t.startAt, elapsedMin });
+    }
+  }
+
+  // Also summarize who worked today (unique people)
+  const people = {};
+  for (const t of entries) {
+    const person = t.user?.name?.full || 'Unknown';
+    if (!people[person]) people[person] = { totalMin: 0, jobs: 0 };
+    people[person].totalMin += Math.round((t.duration || 0) / 60);
+    if (t.job?.id) people[person].jobs++;
+  }
+
+  return res.json({ active, people });
+}
+
 // ── Router ──
 
 export default async function handler(req, res) {
   try {
     const action = req.query.action;
+    if (action === 'status') {
+      const status = await jobberStatus();
+      return res.json(status);
+    }
+    if (action === 'crew-status') return handleCrewStatus(req, res);
     if (action === 'clients') return handleClientSearch(req, res);
     if (action === 'labor') return handleLaborData(req, res);
     if (action === 'ytd-revenue') return handleYTDRevenue(req, res);
-    return res.status(400).json({ error: 'action param required: clients | labor | ytd-revenue' });
+    return res.status(400).json({ error: 'action param required: status | crew-status | clients | labor | ytd-revenue' });
   } catch (err) {
     console.error('[Jobber Data] Error:', err.message);
+    if (err instanceof JobberDisconnectedError || err.code === 'JOBBER_DISCONNECTED') {
+      return res.status(401).json({ error: err.message, code: 'JOBBER_DISCONNECTED' });
+    }
     return res.status(500).json({ error: err.message });
   }
 }

@@ -14,9 +14,7 @@ const AgreementSigningFlow = lazy(() => import('../components/AgreementSigningFl
 
 
 const PLAYBOOK_OPTIONS = [
-  { key: 'service', label: 'Team Member', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
-  { key: 'leader', label: 'Leader', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
-  { key: 'sales', label: 'Sales Team', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' },
+  { key: 'service', label: 'Field Team', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
   { key: 'strategy', label: 'General Manager', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
 ];
 

@@ -10,7 +10,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
-import { ONBOARDING_STEPS } from './Training';
+import { ONBOARDING_STEPS } from '../utils/onboarding';
 import { getActiveRepairs, genId } from '../data';
 import { getTodayInTimezone } from '../utils/timezone';
 

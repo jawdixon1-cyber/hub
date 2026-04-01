@@ -1,6 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { ClipboardCheck, Wrench, X, ChevronRight, Users } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { ClipboardCheck, Wrench, X, ChevronRight, Users, Link2, Check, Plug } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
 const TeamManagement = lazy(() => import('./TeamManagement'));
@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 /* ─── Settings Nav ─── */
 
 const SETTINGS_NAV = [
+  { id: 'connections', label: 'Connections', icon: Plug },
   { id: 'checklists', label: 'Checklists', icon: ClipboardCheck },
   { id: 'team', label: 'Team', icon: Users },
 ];
@@ -151,6 +152,98 @@ function ChecklistsSection() {
   );
 }
 
+/* ─── Connections Section ─── */
+
+function JobberConnectionPanel() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    const jobberParam = searchParams.get('jobber');
+    if (jobberParam === 'error') {
+      setErrorMsg(searchParams.get('msg') || 'Connection failed');
+      searchParams.delete('jobber');
+      searchParams.delete('msg');
+      setSearchParams(searchParams, { replace: true });
+    } else if (jobberParam === 'connected') {
+      searchParams.delete('jobber');
+      setSearchParams(searchParams, { replace: true });
+    }
+
+    fetch('/api/jobber-data?action=status')
+      .then((r) => r.json())
+      .then(setStatus)
+      .catch(() => setStatus({ connected: false }))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[#1a3a3a] flex items-center justify-center shrink-0">
+            <span className="text-white text-xs font-bold">J</span>
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-primary">Jobber</h3>
+            {loading ? (
+              <p className="text-xs text-muted">Checking connection...</p>
+            ) : status?.connected ? (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                <Check size={12} /> Connected
+              </p>
+            ) : (
+              <p className="text-xs text-muted">Not connected</p>
+            )}
+          </div>
+        </div>
+        {!loading && (
+          status?.connected ? (
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-xs font-semibold">
+                Active
+              </span>
+              <a
+                href="/api/jobber-auth"
+                onClick={(e) => { e.preventDefault(); window.location.href = '/api/jobber-auth'; }}
+                className="px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-semibold hover:bg-surface hover:text-primary transition-colors"
+              >
+                Reconnect
+              </a>
+            </div>
+          ) : (
+            <a
+              href="/api/jobber-auth"
+              onClick={(e) => { e.preventDefault(); window.location.href = '/api/jobber-auth'; }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1a3a3a] text-white text-xs font-semibold hover:bg-[#2a4a4a] transition-colors"
+            >
+              <Link2 size={14} />
+              Connect
+            </a>
+          )
+        )}
+      </div>
+      {errorMsg && (
+        <p className="mt-3 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 rounded-lg p-3 break-all">
+          Jobber Error: {errorMsg}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ConnectionsSection() {
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold text-primary">Connections</h2>
+      <p className="text-xs text-muted">Manage integrations with external services.</p>
+      <JobberConnectionPanel />
+    </div>
+  );
+}
+
 /* ─── Legacy export for Profile.jsx ─── */
 export function SettingsContent() { return null; }
 
@@ -159,7 +252,12 @@ export function SettingsContent() { return null; }
 export default function Settings() {
   const { ownerMode } = useAuth();
   const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState('checklists');
+  const [searchParams] = useSearchParams();
+  const [activeSection, setActiveSection] = useState(() => {
+    // Auto-open connections if redirected from Jobber OAuth
+    if (searchParams.get('jobber')) return 'connections';
+    return 'connections';
+  });
 
   if (!ownerMode) { navigate('/'); return null; }
 
@@ -200,6 +298,7 @@ export default function Settings() {
 
         {/* Content */}
         <div className="flex-1 min-w-0">
+        {activeSection === 'connections' && <ConnectionsSection />}
         {activeSection === 'checklists' && <ChecklistsSection />}
 
         {activeSection === 'team' && (

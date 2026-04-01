@@ -1,4 +1,4 @@
-import { jobberQuery } from '../../lib/jobberClient.js';
+import { jobberQuery, JobberDisconnectedError } from '../../lib/jobberClient.js';
 
 // ── Fetch All Quotes (paginated) ──
 
@@ -176,22 +176,40 @@ function normalizeSource(raw) {
 
 let cachedData = null;
 let cacheTime = 0;
+let lastError = null;
+let lastErrorTime = 0;
 const CACHE_TTL = 5 * 60 * 1000;
+const ERROR_COOLDOWN = 60 * 1000; // wait 60s before retrying after an error
 
 async function getJobberData() {
   if (cachedData && Date.now() - cacheTime < CACHE_TTL) {
     return cachedData;
   }
+  // If we recently got an error, don't hammer Jobber — use stale cache or wait
+  if (lastError && Date.now() - lastErrorTime < ERROR_COOLDOWN) {
+    if (cachedData) return cachedData; // serve stale data
+    throw lastError;
+  }
   console.log('[Commander] Fetching fresh data from Jobber...');
-  const [requests, quotes, recurringJobs] = await Promise.all([
-    fetchRequests(),
-    fetchAllQuotes(),
-    fetchRecurringJobs(),
-  ]);
-  cachedData = { requests, quotes, recurringJobs };
-  cacheTime = Date.now();
-  console.log(`[Commander] Got ${requests.length} requests, ${quotes.length} quotes, ${recurringJobs.length} recurring jobs`);
-  return cachedData;
+  try {
+    // Sequential to avoid hitting Jobber rate limits
+    const requests = await fetchRequests();
+    const quotes = await fetchAllQuotes();
+    const recurringJobs = await fetchRecurringJobs();
+    cachedData = { requests, quotes, recurringJobs };
+    cacheTime = Date.now();
+    lastError = null;
+    console.log(`[Commander] Got ${requests.length} requests, ${quotes.length} quotes, ${recurringJobs.length} recurring jobs`);
+    return cachedData;
+  } catch (err) {
+    lastError = err;
+    lastErrorTime = Date.now();
+    if (cachedData) {
+      console.log('[Commander] Jobber error, serving stale cache:', err.message);
+      return cachedData;
+    }
+    throw err;
+  }
 }
 
 // ── GET /api/commander/summary?start=YYYY-MM-DD&end=YYYY-MM-DD ──
@@ -247,7 +265,6 @@ export default async function handler(req, res) {
     });
 
     // ── Process Recurring Jobs ──
-    // Use createdAt (when booked) for "starts" — not the first visit date
     const processedJobs = recurringJobs.map(job => {
       const calRule = job.visitSchedule?.recurrenceSchedule?.calendarRule;
       const monthlyValue = estimateMonthlyValue(job.total, calRule);
@@ -392,6 +409,9 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('[Commander Summary] Error:', err);
+    if (err instanceof JobberDisconnectedError || err.code === 'JOBBER_DISCONNECTED') {
+      return res.status(401).json({ error: err.message, code: 'JOBBER_DISCONNECTED' });
+    }
     return res.status(500).json({ error: err.message });
   }
 }

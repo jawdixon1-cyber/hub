@@ -60,10 +60,10 @@ const Marketing = lazy(() => import('./pages/Marketing'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
-  { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
 ];
 
 const TOOLS_ITEMS = [
+  { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
@@ -74,23 +74,12 @@ const TEAM_ITEMS = [
 ];
 
 const OWNER_ITEMS = [
-  { id: 'marketing', path: '/marketing', label: 'Marketing', icon: MapPinned },
-  { id: 'sales', path: '/sales', label: 'Sales', icon: Crosshair },
-  { id: 'labor', path: '/labor', label: 'Labor', icon: TrendingUp },
+  { id: 'marketing', path: '/marketing', label: 'Get Leads', icon: MapPinned },
+  { id: 'sales', path: '/sales', label: 'Close Leads', icon: Crosshair },
+  { id: 'labor', path: '/labor', label: 'Profitability', icon: TrendingUp },
   { id: 'finance', path: '/finance', label: 'Finance', icon: DollarSign },
-  { id: 'settings', path: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
-const EXTERNAL_APPS = [
-  { name: 'Jobber', url: 'https://getjobber.com', bg: 'bg-[#1a3a3a]', icon: 'J', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://getjobber.com&size=128' },
-  { name: 'GoHighLevel', url: 'https://app.gohighlevel.com', bg: 'bg-[#1a2332]', icon: 'G', logo: '/logos/ghl-icon.jpg' },
-  { name: 'QuickBooks', url: 'https://quickbooks.intuit.com', bg: 'bg-[#2ca01c]', icon: 'QB', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://quickbooks.intuit.com&size=128' },
-  { name: 'ADP', url: 'https://my.adp.com', bg: 'bg-[#d0271d]', icon: 'ADP', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://adp.com&size=128' },
-  { name: 'Canva', url: 'https://www.canva.com', bg: 'bg-[#00c4cc]', icon: 'C', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://canva.com&size=128' },
-  { name: 'ChatGPT', url: 'https://chat.openai.com', bg: 'bg-[#10a37f]', icon: 'AI', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://chat.openai.com&size=128' },
-  { name: 'Gemini', url: 'https://gemini.google.com', bg: 'bg-white', icon: 'Ge', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://gemini.google.com&size=128' },
-  { name: 'Claude', url: 'https://claude.ai', bg: 'bg-[#d97757]', icon: 'Cl', logo: 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://claude.ai&size=128' },
-];
 
 /* ─── App (outer) — auth gate + data loading ─── */
 
@@ -298,7 +287,6 @@ function AppShell() {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [appsExpanded, setAppsExpanded] = useState(false);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((v) => {
@@ -417,36 +405,6 @@ function AppShell() {
             );
           })}
 
-          <div className="h-px bg-border-subtle my-3 mx-2" />
-          <button
-            onClick={() => setAppsExpanded((v) => !v)}
-            title={collapsed ? 'Apps' : undefined}
-            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium text-secondary hover:bg-surface-alt hover:text-primary transition-colors cursor-pointer`}
-          >
-            <LayoutGrid size={20} className="shrink-0" />
-            {!collapsed && (
-              <>
-                <span className="truncate flex-1 text-left">Apps</span>
-                <ChevronDown size={16} className={`text-muted transition-transform duration-200 ${appsExpanded ? '' : '-rotate-90'}`} />
-              </>
-            )}
-          </button>
-          {appsExpanded && EXTERNAL_APPS.map((app) => (
-            <a
-              key={app.name}
-              href={app.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={collapsed ? app.name : undefined}
-              className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'pl-6 pr-3'} py-2 rounded-xl text-sm font-medium text-secondary hover:bg-surface-alt hover:text-primary transition-colors cursor-pointer`}
-            >
-              <div className={`w-6 h-6 rounded-md ${app.bg} flex items-center justify-center shrink-0 overflow-hidden`}>
-                <img src={app.logo} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = ''; }} />
-                <span className="text-white text-[9px] font-bold" style={{ display: 'none' }}>{app.icon}</span>
-              </div>
-              {!collapsed && <span className="truncate">{app.name}</span>}
-            </a>
-          ))}
         </>
       )}
     </nav>
@@ -465,22 +423,37 @@ function AppShell() {
 
         {/* Profile */}
         <div className="border-t border-border-subtle p-2 shrink-0">
-          <button
-            onClick={() => navigate('/profile')}
-            title={sidebarCollapsed ? currentUser : undefined}
-            className={`w-full flex items-center gap-3 ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-              isProfileActive
-                ? 'bg-brand-light text-brand-text-strong'
-                : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-            }`}
-          >
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-              isProfileActive ? 'bg-brand text-on-brand' : 'bg-brand-light text-brand-text-strong'
-            }`}>
-              {getInitials(currentUser)}
-            </div>
-            {!sidebarCollapsed && <span className="truncate">{currentUser}</span>}
-          </button>
+          <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-1'}`}>
+            <button
+              onClick={() => navigate('/profile')}
+              title={sidebarCollapsed ? currentUser : undefined}
+              className={`flex-1 flex items-center gap-3 ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                isProfileActive
+                  ? 'bg-brand-light text-brand-text-strong'
+                  : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+              }`}
+            >
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                isProfileActive ? 'bg-brand text-on-brand' : 'bg-brand-light text-brand-text-strong'
+              }`}>
+                {getInitials(currentUser)}
+              </div>
+              {!sidebarCollapsed && <span className="truncate">{currentUser}</span>}
+            </button>
+            {!sidebarCollapsed && ownerMode && (
+              <button
+                onClick={() => navigate('/settings')}
+                title="Settings"
+                className={`p-2 rounded-xl transition-colors ${
+                  location.pathname === '/settings'
+                    ? 'text-brand-text-strong bg-brand-light'
+                    : 'text-muted hover:text-primary hover:bg-surface-alt cursor-pointer'
+                }`}
+              >
+                <SettingsIcon size={18} />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Collapse toggle */}
@@ -498,7 +471,7 @@ function AppShell() {
           <button onClick={() => setMobileSidebarOpen(true)} className="p-1.5 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
             <Menu size={22} className="text-secondary" />
           </button>
-          <span className="font-bold text-primary text-sm">Hey Jude's Lawn Care</span>
+          <span className="font-bold text-primary text-sm">Hub</span>
           <button
             onClick={() => navigate('/profile')}
             className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
@@ -530,21 +503,36 @@ function AppShell() {
           </div>
           {renderSidebarNav(false)}
           <div className="border-t border-border-subtle p-2 shrink-0">
-            <button
-              onClick={() => navigate('/profile')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                isProfileActive
-                  ? 'bg-brand-light text-brand-text-strong'
-                  : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-              }`}
-            >
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                isProfileActive ? 'bg-brand text-on-brand' : 'bg-brand-light text-brand-text-strong'
-              }`}>
-                {getInitials(currentUser)}
-              </div>
-              <span className="truncate">{currentUser}</span>
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => navigate('/profile')}
+                className={`flex-1 flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                  isProfileActive
+                    ? 'bg-brand-light text-brand-text-strong'
+                    : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                }`}
+              >
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                  isProfileActive ? 'bg-brand text-on-brand' : 'bg-brand-light text-brand-text-strong'
+                }`}>
+                  {getInitials(currentUser)}
+                </div>
+                <span className="truncate">{currentUser}</span>
+              </button>
+              {ownerMode && (
+                <button
+                  onClick={() => navigate('/settings')}
+                  title="Settings"
+                  className={`p-2 rounded-xl transition-colors ${
+                    location.pathname === '/settings'
+                      ? 'text-brand-text-strong bg-brand-light'
+                      : 'text-muted hover:text-primary hover:bg-surface-alt cursor-pointer'
+                  }`}
+                >
+                  <SettingsIcon size={18} />
+                </button>
+              )}
+            </div>
           </div>
         </aside>
       </div>
