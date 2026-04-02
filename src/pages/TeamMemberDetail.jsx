@@ -85,6 +85,8 @@ export default function TeamMemberDetail() {
   const equipmentRepairLog = useAppStore((s) => s.equipmentRepairLog);
   const strikes = useAppStore((s) => s.strikes);
   const setStrikes = useAppStore((s) => s.setStrikes);
+  const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
+  const agreementConfig = useAppStore((s) => s.agreementConfig);
 
   const [signatureModal, setSignatureModal] = useState(null);
   const [showStrikeForm, setShowStrikeForm] = useState(false);
@@ -443,6 +445,54 @@ export default function TeamMemberDetail() {
           </button>
         </div>
       </div>
+
+      {/* ── Team Agreement Status ── */}
+      {(() => {
+        const memberAgreements = signedAgreements.filter((a) => a.memberEmail === email);
+        const latest = memberAgreements[memberAgreements.length - 1];
+        const currentVersion = agreementConfig?.version;
+        const isCurrent = latest?.version === currentVersion;
+        const hasSigned = !!latest;
+
+        return (
+          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Team Agreement</p>
+              {hasSigned ? (
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${isCurrent ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
+                  {isCurrent ? `Signed v${latest.version}` : `Outdated v${latest.version}`}
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-red-500/10 text-red-500">Not Signed</span>
+              )}
+            </div>
+
+            {hasSigned ? (
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted">Signed by</span>
+                  <span className="text-primary font-semibold">{latest.printedName}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted">Date signed</span>
+                  <span className="text-primary font-semibold">{new Date(latest.signedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                </div>
+                {latest.signatureDataUrl && (
+                  <div className="mt-2 p-3 rounded-xl bg-surface-alt border border-border-subtle">
+                    <p className="text-[10px] text-muted mb-1">Signature</p>
+                    <img src={latest.signatureDataUrl} alt="Signature" className="h-12 object-contain" />
+                  </div>
+                )}
+                {!isCurrent && currentVersion && (
+                  <p className="text-[10px] text-amber-500 mt-2">Current version is v{currentVersion}. {name.split(' ')[0]} needs to re-sign.</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted">{name.split(' ')[0]} has not signed the team agreement yet.</p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Strikes / Discipline ── */}
       {(() => {

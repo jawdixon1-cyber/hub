@@ -641,6 +641,23 @@ export default function Quoting() {
   const [measurements, setMeasurements] = useState({ measurements: [], mapCenter: null, mapAddress: '' });
 
   const addressAutocomplete = useAddressAutocomplete();
+  const [clientSelected, setClientSelected] = useState(false);
+  const savedClients = useAppStore((s) => s.clients) || [];
+  const setSavedClients = useAppStore((s) => s.setClients);
+  const agreements = useAppStore((s) => s.agreements) || [];
+
+  // Find saved property data for current client name
+  const savedProperty = (() => {
+    if (!clientName.trim()) return null;
+    const q = clientName.toLowerCase().trim();
+    // Check clients store
+    const fromClients = savedClients.find((c) => c.name?.toLowerCase().trim() === q);
+    if (fromClients?.measurements?.length) return fromClients;
+    // Check agreements
+    const fromAgreement = agreements.find((a) => a.clientName?.toLowerCase().trim() === q);
+    if (fromAgreement?.measurements?.length) return { measurements: fromAgreement.measurements, mapCenter: fromAgreement.mapCenter };
+    return null;
+  })();
 
   const toggleService = (id) => {
     setSelectedServices((prev) => {
@@ -719,6 +736,7 @@ export default function Quoting() {
   const startNewQuote = () => {
     setQuickMode(false);
     setClientName('');
+    setClientSelected(false);
     setClientAddress('');
     setClientLatLng(null);
     setSelectedServices(new Set());
@@ -771,6 +789,29 @@ export default function Quoting() {
       clientLatLng,
     };
     setQuotes([newQuote, ...quotes]);
+
+    // Save property + pricing data to clients store
+    const clientKey = clientName.trim().toLowerCase();
+    const clientPricing = {
+      weeklyPrice: lawnCalc.weekly || 0,
+      eowPrice: lawnCalc.biweekly || 0,
+      quotedAt: new Date().toISOString(),
+    };
+    const clientData = {
+      ...(measurements.measurements.length > 0 ? { measurements: measurements.measurements, mapCenter: measurements.mapCenter || clientLatLng } : {}),
+      address: clientAddress,
+      ...clientPricing,
+    };
+    const existing = savedClients.find((c) => c.name?.toLowerCase().trim() === clientKey);
+    if (existing) {
+      setSavedClients(savedClients.map((c) => c.name?.toLowerCase().trim() === clientKey
+        ? { ...c, ...clientData }
+        : c
+      ));
+    } else {
+      setSavedClients([...savedClients, { id: genId(), name: clientName.trim(), ...clientData }]);
+    }
+
     setStep('list');
   };
 
@@ -944,7 +985,80 @@ export default function Quoting() {
         </div>
 
         <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-5">
-          <InputField label="Client Name" value={clientName} onChange={setClientName} placeholder="Enter client name..." />
+          {/* Client name search */}
+          <div className="relative">
+            <label className="block text-xs font-medium text-secondary mb-1">Client Name</label>
+            <input
+              type="text"
+              value={clientName}
+              onChange={(e) => { setClientName(e.target.value); setClientSelected(false); }}
+              placeholder="Start typing a name..."
+              className="w-full rounded-lg border border-border-strong bg-card px-3 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand placeholder:text-placeholder-muted"
+            />
+            {/* Search results dropdown */}
+            {clientName.trim().length >= 2 && !clientSelected && (() => {
+              const q = clientName.toLowerCase().trim();
+              // Search saved clients, agreements, and Jobber clients
+              const matches = [];
+              const seen = new Set();
+              // From saved clients store
+              for (const c of savedClients) {
+                if (c.name?.toLowerCase().includes(q) && !seen.has(c.name.toLowerCase())) {
+                  seen.add(c.name.toLowerCase());
+                  matches.push({ name: c.name, address: c.address || '', hasMap: !!(c.measurements?.length), source: 'saved', data: c });
+                }
+              }
+              // From agreements
+              for (const a of agreements) {
+                const n = a.clientName?.toLowerCase();
+                if (n?.includes(q) && !seen.has(n)) {
+                  seen.add(n);
+                  matches.push({ name: a.clientName, address: a.clientAddress || '', hasMap: !!(a.measurements?.length), source: 'contract', data: a });
+                }
+              }
+              // From saved quotes
+              for (const qo of quotes) {
+                const n = qo.clientName?.toLowerCase();
+                if (n?.includes(q) && !seen.has(n)) {
+                  seen.add(n);
+                  matches.push({ name: qo.clientName, address: qo.clientAddress || qo.mapAddress || '', hasMap: !!(qo.measurements?.length), source: 'quote', data: qo });
+                }
+              }
+              if (matches.length === 0) return null;
+              return (
+                <div className="absolute z-50 mt-1 w-full bg-card border border-border-strong rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                  {matches.map((m, i) => (
+                    <button key={i} onClick={() => {
+                      setClientName(m.name);
+                      setClientSelected(true);
+                      if (m.address) setClientAddress(m.address);
+                      const center = m.data.mapCenter || m.data.clientLatLng || null;
+                      if (center) setClientLatLng(center);
+                      // Always set map center so map zooms in, and load measurements if available
+                      setMeasurements({
+                        measurements: m.hasMap ? (m.data.measurements || []) : [],
+                        mapCenter: center,
+                        mapAddress: m.address || '',
+                      });
+                    }}
+                      className="w-full text-left px-4 py-3 hover:bg-surface-alt transition-colors cursor-pointer border-b border-border-subtle/50 last:border-0"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-bold text-primary">{m.name}</p>
+                          {m.address && <p className="text-[10px] text-muted truncate">{m.address}</p>}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {m.hasMap && <span className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">Mapped</span>}
+                          <span className="text-[9px] text-muted">{m.source}</span>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
 
           <div className="relative">
             <label className="block text-xs font-medium text-secondary mb-1">Property Address</label>
@@ -998,19 +1112,47 @@ export default function Quoting() {
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            if (clientLatLng) {
-              setMeasurements((prev) => ({ ...prev, mapCenter: clientLatLng, mapAddress: clientAddress }));
-            }
-            setStep('measurements');
-          }}
-          disabled={!clientName.trim()}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Next: Measure Property
-          <ArrowRight size={16} />
-        </button>
+        {/* Saved property indicator */}
+        {savedProperty && (
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 flex items-center gap-3">
+            <CheckCircle size={20} className="text-emerald-500 shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-emerald-500">Property already mapped</p>
+              <p className="text-xs text-muted">{savedProperty.measurements?.length} areas saved — you can skip to services</p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-3">
+          {savedProperty && (
+            <button
+              onClick={() => {
+                setMeasurements({ measurements: savedProperty.measurements, mapCenter: savedProperty.mapCenter, mapAddress: clientAddress });
+                if (savedProperty.mapCenter) setClientLatLng(savedProperty.mapCenter);
+                setStep('services');
+              }}
+              disabled={!clientName.trim()}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-brand text-on-brand font-semibold hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Skip to Services <ArrowRight size={16} />
+            </button>
+          )}
+          <button
+            onClick={() => {
+              if (clientLatLng) {
+                setMeasurements((prev) => ({ ...prev, mapCenter: clientLatLng, mapAddress: clientAddress }));
+              }
+              if (savedProperty) {
+                setMeasurements({ measurements: savedProperty.measurements, mapCenter: savedProperty.mapCenter || clientLatLng, mapAddress: clientAddress });
+              }
+              setStep('measurements');
+            }}
+            disabled={!clientName.trim()}
+            className={`${savedProperty ? '' : 'flex-1'} inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl ${savedProperty ? 'border border-border-subtle text-secondary hover:bg-surface-alt' : 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:opacity-90'} font-semibold transition-opacity cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+          >
+            {savedProperty ? 'Re-map Property' : 'Next: Measure Property'} <ArrowRight size={16} />
+          </button>
+        </div>
       </div>
     );
   }
@@ -1040,6 +1182,7 @@ export default function Quoting() {
           <div style={{ height: '50vh' }}>
             <Suspense fallback={<div className="w-full h-full flex items-center justify-center text-muted">Loading map...</div>}>
               <MapView
+                key={measurements.mapCenter ? `${measurements.mapCenter.lat}-${measurements.mapCenter.lng}` : 'default'}
                 center={measurements.mapCenter ? [measurements.mapCenter.lat, measurements.mapCenter.lng] : null}
                 onMeasurementsChange={(updater) => {
                   setMeasurements((prev) => {

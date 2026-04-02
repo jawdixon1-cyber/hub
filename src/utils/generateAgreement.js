@@ -5,13 +5,12 @@
  *
  * @param {Object}        opts
  * @param {Object}        opts.client   - { name, phone, email, address, cityStateZip }
- * @param {Array<Object>} opts.services - enabled services, each { name, frequency, season, bullets: string[], price, priceLabel, anchorPrice, visitsPerYear, calcType }
+ * @param {Array<Object>} opts.services - enabled services, each { name, frequency, season, bullets: string[], price, priceLabel, visitsPerYear, calcType }
  * @param {Object|null}   opts.plan     - { name, monthlyPrice, description, extras: string[] } or null
  * @param {Object}        opts.term     - { startDate, endDate, months }
- * @param {number}        opts.annualSavings - total annual savings vs individual pricing
  * @returns {string} Complete HTML document string
  */
-export function generateAgreementHTML({ client, services, plan, plans, term, annualSavings = 0 }) {
+export function generateAgreementHTML({ client, services, plan, plans, term, weeksRemaining, hedgeMonths, isEow }) {
   // ── Helper: format price ─────────────────────────────────────────
   const fmtPrice = (n) => {
     if (n == null) return '0.00';
@@ -23,20 +22,19 @@ export function generateAgreementHTML({ client, services, plan, plans, term, ann
     .map(
       (svc) => {
         const isIncluded = svc.calcType === 'included' || svc.priceLabel === 'Included';
-        const hasAnchor = !isIncluded && svc.anchorPrice != null && svc.anchorPrice > svc.price;
 
         // Build the pricing display
         let pricingHTML = '';
         if (isIncluded) {
           pricingHTML = `<div style="text-align:right;margin-top:10px;font-size:12px;font-weight:800;color:#B0FF03;">Included</div>`;
-        } else if (hasAnchor) {
+        } else if (svc.priceLabel === '/visit' && svc.visitsPerYear > 0) {
+          const annual = svc.price * svc.visitsPerYear;
           pricingHTML = `
     <div style="text-align:right;margin-top:10px;">
-      <div style="font-size:10px;color:rgba(255,255,255,.4);text-decoration:line-through;font-weight:600;">Individual rate: $${escapeHTML(fmtPrice(svc.anchorPrice))}${escapeHTML(svc.priceLabel || '')}</div>
-      <div style="font-size:12px;font-weight:800;color:#B0FF03;">Your contract rate: $${escapeHTML(fmtPrice(svc.price))}${escapeHTML(svc.priceLabel || '')}</div>
+      <div style="font-size:12px;font-weight:800;color:#B0FF03;">$${escapeHTML(fmtPrice(svc.price))}/visit &times; ${svc.visitsPerYear} visits = $${escapeHTML(fmtPrice(annual))}/yr</div>
     </div>`;
         } else {
-          pricingHTML = `<div style="text-align:right;margin-top:10px;font-size:12px;font-weight:800;color:#B0FF03;">${isIncluded ? 'Included' : `$${escapeHTML(fmtPrice(svc.price))}${escapeHTML(svc.priceLabel || '')}`}</div>`;
+          pricingHTML = `<div style="text-align:right;margin-top:10px;font-size:12px;font-weight:800;color:#B0FF03;">$${escapeHTML(fmtPrice(svc.price))}</div>`;
         }
 
         return `
@@ -54,13 +52,6 @@ export function generateAgreementHTML({ client, services, plan, plans, term, ann
     )
     .join('\n');
 
-  // ── Annual savings callout ───────────────────────────────────────
-  const savingsCallout = annualSavings > 0 ? `
-<div class="card-no-break" style="background:rgba(34,197,94,.08);border:2px solid rgba(34,197,94,.35);border-radius:12px;padding:20px;text-align:center;margin:20px 0;">
-  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,.45);margin-bottom:6px;">Annual Savings With Your Contract</div>
-  <div style="font-size:28px;font-weight:900;color:#4ade80;">$${escapeHTML(fmtPrice(annualSavings))}</div>
-  <div style="font-size:10px;color:rgba(255,255,255,.35);margin-top:4px;font-weight:600;">compared to individual service pricing</div>
-</div>` : '';
 
   // ── Plan section — show all tiers ───────────────────────────────────
   const allPlans = plans || (plan ? [plan] : []);
@@ -441,7 +432,7 @@ ${allPlans.map((p) => {
 
 <!-- AGREEMENT TERM -->
 <h2>Agreement Term</h2>
-<p>This agreement begins <strong>${escapeHTML(term.startDate)}</strong> and continues for a period of <strong>${monthsLabel}</strong>, ending <strong>${escapeHTML(term.endDate)}</strong>. Services will automatically renew for an additional 12-month term unless either party provides written notice at least 30 days prior to the renewal date.</p>
+<p>This agreement begins <strong>${escapeHTML(term.startDate)}</strong> and continues for a period of <strong>${monthsLabel}</strong>, ending <strong>${escapeHTML(term.endDate)}</strong>.</p>
 
 <!-- WHAT'S INCLUDED -->
 <h2>What's Included</h2>
@@ -450,7 +441,6 @@ ${allPlans.map((p) => {
   <li>All labor, equipment, and materials are provided by Hey Jude's Lawn Care — fully covered under this agreement</li>
   <li>Day-before service reminders and on-the-way texts</li>
   <li>Clean-up after every service (blowing walkways, driveways, etc.)</li>
-  <li>Each service is scheduled during its optimal season — mowing Mar–Oct, leaf maintenance Nov–Feb, hedge trimming Apr/Jul/Oct, aeration &amp; overseeding in Fall or Spring, and mulch in Spring</li>
   <li>Satisfaction guarantee — not happy with a visit? Let us know within 48 hours and we'll come back and make it right at no additional cost</li>
 </ul>
 
@@ -462,8 +452,6 @@ ${allPlans.map((p) => {
 <div style="display:flex;flex-direction:column;gap:16px;margin:16px 0;">
 ${serviceCards}
 </div>
-
-${savingsCallout}
 
 ${planSection}
 
@@ -478,7 +466,7 @@ ${planSection}
   <li><strong>Billing:</strong> Client will be billed on the 1st of each month via autopay.</li>
   <li><strong>Payment method:</strong> Credit card or ACH on file. Your card is charged automatically each month, just like a subscription. No invoices to remember, no manual payments.</li>
   <li><strong>Late payments:</strong> Payments not received within 7 days of the billing date may result in a temporary pause of services until the balance is resolved.</li>
-  <li><strong>Price lock:</strong> Pricing is locked for the 12-month term. Any changes will be discussed and agreed upon in writing before renewal.</li>
+  <li><strong>Price lock:</strong> Pricing is locked until the term is complete. Any changes will be discussed and agreed upon in writing before renewal.</li>
 </ul>
 <div class="feature-strip">
   <div class="feature-pill"><span>&#10003;</span> Licensed &amp; Insured</div>
@@ -491,9 +479,9 @@ ${planSection}
 <div class="card-no-break">
 <h2>Scheduling &amp; Service Visits</h2>
 <ul>
-  <li>Services are performed <strong>weekly, year-round</strong>, for predictable service and consistent curb appeal.</li>
+  <li>Services are performed <strong>${isEow ? 'every other week' : 'weekly'}, year-round</strong> (${weeksRemaining || 52} visits this contract period), for predictable service and consistent curb appeal.</li>
   <li>If weather or conditions prevent service, we will notify you of your updated service date.</li>
-  <li>Seasonal services (aeration, leaf cleanup, mulch) are scheduled during their optimal windows and coordinated with you in advance.</li>
+
   <li>You will receive a reminder the day before your service and an on-the-way text when our crew is headed to your property.</li>
   <li>All schedule changes are communicated via text or phone.</li>
 </ul>
@@ -504,14 +492,13 @@ ${planSection}
 <h2>Cancellation &amp; Early Termination</h2>
 <ul>
   <li><strong>Cancellation with notice:</strong> Either party may cancel by providing <strong>30 days written notice</strong> (email or text).</li>
-  <li><strong>Early termination:</strong> If Client cancels before the 12-month term is complete, any seasonal services already performed but not yet fully paid off through monthly payments (e.g., mulch installation, aeration &amp; overseeding) will be billed in full at their retail price. An additional early termination fee of $200 will also apply. That said, our goal is to make sure you never want to cancel — every visit is backed by our satisfaction guarantee, and if something isn't right, we'll come back and fix it at no extra cost.</li>
+  <li><strong>Early termination:</strong> If Client cancels before the term is complete, any seasonal services already performed but not yet fully paid off through monthly payments (e.g., mulch installation, aeration &amp; overseeding) will be billed in full at their retail price. An additional early termination fee of $200 will also apply. That said, our goal is to make sure you never want to cancel — every visit is backed by our satisfaction guarantee, and if something isn't right, we'll come back and fix it at no extra cost.</li>
   <li><strong>Cancel free if we don't show:</strong> If Hey Jude's Lawn Care fails to perform services as agreed, Client may cancel without penalty after written notice and a 14-day cure period.</li>
   <li><strong>Refunds:</strong> No refunds for services already performed. If a seasonal service has not yet been performed, that portion will be credited or refunded.</li>
 </ul>
 </div>
 
 <!-- CLIENT RESPONSIBILITIES -->
-<div class="card-no-break">
 <h2>Client Responsibilities</h2>
 <ul>
   <li>Ensure service areas are accessible on scheduled days (gates unlocked or unlockable from outside, vehicles moved away from grass, pets secured)</li>
@@ -519,10 +506,9 @@ ${planSection}
   <li>Maintain a valid payment method on file for the duration of this agreement</li>
   <li>Notify us of any changes to property access, contact info, or special requests</li>
 </ul>
-</div>
 
-<!-- SATISFACTION + LIABILITY + FOOTER grouped together -->
-<div class="card-no-break">
+<!-- SATISFACTION + LIABILITY + FOOTER -->
+<div>
 <h2>Satisfaction Guarantee</h2>
 <p>Not happy with a service visit? Let us know within 48 hours and we'll come back and make it right at no additional cost. We stand behind every job.</p>
 

@@ -49,6 +49,46 @@ async function handleClientSearch(req, res) {
   return res.json(results);
 }
 
+// ── All Clients (cached) ──
+
+let allClientsCache = null;
+let allClientsCacheTime = 0;
+const ALL_CLIENTS_TTL = 10 * 60 * 1000; // 10 min
+
+async function handleAllClients(req, res) {
+  if (allClientsCache && Date.now() - allClientsCacheTime < ALL_CLIENTS_TTL) {
+    return res.json(allClientsCache);
+  }
+
+  const all = [];
+  let cursor = null, hasNext = true;
+  while (hasNext) {
+    const after = cursor ? `, after: "${cursor}"` : '';
+    const data = await jobberQuery(`{ clients(first: 100${after}) { nodes { id firstName lastName companyName phones { number } emails { address } billingAddress { street1 street2 city province postalCode } tags { label } isLead } pageInfo { hasNextPage endCursor } } }`);
+    all.push(...(data.clients?.nodes || []));
+    hasNext = data.clients?.pageInfo?.hasNextPage || false;
+    cursor = data.clients?.pageInfo?.endCursor || null;
+    if (all.length > 1000) break;
+  }
+
+  const results = all.map(c => {
+    const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.companyName || 'Unknown';
+    const { address, city, state, zip } = formatAddress(c.billingAddress);
+    return {
+      id: c.id, name,
+      phone: c.phones?.[0]?.number || null,
+      email: c.emails?.[0]?.address || null,
+      address, city, state, zip,
+      isLead: c.isLead,
+      tags: (c.tags || []).map(t => t.label),
+    };
+  });
+
+  allClientsCache = results;
+  allClientsCacheTime = Date.now();
+  return res.json(results);
+}
+
 // ── Labor Data (visits + timesheets) ──
 
 async function fetchVisits(start, end) {
@@ -57,20 +97,14 @@ async function fetchVisits(start, end) {
   endPlusOne.setDate(endPlusOne.getDate() + 1);
   const endISO = endPlusOne.toISOString();
 
-  // Only fetch visit lineItems for short ranges (≤3 days) to avoid Jobber rate limits
-  const daySpan = (new Date(end) - new Date(start)) / 86400000;
-  const lineItemsField = daySpan <= 3 ? ' lineItems { nodes { totalPrice } }' : '';
+  // Never fetch lineItems — it triggers Jobber throttling
+  const lineItemsField = '';
 
   const allVisits = [];
   let cursor = null, hasNext = true;
   while (hasNext) {
     const after = cursor ? `, after: "${cursor}"` : '';
-    let data;
-    try {
-      data = await jobberQuery(`{ visits(first: 100${after}, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title completedAt startAt endAt${lineItemsField} job { id jobNumber total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
-    } catch {
-      data = await jobberQuery(`{ visits(first: 100${after}) { nodes { id title completedAt startAt endAt${lineItemsField} job { id jobNumber total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
-    }
+    const data = await jobberQuery(`{ visits(first: 100${after}, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title completedAt startAt endAt${lineItemsField} job { id jobNumber total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
     allVisits.push(...(data.visits?.nodes || []));
     hasNext = data.visits?.pageInfo?.hasNextPage || false;
     cursor = data.visits?.pageInfo?.endCursor || null;
@@ -133,12 +167,9 @@ async function fetchVisitsForJob(jobId) {
   return allVisits.filter(v => v.completedAt);
 }
 
-// Labor data cache — serve stale data when Jobber is throttled
+// Labor data cache
 const laborCache = {};
 const LABOR_CACHE_TTL = 5 * 60 * 1000;
-let laborLastError = null;
-let laborLastErrorTime = 0;
-const LABOR_ERROR_COOLDOWN = 60 * 1000;
 
 async function handleLaborData(req, res) {
   const { start, end } = req.query;
@@ -150,32 +181,24 @@ async function handleLaborData(req, res) {
     return res.json(cached.data);
   }
 
-  // Don't hammer Jobber if we recently got an error
-  if (laborLastError && Date.now() - laborLastErrorTime < LABOR_ERROR_COOLDOWN) {
-    if (cached) return res.json(cached.data);
-    return res.status(429).json({ error: 'Jobber is busy — try again in a minute.', code: 'THROTTLED' });
-  }
-
   let visits, timesheets, expenses;
   try {
-    // Sequential to avoid Jobber rate limits
     visits = await fetchVisits(start, end);
     timesheets = await fetchTimesheets(start, end);
     expenses = await fetchExpenses(start, end);
-    laborLastError = null;
   } catch (err) {
     console.error('[Labor] Fetch error:', err.message);
-    laborLastError = err;
-    laborLastErrorTime = Date.now();
-    // Serve stale cache if available
     if (cached) {
       console.log('[Labor] Serving stale cache due to error');
       return res.json(cached.data);
     }
     if (err.message?.includes('Throttled')) {
-      return res.status(429).json({ error: 'Jobber is busy — try again in a minute.', code: 'THROTTLED' });
+      return res.status(429).json({ error: 'Jobber needs a moment — tap refresh.', code: 'THROTTLED' });
     }
-    throw err;
+    if (err.code === 'JOBBER_DISCONNECTED') {
+      return res.status(401).json({ error: err.message, code: 'JOBBER_DISCONNECTED' });
+    }
+    return res.status(500).json({ error: err.message });
   }
 
   const grouped = {};
@@ -286,33 +309,10 @@ async function handleLaborData(req, res) {
     }
   }
 
-  // Jobs from timesheets only (no visits in range) — need to fetch from Jobber
+  // Jobs from timesheets only (no visits in range) — use placeholder instead of fetching
   const timesheetOnlyJobIds = Object.keys(visitsByJob).filter(id => visitsByJob[id].length === 0);
-  const BATCH_SIZE = 2;
-  for (let i = 0; i < timesheetOnlyJobIds.length; i += BATCH_SIZE) {
-    const batch = timesheetOnlyJobIds.slice(i, i + BATCH_SIZE);
-    await Promise.all(batch.map(async (jobId) => {
-      try {
-        const data = await jobberQuery(`{ job(id: "${jobId}") { total jobNumber title client { firstName lastName } visits(first: 100) { nodes { id completedAt } } } }`);
-        const job = data.job || {};
-        const completed = (job.visits?.nodes || []).filter(v => v.completedAt);
-        const visitDates = completed.map(v => v.completedAt.split('T')[0]).sort();
-        const clientName = job.client ? `${job.client.firstName || ''} ${job.client.lastName || ''}`.trim() : 'Unknown';
-        jobVisitData[jobId] = {
-          visitCount: completed.length,
-          allVisitDates: visitDates,
-          jobTotal: parseFloat(job.total) || 0,
-          clientName,
-          title: job.title || '',
-          jobNumber: job.jobNumber || null,
-        };
-      } catch (err) {
-        console.error(`[Labor] Failed to fetch job ${jobId}:`, err.message);
-        // Fallback: treat as multi-visit with unknown details
-        jobVisitData[jobId] = { visitCount: 2, allVisitDates: [], jobTotal: 0, clientName: 'Unknown', title: '', jobNumber: null };
-      }
-    }));
-    if (i + BATCH_SIZE < timesheetOnlyJobIds.length) await new Promise(r => setTimeout(r, 300));
+  for (const jobId of timesheetOnlyJobIds) {
+    jobVisitData[jobId] = { visitCount: 1, allVisitDates: [], jobTotal: 0, clientName: 'Unknown', title: 'Timesheet-only', jobNumber: null };
   }
 
   // ── Step 2: For multi-visit jobs, find the widest date range needed ──
@@ -325,15 +325,9 @@ async function handleLaborData(req, res) {
     }
   }
 
-  // ── Step 3: Fetch full-range timesheets & expenses in ONE call if range expanded ──
+  // Use existing timesheets/expenses — no additional fetches
   let fullTimesheets = timesheets;
   let fullExpenses = expenses;
-  if (wideStart < start || wideEnd > end) {
-    [fullTimesheets, fullExpenses] = await Promise.all([
-      fetchTimesheets(wideStart, wideEnd),
-      fetchExpenses(wideStart, wideEnd),
-    ]);
-  }
 
   // Index full timesheets and expenses by jobId
   const fullTsByJob = {};
@@ -396,9 +390,16 @@ async function handleLaborData(req, res) {
     const totalJobHours = Object.values(hoursByDate).reduce((s, h) => s + h, 0);
 
     // Create a visit entry for each in-range date that has hours
+    // If job has multiple work days, it's likely recurring — each day gets full jobTotal
+    // If only 1 work day, it's a one-off — gets full jobTotal too
+    const workDays = Object.keys(hoursByDate).length;
+    const isRecurring = workDays > 1; // multiple days = recurring visits, each gets full price
+
     for (const [dateStr, dayHours] of Object.entries(hoursByDate)) {
       if (!grouped[dateStr]) continue;
       const proportion = totalJobHours > 0 ? dayHours / totalJobHours : 0;
+      const visitRevenue = isRecurring ? jobTotal : jobTotal * proportion;
+      const visitExpenses = isRecurring ? totalJobExpenses / workDays : totalJobExpenses * proportion;
 
       grouped[dateStr].visits.push({
         id: `${jobId}-${dateStr}`,
@@ -407,19 +408,19 @@ async function handleLaborData(req, res) {
         jobId,
         jobNumber,
         client: clientName,
-        jobTotal: jobTotal * proportion,
+        jobTotal: visitRevenue,
         rawJobTotal: jobTotal,
         totalJobHours,
         totalJobExpenses,
         actualDailyHours: dayHours,
-        jobExpenses: totalJobExpenses * proportion,
+        jobExpenses: visitExpenses,
         labor: {
           totalHours: dayHours,
           totalCost: costByDate[dateStr] || 0,
           byPerson: personByDate[dateStr] || {},
         },
       });
-      grouped[dateStr].revenue += jobTotal * proportion;
+      grouped[dateStr].revenue += visitRevenue;
     }
   }
 
@@ -539,6 +540,7 @@ export default async function handler(req, res) {
     }
     if (action === 'crew-status') return handleCrewStatus(req, res);
     if (action === 'clients') return handleClientSearch(req, res);
+    if (action === 'all-clients') return handleAllClients(req, res);
     if (action === 'labor') return handleLaborData(req, res);
     if (action === 'ytd-revenue') return handleYTDRevenue(req, res);
     return res.status(400).json({ error: 'action param required: status | crew-status | clients | labor | ytd-revenue' });

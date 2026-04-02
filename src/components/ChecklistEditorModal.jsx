@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Truck } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Truck, Calendar } from 'lucide-react';
 import { genId } from '../data';
+
+const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /* ─── Tap-to-edit text ─── */
 
@@ -54,9 +56,17 @@ export function ChecklistSection({ items, setItems }) {
     indent: i.indent || 0, done: i.done || false, links: i.links || [],
   }));
 
+  const [showDays, setShowDays] = useState(null); // item id showing day picker
+
   const update = (id, text) => setItems(all.map((i) => (i.id === id ? { ...i, text } : i)));
   const remove = (id) => setItems(all.filter((i) => i.id !== id));
   const toggleFieldWork = (id) => setItems(all.map((i) => (i.id === id ? { ...i, fieldWorkOnly: !i.fieldWorkOnly } : i)));
+  const toggleDay = (id, day) => setItems(all.map((i) => {
+    if (i.id !== id) return i;
+    const days = i.days || [];
+    const next = days.includes(day) ? days.filter((d) => d !== day) : [...days, day];
+    return { ...i, days: next.length === 7 || next.length === 0 ? undefined : next };
+  }));
 
   // Drag (items only, not headers)
   const onDragStart = (e, idx) => { setDragFrom(idx); e.dataTransfer.effectAllowed = 'move'; };
@@ -129,26 +139,45 @@ export function ChecklistSection({ items, setItems }) {
               {g.items.map((item) => {
                 const fi = flat(item.id);
                 return (
-                  <div
-                    key={item.id}
-                    data-drag-index={fi}
-                    draggable
-                    onDragStart={(e) => onDragStart(e, fi)}
-                    onDragEnd={onDragEnd}
-                    onDragOver={(e) => onDragOver(e, fi)}
-                    className={`group flex items-center gap-2 px-4 py-2.5 border-t border-border-subtle/40 ${
-                      dragFrom === fi ? 'opacity-20' : ''
-                    } ${dragOver === fi && dragFrom != null && dragFrom !== fi ? 'border-t-brand border-t-2' : ''}`}
-                  >
-                    <GripVertical size={12} className="text-muted/20 group-hover:text-muted/50 cursor-grab active:cursor-grabbing shrink-0" />
-                    <EditableText
-                      value={item.text}
-                      onChange={(t) => update(item.id, t)}
-                      className="flex-1 text-sm text-primary cursor-text min-w-0"
-                      inputClassName="flex-1 w-full bg-transparent outline-none text-sm text-primary"
-                    />
-                    <button onClick={() => toggleFieldWork(item.id)} className={`p-1 cursor-pointer shrink-0 transition-colors ${item.fieldWorkOnly ? 'text-brand-text' : 'text-transparent group-hover:text-muted/30 hover:!text-brand-text'}`} title="Field work only"><Truck size={12} /></button>
-                    <button onClick={() => remove(item.id)} className="p-1 text-transparent group-hover:text-muted/40 hover:!text-red-500 cursor-pointer shrink-0"><Trash2 size={12} /></button>
+                  <div key={item.id}>
+                    <div
+                      data-drag-index={fi}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, fi)}
+                      onDragEnd={onDragEnd}
+                      onDragOver={(e) => onDragOver(e, fi)}
+                      className={`group flex items-center gap-2 px-4 py-2.5 border-t border-border-subtle/40 ${
+                        dragFrom === fi ? 'opacity-20' : ''
+                      } ${dragOver === fi && dragFrom != null && dragFrom !== fi ? 'border-t-brand border-t-2' : ''}`}
+                    >
+                      <GripVertical size={12} className="text-muted/20 group-hover:text-muted/50 cursor-grab active:cursor-grabbing shrink-0" />
+                      <EditableText
+                        value={item.text}
+                        onChange={(t) => update(item.id, t)}
+                        className="flex-1 text-sm text-primary cursor-text min-w-0"
+                        inputClassName="flex-1 w-full bg-transparent outline-none text-sm text-primary"
+                      />
+                      <button onClick={() => setShowDays(showDays === item.id ? null : item.id)}
+                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg cursor-pointer shrink-0 transition-colors text-[9px] font-bold ${item.days?.length ? 'bg-brand/10 text-brand-text' : 'text-muted/40 group-hover:text-muted/60'}`}>
+                        <Calendar size={11} />
+                        {item.days?.length ? item.days.map((d) => d[0]).join('') : ''}
+                      </button>
+                      <button onClick={() => toggleFieldWork(item.id)} className={`p-1 cursor-pointer shrink-0 transition-colors ${item.fieldWorkOnly ? 'text-brand-text' : 'text-transparent group-hover:text-muted/30 hover:!text-brand-text'}`} title="Field work only"><Truck size={12} /></button>
+                      <button onClick={() => remove(item.id)} className="p-1 text-transparent group-hover:text-muted/40 hover:!text-red-500 cursor-pointer shrink-0"><Trash2 size={12} /></button>
+                    </div>
+                    {showDays === item.id && (
+                      <div className="flex items-center gap-1.5 px-4 py-2.5 ml-[24px] bg-surface-alt/50 border-t border-border-subtle/30">
+                        {ALL_DAYS.map((d) => {
+                          const active = !item.days || item.days.includes(d);
+                          return (
+                            <button key={d} onClick={() => toggleDay(item.id, d)}
+                              className={`flex-1 py-2 rounded-lg text-[11px] font-bold cursor-pointer transition-all ${active ? 'bg-brand text-on-brand' : 'bg-surface-alt text-muted/40 hover:text-muted'}`}>
+                              {d}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}

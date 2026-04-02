@@ -85,12 +85,13 @@ async function fetchRecurringJobs() {
   while (hasNext) {
     const after = cursor ? `, after: "${cursor}"` : '';
     const query = `{
-      jobs(first: 100, filter: { jobType: RECURRING }${after}) {
+      jobs(first: 25, filter: { jobType: RECURRING }${after}) {
         nodes {
           id
           jobNumber
           jobStatus
           total
+          lineItems { nodes { totalPrice quantity } }
           startAt
           completedAt
           createdAt
@@ -114,6 +115,7 @@ async function fetchRecurringJobs() {
     allNodes.push(...nodes);
     hasNext = data.jobs?.pageInfo?.hasNextPage || false;
     cursor = data.jobs?.pageInfo?.endCursor || null;
+    if (hasNext) await new Promise(r => setTimeout(r, 500)); // pace requests
   }
   return allNodes;
 }
@@ -178,30 +180,36 @@ let cachedData = null;
 let cacheTime = 0;
 let lastError = null;
 let lastErrorTime = 0;
+let inFlightPromise = null; // dedup concurrent requests
 const CACHE_TTL = 5 * 60 * 1000;
-const ERROR_COOLDOWN = 60 * 1000; // wait 60s before retrying after an error
+const ERROR_COOLDOWN = 30 * 1000;
 
 async function getJobberData() {
   if (cachedData && Date.now() - cacheTime < CACHE_TTL) {
     return cachedData;
   }
-  // If we recently got an error, don't hammer Jobber — use stale cache or wait
+  // If already fetching, wait for that instead of starting another
+  if (inFlightPromise) {
+    console.log('[Commander] Waiting for in-flight fetch...');
+    return inFlightPromise;
+  }
+  // If we recently got an error, serve stale cache
   if (lastError && Date.now() - lastErrorTime < ERROR_COOLDOWN) {
-    if (cachedData) return cachedData; // serve stale data
+    if (cachedData) return cachedData;
     throw lastError;
   }
   console.log('[Commander] Fetching fresh data from Jobber...');
-  try {
-    // Sequential to avoid hitting Jobber rate limits
-    const requests = await fetchRequests();
-    const quotes = await fetchAllQuotes();
-    const recurringJobs = await fetchRecurringJobs();
-    cachedData = { requests, quotes, recurringJobs };
-    cacheTime = Date.now();
-    lastError = null;
-    console.log(`[Commander] Got ${requests.length} requests, ${quotes.length} quotes, ${recurringJobs.length} recurring jobs`);
-    return cachedData;
-  } catch (err) {
+  inFlightPromise = (async () => {
+    try {
+      const requests = await fetchRequests();
+      const quotes = await fetchAllQuotes();
+      const recurringJobs = await fetchRecurringJobs();
+      cachedData = { requests, quotes, recurringJobs };
+      cacheTime = Date.now();
+      lastError = null;
+      console.log(`[Commander] Got ${requests.length} requests, ${quotes.length} quotes, ${recurringJobs.length} recurring jobs`);
+      return cachedData;
+    } catch (err) {
     lastError = err;
     lastErrorTime = Date.now();
     if (cachedData) {
@@ -209,7 +217,11 @@ async function getJobberData() {
       return cachedData;
     }
     throw err;
+  } finally {
+    inFlightPromise = null;
   }
+  })();
+  return inFlightPromise;
 }
 
 // ── GET /api/commander/summary?start=YYYY-MM-DD&end=YYYY-MM-DD ──
@@ -267,7 +279,11 @@ export default async function handler(req, res) {
     // ── Process Recurring Jobs ──
     const processedJobs = recurringJobs.map(job => {
       const calRule = job.visitSchedule?.recurrenceSchedule?.calendarRule;
-      const monthlyValue = estimateMonthlyValue(job.total, calRule);
+      // Use recurring line items (qty > 0) to exclude one-time add-ons
+      const items = job.lineItems?.nodes || [];
+      const recurringTotal = items.filter(li => li.quantity > 0).reduce((s, li) => s + (parseFloat(li.totalPrice) || 0), 0);
+      const effectiveTotal = recurringTotal > 0 ? recurringTotal : (job.total || 0);
+      const monthlyValue = estimateMonthlyValue(effectiveTotal, calRule);
       const isCanceled = job.jobStatus === 'cancelled' || job.jobStatus === 'archived';
       return {
         ...job,
@@ -315,9 +331,15 @@ export default async function handler(req, res) {
       if (!clientRoster[cid]) {
         clientRoster[cid] = { name, jobs: [], totalPerVisit: 0, totalMonthly: 0 };
       }
-      clientRoster[cid].jobs.push({ jobNumber: job.jobNumber, frequency: freqLabel, perVisit: job.total || 0, monthly: job.monthlyValue || 0 });
-      clientRoster[cid].totalPerVisit += (job.total || 0);
-      clientRoster[cid].totalMonthly += (job.monthlyValue || 0);
+      // Use only recurring line items (qty > 0) for per-visit, excluding one-time add-ons
+      const items = job.lineItems?.nodes || [];
+      const recurringTotal = items.filter(li => li.quantity > 0).reduce((s, li) => s + (parseFloat(li.totalPrice) || 0), 0);
+      const perVisit = recurringTotal > 0 ? recurringTotal : (job.total || 0);
+      const { visitsPerMonth } = parseFrequency(calRule);
+      const monthly = Math.round(perVisit * visitsPerMonth * 100) / 100;
+      clientRoster[cid].jobs.push({ jobId: job.id, jobNumber: job.jobNumber, frequency: freqLabel, perVisit, monthly });
+      clientRoster[cid].totalPerVisit += perVisit;
+      clientRoster[cid].totalMonthly += monthly;
     }
     const recurringClientList = Object.values(clientRoster)
       .map(c => ({

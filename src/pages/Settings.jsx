@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
 const TeamManagement = lazy(() => import('./TeamManagement'));
+const TeamAgreement = lazy(() => import('./TeamAgreement'));
 import { EQUIPMENT_TYPES } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -13,6 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 const SETTINGS_NAV = [
   { id: 'connections', label: 'Connections', icon: Plug },
   { id: 'checklists', label: 'Checklists', icon: ClipboardCheck },
+  { id: 'agreement', label: 'Team Agreement', icon: ClipboardCheck },
   { id: 'team', label: 'Team', icon: Users },
 ];
 
@@ -234,12 +236,72 @@ function JobberConnectionPanel() {
   );
 }
 
+function QBConnectionPanel() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/qb-data?action=status')
+      .then((r) => r.json())
+      .then(setStatus)
+      .catch(() => setStatus({ connected: false }))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[#2ca01c] flex items-center justify-center shrink-0">
+            <span className="text-white text-xs font-bold">QB</span>
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-primary">QuickBooks</h3>
+            {loading ? (
+              <p className="text-xs text-muted">Checking connection...</p>
+            ) : status?.connected ? (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                <Check size={12} /> Connected
+              </p>
+            ) : (
+              <p className="text-xs text-muted">Not connected</p>
+            )}
+          </div>
+        </div>
+        {!loading && (
+          status?.connected ? (
+            <span className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-xs font-semibold">
+              Active
+            </span>
+          ) : (
+            <a
+              href="/api/qb-auth"
+              onClick={(e) => { e.preventDefault(); window.location.href = '/api/qb-auth'; }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#2ca01c] text-white text-xs font-semibold hover:bg-[#238a17] transition-colors"
+            >
+              <Link2 size={14} />
+              Connect
+            </a>
+          )
+        )}
+      </div>
+      {errorMsg && (
+        <p className="mt-3 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 rounded-lg p-3 break-all">
+          QB Error: {errorMsg}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ConnectionsSection() {
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-primary">Connections</h2>
       <p className="text-xs text-muted">Manage integrations with external services.</p>
       <JobberConnectionPanel />
+      <QBConnectionPanel />
     </div>
   );
 }
@@ -300,6 +362,12 @@ export default function Settings() {
         <div className="flex-1 min-w-0">
         {activeSection === 'connections' && <ConnectionsSection />}
         {activeSection === 'checklists' && <ChecklistsSection />}
+
+        {activeSection === 'agreement' && (
+          <Suspense fallback={<div className="text-center py-8 text-muted text-sm">Loading...</div>}>
+            <TeamAgreement />
+          </Suspense>
+        )}
 
         {activeSection === 'team' && (
           <Suspense fallback={<div className="text-center py-8 text-muted text-sm">Loading...</div>}>

@@ -43,9 +43,9 @@ function shortDay(ds) {
 
 // ── Colors ──
 
-function laborColor(p) { return p === 0 ? 'text-muted' : p <= 35 ? 'text-emerald-500' : p <= 45 ? 'text-amber-500' : 'text-red-500'; }
-function laborBg(p) { return p <= 35 ? 'bg-emerald-500/10 border-emerald-500/30' : p <= 45 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-red-500/10 border-red-500/30'; }
-function laborDot(p) { return p <= 35 ? 'bg-emerald-500' : p <= 45 ? 'bg-amber-500' : 'bg-red-500'; }
+function laborColor(p) { return p === 0 ? 'text-muted' : p <= 25 ? 'text-emerald-500' : p <= 30 ? 'text-amber-500' : 'text-red-500'; }
+function laborBg(p) { return p <= 25 ? 'bg-emerald-500/10 border-emerald-500/30' : p <= 30 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-red-500/10 border-red-500/30'; }
+function laborDot(p) { return p <= 25 ? 'bg-emerald-500' : p <= 30 ? 'bg-amber-500' : 'bg-red-500'; }
 function profitColor(v) { return v > 0 ? 'text-emerald-500' : v < 0 ? 'text-red-500' : 'text-muted'; }
 function rphColor(v) { return v === 0 ? 'text-muted' : v > 80 ? 'text-emerald-500' : v >= 65 ? 'text-amber-500' : 'text-red-500'; }
 
@@ -447,12 +447,14 @@ function CrewView({ crew, totalRevenue }) {
 //  TAB: RECURRING CLIENTS
 // ══════════════════════════════════════════
 
-function RecurringView() {
+export function RecurringView({ onSelectClient }) {
   const [clients, setClients] = useState([]);
   const [laborByClient, setLaborByClient] = useState({});
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState('newest');
   const [sortDir, setSortDir] = useState('desc');
+  const [expanded, setExpanded] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -461,35 +463,40 @@ function RecurringView() {
     const thirtyAgo = new Date(); thirtyAgo.setDate(thirtyAgo.getDate() - 30);
     const thirtyStr = thirtyAgo.toISOString().split('T')[0];
 
-    Promise.all([
-      fetch(`/api/commander/summary?start=${yearStart}&end=${today}`)
-        .then(r => { if (!r.ok) return r.json().catch(() => ({})).then(e => { throw new Error(e.error || `HTTP ${r.status}`); }); return r.json(); }),
-      fetch(`/api/jobber-data?action=labor&start=${thirtyStr}&end=${today}`)
-        .then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([commanderData, laborData]) => {
+    // Fetch commander first (cached), then labor sequentially
+    (async () => {
+      const commanderData = await fetch(`/api/commander/summary?start=${yearStart}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null);
       if (commanderData?.recurringClientList) setClients(commanderData.recurringClientList);
 
-      // Aggregate labor % by client name from last 30 days
+      // Now fetch labor (30 days) — sequential so we don't throttle
+      const laborData = await fetch(`/api/jobber-data?action=labor&start=${thirtyStr}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null);
       if (laborData) {
         const byClient = {};
         for (const [, day] of Object.entries(laborData)) {
           for (const v of (day.visits || [])) {
             const name = v.client || 'Unknown';
-            if (!byClient[name]) byClient[name] = { revenue: 0, laborCost: 0, visits: 0 };
+            if (!byClient[name]) byClient[name] = { revenue: 0, laborCost: 0, visits: 0, visitDetails: [] };
             const vl = v.labor || {};
-            const totalJobHrs = v.totalJobHours || 0;
             const dailyHrs = v.actualDailyHours || 0;
-            const rawTotal = parseFloat(v.rawJobTotal || v.jobTotal) || 0;
-            const dailyRev = totalJobHrs > 0 && dailyHrs > 0 ? rawTotal * (dailyHrs / totalJobHrs) : (parseFloat(v.jobTotal) || 0);
+            // jobTotal is already the per-visit/daily proportioned revenue from the server
+            const dailyRev = parseFloat(v.jobTotal) || 0;
             byClient[name].revenue += dailyRev;
             byClient[name].laborCost += vl.totalCost || 0;
             byClient[name].visits += 1;
+            byClient[name].visitDetails.push({
+              date: v.completedAt || v.startAt || '',
+              jobId: v.jobId || null,
+              revenue: Math.round(dailyRev * 100) / 100,
+              laborCost: Math.round((vl.totalCost || 0) * 100) / 100,
+              laborPct: dailyRev > 0 ? Math.round(((vl.totalCost || 0) / dailyRev) * 100) : null,
+              hours: Math.round((dailyHrs || 0) * 100) / 100,
+              crew: vl.byPerson || {},
+            });
           }
         }
         setLaborByClient(byClient);
       }
-    }).catch(e => setError(e.message))
-      .finally(() => setLoading(false));
+    })().catch(e => setError(e.message)).finally(() => setLoading(false));
   }, []);
 
   const toggleSort = (key) => {
@@ -497,20 +504,41 @@ function RecurringView() {
     else { setSortKey(key); setSortDir(key === 'name' ? 'asc' : 'desc'); }
   };
 
-  // Enrich clients with labor data
+  // Enrich clients with labor data — use Commander perVisit and filter to recurring jobs only
   const enriched = useMemo(() => clients.map(c => {
     const labor = laborByClient[c.name];
-    const laborPct = labor && labor.revenue > 0 ? (labor.laborCost / labor.revenue) * 100 : null;
-    return { ...c, laborPct, laborVisits: labor?.visits || 0 };
+    const correctPerVisit = c.perVisit || 0;
+    // Get recurring job IDs to filter out one-off project visits
+    const recurringJobIds = new Set((c.jobs || []).map(j => j.jobId).filter(Boolean));
+    // Filter visit details to only recurring job visits
+    const allVisits = labor?.visitDetails || [];
+    const recurringVisits = recurringJobIds.size > 0
+      ? allVisits.filter(v => v.jobId && recurringJobIds.has(v.jobId))
+      : allVisits;
+    const totalRevenue = correctPerVisit > 0 ? correctPerVisit * recurringVisits.length : recurringVisits.reduce((s, v) => s + v.revenue, 0);
+    const totalLaborCost = recurringVisits.reduce((s, v) => s + v.laborCost, 0);
+    const laborPct = totalRevenue > 0 ? (totalLaborCost / totalRevenue) * 100 : null;
+    // Fix visit details to use correct per-visit revenue
+    const visitDetails = recurringVisits.map(v => {
+      const rev = correctPerVisit > 0 ? correctPerVisit : v.revenue;
+      return { ...v, revenue: rev, laborPct: rev > 0 ? Math.round((v.laborCost / rev) * 100) : null };
+    });
+    return { ...c, laborPct, laborVisits: recurringVisits.length, visitDetails };
   }), [clients, laborByClient]);
 
   const sorted = useMemo(() => {
     const list = [...enriched];
     const dir = sortDir === 'asc' ? 1 : -1;
     list.sort((a, b) => {
+      const freqOrder = { 'Weekly': 1, 'Every 2 weeks': 2, 'Monthly': 3 };
       switch (sortKey) {
         case 'perVisit': return (a.perVisit - b.perVisit) * dir;
         case 'monthly': return (a.monthly - b.monthly) * dir;
+        case 'frequency': {
+          const af = freqOrder[a.jobs[0]?.frequency] || 99;
+          const bf = freqOrder[b.jobs[0]?.frequency] || 99;
+          return (af - bf) * dir;
+        }
         case 'laborPct': {
           const ap = a.laborPct ?? 999; const bp = b.laborPct ?? 999;
           return (ap - bp) * dir;
@@ -524,8 +552,13 @@ function RecurringView() {
         default: return a.name.localeCompare(b.name) * dir;
       }
     });
+    // Filter by search
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return list.filter(c => c.name.toLowerCase().includes(q));
+    }
     return list;
-  }, [enriched, sortKey, sortDir]);
+  }, [enriched, sortKey, sortDir, search]);
 
   const activeClients = enriched.filter(c => c.monthly > 0);
   const inactiveClients = enriched.filter(c => c.monthly <= 0);
@@ -543,81 +576,138 @@ function RecurringView() {
   if (enriched.length === 0) return <p className="text-muted text-sm py-8 text-center">No recurring clients found.</p>;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
-          <p className="text-[9px] font-bold text-muted uppercase tracking-wider">Active</p>
-          <p className="text-2xl font-black text-primary mt-0.5">{activeClients.length}</p>
-          {inactiveClients.length > 0 && <p className="text-[10px] text-muted mt-0.5">+{inactiveClients.length} inactive</p>}
-        </div>
-        <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
-          <p className="text-[9px] font-bold text-muted uppercase tracking-wider">Monthly Rev</p>
-          <p className="text-2xl font-black text-emerald-500 mt-0.5">${Math.round(totalMonthly).toLocaleString()}</p>
-        </div>
-        <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
-          <p className="text-[9px] font-bold text-muted uppercase tracking-wider">Avg/Client</p>
-          <p className="text-2xl font-black text-primary mt-0.5">${Math.round(avgMonthly)}</p>
-        </div>
+      {(() => {
+        const clientsWithLabor = enriched.filter(c => c.laborPct != null);
+        const avgLaborPct = clientsWithLabor.length > 0 ? clientsWithLabor.reduce((s, c) => s + c.laborPct, 0) / clientsWithLabor.length : null;
+        return (
+          <div className="grid grid-cols-4 gap-2">
+            <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
+              <p className="text-[9px] font-bold text-muted uppercase tracking-wider">Active</p>
+              <p className="text-2xl font-black text-primary mt-0.5">{activeClients.length}</p>
+            </div>
+            <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
+              <p className="text-[9px] font-bold text-muted uppercase tracking-wider">Monthly</p>
+              <p className="text-2xl font-black text-emerald-500 mt-0.5">${Math.round(totalMonthly).toLocaleString()}</p>
+            </div>
+            <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
+              <p className="text-[9px] font-bold text-muted uppercase tracking-wider">Avg/Client</p>
+              <p className="text-2xl font-black text-primary mt-0.5">${Math.round(avgMonthly)}</p>
+            </div>
+            <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
+              <p className="text-[9px] font-bold text-muted uppercase tracking-wider">Avg Labor</p>
+              <p className={`text-2xl font-black mt-0.5 ${avgLaborPct != null ? laborColor(avgLaborPct) : 'text-muted'}`}>{avgLaborPct != null ? `${avgLaborPct.toFixed(0)}%` : '--'}</p>
+            </div>
+          </div>
+        );
+      })()}
+
+
+      {/* Search */}
+      <div className="relative">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search clients..."
+          className="w-full pl-3 pr-4 py-2 rounded-xl bg-card border border-border-subtle text-sm text-primary placeholder:text-muted outline-none focus:ring-1 focus:ring-brand"
+        />
       </div>
 
-      {/* Sort pills */}
-      <div className="flex flex-wrap gap-1.5">
-        {[['newest', 'Newest First'], ['name', 'A-Z'], ['laborPct', 'Worst Labor %'], ['monthly', 'Top Revenue']].map(([k, l]) => (
-          <button key={k} onClick={() => toggleSort(k)}
-            className={`px-2.5 py-1 text-[11px] font-bold rounded-md cursor-pointer ${sortKey === k ? 'bg-brand text-on-brand' : 'bg-surface-alt text-secondary hover:bg-brand-light'}`}>{l}</button>
-        ))}
+      {/* Column headers — tap to sort */}
+      <div className="flex items-center gap-3 px-4 text-[9px] font-bold uppercase tracking-wider">
+        <span className="w-6 shrink-0 text-muted">#</span>
+        <button onClick={() => toggleSort('name')} className={`flex-1 text-left cursor-pointer ${sortKey === 'name' ? 'text-brand-text' : 'text-muted hover:text-secondary'}`}>Client{sortKey === 'name' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</button>
+        <button onClick={() => toggleSort('frequency')} className={`w-20 text-right cursor-pointer ${sortKey === 'frequency' ? 'text-brand-text' : 'text-muted hover:text-secondary'}`}>Freq{sortKey === 'frequency' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</button>
+        <button onClick={() => toggleSort('perVisit')} className={`w-20 text-right cursor-pointer ${sortKey === 'perVisit' ? 'text-brand-text' : 'text-muted hover:text-secondary'}`}>/Visit{sortKey === 'perVisit' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</button>
+        <button onClick={() => toggleSort('monthly')} className={`w-20 text-right cursor-pointer ${sortKey === 'monthly' ? 'text-brand-text' : 'text-muted hover:text-secondary'}`}>/Month{sortKey === 'monthly' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</button>
+        <span className="w-20 text-right text-muted">Labor $</span>
+        <button onClick={() => toggleSort('laborPct')} className={`w-16 text-right cursor-pointer ${sortKey === 'laborPct' ? 'text-brand-text' : 'text-muted hover:text-secondary'}`}>Labor %{sortKey === 'laborPct' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</button>
       </div>
 
       {/* Active clients */}
       {sorted.filter(c => c.monthly > 0).map((c, i) => (
-        <div key={c.name} className={`rounded-xl border px-4 py-3 ${c.laborPct != null && c.laborPct > 45 ? 'bg-red-500/5 border-red-500/20' : c.laborPct != null && c.laborPct <= 35 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-card border-border-subtle'}`}>
-          <div className="flex items-center gap-3">
-            <span className="text-[10px] font-black text-muted w-6 shrink-0">{i + 1}</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-primary truncate">{c.name}</p>
-              <p className="text-[10px] text-muted">
-                {c.jobs.length === 1 ? c.jobs[0].frequency : c.jobs.map(j => j.frequency).join(', ')}
-              </p>
+        <div key={c.name}>
+          <button onClick={() => onSelectClient ? onSelectClient(c) : setExpanded(expanded === c.name ? null : c.name)} className="w-full bg-card rounded-xl border border-border-subtle px-4 py-4 cursor-pointer hover:bg-surface-alt/50 transition-colors text-left">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-black text-muted w-6 shrink-0">{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-primary truncate">{c.name}</p>
+              </div>
+              <span className="w-20 text-right text-[11px] text-muted font-semibold">
+                {c.jobs.length === 1 ? c.jobs[0].frequency.replace('Every ', '').replace('weeks', 'wk') : `${c.jobs.length} jobs`}
+              </span>
+              <span className="w-20 text-right text-[11px] font-bold text-primary">${Math.round(c.perVisit)}</span>
+              <span className="w-20 text-right text-[11px] font-black text-emerald-500">${Math.round(c.monthly)}</span>
+              <span className="w-20 text-right text-[11px] text-muted font-semibold">{c.visitDetails?.length > 0 ? `$${Math.round(c.visitDetails.reduce((s, v) => s + v.laborCost, 0) / c.visitDetails.length)}` : '--'}</span>
+              <span className={`w-16 text-right text-[11px] font-black ${c.laborPct != null ? laborColor(c.laborPct) : 'text-muted'}`}>{c.laborPct != null ? `${c.laborPct.toFixed(0)}%` : '--'}</span>
             </div>
-            <div className="text-right shrink-0">
-              <p className="text-xs font-black text-emerald-500">${Math.round(c.monthly)}/mo</p>
-              <p className="text-[10px] text-muted">${Math.round(c.perVisit)}/visit</p>
-            </div>
-            <div className="w-12 text-right shrink-0">
-              {c.laborPct != null ? (
-                <p className={`text-xs font-black ${laborColor(c.laborPct)}`}>{c.laborPct.toFixed(0)}%</p>
+          </button>
+
+          {/* Expanded visit details */}
+          {expanded === c.name && (
+            <div className="ml-7 mt-1 mb-2 space-y-1">
+              {c.visitDetails.length > 0 ? (
+                <>
+                  <div className="flex items-center gap-2 px-3 py-1 text-[9px] font-bold text-muted uppercase">
+                    <span className="flex-1">Date</span>
+                    <span className="w-14 text-right">Revenue</span>
+                    <span className="w-14 text-right">Labor $</span>
+                    <span className="w-12 text-right">Labor %</span>
+                    <span className="w-12 text-right">Hours</span>
+                  </div>
+                  {c.visitDetails.sort((a, b) => b.date.localeCompare(a.date)).map((v, vi) => (
+                    <div key={vi} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-alt/50 text-[11px]">
+                      <span className="flex-1 text-muted">{v.date ? new Date(v.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '--'}</span>
+                      <span className="w-14 text-right text-primary font-semibold">${Math.round(v.revenue)}</span>
+                      <span className="w-14 text-right text-primary">${Math.round(v.laborCost)}</span>
+                      <span className={`w-12 text-right font-bold ${v.laborPct != null ? laborColor(v.laborPct) : 'text-muted'}`}>{v.laborPct != null ? `${v.laborPct}%` : '--'}</span>
+                      <span className="w-12 text-right text-muted">{v.hours > 0 ? `${v.hours.toFixed(1)}h` : '--'}</span>
+                    </div>
+                  ))}
+                  {/* Average */}
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border-subtle text-[11px] font-bold">
+                    <span className="flex-1 text-muted">Avg ({c.visitDetails.length} visits)</span>
+                    <span className="w-14 text-right text-primary">${Math.round(c.visitDetails.reduce((s, v) => s + v.revenue, 0) / c.visitDetails.length)}</span>
+                    <span className="w-14 text-right text-primary">${Math.round(c.visitDetails.reduce((s, v) => s + v.laborCost, 0) / c.visitDetails.length)}</span>
+                    <span className={`w-12 text-right ${c.laborPct != null ? laborColor(c.laborPct) : 'text-muted'}`}>{c.laborPct != null ? `${c.laborPct.toFixed(0)}%` : '--'}</span>
+                    <span className="w-12 text-right text-muted">{c.visitDetails.length > 0 ? `${(c.visitDetails.reduce((s, v) => s + v.hours, 0) / c.visitDetails.length).toFixed(1)}h` : '--'}</span>
+                  </div>
+                </>
               ) : (
-                <p className="text-[10px] text-muted">--</p>
+                <p className="text-xs text-muted px-3 py-2">No visit data yet</p>
               )}
-              <p className="text-[9px] text-muted">labor</p>
             </div>
-          </div>
+          )}
         </div>
       ))}
 
       {/* Total */}
-      <div className="flex items-center justify-between px-4 py-3 border-t-2 border-border-default">
-        <span className="text-xs font-bold text-primary">{activeClients.length} active clients</span>
-        <span className="text-sm font-black text-emerald-500">${Math.round(totalMonthly).toLocaleString()}/mo</span>
+      <div className="flex items-center gap-3 px-4 py-3 border-t-2 border-border-default">
+        <span className="w-6 shrink-0" />
+        <span className="flex-1 text-xs font-bold text-primary">{activeClients.length} active</span>
+        <span className="w-20" />
+        <span className="w-20" />
+        <span className="w-20 text-right text-xs font-black text-emerald-500">${Math.round(totalMonthly).toLocaleString()}</span>
+        <span className="w-20" />
+        <span className="w-16" />
       </div>
 
-      {/* Inactive clients ($0/mo) */}
+      {/* Inactive */}
       {inactiveClients.length > 0 && (
         <>
-          <p className="text-[10px] font-black text-muted uppercase tracking-widest px-4 pt-2">Not Recurring — $0/mo</p>
+          <p className="text-[9px] font-black text-muted uppercase tracking-widest px-3 pt-2">Inactive — $0/mo</p>
           {sorted.filter(c => c.monthly <= 0).map((c) => (
-            <div key={c.name} className="bg-card/50 rounded-xl border border-border-subtle/50 px-4 py-3 opacity-60">
+            <div key={c.name} className="bg-card/50 rounded-xl border border-border-subtle/50 px-4 py-3 opacity-50">
               <div className="flex items-center gap-3">
                 <span className="w-6 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-muted truncate">{c.name}</p>
-                  <p className="text-[10px] text-muted">
-                    {c.jobs.length === 1 ? c.jobs[0].frequency : c.jobs.map(j => j.frequency).join(', ')}
-                  </p>
-                </div>
-                <span className="text-xs font-bold text-muted w-16 text-right">${Math.round(c.perVisit)}</span>
-                <span className="text-xs font-bold text-muted w-20 text-right">$0/mo</span>
+                <p className="flex-1 text-sm text-muted truncate">{c.name}</p>
+                <span className="w-20 text-right text-[11px] text-muted">
+                  {c.jobs.length === 1 ? c.jobs[0].frequency.replace('Every ', '').replace('weeks', 'wk') : `${c.jobs.length} jobs`}
+                </span>
+                <span className="w-20 text-right text-[11px] text-muted">${Math.round(c.perVisit)}</span>
+                <span className="w-20 text-right text-[11px] text-muted">$0</span>
               </div>
             </div>
           ))}
@@ -669,7 +759,6 @@ function NumbersView({ analysis, dates, data, milesByDate, allJobs, crew, startD
 
 const TABS = [
   { id: 'today', label: 'Today', icon: CalendarDays },
-  { id: 'recurring', label: 'Recurring', icon: Repeat },
   { id: 'numbers', label: 'Numbers', icon: BarChart3 },
   { id: 'crew', label: 'Crew', icon: Users },
 ];
@@ -706,19 +795,23 @@ export default function LaborEfficiency() {
     return map;
   }, [mileageLog, companyTruckId]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (retries = 1) => {
     setLoading(true); setError(null); setDisconnected(false);
     try {
       const res = await fetch(`/api/jobber-data?action=labor&start=${startDate}&end=${endDate}`);
       if (!res.ok) {
         const e = await res.json().catch(() => null);
         if (res.status === 401 || e?.code === 'JOBBER_DISCONNECTED') { setDisconnected(true); return; }
-        const msg = e?.error || (res.status === 429 ? 'Jobber is busy — try again in a minute.' : `HTTP ${res.status}`);
+        if (res.status === 429 && retries > 0) {
+          await new Promise((r) => setTimeout(r, 5000));
+          return fetchData(retries - 1);
+        }
+        const msg = e?.error || `HTTP ${res.status}`;
         throw new Error(msg);
       }
       setData(await res.json());
     } catch (e) {
-      setError(e.message?.includes('Throttled') ? 'Jobber is busy — try again in a minute.' : e.message);
+      setError(e.message?.includes('Throttled') || e.message?.includes('rate') ? 'Jobber needs a moment — tap refresh.' : e.message);
     } finally { setLoading(false); }
   }, [startDate, endDate]);
 
@@ -838,7 +931,6 @@ export default function LaborEfficiency() {
 
           {/* Tab content */}
           {tab === 'today' && <TodayView allJobs={analysis.allJobs} />}
-          {tab === 'recurring' && <RecurringView />}
           {tab === 'numbers' && <NumbersView analysis={analysis} dates={dates} data={data} milesByDate={milesByDate} allJobs={analysis.allJobs} crew={analysis.crew} startDate={startDate} endDate={endDate} setStartDate={setStartDate} setEndDate={setEndDate} fetchData={fetchData} loading={loading} />}
           {tab === 'crew' && <CrewView crew={analysis.crew} totalRevenue={analysis.revenue} />}
         </>

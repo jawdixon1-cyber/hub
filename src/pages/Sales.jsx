@@ -1,14 +1,12 @@
 import { useState, lazy, Suspense } from 'react';
-import { GitBranch, Calculator, FileText } from 'lucide-react';
+import { GitBranch, Calculator } from 'lucide-react';
 
 const SalesPipeline = lazy(() => import('./SalesPipeline'));
 const Quoting = lazy(() => import('./Quoting'));
-const ServiceAgreement = lazy(() => import('./ServiceAgreement'));
 
 const TABS = [
   { id: 'quoting', label: 'Quoting', icon: Calculator },
   { id: 'pipeline', label: 'Pipeline', icon: GitBranch },
-  { id: 'agreements', label: 'Agreements', icon: FileText },
 ];
 
 const Loading = () => (
@@ -41,7 +39,6 @@ export default function Sales() {
       <Suspense fallback={<Loading />}>
         {tab === 'quoting' && <Quoting />}
         {tab === 'pipeline' && <SalesPipeline />}
-        {tab === 'agreements' && <ServiceAgreement />}
       </Suspense>
     </div>
   );

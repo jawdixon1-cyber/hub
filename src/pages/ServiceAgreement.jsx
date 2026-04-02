@@ -14,7 +14,6 @@ const MeasurementList = lazy(() => import('../components/PropertyMapper/Measurem
 
 const TAX_RATE = 0.07;
 const SQ_FT_PER_YD_AT_1IN = 324;
-const ANCHOR_MARKUP = 1.2;
 
 /* ─── Calculators ─── */
 
@@ -37,13 +36,14 @@ function calcHedgePrice(bushes) {
   return Math.max(total, total > 0 ? 35 : 0);
 }
 
-function calcAerationPrice(sqft, seedRate = 8, bagPrice = 200) {
-  if (!sqft || sqft <= 0) return { aerationPrice: 0, overseedQuote: 0, total: 0 };
+function calcAerationPrice(sqft, seedRate = 8, pricePerBag = 200) {
+  if (!sqft || sqft <= 0) return { aerationPrice: 0, overseedQuote: 0, seedLbs: 0, bags: 0, perLb: 0, total: 0 };
   const aerationPrice = sqft <= 10000 ? 169 : 169 + ((sqft - 10000) / 1000) * 15;
   const seedLbs = (sqft / 1000) * seedRate;
-  const perLb = (bagPrice + bagPrice * TAX_RATE) / 50;
-  const overseedQuote = Math.round(perLb * seedLbs * 100) / 100;
-  return { aerationPrice: Math.round(aerationPrice * 100) / 100, overseedQuote, total: Math.round((aerationPrice + overseedQuote) * 100) / 100 };
+  const bags = Math.ceil(seedLbs / 50);
+  const perLb = pricePerBag / 50;
+  const overseedQuote = Math.round(seedLbs * perLb * 100) / 100;
+  return { aerationPrice: Math.round(aerationPrice * 100) / 100, overseedQuote, seedLbs: Math.round(seedLbs), bags, perLb, total: Math.round((aerationPrice + overseedQuote) * 100) / 100 };
 }
 
 function calcMulchPrice(sqft, depth = 3, materialCostPerYd = 40, chargePerYd = 35) {
@@ -94,10 +94,13 @@ function calcTerm(startDateStr, services, getPrice, getVisitsForSvc) {
 
   const isFullCycle = startMonth === 2 && start.getDate() <= 7; // Starting in early March = full cycle
   const remainingMs = cycleEnd - start;
-  const remainingMonths = Math.max(Math.round(remainingMs / (1000 * 60 * 60 * 24 * 30.44)), 1);
+  // Count calendar months from start to cycle end
+  let remainingMonths = (cycleEnd.getFullYear() - start.getFullYear()) * 12 + (cycleEnd.getMonth() - start.getMonth());
+  if (cycleEnd.getDate() >= start.getDate()) remainingMonths += 1; // include partial last month
+  remainingMonths = Math.max(remainingMonths, 1);
 
   const fmtDate = (d) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  const startFmt = fmtDate(cycleStart);
+  const startFmt = fmtDate(start);
   const endFmt = fmtDate(cycleEnd);
   const firstBilling = fmtDate(start);
 
@@ -185,9 +188,10 @@ function calcTerm(startDateStr, services, getPrice, getVisitsForSvc) {
 
 const LAWN_SERVICES = [
   {
-    id: 'lawn', name: 'Lawn Maintenance', frequency: 'Weekly', season: 'Mar - Oct', visitsPerYear: 32,
-    bullets: ['Mow, trim, edge, blow, weed beds every visit'],
+    id: 'lawn', name: 'Lawn & Leaf Maintenance', frequency: 'Weekly', season: 'Year-round', visitsPerYear: 50,
+    bullets: ['Mow, trim, edge, blow, weed beds (Mar–Oct)', 'Blow leaves, mulch into lawn, trim, weed beds (Nov–Feb)'],
     priceLabel: '/visit', calcType: 'lawn',
+    linkedIds: ['leaf'], // leaf is bundled with lawn
   },
   {
     id: 'aeration', name: 'Aeration & Overseeding', frequency: '1x per year', season: 'Fall (recommended)', visitsPerYear: 1,
@@ -197,11 +201,6 @@ const LAWN_SERVICES = [
 ];
 
 const BED_SERVICES = [
-  {
-    id: 'leaf', name: 'Leaf Maintenance', frequency: 'Weekly', season: 'Nov - Feb', visitsPerYear: 18,
-    bullets: ['Blow leaves, mulch into lawn, trim, weed beds every visit'],
-    priceLabel: '/visit', calcType: 'leaf',
-  },
   {
     id: 'hedge', name: 'Hedge Trimming', frequency: '3x per year', season: 'Apr, Jul, Oct', visitsPerYear: 3,
     bullets: ['Shape and trim all shrubs, bushes, and hedges'],
@@ -231,9 +230,9 @@ const ALL_WITH_STICKS = [...ALL_SERVICES, ALWAYS_INCLUDED];
 
 // Full bullets for the agreement PDF
 const FULL_BULLETS = {
-  lawn: ['Mow entire lawn at the proper height for your grass type', 'String trim where mowers can\'t reach', 'Edge along all sidewalks, driveways, and curbs', 'Edge around landscape beds', 'Blow all clippings off hard surfaces', 'Weed all landscape beds during each visit'],
-  leaf: ['Blow all leaves off landscape beds, porches, walkways, driveways, and hard surfaces', 'Mulch leaves into the lawn to return nutrients to the soil', 'Trim grass as needed', 'Keep beds and the entire property looking clean', 'Weed all landscape beds during each visit'],
-  aeration: ['Core aerate the entire lawn with commercial-grade equipment', 'Overseed at 8 lbs per 1,000 sq ft using LESCO Tall Fescue Select Blend', 'Provide clear aftercare instructions for watering'],
+  lawn: ['Mow entire lawn at the proper height for your grass type (Mar–Oct)', 'String trim where mowers can\'t reach', 'Edge along all sidewalks, driveways, and curbs', 'Edge around landscape beds', 'Blow all clippings off hard surfaces', 'Blow all leaves off beds, porches, walkways, driveways (Nov–Feb)', 'Mulch leaves into the lawn to return nutrients to the soil', 'Keep beds and the entire property looking clean year-round'],
+  leaf: ['Blow all leaves off landscape beds, porches, walkways, driveways, and hard surfaces', 'Mulch leaves into the lawn to return nutrients to the soil', 'Trim grass as needed', 'Keep beds and the entire property looking clean'],
+  aeration: ['Core aerate the entire lawn with commercial-grade equipment', 'Thickens your lawn with LESCO Tall Fescue Select Blend (Certified Tag) — a professional-grade seed trusted on golf courses and athletic fields. Certified for purity (no weeds, no filler) and bred for density, drought tolerance, and disease resistance, it establishes a cleaner, fuller lawn than store-bought blends'],
   sticks: ['Pick up all sticks on the property every visit', 'Haul away and dispose of off-site'],
   hedge: ['Shape and trim all shrubs, bushes, and hedges on the property', 'Remove all clippings and debris from beds and surrounding areas', 'Maintain natural shape while keeping growth in check'],
   mulch: ['Weed all landscape beds before installation', 'Install fresh mulch in all landscape beds at 3 inches deep', 'Edge beds cleanly before installation', 'Clean up all walkways, driveways, and hard surfaces after installation'],
@@ -303,7 +302,7 @@ function AgreementCard({ agreement: a, onDelete, onRegenerate, onEdit }) {
               <RefreshCw size={13} /> PDF
             </button>
             <button
-              onClick={() => { if (confirm(`Delete agreement for ${a.clientName}?`)) onDelete(a.id); }}
+              onClick={() => { if (confirm(`Delete contract for ${a.clientName}?`)) onDelete(a.id); }}
               className="px-4 py-2 rounded-xl border border-red-500/30 text-red-500 text-xs font-semibold hover:bg-red-500/10 cursor-pointer"
             >
               <Trash2 size={13} />
@@ -427,11 +426,11 @@ function OverrideToggle({ enabled, onToggle, overrideValue, onChangeOverride }) 
 
 /* ─── Main Page ─── */
 
-export default function ServiceAgreement() {
+export default function ServiceAgreement({ editId, onDone }) {
   const agreements = useAppStore((s) => s.agreements);
   const setAgreements = useAppStore((s) => s.setAgreements);
 
-  const [step, setStep] = useState('list');
+  const [step, setStep] = useState(editId ? '_init' : 'list');
   const search = useJobberSearch();
   const addressAutocomplete = useAddressAutocomplete();
 
@@ -451,15 +450,15 @@ export default function ServiceAgreement() {
 
   // Per-service calculator inputs
   const [calc, setCalc] = useState({
-    // Lawn
+    // Property
     lawnSqftManual: '',
+    bedSqftManual: '',
     difficulty: 'easy',
     lawnPriceType: 'weekly', // 'weekly' | 'eow'
-    // Leaf
-    leafPerVisit: '',
     // Aeration
     seedRate: '8', bagPrice: '200',
     // Hedge
+    hedgeMonths: ['Apr', 'Jul', 'Oct'],
     bushesSmall: '', bushesMedium: '', bushesLarge: '', bushesXl: '',
     // Mulch
     mulchSqft: '', mulchDepth: '3', mulchMaterialCost: '40', mulchChargePerYd: '35',
@@ -488,27 +487,74 @@ export default function ServiceAgreement() {
   const [termMonths, setTermMonths] = useState(12);
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
 
-  const toggle = (id) => setEnabledIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggle = (id) => setEnabledIds((prev) => {
+    const n = new Set(prev);
+    const svc = ALL_SERVICES.find((s) => s.id === id);
+    if (n.has(id)) {
+      n.delete(id);
+      // Remove linked services (e.g. leaf when lawn is toggled off)
+      if (svc?.linkedIds) svc.linkedIds.forEach((lid) => n.delete(lid));
+    } else {
+      n.add(id);
+      // Add linked services (e.g. leaf when lawn is toggled on)
+      if (svc?.linkedIds) svc.linkedIds.forEach((lid) => n.add(lid));
+    }
+    return n;
+  });
   const isOn = (id) => enabledIds.has(id);
 
-  // Determine if measure step is needed
-  const needsMeasure = isOn('lawn') || isOn('aeration');
+  // Auto-load agreement if editId prop is provided
+  useEffect(() => {
+    if (editId && step === '_init') {
+      const a = (agreements || []).find((ag) => ag.id === editId);
+      if (a) {
+        loadAgreementFromProp(a);
+      } else {
+        setStep('list');
+      }
+    }
+  }, [editId]);
 
-  // Lawn sqft: from map measurements or manual input
-  const mapLawnSqft = useMemo(() => {
-    if (!measurements || measurements.length === 0) return 0;
+  const loadAgreementFromProp = (a) => {
+    setEditingId(a.id);
+    setClient({ name: a.clientName || '', phone: a.clientPhone || '', email: a.clientEmail || '', address: a.clientAddress || '', cityStateZip: a.clientCityStateZip || 'Rock Hill, SC 29732' });
+    const ids = new Set((a.services || []).map((s) => s.id).filter(Boolean));
+    setEnabledIds(ids);
+    const newOverrides = {};
+    for (const s of (a.services || [])) {
+      if (s.id && s.price != null) {
+        newOverrides[s.id] = { enabled: true, price: String(s.price), weeklyOverride: String(s.price), eowOverride: '' };
+      }
+    }
+    setOverrides((prev) => ({ ...prev, ...newOverrides }));
+    if (a.measurements) setMeasurements(a.measurements);
+    if (a.mapCenter) setClientLatLng(a.mapCenter);
+    setSelectedPlan(a.planTier || 'total-care');
+    setMonthlyPrice(String(a.monthlyPrice || ''));
+    setAutoMonthly(false);
+    setStartDate(a.termStart || new Date().toISOString().split('T')[0]);
+    setStep('services');
+  };
+
+  // Determine if measure step is needed
+  const needsMeasure = true; // Always allow property measurement
+
+  // Property sqft: from map measurements or manual input
+  const { mapLawnSqft, mapBedSqft } = useMemo(() => {
+    if (!measurements || measurements.length === 0) return { mapLawnSqft: 0, mapBedSqft: 0 };
     const totals = computeNetTotals(measurements);
-    return totals.lawn || 0;
+    return { mapLawnSqft: totals.lawn || 0, mapBedSqft: totals.beds || 0 };
   }, [measurements]);
 
   const lawnSqft = mapLawnSqft > 0 ? mapLawnSqft : (parseFloat(calc.lawnSqftManual) || 0);
+  const bedSqft = mapBedSqft > 0 ? mapBedSqft : (parseFloat(calc.bedSqftManual) || 0);
 
   // Calculated prices from calculator inputs
   const prices = useMemo(() => {
     const lawnWeekly = calcLawnPrice(lawnSqft, calc.difficulty);
     const lawnEow = lawnSqft > 0 ? Math.round(lawnWeekly * 1.5) : 0;
     const selectedLawnPrice = calc.lawnPriceType === 'eow' ? lawnEow : lawnWeekly;
-    const leafPerVisit = parseFloat(calc.leafPerVisit) || lawnWeekly;
+    const leafPerVisit = lawnWeekly; // leaf uses same price as lawn
     const hedgePrice = calcHedgePrice({
       small: parseInt(calc.bushesSmall) || 0, medium: parseInt(calc.bushesMedium) || 0,
       large: parseInt(calc.bushesLarge) || 0, xl: parseInt(calc.bushesXl) || 0,
@@ -532,7 +578,8 @@ export default function ServiceAgreement() {
   }, [lawnSqft, calc]);
 
   const getPrice = (id) => {
-    if (id === 'lawn') {
+    if (id === 'lawn' || id === 'leaf') {
+      // Leaf uses same price as lawn
       const isEow = calc.lawnPriceType === 'eow';
       if (overrides.lawn?.enabled) {
         return parseFloat(isEow ? overrides.lawn.eowOverride : overrides.lawn.weeklyOverride) || 0;
@@ -546,8 +593,19 @@ export default function ServiceAgreement() {
   };
 
   // Get visits per year (lawn depends on weekly vs EOW)
+  // Weeks remaining from start date to Feb 28
+  const weeksInTerm = useMemo(() => {
+    if (!startDate) return 52;
+    const s = new Date(startDate + 'T00:00:00');
+    const endYear = s.getMonth() < 2 ? s.getFullYear() : s.getFullYear() + 1;
+    const end = new Date(endYear, 1, 28);
+    return Math.max(1, Math.round((end - s) / (7 * 24 * 60 * 60 * 1000)));
+  }, [startDate]);
+
   const getVisits = (svc) => {
-    if (svc.id === 'lawn') return calc.lawnPriceType === 'eow' ? 16 : 32;
+    if (svc.id === 'lawn') return calc.lawnPriceType === 'eow' ? Math.round(weeksInTerm / 2) : weeksInTerm;
+    if (svc.id === 'leaf') return 0; // included in lawn visits
+    if (svc.id === 'hedge') return calc.hedgeMonths.length;
     return svc.visitsPerYear;
   };
 
@@ -558,17 +616,7 @@ export default function ServiceAgreement() {
         const p = getPrice(svc.id);
         return sum + (svc.priceLabel === '/visit' ? p * getVisits(svc) : p);
       }, 0);
-  }, [enabledIds, prices, overrides, calc.lawnPriceType]);
-
-  const anchorAnnualTotal = useMemo(() => {
-    return ALL_SERVICES.filter((s) => isOn(s.id) && s.calcType !== 'included')
-      .reduce((sum, svc) => {
-        const p = Math.round(getPrice(svc.id) * ANCHOR_MARKUP * 100) / 100;
-        return sum + (svc.priceLabel === '/visit' ? p * getVisits(svc) : p);
-      }, 0);
-  }, [enabledIds, prices, overrides]);
-
-  const annualSavings = anchorAnnualTotal - annualTotal;
+  }, [enabledIds, prices, overrides, calc.lawnPriceType, weeksInTerm]);
 
   // Auto-monthly — uses proration if mid-cycle
   useEffect(() => {
@@ -585,6 +633,14 @@ export default function ServiceAgreement() {
       setMonthlyPrice(String(Math.round(annualTotal / 12)));
     }
   }, [annualTotal, autoMonthly, startDate]);
+
+  // How many months to bill over (actual term, not always 12)
+  const billingMonths = useMemo(() => {
+    if (!startDate) return 12;
+    const enabledSvcs = [...ALL_SERVICES.filter((s) => isOn(s.id)), ...(enabledIds.size > 0 ? [ALWAYS_INCLUDED] : [])];
+    const term = calcTerm(startDate, enabledSvcs, getPrice, getVisits);
+    return term ? (term.isFullCycle ? 12 : term.remainingMonths) : 12;
+  }, [startDate, enabledIds, prices, overrides, calc.lawnPriceType]);
 
   const endDate = useMemo(() => {
     if (!startDate) return '';
@@ -632,24 +688,65 @@ export default function ServiceAgreement() {
     const termMonthsActual = term ? (term.isFullCycle ? 12 : term.remainingMonths) : 12;
     const termStartFmt = term ? term.startFmt : '';
 
+    // Calculate actual weeks from start to Feb 28
+    const startD = new Date(startDate + 'T00:00:00');
+    const startYear = startD.getFullYear();
+    const cycleEndYear = startD.getMonth() < 2 ? startYear : startYear + 1;
+    const cycleEnd = new Date(cycleEndYear, 1, 28);
+    const weeksRemaining = Math.max(1, Math.round((cycleEnd - startD) / (7 * 24 * 60 * 60 * 1000)));
+    const isEow = calc.lawnPriceType === 'eow';
+    const actualLawnVisits = isEow ? Math.round(weeksRemaining / 2) : weeksRemaining;
+
+    // Dynamic bullets based on calculator
+    const seedRate = parseFloat(calc.seedRate) || 8;
+    const hedgeMonthsStr = calc.hedgeMonths.join(', ');
+    const dynamicBullets = {
+      lawn: ['Mow entire lawn at the proper height for your grass type (Mar–Oct)', 'String trim where mowers can\'t reach', 'Edge along all sidewalks, driveways, and curbs', 'Edge around landscape beds', 'Blow all clippings off hard surfaces', 'Blow all leaves off beds, porches, walkways, driveways (Nov–Feb)', 'Mulch leaves into the lawn to return nutrients to the soil', 'Keep beds and the entire property looking clean year-round'],
+      leaf: FULL_BULLETS.leaf,
+      aeration: ['Core aerate the entire lawn with commercial-grade equipment', `Overseed at ${seedRate} lbs per 1,000 sq ft`, 'Thickens your lawn with LESCO Tall Fescue Select Blend (Certified Tag) — a professional-grade seed trusted on golf courses and athletic fields. Certified for purity (no weeds, no filler) and bred for density, drought tolerance, and disease resistance, it establishes a cleaner, fuller lawn than store-bought blends'],
+      hedge: [`Shape and trim all shrubs, bushes, and hedges on the property (${hedgeMonthsStr})`, 'Remove all clippings and debris from beds and surrounding areas', 'Maintain natural shape while keeping growth in check'],
+      sticks: FULL_BULLETS.sticks,
+      mulch: ['Weed all landscape beds before installation', `Install fresh mulch in all landscape beds at ${calc.mulchDepth || 3} inches deep`, 'Edge beds cleanly before installation', 'Clean up all walkways, driveways, and hard surfaces after installation'],
+      pine: FULL_BULLETS.pine,
+    };
+
+    // Dynamic frequency/season per service
+    const getDynamicFreq = (s) => {
+      if (s.id === 'lawn') return isEow ? 'Every other week' : 'Weekly';
+      if (s.id === 'hedge') return `${calc.hedgeMonths.length}x per year`;
+      return s.frequency;
+    };
+    const getDynamicSeason = (s) => {
+      if (s.id === 'lawn') return 'Year-round';
+      if (s.id === 'hedge') return hedgeMonthsStr;
+      return s.season;
+    };
+    const getDynamicVisits = (s) => {
+      if (s.id === 'lawn') return actualLawnVisits;
+      if (s.id === 'leaf') return 0;
+      if (s.id === 'hedge') return calc.hedgeMonths.length;
+      return s.visitsPerYear;
+    };
+
     const html = generateAgreementHTML({
       client,
       services: enabled.map((s) => ({
-        name: s.name, frequency: s.frequency, season: s.season,
-        bullets: FULL_BULLETS[s.id] || s.bullets,
+        name: s.name, frequency: getDynamicFreq(s), season: getDynamicSeason(s),
+        bullets: dynamicBullets[s.id] || s.bullets,
         price: getPrice(s.id), priceLabel: s.priceLabel,
-        anchorPrice: s.calcType !== 'included' ? Math.round(getPrice(s.id) * ANCHOR_MARKUP * 100) / 100 : null,
-        visitsPerYear: getVisits(s), calcType: s.calcType,
+        visitsPerYear: getDynamicVisits(s), calcType: s.calcType,
       })),
       plans: PLAN_TIERS.map((p) => ({
         name: p.name,
-        monthlyPrice: `$${fmt(Math.round(annualTotal / 12) + p.addonPerMonth)}`,
+        monthlyPrice: `$${fmt(Math.round(annualTotal / termMonthsActual) + p.addonPerMonth)}`,
         description: p.description,
         extras: p.extras,
         popular: p.popular || false,
       })),
       term: { startDate: termStartFmt, endDate: termEndDate, months: termMonthsActual },
-      annualSavings: Math.round(annualSavings * 100) / 100,
+      weeksRemaining: actualLawnVisits,
+      hedgeMonths: hedgeMonthsStr,
+      isEow,
     });
     const win = window.open('', '_blank'); win.document.write(html); win.document.close();
     const agreementData = {
@@ -658,12 +755,18 @@ export default function ServiceAgreement() {
       clientAddress: client.address, clientCityStateZip: client.cityStateZip,
       services: enabled.map((s) => ({
         id: s.id, name: s.name, price: getPrice(s.id), priceLabel: s.priceLabel,
-        frequency: s.frequency, season: s.season, visitsPerYear: getVisits(s), calcType: s.calcType,
+        frequency: getDynamicFreq(s), season: getDynamicSeason(s), visitsPerYear: getDynamicVisits(s), calcType: s.calcType,
       })),
       planTier: selectedPlan, monthlyPrice: parseFloat(monthlyPrice) || 0,
       termStart: startDate, termMonths: termMonthsActual,
       annualTotal: Math.round(annualTotal * 100) / 100,
-      annualSavings: Math.round(annualSavings * 100) / 100,
+      lawnSqft: lawnSqft || 0,
+      bedSqft: bedSqft || 0,
+      mulchDepth: calc.mulchDepth || '3',
+      seedRate: calc.seedRate || '8',
+      hedgeMonths: calc.hedgeMonths,
+      measurements: measurements.length > 0 ? measurements : [],
+      mapCenter: clientLatLng || null,
       createdAt: editingId ? ((agreements || []).find((a) => a.id === editingId)?.createdAt || new Date().toISOString()) : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -675,7 +778,8 @@ export default function ServiceAgreement() {
       // Create new
       setAgreements([agreementData, ...(agreements || [])]);
     }
-    setEditingId(null);
+    // Keep editing — don't reset. User can navigate back manually.
+    setEditingId(agreementData.id);
   };
 
   const startNew = () => {
@@ -707,6 +811,9 @@ export default function ServiceAgreement() {
       }
     }
     setOverrides((prev) => ({ ...prev, ...newOverrides }));
+    // Restore measurements and map data
+    if (a.measurements) setMeasurements(a.measurements);
+    if (a.mapCenter) setClientLatLng(a.mapCenter);
     setSelectedPlan(a.planTier || 'total-care');
     setMonthlyPrice(String(a.monthlyPrice || ''));
     setAutoMonthly(false);
@@ -719,7 +826,7 @@ export default function ServiceAgreement() {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-primary">Agreements</h1>
+          <h1 className="text-2xl font-bold text-primary">Contracts</h1>
           <button onClick={startNew} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand text-on-brand text-sm font-semibold hover:bg-brand-hover cursor-pointer">
             <Plus size={16} /> New
           </button>
@@ -727,7 +834,7 @@ export default function ServiceAgreement() {
         {(!agreements || agreements.length === 0) ? (
           <div className="text-center py-16">
             <FileText size={48} className="text-muted/30 mx-auto mb-4" />
-            <p className="text-muted text-sm">No agreements yet</p>
+            <p className="text-muted text-sm">No contracts yet</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -739,12 +846,11 @@ export default function ServiceAgreement() {
                   client: { name: ag.clientName, phone: ag.clientPhone || '', email: ag.clientEmail || '', address: ag.clientAddress || '', cityStateZip: ag.clientCityStateZip || 'Rock Hill, SC 29732' },
                   services: (ag.services || []).map((s) => ({
                     name: s.name, frequency: s.frequency || '', season: s.season || '', bullets: FULL_BULLETS[s.id] || [s.name],
-                    price: s.price, priceLabel: s.priceLabel || '', anchorPrice: s.price ? Math.round(s.price * ANCHOR_MARKUP * 100) / 100 : null,
+                    price: s.price, priceLabel: s.priceLabel || '',
                     visitsPerYear: s.visitsPerYear || 1, calcType: s.calcType || 'item',
                   })),
                   plans: PLAN_TIERS.map((p) => ({ name: p.name, monthlyPrice: `$${fmt(Math.round((ag.annualTotal || 0) / 12) + p.addonPerMonth)}`, description: p.description, extras: p.extras, popular: p.popular || false })),
                   term: { startDate: termStart, endDate: '', months: ag.termMonths || 12 },
-                  annualSavings: ag.annualSavings || 0,
                 });
                 const win = window.open('', '_blank'); win.document.write(html); win.document.close();
               }} />
@@ -761,7 +867,7 @@ export default function ServiceAgreement() {
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex items-center gap-3">
           <button onClick={() => setStep('list')} className="p-2 rounded-lg hover:bg-surface-alt cursor-pointer"><ArrowLeft size={20} className="text-secondary" /></button>
-          <div><h1 className="text-xl font-bold text-primary">New Agreement</h1><p className="text-xs text-muted">Step 1: Client</p></div>
+          <div><h1 className="text-xl font-bold text-primary">New Contract</h1><p className="text-xs text-muted">Step 1: Client</p></div>
         </div>
         <div className="bg-card rounded-2xl border border-border-subtle p-5">
           <label className="block text-xs font-medium text-muted mb-2">Search Jobber</label>
@@ -880,7 +986,7 @@ export default function ServiceAgreement() {
         <div>
           <p className="text-[11px] font-bold text-muted uppercase tracking-widest mb-2">Beds & Extras</p>
           <div className="space-y-2">
-            {BED_SERVICES.map((svc) => <ServiceToggle key={svc.id} svc={svc} active={isOn(svc.id)} onToggle={toggle} />)}
+            {BED_SERVICES.filter((svc) => svc.id !== 'leaf').map((svc) => <ServiceToggle key={svc.id} svc={svc} active={isOn(svc.id)} onToggle={toggle} />)}
           </div>
         </div>
 
@@ -982,347 +1088,427 @@ export default function ServiceAgreement() {
           <div><h1 className="text-xl font-bold text-primary">Calculate</h1><p className="text-xs text-muted">Step {stepNum}: Price each service for {client.name.split(' ')[0]}</p></div>
         </div>
 
-        {/* ── Lawn Maintenance Card ── */}
-        {isOn('lawn') && (
-          <div className="bg-card rounded-2xl border border-border-subtle p-5">
-            <div className="flex items-start justify-between gap-6">
-              <div className="flex-1 space-y-4">
-                <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Lawn Maintenance</p>
+        {/* ── Property ── */}
+        <div className="bg-card rounded-2xl border border-border-subtle p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Property</p>
+            {(lawnSqft > 0 || bedSqft > 0) && <p className="text-xs text-muted">{(lawnSqft + bedSqft).toLocaleString()} total sq ft</p>}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              {mapLawnSqft > 0 ? (
+                <div className="rounded-xl bg-emerald-500/10 p-3 text-center">
+                  <p className="text-lg font-bold text-emerald-500">{mapLawnSqft.toLocaleString()}</p>
+                  <p className="text-[10px] text-muted">Lawn sq ft</p>
+                </div>
+              ) : (
+                <FormInput label="Lawn sq ft" value={calc.lawnSqftManual} onChange={(v) => setC('lawnSqftManual', v)} placeholder="e.g. 8000" />
+              )}
+            </div>
+            <div>
+              {mapBedSqft > 0 ? (
+                <div className="rounded-xl bg-red-500/10 p-3 text-center">
+                  <p className="text-lg font-bold text-red-400">{mapBedSqft.toLocaleString()}</p>
+                  <p className="text-[10px] text-muted">Bed sq ft</p>
+                </div>
+              ) : (
+                <FormInput label="Bed sq ft" value={calc.bedSqftManual} onChange={(v) => setC('bedSqftManual', v)} placeholder="e.g. 500" />
+              )}
+            </div>
+          </div>
+        </div>
 
-                {/* Sqft display */}
-                {mapLawnSqft > 0 ? (
-                  <p className="text-xs text-secondary">
-                    <span className="font-semibold text-brand-text">{mapLawnSqft.toLocaleString()} sq ft</span> from map
-                  </p>
-                ) : (
-                  <FormInput label="Lawn Sq Ft (manual)" value={calc.lawnSqftManual} onChange={(v) => setC('lawnSqftManual', v)} placeholder="e.g. 8000" />
+        {/* ── Services — clean list with tap-to-edit prices ── */}
+        <div className="space-y-3">
+          {/* Lawn & Leaf */}
+          {isOn('lawn') && (() => {
+            const isEow = calc.lawnPriceType === 'eow';
+            const totalVisits = isEow ? 26 : 52;
+            const displayPrice = overrides.lawn.enabled
+              ? parseFloat(isEow ? overrides.lawn.eowOverride : overrides.lawn.weeklyOverride) || 0
+              : (isEow ? prices.lawnEow : prices.lawnWeekly);
+            return (
+              <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-primary">Lawn & Leaf</p>
+                    <p className="text-[10px] text-muted">Year-round · {totalVisits} visits/yr</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-brand-text">${fmt(displayPrice)}<span className="text-xs font-normal text-muted">/visit</span></p>
+                    <p className="text-[10px] text-muted">${fmt(displayPrice * totalVisits)}/yr</p>
+                  </div>
+                </div>
+
+                {/* Frequency toggle */}
+                <div className="flex gap-2">
+                  {[{ id: 'weekly', label: 'Weekly (52)', price: prices.lawnWeekly }, { id: 'eow', label: 'Every Other Week (26)', price: prices.lawnEow }].map((opt) => (
+                    <button key={opt.id} onClick={() => setC('lawnPriceType', opt.id)}
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${calc.lawnPriceType === opt.id ? 'bg-brand text-on-brand' : 'bg-surface-alt text-muted hover:text-secondary'}`}>
+                      {opt.label}{opt.price > 0 ? ` $${fmt(opt.price)}` : ''}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Override */}
+                {overrides.lawn.enabled && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormInput label="Weekly $" value={overrides.lawn.weeklyOverride || ''} onChange={(v) => setOverrides((p) => ({ ...p, lawn: { ...p.lawn, weeklyOverride: v, price: calc.lawnPriceType === 'weekly' ? v : (p.lawn.eowOverride || v) } }))} placeholder="50" />
+                    <FormInput label="EOW $" value={overrides.lawn.eowOverride || ''} onChange={(v) => setOverrides((p) => ({ ...p, lawn: { ...p.lawn, eowOverride: v, price: calc.lawnPriceType === 'eow' ? v : (p.lawn.weeklyOverride || v) } }))} placeholder="70" />
+                  </div>
                 )}
+                <button onClick={() => toggleOverride('lawn')} className="text-[10px] text-muted hover:text-secondary cursor-pointer">{overrides.lawn.enabled ? 'Use calculated price' : 'Override price'}</button>
+              </div>
+            );
+          })()}
 
-                {/* Difficulty */}
+          {/* Aeration & Overseeding */}
+          {isOn('aeration') && (() => {
+            const seedRate = parseFloat(calc.seedRate) || 8;
+            const bagPrice = parseFloat(calc.bagPrice) || 85;
+            const seedLbs = lawnSqft > 0 ? (lawnSqft / 1000) * seedRate : 0;
+            const bags = Math.ceil(seedLbs / 50);
+            const aerPrice = overrides.aeration.enabled ? (parseFloat(overrides.aeration.price) || 0) : prices.aeration;
+            return (
+              <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-primary">Aeration & Overseeding</p>
+                    <p className="text-[10px] text-muted">1x per year · Fall</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-brand-text">${fmt(aerPrice)}</p>
+                  </div>
+                </div>
+
+                {/* What we charge */}
+                <div className="rounded-xl bg-surface-alt border border-border-subtle p-3 space-y-1.5">
+                  <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Charging</p>
+                  <div className="flex justify-between text-[11px]"><span className="text-muted">Aeration</span><span className="text-primary font-semibold">${fmt(prices.aerationDetail.aerationPrice)}</span></div>
+                  <div className="flex justify-between text-[11px]"><span className="text-muted">Overseeding ({prices.aerationDetail.seedLbs > 0 ? `${prices.aerationDetail.seedLbs} lbs` : '—'})</span><span className="text-primary font-semibold">${fmt(prices.aerationDetail.overseedQuote)}</span></div>
+                  <div className="flex justify-between text-[11px] pt-1.5 border-t border-border-subtle/30"><span className="font-bold text-primary">Client pays</span><span className="text-brand-text font-bold">${fmt(aerPrice)}</span></div>
+                </div>
+
+                {/* Our costs */}
+                {prices.aerationDetail.seedLbs > 0 && (() => {
+                  const seedCogs = prices.aerationDetail.bags * 85;
+                  return (
+                    <div className="rounded-xl bg-surface-alt border border-border-subtle p-3 space-y-1.5">
+                      <p className="text-[10px] font-bold text-muted uppercase tracking-widest">COGS</p>
+                      <div className="flex justify-between text-[11px]"><span className="text-muted">Seed ({prices.aerationDetail.seedLbs} lbs / {prices.aerationDetail.bags} bags)</span><span className="text-primary font-semibold">${fmt(seedCogs)}</span></div>
+                      <div className="flex justify-between text-[11px] pt-1.5 border-t border-border-subtle/30"><span className="font-bold text-red-400">Total COGS</span><span className="text-red-400 font-bold">-${fmt(seedCogs)}</span></div>
+                      <div className="flex justify-between text-[11px]"><span className="font-bold text-emerald-500">Revenue before labor</span><span className="text-emerald-500 font-bold">${fmt(aerPrice - seedCogs)}</span></div>
+                    </div>
+                  );
+                })()}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FormInput label="Seed rate (lbs/1k sqft)" value={calc.seedRate} onChange={(v) => setC('seedRate', v)} />
+                  <FormInput label="Charge per 50lb bag spread" value={calc.bagPrice} onChange={(v) => setC('bagPrice', v)} />
+                </div>
+                <OverrideToggle enabled={overrides.aeration.enabled} onToggle={() => toggleOverride('aeration')} overrideValue={overrides.aeration.price} onChangeOverride={(v) => setOverridePrice('aeration', v)} />
+              </div>
+            );
+          })()}
+
+          {/* Hedge Trimming */}
+          {isOn('hedge') && (() => {
+            const hedgePrice = overrides.hedge.enabled ? (parseFloat(overrides.hedge.price) || 0) : prices.hedge;
+            const hedgeVisits = calc.hedgeMonths.length;
+            const allMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const toggleMonth = (m) => setC('hedgeMonths', calc.hedgeMonths.includes(m) ? calc.hedgeMonths.filter((x) => x !== m) : [...calc.hedgeMonths, m]);
+            return (
+              <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-primary">Hedge Trimming</p>
+                    <p className="text-[10px] text-muted">{hedgeVisits}x per year · {calc.hedgeMonths.join(', ')}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-brand-text">${fmt(hedgePrice)}<span className="text-xs font-normal text-muted">/visit</span></p>
+                    {hedgePrice > 0 && hedgeVisits > 0 && <p className="text-[10px] text-muted">${fmt(hedgePrice * hedgeVisits)}/yr</p>}
+                  </div>
+                </div>
+
+                {/* Month picker */}
                 <div>
-                  <label className="block text-[11px] font-medium text-muted mb-1">Difficulty</label>
-                  <div className="flex gap-2">
-                    {['easy', 'moderate', 'hard'].map((d) => (
-                      <button
-                        key={d}
-                        onClick={() => setC('difficulty', d)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize cursor-pointer transition-colors ${calc.difficulty === d ? 'bg-brand text-on-brand' : 'bg-surface-alt text-secondary hover:bg-border-subtle'}`}
-                      >
-                        {d}
+                  <p className="text-[10px] font-medium text-muted mb-2">Months</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allMonths.map((m) => (
+                      <button key={m} onClick={() => toggleMonth(m)}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-all ${calc.hedgeMonths.includes(m) ? 'bg-brand text-on-brand' : 'bg-surface-alt text-muted hover:text-secondary'}`}>
+                        {m}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Weekly / EOW selection */}
-                {lawnSqft > 0 && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setC('lawnPriceType', 'weekly')}
-                      className={`flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-colors ${calc.lawnPriceType === 'weekly' ? 'bg-brand text-on-brand' : 'border border-border-strong text-secondary hover:bg-surface-alt'}`}
-                    >
-                      Weekly ${fmt(prices.lawnWeekly)}
-                    </button>
-                    <button
-                      onClick={() => setC('lawnPriceType', 'eow')}
-                      className={`flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-colors ${calc.lawnPriceType === 'eow' ? 'bg-brand text-on-brand' : 'border border-border-strong text-secondary hover:bg-surface-alt'}`}
-                    >
-                      EOW ${fmt(prices.lawnEow)}
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="text-right shrink-0">
-                {(() => {
-                  const isEow = calc.lawnPriceType === 'eow';
-                  const visits = isEow ? 16 : 32;
-                  const displayPrice = overrides.lawn.enabled
-                    ? parseFloat(isEow ? overrides.lawn.eowOverride : overrides.lawn.weeklyOverride) || 0
-                    : (isEow ? prices.lawnEow : prices.lawnWeekly);
-                  return <>
-                    <p className="text-2xl font-bold text-brand-text">${fmt(displayPrice)}</p>
-                    <p className="text-[10px] text-muted">/{isEow ? 'EOW visit' : 'visit'}</p>
-                    {lawnSqft > 0 && (
-                      <p className="text-[10px] text-muted mt-1">× {visits} = ${fmt(displayPrice * visits)}/yr</p>
-                    )}
-                  </>;
-                })()}
-              </div>
-            </div>
-            {/* Override — shows weekly + EOW inputs */}
-            <div className="mt-3 pt-3 border-t border-border-subtle/50">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${overrides.lawn.enabled ? 'bg-brand border-brand' : 'border-border-strong'}`}>
-                  {overrides.lawn.enabled && <Check size={10} className="text-on-brand" />}
-                </div>
-                <span className="text-[11px] text-muted" onClick={() => toggleOverride('lawn')}>Override price</span>
-              </label>
-              {overrides.lawn.enabled && (
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <FormInput label="Weekly Override" value={overrides.lawn.weeklyOverride || ''} onChange={(v) => setOverrides((p) => ({ ...p, lawn: { ...p.lawn, weeklyOverride: v, price: calc.lawnPriceType === 'weekly' ? v : (p.lawn.eowOverride || v) } }))} placeholder="e.g. 50" />
-                  <FormInput label="EOW Override" value={overrides.lawn.eowOverride || ''} onChange={(v) => setOverrides((p) => ({ ...p, lawn: { ...p.lawn, eowOverride: v, price: calc.lawnPriceType === 'eow' ? v : (p.lawn.weeklyOverride || v) } }))} placeholder="e.g. 70" />
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Leaf Maintenance Card ── */}
-        {isOn('leaf') && (
-          <div className="bg-card rounded-2xl border border-border-subtle p-5">
-            <div className="flex items-start justify-between gap-6">
-              <div className="flex-1 space-y-4">
-                <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Leaf Maintenance</p>
-                <FormInput label="Per Visit Price" value={calc.leafPerVisit} onChange={(v) => setC('leafPerVisit', v)} placeholder={prices.lawnWeekly ? String(prices.lawnWeekly) : 'e.g. 50'} />
-                <p className="text-[10px] text-muted">Defaults to lawn weekly price if left blank</p>
-              </div>
-              <div className="text-right shrink-0">
-                <p className="text-2xl font-bold text-brand-text">${fmt(overrides.leaf.enabled ? (parseFloat(overrides.leaf.price) || 0) : prices.leaf)}</p>
-                <p className="text-[10px] text-muted">/visit</p>
-                <p className="text-[10px] text-muted mt-1">x 18 = ${fmt((overrides.leaf.enabled ? (parseFloat(overrides.leaf.price) || 0) : prices.leaf) * 18)}/yr</p>
-              </div>
-            </div>
-            <OverrideToggle enabled={overrides.leaf.enabled} onToggle={() => toggleOverride('leaf')} overrideValue={overrides.leaf.price} onChangeOverride={(v) => setOverridePrice('leaf', v)} />
-          </div>
-        )}
-
-        {/* ── Aeration & Overseeding Card ── */}
-        {isOn('aeration') && (
-          <div className="bg-card rounded-2xl border border-border-subtle p-5">
-            <div className="flex items-start justify-between gap-6">
-              <div className="flex-1 space-y-4">
-                <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Aeration & Overseeding</p>
-                <p className="text-xs text-secondary">
-                  Lawn: <span className="font-semibold text-brand-text">{lawnSqft > 0 ? `${lawnSqft.toLocaleString()} sq ft` : 'not set'}</span>
-                  {mapLawnSqft > 0 && <span className="text-muted"> (from map)</span>}
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <FormInput label="Seed Rate (lbs/1k)" value={calc.seedRate} onChange={(v) => setC('seedRate', v)} />
-                  <FormInput label="Bag Price (50lb)" value={calc.bagPrice} onChange={(v) => setC('bagPrice', v)} />
-                </div>
-                {lawnSqft > 0 && (
-                  <p className="text-[10px] text-muted">
-                    Aeration: ${fmt(prices.aerationDetail.aerationPrice)} + Overseed: ${fmt(prices.aerationDetail.overseedQuote)}
-                  </p>
-                )}
-              </div>
-              <div className="text-right shrink-0">
-                <p className="text-2xl font-bold text-brand-text">${fmt(overrides.aeration.enabled ? (parseFloat(overrides.aeration.price) || 0) : prices.aeration)}</p>
-                <p className="text-[10px] text-muted">total</p>
-              </div>
-            </div>
-            <OverrideToggle enabled={overrides.aeration.enabled} onToggle={() => toggleOverride('aeration')} overrideValue={overrides.aeration.price} onChangeOverride={(v) => setOverridePrice('aeration', v)} />
-          </div>
-        )}
-
-        {/* ── Hedge Trimming Card ── */}
-        {isOn('hedge') && (
-          <div className="bg-card rounded-2xl border border-border-subtle p-5">
-            <div className="flex items-start justify-between gap-6">
-              <div className="flex-1 space-y-4">
-                <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Hedge Trimming</p>
                 <div className="grid grid-cols-4 gap-2">
                   <FormInput label="Small" value={calc.bushesSmall} onChange={(v) => setC('bushesSmall', v)} placeholder="0" />
                   <FormInput label="Medium" value={calc.bushesMedium} onChange={(v) => setC('bushesMedium', v)} placeholder="0" />
                   <FormInput label="Large" value={calc.bushesLarge} onChange={(v) => setC('bushesLarge', v)} placeholder="0" />
                   <FormInput label="XL" value={calc.bushesXl} onChange={(v) => setC('bushesXl', v)} placeholder="0" />
                 </div>
-                <p className="text-[10px] text-muted">$8/sm · $12/md · $18/lg · $50/xl · $35 min</p>
+                <OverrideToggle enabled={overrides.hedge.enabled} onToggle={() => toggleOverride('hedge')} overrideValue={overrides.hedge.price} onChangeOverride={(v) => setOverridePrice('hedge', v)} />
               </div>
-              <div className="text-right shrink-0">
-                <p className="text-2xl font-bold text-brand-text">${fmt(overrides.hedge.enabled ? (parseFloat(overrides.hedge.price) || 0) : prices.hedge)}</p>
-                <p className="text-[10px] text-muted">/visit</p>
-                {prices.hedge > 0 && (
-                  <p className="text-[10px] text-muted mt-1">x 3 = ${fmt((overrides.hedge.enabled ? (parseFloat(overrides.hedge.price) || 0) : prices.hedge) * 3)}/yr</p>
-                )}
-              </div>
-            </div>
-            <OverrideToggle enabled={overrides.hedge.enabled} onToggle={() => toggleOverride('hedge')} overrideValue={overrides.hedge.price} onChangeOverride={(v) => setOverridePrice('hedge', v)} />
-          </div>
-        )}
+            );
+          })()}
 
-        {/* ── Mulch Installation Card ── */}
-        {isOn('mulch') && (
-          <div className="bg-card rounded-2xl border border-border-subtle p-5">
-            <div className="flex items-start justify-between gap-6">
-              <div className="flex-1 space-y-4">
-                <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Mulch Installation</p>
+          {/* Mulch Installation */}
+          {isOn('mulch') && (() => {
+            const yds = prices.mulchDetail.cubicYards;
+            const matPerYd = parseFloat(calc.mulchMaterialCost) || 40;
+            const laborPerYd = parseFloat(calc.mulchChargePerYd) || 35;
+            const loads = Math.ceil(yds / 6);
+            const matCost = yds * matPerYd;
+            const delivery = loads * 50;
+            const tax = (matCost + delivery) * 0.07;
+            const laborCost = yds * laborPerYd;
+            const mulchPrice = overrides.mulch.enabled ? (parseFloat(overrides.mulch.price) || 0) : prices.mulch;
+            return (
+              <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-primary">Mulch Installation</p>
+                    <p className="text-[10px] text-muted">1x per year · Spring</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-brand-text">${fmt(mulchPrice)}</p>
+                    {yds > 0 && <p className="text-[10px] text-muted">{yds} cubic yards</p>}
+                  </div>
+                </div>
+
+                {/* What we charge */}
+                <div className="rounded-xl bg-surface-alt border border-border-subtle p-3 space-y-1.5">
+                  <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Charging</p>
+                  <div className="flex justify-between text-[11px]"><span className="text-muted">Mulch ({yds > 0 ? `${yds} yds` : '—'})</span><span className="text-primary font-semibold">{yds > 0 ? `$${fmt(matCost)}` : '—'}</span></div>
+                  <div className="flex justify-between text-[11px]"><span className="text-muted">Delivery</span><span className="text-primary font-semibold">{yds > 0 ? `$${fmt(delivery)}` : '—'}</span></div>
+                  <div className="flex justify-between text-[11px]"><span className="text-muted">Tax</span><span className="text-primary font-semibold">${fmt(tax)}</span></div>
+                  <div className="flex justify-between text-[11px]"><span className="text-muted">Labor</span><span className="text-primary font-semibold">{yds > 0 ? `$${fmt(laborCost)}` : '—'}</span></div>
+                  <div className="flex justify-between text-[11px] pt-1.5 border-t border-border-subtle/30"><span className="font-bold text-primary">Client pays</span><span className="text-brand-text font-bold">${fmt(mulchPrice)}</span></div>
+                </div>
+
+                {/* Our costs */}
+                {yds > 0 && (() => {
+                  const mulchCogs = matCost + delivery + tax;
+                  return (
+                    <div className="rounded-xl bg-surface-alt border border-border-subtle p-3 space-y-1.5">
+                      <p className="text-[10px] font-bold text-muted uppercase tracking-widest">COGS</p>
+                      <div className="flex justify-between text-[11px]"><span className="text-muted">Material</span><span className="text-primary font-semibold">${fmt(matCost)}</span></div>
+                      <div className="flex justify-between text-[11px]"><span className="text-muted">Delivery</span><span className="text-primary font-semibold">${fmt(delivery)}</span></div>
+                      <div className="flex justify-between text-[11px]"><span className="text-muted">Tax</span><span className="text-primary font-semibold">${fmt(tax)}</span></div>
+                      <div className="flex justify-between text-[11px] pt-1.5 border-t border-border-subtle/30"><span className="font-bold text-red-400">Total COGS</span><span className="text-red-400 font-bold">-${fmt(mulchCogs)}</span></div>
+                      <div className="flex justify-between text-[11px]"><span className="font-bold text-emerald-500">Revenue before labor</span><span className="text-emerald-500 font-bold">${fmt(mulchPrice - mulchCogs)}</span></div>
+                    </div>
+                  );
+                })()}
+
                 <div className="grid grid-cols-2 gap-3">
-                  <FormInput label="Bed Sq Ft" value={calc.mulchSqft} onChange={(v) => setC('mulchSqft', v)} placeholder="e.g. 500" />
+                  <FormInput label="Bed sq ft" value={calc.mulchSqft} onChange={(v) => setC('mulchSqft', v)} placeholder="e.g. 500" />
                   <FormInput label="Depth (inches)" value={calc.mulchDepth} onChange={(v) => setC('mulchDepth', v)} />
                   <FormInput label="Material $/yd" value={calc.mulchMaterialCost} onChange={(v) => setC('mulchMaterialCost', v)} />
                   <FormInput label="Labor $/yd" value={calc.mulchChargePerYd} onChange={(v) => setC('mulchChargePerYd', v)} />
                 </div>
-                {prices.mulchDetail.cubicYards > 0 && (
-                  <p className="text-[10px] text-muted">{prices.mulchDetail.cubicYards} yds · {prices.mulchDetail.loads} load{prices.mulchDetail.loads !== 1 ? 's' : ''}</p>
-                )}
+                <OverrideToggle enabled={overrides.mulch.enabled} onToggle={() => toggleOverride('mulch')} overrideValue={overrides.mulch.price} onChangeOverride={(v) => setOverridePrice('mulch', v)} />
               </div>
-              <div className="text-right shrink-0">
-                <p className="text-2xl font-bold text-brand-text">${fmt(overrides.mulch.enabled ? (parseFloat(overrides.mulch.price) || 0) : prices.mulch)}</p>
-                <p className="text-[10px] text-muted">total</p>
-              </div>
-            </div>
-            <OverrideToggle enabled={overrides.mulch.enabled} onToggle={() => toggleOverride('mulch')} overrideValue={overrides.mulch.price} onChangeOverride={(v) => setOverridePrice('mulch', v)} />
-          </div>
-        )}
+            );
+          })()}
 
-        {/* ── Pine Needle Installation Card ── */}
-        {isOn('pine') && (
-          <div className="bg-card rounded-2xl border border-border-subtle p-5">
-            <div className="flex items-start justify-between gap-6">
-              <div className="flex-1 space-y-4">
-                <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Pine Needle Installation</p>
+          {/* Pine Needle Installation */}
+          {isOn('pine') && (() => {
+            const bales = parseInt(calc.pineBales) || 0;
+            const laborPerBale = parseFloat(calc.pineLaborPerBale) || 6;
+            const delivery = parseFloat(calc.pineDelivery) || 50;
+            const matCost = bales * 4.25;
+            const laborCost = bales * laborPerBale;
+            const pinePrice = overrides.pine.enabled ? (parseFloat(overrides.pine.price) || 0) : prices.pine;
+            return (
+              <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-primary">Pine Needles</p>
+                    <p className="text-[10px] text-muted">1x per year · Spring</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-brand-text">${fmt(pinePrice)}</p>
+                  </div>
+                </div>
+
+                {/* What we charge */}
+                <div className="rounded-xl bg-surface-alt border border-border-subtle p-3 space-y-1.5">
+                  <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Charging</p>
+                  <div className="flex justify-between text-[11px]"><span className="text-muted">Pine ({bales > 0 ? `${bales} bales` : '—'})</span><span className="text-primary font-semibold">{bales > 0 ? `$${fmt(matCost + laborCost)}` : '—'}</span></div>
+                  <div className="flex justify-between text-[11px]"><span className="text-muted">Delivery</span><span className="text-primary font-semibold">${fmt(delivery)}</span></div>
+                  <div className="flex justify-between text-[11px] pt-1.5 border-t border-border-subtle/30"><span className="font-bold text-primary">Client pays</span><span className="text-brand-text font-bold">${fmt(pinePrice)}</span></div>
+                </div>
+
+                {/* Our costs */}
+                {bales > 0 && (() => {
+                  const pineCogs = matCost;
+                  return (
+                    <div className="rounded-xl bg-surface-alt border border-border-subtle p-3 space-y-1.5">
+                      <p className="text-[10px] font-bold text-muted uppercase tracking-widest">COGS</p>
+                      <div className="flex justify-between text-[11px]"><span className="text-muted">Material ({bales} bales x $4.25)</span><span className="text-primary font-semibold">${fmt(pineCogs)}</span></div>
+                      <div className="flex justify-between text-[11px] pt-1.5 border-t border-border-subtle/30"><span className="font-bold text-red-400">Total COGS</span><span className="text-red-400 font-bold">-${fmt(pineCogs)}</span></div>
+                      <div className="flex justify-between text-[11px]"><span className="font-bold text-emerald-500">Revenue before labor</span><span className="text-emerald-500 font-bold">${fmt(pinePrice - pineCogs)}</span></div>
+                    </div>
+                  );
+                })()}
+
                 <div className="grid grid-cols-3 gap-3">
                   <FormInput label="Bales" value={calc.pineBales} onChange={(v) => setC('pineBales', v)} placeholder="0" />
-                  <FormInput label="Labor/Bale ($)" value={calc.pineLaborPerBale} onChange={(v) => setC('pineLaborPerBale', v)} />
-                  <FormInput label="Delivery ($)" value={calc.pineDelivery} onChange={(v) => setC('pineDelivery', v)} />
+                  <FormInput label="Labor/bale $" value={calc.pineLaborPerBale} onChange={(v) => setC('pineLaborPerBale', v)} />
+                  <FormInput label="Delivery $" value={calc.pineDelivery} onChange={(v) => setC('pineDelivery', v)} />
                 </div>
-              </div>
-              <div className="text-right shrink-0">
-                <p className="text-2xl font-bold text-brand-text">${fmt(overrides.pine.enabled ? (parseFloat(overrides.pine.price) || 0) : prices.pine)}</p>
-                <p className="text-[10px] text-muted">total</p>
-              </div>
-            </div>
-            <OverrideToggle enabled={overrides.pine.enabled} onToggle={() => toggleOverride('pine')} overrideValue={overrides.pine.price} onChangeOverride={(v) => setOverridePrice('pine', v)} />
-          </div>
-        )}
-
-        {/* ── Stick Removal ── */}
-        <div className="bg-card rounded-2xl border border-border-subtle p-5">
-          <div className="flex items-start justify-between gap-6">
-            <div>
-              <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Stick Removal</p>
-              <p className="text-[10px] text-muted mt-1">Every visit · Year-round</p>
-            </div>
-            <div className="text-right shrink-0">
-              <p className="text-2xl font-bold text-brand-text">Included</p>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Summary ── */}
-        <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-3">
-          <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Summary</p>
-          {enabledServices.filter((s) => s.calcType !== 'included').map((svc) => {
-            const price = getPrice(svc.id);
-            const anchor = Math.round(price * ANCHOR_MARKUP * 100) / 100;
-            const annual = svc.priceLabel === '/visit' ? price * svc.visitsPerYear : price;
-            return (
-              <div key={svc.id} className="flex items-center justify-between">
-                <span className="text-xs text-primary">{svc.name}</span>
-                <div className="text-right">
-                  <span className="text-[10px] text-muted line-through mr-2">${fmt(anchor)}{svc.priceLabel}</span>
-                  <span className="text-xs font-bold text-brand-text">${fmt(price)}{svc.priceLabel}</span>
-                </div>
+                <OverrideToggle enabled={overrides.pine.enabled} onToggle={() => toggleOverride('pine')} overrideValue={overrides.pine.price} onChangeOverride={(v) => setOverridePrice('pine', v)} />
               </div>
             );
-          })}
-          <div className="border-t border-border-subtle pt-3 space-y-1">
-            <div className="flex justify-between"><span className="text-xs text-muted">Annual (contract)</span><span className="text-sm font-bold text-primary">${fmt(annualTotal)}</span></div>
-            <div className="flex justify-between"><span className="text-xs text-muted">Annual (individual)</span><span className="text-sm text-muted line-through">${fmt(anchorAnnualTotal)}</span></div>
-            {annualSavings > 0 && <div className="flex justify-between"><span className="text-xs text-muted">Client saves</span><span className="text-sm font-bold text-emerald-500">${fmt(annualSavings)}/yr</span></div>}
-          </div>
+          })()}
+
+          {/* Stick Removal — always included */}
+          {enabledIds.size > 0 && (
+            <div className="flex items-center justify-between px-5 py-3 rounded-2xl bg-surface-alt/50 border border-border-subtle/50">
+              <p className="text-xs text-muted">Stick Removal · Every visit</p>
+              <p className="text-xs font-bold text-brand-text">Included</p>
+            </div>
+          )}
         </div>
 
-        {/* ── Plan Preview (all 3 shown to client on the agreement) ── */}
-        <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-3">
-          <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Plans on Agreement</p>
-          <p className="text-[10px] text-muted">All 3 options will be shown to the client. They choose one.</p>
-          {PLAN_TIERS.map((plan) => {
-            const baseMonthly = Math.round(annualTotal / 12);
-            const planMonthly = baseMonthly + plan.addonPerMonth;
+        {/* ── Price Breakdown ── */}
+        <div className="bg-card rounded-2xl border border-brand/20 p-5 space-y-3">
+          <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Price Breakdown</p>
+          {enabledServices.filter((s) => s.calcType !== 'included').map((svc) => {
+            const price = getPrice(svc.id);
+            const visits = getVisits(svc);
+            const annual = svc.priceLabel === '/visit' ? price * visits : price;
+
+            // Detail lines for services with cost breakdowns
+            let details = [];
+            if (svc.id === 'aeration' && lawnSqft > 0 && prices.aerationDetail) {
+              const seedLbs = (lawnSqft / 1000) * (parseFloat(calc.seedRate) || 8);
+              const bags = Math.ceil(seedLbs / 50);
+              details = [
+                `Aeration: $${fmt(prices.aerationDetail.aerationPrice)}`,
+                `Seed: ${Math.round(seedLbs)} lbs (${bags} x 50lb bag${bags !== 1 ? 's' : ''} @ $${fmt(parseFloat(calc.bagPrice) || 200)}/bag)`,
+                `Overseed cost: $${fmt(prices.aerationDetail.overseedQuote)}`,
+              ];
+            }
+            if (svc.id === 'mulch' && prices.mulchDetail && prices.mulchDetail.cubicYards > 0) {
+              const yds = prices.mulchDetail.cubicYards;
+              const matCost = yds * (parseFloat(calc.mulchMaterialCost) || 40);
+              const laborCost = yds * (parseFloat(calc.mulchChargePerYd) || 35);
+              const loads = Math.ceil(yds / 6);
+              const delivery = loads * 50;
+              const tax = (matCost + delivery) * 0.07;
+              details = [
+                `${yds} cubic yards @ ${calc.mulchDepth || 3}" depth`,
+                `Material: $${fmt(matCost)} (${yds} yds x $${fmt(parseFloat(calc.mulchMaterialCost) || 40)}/yd)`,
+                `Delivery: $${fmt(delivery)}`,
+                `Tax: $${fmt(tax)}`,
+                `Labor: $${fmt(laborCost)} (${yds} yds x $${fmt(parseFloat(calc.mulchChargePerYd) || 35)}/yd)`,
+              ];
+            }
+            if (svc.id === 'pine' && (parseInt(calc.pineBales) || 0) > 0) {
+              const bales = parseInt(calc.pineBales) || 0;
+              const laborPerBale = parseFloat(calc.pineLaborPerBale) || 6;
+              const delivery = parseFloat(calc.pineDelivery) || 50;
+              details = [
+                `${bales} bales @ $4.25/bale = $${fmt(bales * 4.25)}`,
+                `Labor: $${fmt(bales * laborPerBale)} (${bales} x $${fmt(laborPerBale)}/bale)`,
+                `Delivery: $${fmt(delivery)}`,
+              ];
+            }
+            if (svc.id === 'hedge') {
+              const sm = parseInt(calc.bushesSmall) || 0;
+              const md = parseInt(calc.bushesMedium) || 0;
+              const lg = parseInt(calc.bushesLarge) || 0;
+              const xl = parseInt(calc.bushesXl) || 0;
+              const parts = [];
+              if (sm) parts.push(`${sm} small ($${sm * 8})`);
+              if (md) parts.push(`${md} medium ($${md * 12})`);
+              if (lg) parts.push(`${lg} large ($${lg * 18})`);
+              if (xl) parts.push(`${xl} XL ($${xl * 50})`);
+              if (parts.length) {
+                details = [parts.join(' · '), `${calc.hedgeMonths.length}x/yr: $${fmt(price)}/visit x ${calc.hedgeMonths.length} = $${fmt(price * calc.hedgeMonths.length)}`];
+              }
+            }
+
             return (
-              <div key={plan.id} className={`rounded-xl p-3 ${plan.popular ? 'border-2 border-brand bg-brand-light/10' : 'border border-border-subtle/50'}`}>
+              <div key={svc.id} className="py-2 border-b border-border-subtle/30 last:border-0">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-bold text-primary">{plan.name}</p>
-                    {plan.popular && <span className="text-[8px] font-bold bg-brand text-on-brand px-1.5 py-0.5 rounded-full uppercase">Most Popular</span>}
+                  <div>
+                    <p className="text-sm text-primary">{svc.name}</p>
+                    <p className="text-[10px] text-muted">{svc.priceLabel === '/visit' ? `$${fmt(price)}/visit x ${visits}` : svc.frequency}</p>
                   </div>
-                  <p className="text-sm font-bold text-brand-text">${fmt(planMonthly)}/mo</p>
+                  <p className="text-sm font-bold text-primary">${fmt(annual)}</p>
                 </div>
-                {plan.extras.length > 0 && (
-                  <p className="text-[10px] text-muted mt-1">+ {plan.extras.map((e) => e.split(':')[0]).join(', ')}</p>
+                {details.length > 0 && (
+                  <div className="mt-2 pl-3 border-l-2 border-border-subtle/30 space-y-0.5">
+                    {details.map((d, i) => <p key={i} className="text-[10px] text-muted">{d}</p>)}
+                  </div>
                 )}
               </div>
             );
           })}
+          {enabledIds.size > 0 && (
+            <div className="flex items-center justify-between py-2 border-b border-border-subtle/30">
+              <p className="text-sm text-muted">Stick Removal</p>
+              <p className="text-sm font-bold text-brand-text">Included</p>
+            </div>
+          )}
+          <div className="pt-2 space-y-1">
+            <div className="flex justify-between items-center">
+              <p className="text-xs text-muted">Annual Total</p>
+              <p className="text-2xl font-black text-primary">${fmt(annualTotal)}</p>
+            </div>
+            {annualTotal > 0 && (
+              <div className="flex justify-between items-center">
+                <p className="text-xs text-muted">Monthly</p>
+                <p className="text-lg font-bold text-brand-text">${fmt(Math.round(annualTotal / billingMonths))}/mo <span className="text-[10px] text-muted font-normal">({billingMonths} mo)</span></p>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* ── Term & Proration ── */}
-        <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-4">
-          <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Term</p>
-          <FormInput label="Start Date" value={startDate} onChange={(v) => setStartDate(v)} type="date" />
+        {/* ── Plan tiers — compact ── */}
+        <div className="flex gap-2">
+          {PLAN_TIERS.map((plan) => {
+            const planMonthly = Math.round(annualTotal / billingMonths) + plan.addonPerMonth;
+            return (
+              <div key={plan.id} className={`flex-1 rounded-xl p-3 text-center ${plan.popular ? 'border border-border-subtle/50 bg-brand-light/5' : 'border border-border-subtle/50'}`}>
+                <p className="text-[10px] font-bold text-muted">{plan.name}</p>
+                <p className="text-sm font-black text-brand-text mt-1">${fmt(planMonthly)}</p>
+                <p className="text-[9px] text-muted">/mo</p>
+              </div>
+            );
+          })}
+        </div>
 
+        {/* ── Start date ── */}
+        <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-3">
+          <FormInput label="Start Date" value={startDate} onChange={(v) => setStartDate(v)} type="date" />
           {startDate && (() => {
             const enabledSvcs = [...ALL_SERVICES.filter((s) => isOn(s.id)), ...(enabledIds.size > 0 ? [ALWAYS_INCLUDED] : [])];
             const term = calcTerm(startDate, enabledSvcs, getPrice, getVisits);
             if (!term) return null;
-
             return (
-              <div className="space-y-4">
-                {/* Contract info */}
-                <div className="rounded-xl bg-surface-alt/50 p-4 space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-xs text-muted">Cycle</span>
-                    <span className="text-xs font-semibold text-primary">{term.startFmt} → {term.endFmt}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-xs text-muted">First billing</span>
-                    <span className="text-xs font-semibold text-primary">{term.firstBilling}</span>
-                  </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted">Cycle</span>
+                  <span className="font-semibold text-primary">{term.startFmt} → {term.endFmt}</span>
                 </div>
-
-                {/* Full year rate */}
-                <div className="rounded-xl bg-surface-alt/50 p-4 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-muted">Full annual rate</span>
-                    <span className="text-sm font-bold text-primary">${fmt(term.fullYearTotal)}/yr (${fmt(term.fullMonthly)}/mo)</span>
-                  </div>
-                </div>
-
-                {/* Proration — only show if mid-cycle */}
                 {!term.isFullCycle && (
-                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
-                    <p className="text-[11px] font-bold text-amber-500 uppercase tracking-widest">Prorated Year 1</p>
-                    <p className="text-xs text-muted">Since we're starting mid-cycle, here's what's left this year:</p>
-
-                    {term.breakdown.filter((b) => !b.included).map((b) => (
-                      <div key={b.id} className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${b.status === 'done' ? 'bg-muted/30' : b.status === 'full' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                          <span className={b.status === 'done' ? 'text-muted/50 line-through' : 'text-secondary'}>{b.name}</span>
-                        </div>
-                        <div className="text-right">
-                          {b.status === 'done' ? (
-                            <span className="text-muted/50">Already passed</span>
-                          ) : (
-                            <span className="font-semibold text-primary">
-                              {b.remainingVisits} visit{b.remainingVisits !== 1 ? 's' : ''} · ${fmt(b.proratedAnnual)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-
-                    <div className="border-t border-amber-500/20 pt-2 space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-xs font-semibold text-primary">Year 1 total ({term.remainingMonths} months)</span>
-                        <span className="text-xs font-bold text-brand-text">${fmt(term.proratedTotal)}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-muted">Year 1 monthly</span>
-                        <span className="text-lg font-bold text-brand-text">${fmt(term.proratedMonthly)}/mo</span>
-                      </div>
+                  <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 p-3 space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-amber-500 font-bold">Year 1 ({term.remainingMonths} mo)</span>
+                      <span className="font-bold text-brand-text">${fmt(term.proratedMonthly)}/mo</span>
                     </div>
-
-                    <p className="text-[10px] text-muted">Renews March 1 at ${fmt(term.fullMonthly)}/mo for the full year</p>
+                    <p className="text-[10px] text-muted">Renews at ${fmt(term.fullMonthly)}/mo</p>
                   </div>
                 )}
-
-                {/* Full cycle monthly */}
                 {term.isFullCycle && (
-                  <div className="flex justify-between items-center rounded-xl bg-brand-light/20 p-4">
-                    <span className="text-xs font-semibold text-primary">Monthly price</span>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted">Monthly</span>
                     <span className="text-lg font-bold text-brand-text">${fmt(term.fullMonthly)}/mo</span>
                   </div>
                 )}
@@ -1332,9 +1518,16 @@ export default function ServiceAgreement() {
         </div>
 
         <button onClick={handleGenerate} disabled={!startDate}
-          className="w-full flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-brand text-on-brand font-bold text-lg hover:bg-brand-hover cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
-          <FileText size={20} /> Generate Agreement
+          className="w-full flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-brand text-on-brand font-black text-lg hover:bg-brand-hover cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]">
+          <FileText size={20} /> {editingId ? 'Save & Generate Contract' : 'Generate Contract'}
         </button>
+
+        {onDone && (
+          <button onClick={onDone}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer transition-colors">
+            <ArrowLeft size={16} /> Back to Clients
+          </button>
+        )}
       </div>
     );
   }

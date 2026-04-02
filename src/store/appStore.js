@@ -71,6 +71,7 @@ const STATE_KEYS = [
   { key: 'mowingSettings',      supaKey: 'greenteam-mowingSettings',      initial: initialMowingSettings },
   { key: 'mowingNotifications', supaKey: 'greenteam-mowingNotifications', initial: initialMowingNotifications },
   { key: 'strikes',             supaKey: 'greenteam-strikes',             initial: [] },
+  { key: 'clients',             supaKey: 'greenteam-clients',             initial: [] },
 ];
 
 function resolveInitial(cloudValue, initial) {

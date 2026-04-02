@@ -254,29 +254,6 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* Preview as Team Member */}
-        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Eye size={18} className="text-brand-text-strong" />
-            <h3 className="text-sm font-bold text-primary">Preview Team Member View</h3>
-          </div>
-          {teamMembers.length > 0 ? (
-            <div className="space-y-2">
-              {teamMembers.map(([email, info]) => (
-                <button key={email} onClick={() => { setPreviewEmail(email); setPreviewTeamView(true); }}
-                  className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-surface-alt hover:bg-surface-alt/80 transition-colors cursor-pointer">
-                  <span className="text-sm font-medium text-primary">{info.name || email}</span>
-                  <ChevronRight size={14} className="text-muted" />
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-muted">No team members added yet.</p>
-          )}
-        </div>
-
-        <QBConnectionPanel />
-
         <button
           onClick={handleSignOut}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors cursor-pointer"

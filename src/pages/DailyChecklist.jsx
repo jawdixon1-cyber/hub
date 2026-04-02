@@ -2,12 +2,23 @@ import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } fro
 import { Check, ChevronRight, ChevronDown, RotateCcw, Pencil, Plus, Trash2, GripVertical, X, ExternalLink, StickyNote, Link2, Type, Clock, Target, Circle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/AppStoreContext';
+import { useAuth } from '../contexts/AuthContext';
 import { genId } from '../data';
 import { getTodayInTimezone, getTimezone } from '../utils/timezone';
 import renderLinkedText from '../utils/renderLinkedText';
 import QuickLinks from '../components/QuickLinks';
 
 const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
+
+/* ─── Day filtering ─── */
+
+const DAY_NAMES_TOP = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function isItemForToday(item) {
+  if (!item.days || item.days.length === 0) return true;
+  const today = DAY_NAMES_TOP[new Date().getDay()];
+  return item.days.includes(today);
+}
 
 /* ─── Hooks ─── */
 
@@ -35,7 +46,7 @@ function useChecklistDay(items, setItems, checklistType) {
 }
 
 function useChecklistLog(items, checklistType, checklistLog, setChecklistLog) {
-  const checkableItems = items.filter((i) => i.type !== 'header');
+  const checkableItems = items.filter((i) => i.type !== 'header' && isItemForToday(i));
   const completedCount = checkableItems.filter((i) => i.done).length;
   const logDebounce = useRef(null);
   useEffect(() => {
@@ -557,28 +568,27 @@ function TodaySchedule() {
 
 /* ─── Checklist Flow (modal overlay) ─── */
 
-function ChecklistFlow({ items, setItems, onClose, title }) {
+function ChecklistFlow({ items, setItems, onClose, title, onEdit, userName }) {
+  const isForToday = isItemForToday;
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const firstName = (userName || '').split(' ')[0] || '';
+  const [started, setStarted] = useState(false);
   const [dismissing, setDismissing] = useState(new Set());
 
   const groups = useMemo(() => {
     const result = []; let cur = null;
     for (const item of items) {
       if (item.type === 'header') { if (cur) result.push(cur); cur = { header: item.text, items: [] }; }
-      else if (cur) cur.items.push(item);
-      else { if (!result.length || result[result.length - 1].header !== null) result.push({ header: null, items: [] }); result[result.length - 1].items.push(item); }
+      else if (cur && isForToday(item)) cur.items.push(item);
+      else if (isForToday(item)) { if (!result.length || result[result.length - 1].header !== null) result.push({ header: null, items: [] }); result[result.length - 1].items.push(item); }
     }
     if (cur) result.push(cur);
-    return result;
+    // Remove empty groups (header with no items for today)
+    return result.filter((g) => g.items.length > 0 || !g.header);
   }, [items]);
 
-  const activeSectionIndex = useMemo(() => {
-    for (let i = 0; i < groups.length; i++) { if (groups[i].items.some((it) => !it.done)) return i; }
-    return groups.length - 1;
-  }, [groups]);
-
-  const activeGroup = groups[activeSectionIndex];
-  const remainingItems = activeGroup ? activeGroup.items.filter((it) => !it.done) : [];
-  const checkable = items.filter((i) => i.type !== 'header');
+  const checkable = items.filter((i) => i.type !== 'header' && isForToday(i));
   const done = checkable.filter((i) => i.done).length;
   const allDone = checkable.length > 0 && done === checkable.length;
 
@@ -592,44 +602,72 @@ function ChecklistFlow({ items, setItems, onClose, title }) {
     }, 350);
   }, [items, setItems]);
 
+  if (!started) {
+    return (
+      <div className="min-h-[calc(100svh-80px)] bg-surface flex flex-col items-center justify-center">
+        <div className="text-center space-y-6 px-8">
+          <p className="text-3xl font-black text-primary">{greeting}{firstName ? `, ${firstName}` : ''}</p>
+          <p className="text-base text-muted">{title === 'Start Day' ? "Let's get today started." : "Time to wrap up the day."}</p>
+          <button onClick={() => setStarted(true)}
+            className="px-10 py-4 rounded-2xl bg-brand text-on-brand font-black text-lg cursor-pointer hover:bg-brand-hover transition-all active:scale-[0.97]">
+            Open
+          </button>
+          <div>
+            <button onClick={onClose} className="text-xs text-muted hover:text-secondary cursor-pointer mt-4">Skip for now</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 z-50 bg-surface">
+    <div className="min-h-[calc(100svh-80px)] bg-surface">
       <div className="h-full flex flex-col max-w-lg mx-auto">
-        <div className="flex items-center gap-3 px-5 py-4 shrink-0">
-          <button onClick={onClose} className="p-2 -ml-2 rounded-xl text-secondary hover:bg-surface-alt cursor-pointer"><X size={20} /></button>
-          <h1 className="text-lg font-bold text-primary flex-1">{title}</h1>
-          <button onClick={() => setItems((prev) => prev.map((i) => (i.type === 'header' ? i : { ...i, done: false })))} className="p-2 rounded-xl text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer"><RotateCcw size={16} /></button>
+        <div className="flex items-center justify-between px-5 py-3 shrink-0">
+          <div className="flex items-center gap-2">
+            <button onClick={onEdit} className="p-2 rounded-xl text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer"><Pencil size={16} /></button>
+            <button onClick={() => setItems((prev) => prev.map((i) => (i.type === 'header' ? i : { ...i, done: false })))} className="p-2 rounded-xl text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer"><RotateCcw size={16} /></button>
+          </div>
+          <span className="text-xs text-muted">{done}/{checkable.length}</span>
+          <button onClick={onClose} className="px-3 py-1.5 rounded-xl text-xs font-semibold text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer">Skip</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 pb-8">
-          {!allDone && activeGroup && (
-            <div>
-              {activeGroup.header && <h2 className="text-sm font-bold uppercase tracking-wider text-muted mb-3">{activeGroup.header}</h2>}
-              <div className="space-y-2">
-                {remainingItems.map((item) => (
-                  <div key={item.id} onClick={() => handleToggle(item.id)}
-                    className={`relative overflow-hidden rounded-xl px-4 py-3.5 select-none cursor-pointer bg-card border border-border-subtle hover:bg-surface-alt active:scale-[0.98] transition-all duration-300 ease-out ${dismissing.has(item.id) ? 'opacity-0 translate-x-8 scale-95' : 'opacity-100'}`}
-                    role="button" tabIndex={0}>
-                    <div className="flex items-center gap-3">
-                      <div className="w-6 h-6 rounded-full border-2 border-border-strong flex items-center justify-center shrink-0">
-                        {dismissing.has(item.id) && <Check size={14} className="text-brand dc-check-appear" />}
-                      </div>
-                      <span className="text-sm text-primary flex-1">{renderLinkedText(item.text)}<QuickLinks links={item.links} /></span>
-                      <ChevronRight size={14} className="text-muted shrink-0" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
+        <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-5">
           {allDone && (
-            <div className="text-center py-12">
+            <div className="text-center py-8">
               <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-brand-light text-brand-text-strong font-semibold text-sm">
                 <Check size={18} /> All done
               </div>
             </div>
           )}
+
+          {groups.map((group, gi) => (
+            <div key={gi}>
+              {group.header && <h2 className="text-[11px] font-bold uppercase tracking-widest text-muted mb-2">{group.header}</h2>}
+              <div className="space-y-2">
+                {group.items.map((item) => (
+                  <div key={item.id} onClick={() => handleToggle(item.id)}
+                    className={`relative overflow-hidden rounded-xl px-4 py-3.5 select-none cursor-pointer border transition-all duration-300 ease-out active:scale-[0.98] ${
+                      item.done
+                        ? 'bg-brand-light/10 border-brand/20'
+                        : 'bg-card border-border-subtle hover:bg-surface-alt'
+                    } ${dismissing.has(item.id) ? 'opacity-60 scale-95' : 'opacity-100'}`}
+                    role="button" tabIndex={0}>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                        item.done ? 'bg-brand border-brand' : 'border-border-strong'
+                      }`}>
+                        {(item.done || dismissing.has(item.id)) && <Check size={14} className="text-on-brand" />}
+                      </div>
+                      <span className={`text-sm flex-1 transition-colors ${item.done ? 'text-muted line-through' : 'text-primary'}`}>
+                        {renderLinkedText(item.text)}<QuickLinks links={item.links} />
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -698,64 +736,143 @@ function HeadingWidget({ widget, onUpdate, onDelete, editing }) {
 
 /* ─── Growth Goals ─── */
 
-function GrowthGoals() {
-  const CLIENT_GOAL = 200;
-  const [stats, setStats] = useState(null);
+function fmt$(n) { return n >= 1000 ? `$${(n/1000).toFixed(1)}k` : `$${Math.round(n)}`; }
 
-  useEffect(() => {
+function OwnerDashboard() {
+  const CLIENT_GOAL = 200;
+  const [data, setData] = useState(null);
+  const [labor, setLabor] = useState(null);
+  const [dashLoading, setDashLoading] = useState(false);
+
+  const loadDashboard = useCallback(() => {
+    setDashLoading(true);
     const today = getTodayInTimezone();
     const yearStart = today.slice(0, 4) + '-01-01';
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const thirtyStr = thirtyDaysAgo.toISOString().split('T')[0];
 
-    Promise.all([
-      fetch(`/api/commander/summary?start=${yearStart}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch(`/api/commander/summary?start=${thirtyStr}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch('/api/jobber-data?action=ytd-revenue').then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([yearData, thirtyData, ytd]) => {
+    // Single commander call (cached server-side for 5 min), then ytd revenue
+    (async () => {
+      const yearData = await fetch(`/api/commander/summary?start=${yearStart}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null);
+      const ytd = await fetch('/api/jobber-data?action=ytd-revenue').then(r => r.ok ? r.json() : null).catch(() => null);
+      return [yearData, yearData, ytd, null];
+    })().then(([yearData, thirtyData, ytd, laborData]) => {
       const sent = thirtyData?.kpis?.quotesSent || 0;
       const approved = thirtyData?.kpis?.quotesApproved || 0;
-      setStats({
+      setData({
         clients: yearData?.activeRecurringCount || 0,
+        newLeads: thirtyData?.kpis?.newLeads || 0,
+        quotesSent: sent,
+        quotesApproved: approved,
         closeRate: sent > 0 ? Math.round((approved / sent) * 100) : 0,
-        revenue: ytd?.ytdRevenue || 0,
+        recurringStarts: thirtyData?.kpis?.recurringStarts || 0,
+        monthlyRevAdd: thirtyData?.kpis?.startsMonthlyRevenue || 0,
+        ytdRevenue: ytd?.ytdRevenue || 0,
+        jobCount: ytd?.jobCount || 0,
       });
-    });
+
+      // Compute labor stats from the week
+      if (laborData) {
+        let totalHrs = 0, jobHrs = 0, generalHrs = 0, totalCost = 0, revenue = 0;
+        for (const [, day] of Object.entries(laborData)) {
+          if (day?.labor) {
+            totalHrs += day.labor.totalHours || 0;
+            totalCost += day.labor.totalCost || 0;
+            jobHrs += day.labor.jobHours || 0;
+            generalHrs += day.labor.generalHours || 0;
+          }
+          if (day?.revenue) revenue += day.revenue;
+        }
+        setLabor({
+          totalHrs: Math.round(totalHrs * 10) / 10,
+          jobHrs: Math.round(jobHrs * 10) / 10,
+          generalHrs: Math.round(generalHrs * 10) / 10,
+          generalPct: totalHrs > 0 ? Math.round((generalHrs / totalHrs) * 100) : 0,
+          laborCost: Math.round(totalCost),
+          revenue: Math.round(revenue),
+          revPerHour: totalHrs > 0 ? Math.round(revenue / totalHrs) : 0,
+          laborPct: revenue > 0 ? Math.round((totalCost / revenue) * 100) : 0,
+        });
+      }
+    }).finally(() => setDashLoading(false));
   }, []);
 
-  const clients = stats?.clients || 0;
+  // Don't auto-load — user taps Refresh to load stats (prevents Jobber throttling)
+
+  const clients = data?.clients || 0;
   const clientPct = Math.min(100, Math.round((clients / CLIENT_GOAL) * 100));
-  const closeRate = stats?.closeRate || 0;
-  const revenue = stats?.revenue || 0;
 
   return (
-    <div className="space-y-3">
-      {/* Recurring Clients */}
-      <div className="bg-card rounded-2xl border border-border-subtle p-4 space-y-2">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-bold text-secondary">Recurring Clients</span>
-          <span className="font-black text-primary">{clients} <span className="text-muted font-normal">/ {CLIENT_GOAL}</span></span>
+    <div className="space-y-4">
+      {/* ── Overall ── */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Overview</p>
+          <button onClick={loadDashboard} disabled={dashLoading} className="px-3 py-1 rounded-lg text-[10px] font-bold text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer disabled:opacity-50 transition-colors">
+            {dashLoading ? 'Loading...' : data ? 'Refresh' : 'Load Stats'}
+          </button>
         </div>
-        <div className="w-full h-3 rounded-full bg-surface-alt overflow-hidden">
-          <div className="h-full rounded-full bg-brand transition-all duration-500" style={{ width: `${clientPct}%` }} />
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
+            <p className="text-[9px] text-muted font-bold uppercase">YTD Revenue</p>
+            <p className="text-xl font-black text-primary mt-1">{data ? fmt$(data.ytdRevenue) : '--'}</p>
+          </div>
+          <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
+            <p className="text-[9px] text-muted font-bold uppercase">Recurring</p>
+            <p className="text-xl font-black text-brand-text mt-1">{data ? clients : '--'}</p>
+            <p className="text-[9px] text-muted">/ {CLIENT_GOAL} goal</p>
+          </div>
+          <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
+            <p className="text-[9px] text-muted font-bold uppercase">Jobs YTD</p>
+            <p className="text-xl font-black text-primary mt-1">{data ? data.jobCount : '--'}</p>
+          </div>
         </div>
-        <p className="text-[10px] text-muted">{CLIENT_GOAL - clients > 0 ? `${CLIENT_GOAL - clients} to go` : 'Goal reached!'}</p>
+        {/* Progress bar */}
+        <div className="mt-2 bg-card rounded-xl border border-border-subtle p-3">
+          <div className="flex items-center justify-between text-[10px] mb-1">
+            <span className="text-muted font-bold">Growth Goal</span>
+            <span className="font-black text-primary">{clientPct}%</span>
+          </div>
+          <div className="w-full h-2 rounded-full bg-surface-alt overflow-hidden">
+            <div className="h-full rounded-full bg-brand transition-all duration-500" style={{ width: `${clientPct}%` }} />
+          </div>
+        </div>
       </div>
 
-      {/* Close Rate + YTD Revenue side by side */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-card rounded-2xl border border-border-subtle p-4 text-center">
-          <p className="text-[9px] font-bold text-muted uppercase tracking-wider">Close Rate</p>
-          <p className={`text-2xl font-black mt-1 ${closeRate >= 50 ? 'text-emerald-500' : closeRate >= 30 ? 'text-amber-500' : closeRate > 0 ? 'text-red-500' : 'text-muted'}`}>{closeRate > 0 ? `${closeRate}%` : '--'}</p>
-          <p className="text-[10px] text-muted mt-0.5">Last 30 days</p>
-        </div>
-        <div className="bg-card rounded-2xl border border-border-subtle p-4 text-center">
-          <p className="text-[9px] font-bold text-muted uppercase tracking-wider">YTD Revenue</p>
-          <p className="text-2xl font-black text-primary mt-1">{revenue > 0 ? `$${(revenue / 1000).toFixed(0)}k` : '--'}</p>
-          <p className="text-[10px] text-muted mt-0.5">{new Date().getFullYear()}</p>
+      {/* ── Sales ── */}
+      <div>
+        <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">Sales (Last 30 Days)</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="bg-card rounded-xl border border-border-subtle p-3">
+            <div className="flex justify-between items-center">
+              <p className="text-[9px] text-muted font-bold uppercase">New Leads</p>
+              <p className="text-lg font-black text-primary">{data?.newLeads ?? '--'}</p>
+            </div>
+          </div>
+          <div className="bg-card rounded-xl border border-border-subtle p-3">
+            <div className="flex justify-between items-center">
+              <p className="text-[9px] text-muted font-bold uppercase">Quotes Sent</p>
+              <p className="text-lg font-black text-primary">{data?.quotesSent ?? '--'}</p>
+            </div>
+          </div>
+          <div className="bg-card rounded-xl border border-border-subtle p-3">
+            <div className="flex justify-between items-center">
+              <p className="text-[9px] text-muted font-bold uppercase">Close Rate</p>
+              <p className={`text-lg font-black ${(data?.closeRate || 0) >= 50 ? 'text-emerald-500' : (data?.closeRate || 0) >= 30 ? 'text-amber-500' : (data?.closeRate || 0) > 0 ? 'text-red-500' : 'text-muted'}`}>{data?.closeRate != null ? `${data.closeRate}%` : '--'}</p>
+            </div>
+          </div>
+          <div className="bg-card rounded-xl border border-border-subtle p-3">
+            <div className="flex justify-between items-center">
+              <p className="text-[9px] text-muted font-bold uppercase">New Recurring</p>
+              <div className="text-right">
+                <p className="text-lg font-black text-emerald-500">{data?.recurringStarts ?? '--'}</p>
+                {data?.monthlyRevAdd > 0 && <p className="text-[9px] text-emerald-500/70">+{fmt$(data.monthlyRevAdd)}/mo</p>}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+
     </div>
   );
 }
@@ -906,6 +1023,7 @@ function MonthlyProfit() {
 
 export default function DailyChecklist() {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
 
   // Store
   const ownerStartChecklist = useAppStore((s) => s.ownerStartChecklist);
@@ -927,6 +1045,47 @@ export default function DailyChecklist() {
   // Checklist flow state
   const [activeFlow, setActiveFlow] = useState(null); // 'morning' | 'evening' | null
   const [showEditor, setShowEditor] = useState(null); // 'morning' | 'evening' | null
+
+  // Auto-trigger: 3 AM EST = Start Day, 5 PM EST = End Day
+  // Stays on screen until complete. Skip = temporary (comes back in 2 min)
+  const [skippedUntil, setSkippedUntil] = useState({ morning: 0, evening: 0 });
+
+  const autoFlow = (() => {
+    const now = new Date();
+    const est = new Date(now.toLocaleString('en-US', { timeZone: getTimezone() }));
+    const hour = est.getHours();
+    const nowMs = Date.now();
+
+    // After 5 PM, evening takes priority (if morning is done)
+    if (hour >= 17 && !eveningAllDone && morningAllDone && nowMs > skippedUntil.evening) return 'evening';
+    // After 3 AM, show morning
+    if (hour >= 3 && !morningAllDone && nowMs > skippedUntil.morning) return 'morning';
+    return null;
+  })();
+
+  // Re-render every 30s to check time and skip expiry
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  // When all done, auto-close after a moment
+  useEffect(() => {
+    if (activeFlow === 'morning' && morningAllDone) setTimeout(() => setActiveFlow(null), 1200);
+    if (activeFlow === 'evening' && eveningAllDone) setTimeout(() => setActiveFlow(null), 1200);
+  }, [activeFlow, morningAllDone, eveningAllDone]);
+
+  // Auto-open the flow when autoFlow says so
+  useEffect(() => {
+    if (autoFlow && !activeFlow && !showEditor) setActiveFlow(autoFlow);
+  }, [autoFlow, activeFlow, showEditor]);
+
+  // Skip = dismiss for 2 minutes, then it comes back
+  const skipFlow = (type) => {
+    setSkippedUntil((prev) => ({ ...prev, [type]: Date.now() + 2 * 60 * 1000 }));
+    setActiveFlow(null);
+  };
 
   // Dashboard widgets
   const [widgets, setWidgets] = useState(loadWidgets);
@@ -961,10 +1120,10 @@ export default function DailyChecklist() {
     <div className="pb-12 space-y-4">
       {/* Checklist flow overlays */}
       {activeFlow === 'morning' && (
-        <ChecklistFlow items={ownerStartChecklist} setItems={setOwnerStartChecklist} onClose={() => setActiveFlow(null)} title="Start Day" />
+        <ChecklistFlow items={ownerStartChecklist} setItems={setOwnerStartChecklist} onClose={() => skipFlow('morning')} title="Start Day" onEdit={() => { skipFlow('morning'); setShowEditor('morning'); }} userName={currentUser} />
       )}
       {activeFlow === 'evening' && (
-        <ChecklistFlow items={ownerEndChecklist} setItems={setOwnerEndChecklist} onClose={() => setActiveFlow(null)} title="End Day" />
+        <ChecklistFlow items={ownerEndChecklist} setItems={setOwnerEndChecklist} onClose={() => skipFlow('evening')} title="End Day" onEdit={() => { skipFlow('evening'); setShowEditor('evening'); }} userName={currentUser} />
       )}
 
       {/* Checklist editors */}
@@ -984,47 +1143,8 @@ export default function DailyChecklist() {
 
         {/* Left column — main content */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Start / End Day buttons */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-card rounded-2xl border border-border-subtle overflow-hidden">
-              <button onClick={() => setActiveFlow('morning')}
-                className={`w-full px-5 py-4 text-left cursor-pointer transition-colors ${morningAllDone ? 'bg-brand-light/20' : 'hover:bg-surface-alt'}`}>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-bold text-primary">Start Day</p>
-                  {morningAllDone ? (
-                    <span className="text-[10px] font-bold text-brand-text bg-brand-light px-2 py-0.5 rounded-full">Done</span>
-                  ) : morningDone > 0 ? (
-                    <span className="text-[10px] text-muted">{morningDone}/{morningItems.length}</span>
-                  ) : null}
-                </div>
-              </button>
-              <button onClick={() => setShowEditor('morning')}
-                className="w-full px-5 py-2 border-t border-border-subtle/50 text-[10px] text-muted hover:text-secondary cursor-pointer hover:bg-surface-alt transition-colors">
-                Edit
-              </button>
-            </div>
-
-            <div className="bg-card rounded-2xl border border-border-subtle overflow-hidden">
-              <button onClick={() => setActiveFlow('evening')}
-                className={`w-full px-5 py-4 text-left cursor-pointer transition-colors ${eveningAllDone ? 'bg-brand-light/20' : 'hover:bg-surface-alt'}`}>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-bold text-primary">End Day</p>
-                  {eveningAllDone ? (
-                    <span className="text-[10px] font-bold text-brand-text bg-brand-light px-2 py-0.5 rounded-full">Done</span>
-                  ) : eveningDone > 0 ? (
-                    <span className="text-[10px] text-muted">{eveningDone}/{eveningItems.length}</span>
-                  ) : null}
-                </div>
-              </button>
-              <button onClick={() => setShowEditor('evening')}
-                className="w-full px-5 py-2 border-t border-border-subtle/50 text-[10px] text-muted hover:text-secondary cursor-pointer hover:bg-surface-alt transition-colors">
-                Edit
-              </button>
-            </div>
-          </div>
-
           {/* Growth Goals */}
-          <GrowthGoals />
+          <OwnerDashboard />
 
           {/* Custom widgets */}
           <div className="space-y-3">

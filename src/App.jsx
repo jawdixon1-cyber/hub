@@ -57,13 +57,14 @@ const Finance = lazy(() => import('./pages/Finance'));
 const LaborEfficiency = lazy(() => import('./pages/LaborEfficiency'));
 const Sales = lazy(() => import('./pages/Sales'));
 const Marketing = lazy(() => import('./pages/Marketing'));
+const Clients = lazy(() => import('./pages/Clients'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
+  { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
 ];
 
-const TOOLS_ITEMS = [
-  { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
+const TEAM_TOOLS_ITEMS = [
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
@@ -74,8 +75,9 @@ const TEAM_ITEMS = [
 ];
 
 const OWNER_ITEMS = [
-  { id: 'marketing', path: '/marketing', label: 'Get Leads', icon: MapPinned },
-  { id: 'sales', path: '/sales', label: 'Close Leads', icon: Crosshair },
+  { id: 'marketing', path: '/marketing', label: 'Leads', icon: MapPinned },
+  { id: 'sales', path: '/sales', label: 'Quotes', icon: Crosshair },
+  { id: 'clients', path: '/clients', label: 'Clients', icon: Users },
   { id: 'labor', path: '/labor', label: 'Profitability', icon: TrendingUp },
   { id: 'finance', path: '/finance', label: 'Finance', icon: DollarSign },
 ];
@@ -287,6 +289,7 @@ function AppShell() {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [teamToolsOpen, setTeamToolsOpen] = useState(false);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((v) => {
@@ -336,9 +339,16 @@ function AppShell() {
       })}
 
       <div className="h-px bg-border-subtle my-3 mx-2" />
-      {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Tools</p>}
 
-      {TOOLS_ITEMS.filter((item) => !item.ownerOnly || ownerMode).map((item) => {
+      {/* Team Tools — collapsible */}
+      {!collapsed && (
+        <button onClick={() => setTeamToolsOpen((o) => !o)}
+          className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
+          <span>Team Tools</span>
+          <ChevronDown size={14} className={`transition-transform ${teamToolsOpen ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+      {(teamToolsOpen || collapsed) && TEAM_TOOLS_ITEMS.map((item) => {
         const Icon = item.icon;
         const active = isActive(item.path);
         return (
@@ -346,40 +356,18 @@ function AppShell() {
             key={item.id}
             onClick={() => handleNav(item.path)}
             title={collapsed ? item.label : undefined}
-            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
               active
                 ? 'bg-brand-light text-brand-text-strong'
                 : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
             }`}
           >
-            <Icon size={20} className="shrink-0" />
+            <Icon size={18} className="shrink-0" />
             {!collapsed && <span className="truncate">{item.label}</span>}
           </button>
         );
       })}
 
-      <div className="h-px bg-border-subtle my-3 mx-2" />
-      {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Human Resources</p>}
-
-      {TEAM_ITEMS.map((item) => {
-        const Icon = item.icon;
-        const active = isActive(item.path);
-        return (
-          <button
-            key={item.id}
-            onClick={() => handleNav(item.path)}
-            title={collapsed ? item.label : undefined}
-            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-              active
-                ? 'bg-brand-light text-brand-text-strong'
-                : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-            }`}
-          >
-            <Icon size={20} className="shrink-0" />
-            {!collapsed && <span className="truncate">{item.label}</span>}
-          </button>
-        );
-      })}
 
       {ownerMode && (
         <>
@@ -565,6 +553,7 @@ function AppShell() {
                 <Route path="/agreement" element={<TeamAgreement />} />
                 <Route path="/mowing" element={<MowingSchedule />} />
                 <Route path="/sales" element={<Sales />} />
+                <Route path="/clients" element={<Clients />} />
                 <Route path="/marketing" element={<Marketing />} />
                 <Route path="/finance" element={<Finance />} />
                 <Route path="/labor" element={<LaborEfficiency />} />
@@ -572,7 +561,7 @@ function AppShell() {
                 <Route path="/commander" element={<Navigate to="/sales" replace />} />
                 <Route path="/pipeline" element={<Navigate to="/sales" replace />} />
                 <Route path="/quoting" element={<Navigate to="/sales" replace />} />
-                <Route path="/agreements" element={<Navigate to="/sales" replace />} />
+                <Route path="/agreements" element={<Navigate to="/clients" replace />} />
                 <Route path="/territory" element={<Navigate to="/marketing" replace />} />
                 <Route path="/team" element={<TeamManagement />} />
                 <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
