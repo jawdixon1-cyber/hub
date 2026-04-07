@@ -117,6 +117,16 @@ async function fetchRecurringJobs() {
     cursor = data.jobs?.pageInfo?.endCursor || null;
     if (hasNext) await new Promise(r => setTimeout(r, 500)); // pace requests
   }
+  // Also check recent ONE_OFF jobs for recurring schedules (Jobber quirk — some recurring jobs are typed as ONE_OFF)
+  try {
+    const d2 = await jobberQuery(`{ jobs(first: 25, filter: { jobType: ONE_OFF }) { nodes { id jobNumber jobStatus total startAt completedAt createdAt endAt visitSchedule { startDate endDate recurrenceSchedule { calendarRule } } client { id firstName lastName } } } }`);
+    const recurringOneOffs = (d2.jobs?.nodes || []).filter(j => j.visitSchedule?.recurrenceSchedule?.calendarRule);
+    if (recurringOneOffs.length > 0) {
+      console.log(`[Commander] Found ${recurringOneOffs.length} ONE_OFF jobs with recurring schedules`);
+      allNodes.push(...recurringOneOffs);
+    }
+  } catch {}
+
   return allNodes;
 }
 

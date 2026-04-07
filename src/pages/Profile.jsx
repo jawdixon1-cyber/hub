@@ -92,7 +92,105 @@ function QBConnectionPanel() {
   );
 }
 
+function ProfileHeader({ name, userEmail, activeStrikes }) {
+  const permissions = useAppStore((s) => s.permissions) || {};
+  const rolesData = useAppStore((s) => s.roles);
+  const allRoles = (rolesData && rolesData.items) ? rolesData.items : [];
+  const myRoleId = permissions[userEmail]?.roleId || null;
+  const myRole = allRoles.find((r) => r.id === myRoleId) || null;
+
+  const strikeColor = activeStrikes >= 3 ? 'bg-red-500/15 text-red-500'
+    : activeStrikes === 2 ? 'bg-orange-500/15 text-orange-500'
+    : activeStrikes === 1 ? 'bg-amber-500/15 text-amber-500'
+    : 'bg-emerald-500/15 text-emerald-500';
+
+  return (
+    <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 text-center">
+      <div className="w-20 h-20 mx-auto rounded-full bg-brand-light flex items-center justify-center text-brand-text-strong text-2xl font-bold mb-3">
+        {getInitials(name)}
+      </div>
+      <h1 className="text-xl font-bold text-primary">{name}</h1>
+      {myRole ? (
+        <p className="text-xs text-muted mt-0.5">{myRole.name}</p>
+      ) : (
+        <p className="text-xs text-amber-500 mt-0.5">No role assigned</p>
+      )}
+
+      {/* Strike count chip */}
+      <div className="flex items-center justify-center gap-2 mt-4">
+        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold ${strikeColor}`}>
+          <AlertCircle size={11} />
+          {activeStrikes === 0 ? 'No active strikes' : `${activeStrikes} active strike${activeStrikes > 1 ? 's' : ''}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function RoleCard({ userEmail }) {
+  const permissions = useAppStore((s) => s.permissions) || {};
+  const rolesData = useAppStore((s) => s.roles);
+  const allRoles = (rolesData && rolesData.items) ? rolesData.items : [];
+  const myRoleId = permissions[userEmail]?.roleId || null;
+  const myRole = allRoles.find((r) => r.id === myRoleId) || null;
+
+  if (!myRole) return null;
+
+  return (
+    <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
+      <p className="text-[10px] font-bold text-muted uppercase tracking-wider mb-3">Your Role · {myRole.name}</p>
+      <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: myRole.body }} />
+    </div>
+  );
+}
+
+function StrikeDetails({ strikes }) {
+  const [open, setOpen] = useState(false);
+  if (strikes.length === 0) return null;
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-card border border-border-subtle text-secondary hover:bg-surface-alt hover:text-primary transition-colors cursor-pointer"
+      >
+        <AlertCircle size={18} className="text-muted" />
+        <div className="flex-1 text-left">
+          <p className="text-sm font-semibold">Strike History</p>
+          <p className="text-[11px] text-muted">{strikes.length} total · tap to view</p>
+        </div>
+        <ChevronRight size={16} className={`text-muted transition-transform ${open ? 'rotate-90' : ''}`} />
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {strikes.slice().reverse().map((strike) => {
+            const issued = new Date(strike.issuedAt);
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const isActive = issued >= thirtyDaysAgo;
+            return (
+              <div key={strike.id} className={`p-3 rounded-xl border ${isActive ? 'border-red-500/30 bg-red-500/5' : 'border-border-subtle bg-surface-alt/30 opacity-70'}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-primary">{strike.reason}</p>
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${isActive ? 'bg-red-500/20 text-red-500' : 'bg-gray-500/20 text-gray-400'}`}>
+                    {isActive ? 'Active' : 'Expired'}
+                  </span>
+                </div>
+                {strike.notes && <p className="text-[11px] text-muted mt-1">{strike.notes}</p>}
+                <p className="text-[10px] text-muted mt-1">
+                  {issued.toLocaleDateString()} — by {strike.issuedBy || 'Management'}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChangePasswordSection({ userId }) {
+  const [open, setOpen] = useState(false);
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
@@ -151,11 +249,30 @@ function ChangePasswordSection({ userId }) {
     }
   };
 
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-card border border-border-subtle text-secondary hover:bg-surface-alt hover:text-primary transition-colors cursor-pointer"
+      >
+        <KeyRound size={18} className="text-muted" />
+        <div className="flex-1 text-left">
+          <p className="text-sm font-semibold">Change Password</p>
+          <p className="text-[11px] text-muted">Update your account password</p>
+        </div>
+        <ChevronRight size={16} className="text-muted" />
+      </button>
+    );
+  }
+
   return (
     <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <KeyRound size={18} className="text-brand-text-strong" />
-        <h3 className="text-sm font-bold text-primary">Change Password</h3>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <KeyRound size={18} className="text-brand-text-strong" />
+          <h3 className="text-sm font-bold text-primary">Change Password</h3>
+        </div>
+        <button onClick={() => setOpen(false)} className="text-xs text-muted hover:text-primary cursor-pointer">Cancel</button>
       </div>
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
@@ -306,93 +423,31 @@ export default function Profile() {
         </div>
       )}
 
-      {/* ── Profile Header ── */}
-      <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-5">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-brand-light flex items-center justify-center text-brand-text-strong text-lg font-bold shrink-0">
-            {getInitials(isPreview ? previewName : currentUser)}
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-primary">{isPreview ? previewName : (currentUser || 'Team Member')}</h1>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {myRole && (
-                <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                  {myRole}
-                </span>
-              )}
-              {myPlaybooks.map((key) => {
-                const opt = PLAYBOOK_OPTIONS.find((o) => o.key === key);
-                return opt ? (
-                  <span key={key} className={`px-2.5 py-1 rounded-full text-xs font-medium ${opt.color}`}>
-                    {opt.label}
-                  </span>
-                ) : null;
-              })}
+      {/* ── Header (avatar, name, role, strike chip) ── */}
+      <ProfileHeader
+        name={isPreview ? previewName : (currentUser || 'Team Member')}
+        userEmail={userEmail}
+        activeStrikes={activeStrikes.length}
+      />
+
+      {/* ── Action list ── */}
+      {!isPreview && (
+        <div className="space-y-2">
+          <StrikeDetails strikes={myStrikes} />
+          {user?.id && <ChangePasswordSection userId={user.id} />}
+          <button
+            onClick={() => navigate('/agreement')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-card border border-border-subtle text-secondary hover:bg-surface-alt hover:text-primary transition-colors cursor-pointer"
+          >
+            <FileText size={18} className="text-muted" />
+            <div className="flex-1 text-left">
+              <p className="text-sm font-semibold">Team Agreement</p>
+              <p className="text-[11px] text-muted">View what you signed</p>
             </div>
-          </div>
+            <ChevronRight size={16} className="text-muted" />
+          </button>
         </div>
-      </div>
-
-      {/* ── Strikes ── */}
-      <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <AlertCircle size={18} className="text-brand-text-strong" />
-            <h3 className="text-sm font-bold text-primary">Strikes</h3>
-          </div>
-          {activeStrikes.length > 0 && (
-            <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-              activeStrikes.length >= 3 ? 'bg-red-500/20 text-red-400' :
-              activeStrikes.length === 2 ? 'bg-amber-500/20 text-amber-400' :
-              'bg-yellow-500/20 text-yellow-400'
-            }`}>
-              {activeStrikes.length} Active
-            </span>
-          )}
-        </div>
-
-        {activeStrikes.length >= 3 && (
-          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 mb-3">
-            <p className="text-xs text-red-400 font-bold">3+ active strikes — termination eligible</p>
-          </div>
-        )}
-        {activeStrikes.length === 2 && (
-          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 mb-3">
-            <p className="text-xs text-amber-400 font-bold">Final warning — 2 active strikes</p>
-          </div>
-        )}
-
-        {myStrikes.length === 0 ? (
-          <p className="text-xs text-muted">No strikes on record. Keep up the great work!</p>
-        ) : (
-          <div className="space-y-2">
-            {myStrikes.slice().reverse().map((strike) => {
-              const issued = new Date(strike.issuedAt);
-              const thirtyDaysAgo = new Date();
-              thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-              const isActive = issued >= thirtyDaysAgo;
-              return (
-                <div key={strike.id} className={`p-3 rounded-lg border ${isActive ? 'border-red-500/30 bg-red-500/5' : 'border-border-subtle bg-surface-alt/30 opacity-60'}`}>
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-primary">{strike.reason}</p>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isActive ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}`}>
-                      {isActive ? 'Active' : 'Expired'}
-                    </span>
-                  </div>
-                  {strike.notes && <p className="text-[11px] text-muted mt-1">{strike.notes}</p>}
-                  <p className="text-[10px] text-muted mt-1">
-                    {issued.toLocaleDateString()} — by {strike.issuedBy || 'Management'}
-                    {strike.acknowledged && ' — Acknowledged'}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── Change Password (not in preview) ── */}
-      {!isPreview && user?.id && <ChangePasswordSection userId={user.id} />}
+      )}
 
       {/* ── Sign Out (not in preview) ── */}
       {!isPreview && (

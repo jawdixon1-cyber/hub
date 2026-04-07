@@ -1,8 +1,9 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, lazy, Suspense, useEffect } from 'react';
 import {
   Calculator, Trash2, ChevronDown, ChevronUp, Save,
   Settings, Plus, X, ArrowLeft, ArrowRight, Trees, Mountain,
   Ruler, TreePine, Shrub, Fence, Scissors, Leaf, MapPin, CheckCircle, Loader2, FileText, CircleDot, CalendarDays, Sprout,
+  Search, User, Phone, Mail, Database,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
@@ -642,9 +643,28 @@ export default function Quoting() {
 
   const addressAutocomplete = useAddressAutocomplete();
   const [clientSelected, setClientSelected] = useState(false);
+  const [selectedClientInfo, setSelectedClientInfo] = useState(null); // { phone, email } from Jobber
   const savedClients = useAppStore((s) => s.clients) || [];
   const setSavedClients = useAppStore((s) => s.setClients);
   const agreements = useAppStore((s) => s.agreements) || [];
+
+  // ─── Jobber live search (debounced, hits ?action=clients&q=...) ───
+  const [jobberClients, setJobberClients] = useState([]);
+  const [jobberLoading, setJobberLoading] = useState(false);
+  useEffect(() => {
+    const q = clientName.trim();
+    if (q.length < 2 || clientSelected) { setJobberClients([]); return; }
+    let cancelled = false;
+    setJobberLoading(true);
+    const t = setTimeout(() => {
+      fetch(`/api/jobber-data?action=clients&q=${encodeURIComponent(q)}`)
+        .then((r) => r.ok ? r.json() : [])
+        .then((data) => { if (!cancelled) setJobberClients(Array.isArray(data) ? data : []); })
+        .catch(() => { if (!cancelled) setJobberClients([]); })
+        .finally(() => { if (!cancelled) setJobberLoading(false); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [clientName, clientSelected]);
 
   // Find saved property data for current client name
   const savedProperty = (() => {
@@ -875,50 +895,57 @@ export default function Quoting() {
 
   if (step === 'list') {
     return (
-      <div className="space-y-6">
-        {/* Clean landing — just the big Create Quote button */}
-        <div className="flex flex-col items-center justify-center py-16">
-          <div className="w-16 h-16 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-6">
-            <Calculator size={32} className="text-emerald-600" />
+      <div className="max-w-2xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="flex items-end justify-between pt-8">
+          <div>
+            <h1 className="text-3xl font-bold text-primary tracking-tight">Quotes</h1>
+            <p className="text-sm text-muted mt-1">Build a new quote or view past ones</p>
           </div>
-          <h1 className="text-2xl font-bold text-primary mb-2">Quoting</h1>
-          <button
-            onClick={startNewQuote}
-            className="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white text-lg font-semibold hover:opacity-90 transition-opacity cursor-pointer mt-4"
-          >
-            <Plus size={20} />
-            Create Quote
-          </button>
-          <button
-            onClick={startQuickQuote}
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl border border-border-strong text-secondary text-sm font-medium hover:bg-surface-alt transition-colors cursor-pointer mt-3"
-          >
-            <Calculator size={16} />
-            Quick Quote — Skip to Calculators
-          </button>
-
-          {/* Small utility buttons */}
-          <div className="flex items-center gap-3 mt-8">
-            {quotes.length > 0 && (
-              <button
-                onClick={() => setShowPastQuotes((v) => !v)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-secondary hover:bg-surface-alt border border-border-subtle transition-colors cursor-pointer"
-              >
-                <FileText size={14} />
-                Past Quotes ({quotes.length})
-              </button>
-            )}
+          <div className="flex items-center gap-1">
             {ownerMode && (
               <button
                 onClick={() => setShowSettings((v) => !v)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-secondary hover:bg-surface-alt border border-border-subtle transition-colors cursor-pointer"
+                className="p-2 rounded-lg text-muted hover:text-primary hover:bg-surface-alt transition-colors cursor-pointer"
+                title="Pricing settings"
               >
-                <Settings size={14} />
-                Settings
+                <Settings size={16} />
               </button>
             )}
           </div>
         </div>
+
+        {/* Primary action card */}
+        <div className="bg-card rounded-2xl border border-border-subtle p-6 space-y-3">
+          <button
+            onClick={startNewQuote}
+            className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-brand text-on-brand font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
+          >
+            <Plus size={18} />
+            New Quote
+          </button>
+          <button
+            onClick={startQuickQuote}
+            className="w-full inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-muted text-xs font-medium hover:text-primary hover:bg-surface-alt transition-colors cursor-pointer"
+          >
+            <Calculator size={13} />
+            Quick Quote — skip to calculators
+          </button>
+        </div>
+
+        {/* Past quotes link */}
+        {quotes.length > 0 && (
+          <button
+            onClick={() => setShowPastQuotes((v) => !v)}
+            className="w-full flex items-center justify-between px-1 text-xs font-semibold uppercase tracking-wider text-muted hover:text-primary transition-colors cursor-pointer"
+          >
+            <span className="flex items-center gap-2">
+              <FileText size={12} />
+              Past Quotes · {quotes.length}
+            </span>
+            <ChevronDown size={14} className={`transition-transform ${showPastQuotes ? 'rotate-180' : ''}`} />
+          </button>
+        )}
 
         {/* Expandable settings */}
         {showSettings && ownerMode && (
@@ -928,7 +955,6 @@ export default function Quoting() {
         {/* Expandable past quotes */}
         {showPastQuotes && quotes.length > 0 && (
           <div className="space-y-2">
-            <h2 className="text-sm font-bold text-secondary uppercase tracking-wide px-1">Past Quotes</h2>
             {quotes.map((q) => (
               <div key={q.id} className="bg-card rounded-xl shadow-sm border border-border-subtle p-4 flex items-center justify-between gap-3 hover:bg-surface-alt transition-colors">
                 <button onClick={() => handleLoadQuote(q)} className="flex-1 min-w-0 text-left cursor-pointer">
@@ -972,96 +998,290 @@ export default function Quoting() {
   // ─── Render: Client step ───
 
   if (step === 'client') {
+    // ─── Build unified search results across all sources ───
+    const buildMatches = () => {
+      const q = clientName.toLowerCase().trim();
+      if (q.length < 2) return [];
+      const matches = [];
+      const seen = new Set();
+      // Jobber clients (highest priority — most complete data)
+      for (const c of jobberClients) {
+        const key = (c.name || '').toLowerCase();
+        if (!key) continue;
+        if (key.includes(q) && !seen.has(key)) {
+          seen.add(key);
+          const fullAddress = [c.address, c.city, c.state, c.zip].filter(Boolean).join(', ');
+          matches.push({
+            name: c.name,
+            address: fullAddress,
+            phone: c.phone,
+            email: c.email,
+            hasMap: false,
+            source: 'jobber',
+            data: c,
+          });
+        }
+      }
+      // Saved clients
+      for (const c of savedClients) {
+        const key = (c.name || '').toLowerCase();
+        if (key.includes(q) && !seen.has(key)) {
+          seen.add(key);
+          matches.push({ name: c.name, address: c.address || '', hasMap: !!(c.measurements?.length), source: 'saved', data: c });
+        }
+      }
+      // Agreements
+      for (const a of agreements) {
+        const key = (a.clientName || '').toLowerCase();
+        if (key.includes(q) && !seen.has(key)) {
+          seen.add(key);
+          matches.push({ name: a.clientName, address: a.clientAddress || '', hasMap: !!(a.measurements?.length), source: 'contract', data: a });
+        }
+      }
+      // Saved quotes
+      for (const qo of quotes) {
+        const key = (qo.clientName || '').toLowerCase();
+        if (key.includes(q) && !seen.has(key)) {
+          seen.add(key);
+          matches.push({ name: qo.clientName, address: qo.clientAddress || qo.mapAddress || '', hasMap: !!(qo.measurements?.length), source: 'quote', data: qo });
+        }
+      }
+      return matches.slice(0, 12);
+    };
+
+    const waitForPlaces = (timeout = 5000) => new Promise((resolve) => {
+      const start = Date.now();
+      (function check() {
+        if (window.google?.maps?.places) return resolve(true);
+        if (Date.now() - start > timeout) return resolve(false);
+        setTimeout(check, 100);
+      })();
+    });
+
+    // Use Places API (which is already proven to work for autocomplete)
+    const geocodeAddress = async (address) => {
+      const ready = await waitForPlaces();
+      if (!ready) {
+        console.warn('[Quoting] Google Places not loaded');
+        return null;
+      }
+      return new Promise((resolve) => {
+        const auto = new google.maps.places.AutocompleteService();
+        auto.getPlacePredictions(
+          { input: address, types: ['address'], componentRestrictions: { country: 'us' } },
+          (predictions, status) => {
+            if (status !== google.maps.places.PlacesServiceStatus.OK || !predictions?.length) {
+              console.warn('[Quoting] No place predictions for:', address, status);
+              return resolve(null);
+            }
+            const details = new google.maps.places.PlacesService(document.createElement('div'));
+            details.getDetails(
+              { placeId: predictions[0].place_id, fields: ['geometry', 'formatted_address'] },
+              (place, dStatus) => {
+                if (dStatus === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
+                  resolve({
+                    lat: place.geometry.location.lat(),
+                    lng: place.geometry.location.lng(),
+                    formatted: place.formatted_address,
+                  });
+                } else {
+                  console.warn('[Quoting] Place details failed:', dStatus);
+                  resolve(null);
+                }
+              }
+            );
+          }
+        );
+      });
+    };
+
+    const handleSelectClient = async (m) => {
+      setClientName(m.name);
+      setClientSelected(true);
+      if (m.address) setClientAddress(m.address);
+      if (m.phone || m.email) setSelectedClientInfo({ phone: m.phone, email: m.email });
+      else setSelectedClientInfo(null);
+
+      let center = m.data.mapCenter || m.data.clientLatLng || null;
+
+      // If no saved coords but we have an address (e.g. Jobber client), geocode it
+      if (!center && m.address) {
+        const geo = await geocodeAddress(m.address);
+        if (geo) {
+          center = { lat: geo.lat, lng: geo.lng };
+          setClientLatLng(center);
+          if (geo.formatted) setClientAddress(geo.formatted);
+        }
+      } else if (center) {
+        setClientLatLng(center);
+      }
+
+      setMeasurements({
+        measurements: m.hasMap ? (m.data.measurements || []) : [],
+        mapCenter: center,
+        mapAddress: m.address || '',
+      });
+    };
+
+    const matches = buildMatches();
+    const sourceBadge = {
+      jobber: { label: 'Jobber', color: 'bg-blue-500/10 text-blue-600' },
+      saved: { label: 'Saved', color: 'bg-purple-500/10 text-purple-600' },
+      contract: { label: 'Contract', color: 'bg-amber-500/10 text-amber-600' },
+      quote: { label: 'Quote', color: 'bg-slate-500/10 text-slate-600' },
+    };
+
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 max-w-2xl mx-auto">
+        {/* Header */}
         <div className="flex items-center gap-3">
-          <button onClick={() => setStep('list')} className="p-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
+          <button onClick={() => setStep('list')} className="p-2 -ml-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
             <ArrowLeft size={20} className="text-secondary" />
           </button>
-          <div>
+          <div className="flex-1">
             <h1 className="text-2xl font-bold text-primary">New Quote</h1>
-            <p className="text-sm text-tertiary">Step 1 of 4: Client info</p>
+            <p className="text-xs text-tertiary">Step 1 of 4 — Find or add a client</p>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted">
+            {jobberLoading ? (
+              <><Loader2 size={11} className="animate-spin" /> Searching Jobber…</>
+            ) : (
+              <><Database size={11} /> Jobber live search</>
+            )}
           </div>
         </div>
 
-        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-5">
-          {/* Client name search */}
-          <div className="relative">
-            <label className="block text-xs font-medium text-secondary mb-1">Client Name</label>
-            <input
-              type="text"
-              value={clientName}
-              onChange={(e) => { setClientName(e.target.value); setClientSelected(false); }}
-              placeholder="Start typing a name..."
-              className="w-full rounded-lg border border-border-strong bg-card px-3 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand placeholder:text-placeholder-muted"
-            />
-            {/* Search results dropdown */}
-            {clientName.trim().length >= 2 && !clientSelected && (() => {
-              const q = clientName.toLowerCase().trim();
-              // Search saved clients, agreements, and Jobber clients
-              const matches = [];
-              const seen = new Set();
-              // From saved clients store
-              for (const c of savedClients) {
-                if (c.name?.toLowerCase().includes(q) && !seen.has(c.name.toLowerCase())) {
-                  seen.add(c.name.toLowerCase());
-                  matches.push({ name: c.name, address: c.address || '', hasMap: !!(c.measurements?.length), source: 'saved', data: c });
-                }
-              }
-              // From agreements
-              for (const a of agreements) {
-                const n = a.clientName?.toLowerCase();
-                if (n?.includes(q) && !seen.has(n)) {
-                  seen.add(n);
-                  matches.push({ name: a.clientName, address: a.clientAddress || '', hasMap: !!(a.measurements?.length), source: 'contract', data: a });
-                }
-              }
-              // From saved quotes
-              for (const qo of quotes) {
-                const n = qo.clientName?.toLowerCase();
-                if (n?.includes(q) && !seen.has(n)) {
-                  seen.add(n);
-                  matches.push({ name: qo.clientName, address: qo.clientAddress || qo.mapAddress || '', hasMap: !!(qo.measurements?.length), source: 'quote', data: qo });
-                }
-              }
-              if (matches.length === 0) return null;
-              return (
-                <div className="absolute z-50 mt-1 w-full bg-card border border-border-strong rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                  {matches.map((m, i) => (
-                    <button key={i} onClick={() => {
-                      setClientName(m.name);
-                      setClientSelected(true);
-                      if (m.address) setClientAddress(m.address);
-                      const center = m.data.mapCenter || m.data.clientLatLng || null;
-                      if (center) setClientLatLng(center);
-                      // Always set map center so map zooms in, and load measurements if available
-                      setMeasurements({
-                        measurements: m.hasMap ? (m.data.measurements || []) : [],
-                        mapCenter: center,
-                        mapAddress: m.address || '',
-                      });
-                    }}
-                      className="w-full text-left px-4 py-3 hover:bg-surface-alt transition-colors cursor-pointer border-b border-border-subtle/50 last:border-0"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-bold text-primary">{m.name}</p>
-                          {m.address && <p className="text-[10px] text-muted truncate">{m.address}</p>}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {m.hasMap && <span className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">Mapped</span>}
-                          <span className="text-[9px] text-muted">{m.source}</span>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+        {/* Selected client card OR search */}
+        {clientSelected ? (
+          <div className="bg-card rounded-2xl shadow-sm border border-brand/30 ring-1 ring-brand/20 overflow-hidden">
+            <div className="bg-brand/5 px-5 py-3 flex items-center justify-between border-b border-border-subtle">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={16} className="text-brand" />
+                <span className="text-xs font-bold uppercase tracking-wider text-brand">Selected Client</span>
+              </div>
+              <button
+                onClick={() => {
+                  setClientSelected(false);
+                  setClientName('');
+                  setClientAddress('');
+                  setClientLatLng(null);
+                  setSelectedClientInfo(null);
+                  setMeasurements({ measurements: [], mapCenter: null, mapAddress: '' });
+                  addressAutocomplete.clear();
+                }}
+                className="text-xs text-muted hover:text-primary cursor-pointer"
+              >
+                Change
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-brand-light flex items-center justify-center shrink-0">
+                  <User size={18} className="text-brand-text-strong" />
                 </div>
-              );
-            })()}
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-bold text-primary truncate">{clientName}</h2>
+                  {clientAddress && (
+                    <p className="text-xs text-muted flex items-start gap-1 mt-0.5">
+                      <MapPin size={11} className="mt-0.5 shrink-0" />
+                      <span className="truncate">{clientAddress}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+              {selectedClientInfo && (selectedClientInfo.phone || selectedClientInfo.email) && (
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-border-subtle/50">
+                  {selectedClientInfo.phone && (
+                    <a href={`tel:${selectedClientInfo.phone}`} className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-surface-alt text-secondary hover:bg-surface-alt/70">
+                      <Phone size={11} /> {selectedClientInfo.phone}
+                    </a>
+                  )}
+                  {selectedClientInfo.email && (
+                    <a href={`mailto:${selectedClientInfo.email}`} className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-surface-alt text-secondary hover:bg-surface-alt/70">
+                      <Mail size={11} /> {selectedClientInfo.email}
+                    </a>
+                  )}
+                </div>
+              )}
+              {clientLatLng && (
+                <p className="text-[11px] text-emerald-600 flex items-center gap-1">
+                  <CheckCircle size={11} /> Location pinned
+                </p>
+              )}
+            </div>
           </div>
+        ) : (
+          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5 space-y-4">
+            {/* Big search */}
+            <div className="relative">
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+              <input
+                type="text"
+                autoFocus
+                value={clientName}
+                onChange={(e) => { setClientName(e.target.value); setClientSelected(false); }}
+                placeholder="Search clients by name..."
+                className="w-full rounded-xl border border-border-strong bg-surface pl-11 pr-4 py-3.5 text-base text-primary outline-none focus:ring-2 focus:ring-brand placeholder:text-muted"
+              />
+            </div>
 
-          <div className="relative">
-            <label className="block text-xs font-medium text-secondary mb-1">Property Address</label>
+            {/* Results */}
+            {clientName.trim().length >= 2 && (
+              matches.length > 0 ? (
+                <div className="border border-border-subtle rounded-xl overflow-hidden divide-y divide-border-subtle/50 max-h-80 overflow-y-auto">
+                  {matches.map((m, i) => {
+                    const badge = sourceBadge[m.source] || sourceBadge.saved;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => handleSelectClient(m)}
+                        className="w-full text-left px-4 py-3 hover:bg-surface-alt transition-colors cursor-pointer flex items-center gap-3"
+                      >
+                        <div className="w-9 h-9 rounded-full bg-surface-alt flex items-center justify-center shrink-0">
+                          <User size={15} className="text-muted" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-primary truncate">{m.name}</p>
+                          {m.address && <p className="text-[11px] text-muted truncate">{m.address}</p>}
+                          {(m.phone || m.email) && (
+                            <p className="text-[10px] text-muted truncate mt-0.5">
+                              {[m.phone, m.email].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${badge.color}`}>{badge.label}</span>
+                          {m.hasMap && <span className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">Mapped</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="border border-dashed border-border-subtle rounded-xl px-4 py-6 text-center">
+                  <p className="text-sm text-muted">No matches found</p>
+                  <button
+                    onClick={() => { setClientSelected(true); setSelectedClientInfo(null); }}
+                    className="mt-2 text-xs text-brand font-semibold hover:underline cursor-pointer"
+                  >
+                    + Use "{clientName}" as new client
+                  </button>
+                </div>
+              )
+            )}
+
+            {clientName.trim().length < 2 && (
+              <p className="text-[11px] text-muted text-center py-2">
+                Type at least 2 characters to search across Jobber, saved clients, contracts, and past quotes
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Address (only shown when client selected manually with no address) */}
+        {clientSelected && !clientAddress && (
+          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
+            <label className="block text-xs font-medium text-secondary mb-1.5">Property Address</label>
             <div className="relative">
               <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
               <input
@@ -1072,52 +1292,33 @@ export default function Quoting() {
                   addressAutocomplete.setSearch(e.target.value);
                 }}
                 placeholder="Start typing an address..."
-                className="w-full rounded-lg border border-border-strong bg-card pl-9 pr-10 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand placeholder:text-placeholder-muted"
+                className="w-full rounded-xl border border-border-strong bg-surface pl-9 pr-10 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-brand placeholder:text-muted"
               />
-              {addressAutocomplete.loading && (
-                <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted animate-spin" />
-              )}
-              {!addressAutocomplete.loading && clientLatLng && (
-                <CheckCircle size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500" />
-              )}
+              {addressAutocomplete.loading && <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted animate-spin" />}
+              {!addressAutocomplete.loading && clientLatLng && <CheckCircle size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500" />}
             </div>
-
             {addressAutocomplete.suggestions.length > 0 && (
-              <div className="absolute z-50 mt-1 w-full bg-card border border-border-strong rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              <div className="mt-1 border border-border-subtle rounded-xl overflow-hidden">
                 {addressAutocomplete.suggestions.map((s, i) => (
                   <button
                     key={i}
-                    onClick={() => {
-                      setClientAddress(s.displayName);
-                      setClientLatLng({ lat: s.lat, lng: s.lng });
-                      addressAutocomplete.clear();
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-sm text-primary hover:bg-surface-alt transition-colors cursor-pointer border-b border-border-subtle last:border-b-0"
+                    onClick={() => { setClientAddress(s.displayName); setClientLatLng({ lat: s.lat, lng: s.lng }); addressAutocomplete.clear(); }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-primary hover:bg-surface-alt transition-colors cursor-pointer border-b border-border-subtle/50 last:border-b-0"
                   >
                     {s.displayName}
                   </button>
                 ))}
               </div>
             )}
-
-            {addressAutocomplete.error && (
-              <p className="text-xs text-red-500 mt-1">{addressAutocomplete.error}</p>
-            )}
-
-            {clientLatLng && (
-              <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                <CheckCircle size={12} /> Location saved
-              </p>
-            )}
           </div>
-        </div>
+        )}
 
         {/* Saved property indicator */}
         {savedProperty && (
           <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 flex items-center gap-3">
             <CheckCircle size={20} className="text-emerald-500 shrink-0" />
             <div>
-              <p className="text-sm font-bold text-emerald-500">Property already mapped</p>
+              <p className="text-sm font-bold text-emerald-600">Property already mapped</p>
               <p className="text-xs text-muted">{savedProperty.measurements?.length} areas saved — you can skip to services</p>
             </div>
           </div>
@@ -1184,6 +1385,7 @@ export default function Quoting() {
               <MapView
                 key={measurements.mapCenter ? `${measurements.mapCenter.lat}-${measurements.mapCenter.lng}` : 'default'}
                 center={measurements.mapCenter ? [measurements.mapCenter.lat, measurements.mapCenter.lng] : null}
+                propertyAddress={clientAddress}
                 onMeasurementsChange={(updater) => {
                   setMeasurements((prev) => {
                     const next = typeof updater === 'function' ? updater(prev.measurements) : updater;

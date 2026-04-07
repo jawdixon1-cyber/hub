@@ -1,10 +1,12 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { ClipboardCheck, Wrench, X, ChevronRight, Users, Link2, Check, Plug } from 'lucide-react';
+import { ClipboardCheck, Wrench, X, ChevronRight, Users, Link2, Check, Plug, Shield, Plus, Trash2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
 const TeamManagement = lazy(() => import('./TeamManagement'));
 const TeamAgreement = lazy(() => import('./TeamAgreement'));
+const RichTextEditor = lazy(() => import('../components/RichTextEditor'));
+import { DEFAULT_ROLES, DEFAULT_ROLES_VERSION } from '../data/roleTemplates';
 import { EQUIPMENT_TYPES } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -302,6 +304,146 @@ function ConnectionsSection() {
       <p className="text-xs text-muted">Manage integrations with external services.</p>
       <JobberConnectionPanel />
       <QBConnectionPanel />
+    </div>
+  );
+}
+
+/* ─── Roles Section ─── */
+
+function bumpVersion(v) {
+  const parts = (v || '1.0').split('.');
+  const minor = parseInt(parts[1] || '0', 10) + 1;
+  return `${parts[0]}.${minor}`;
+}
+
+function RolesSection() {
+  const stored = useAppStore((s) => s.roles);
+  const setRoles = useAppStore((s) => s.setRoles);
+  const data = stored && stored.items ? stored : { version: DEFAULT_ROLES_VERSION, items: DEFAULT_ROLES };
+
+  const [items, setItems] = useState(data.items);
+  const [version, setVersion] = useState(data.version);
+  const [activeId, setActiveId] = useState(data.items[0]?.id || null);
+  const [dirty, setDirty] = useState(false);
+
+  const active = items.find((r) => r.id === activeId) || items[0];
+
+  const updateRole = (id, patch) => {
+    setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    setDirty(true);
+  };
+
+  const addRole = () => {
+    const id = `role-${Date.now()}`;
+    const newRole = { id, name: 'New Role', body: '<p>Describe this role\u2019s responsibilities here.</p>' };
+    setItems((prev) => [...prev, newRole]);
+    setActiveId(id);
+    setDirty(true);
+  };
+
+  const deleteRole = (id) => {
+    if (items.length <= 1) return;
+    if (!confirm('Delete this role? Team members assigned to it will need a new role.')) return;
+    const next = items.filter((r) => r.id !== id);
+    setItems(next);
+    if (activeId === id) setActiveId(next[0]?.id || null);
+    setDirty(true);
+  };
+
+  const resetToDefaults = () => {
+    if (!confirm('Reset all roles to defaults? Your edits will be lost.')) return;
+    setItems(DEFAULT_ROLES);
+    setActiveId(DEFAULT_ROLES[0].id);
+    setDirty(true);
+  };
+
+  const save = () => {
+    const newVersion = dirty ? bumpVersion(version) : version;
+    setRoles({ version: newVersion, items });
+    setVersion(newVersion);
+    setDirty(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-primary">Roles & Responsibilities</h2>
+          <p className="text-xs text-muted mt-0.5">Define the responsibilities for each role on your team. These show up in the agreement.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold text-muted">v{version}{dirty && <span className="text-amber-500"> · unsaved</span>}</span>
+          <button
+            onClick={save}
+            disabled={!dirty}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          >
+            Save changes
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-4">
+        {/* Role list */}
+        <div className="space-y-1">
+          {items.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setActiveId(r.id)}
+              className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-left transition-colors cursor-pointer ${
+                activeId === r.id ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt'
+              }`}
+            >
+              <span className="text-xs font-semibold truncate">{r.name}</span>
+              {items.length > 1 && (
+                <span
+                  onClick={(e) => { e.stopPropagation(); deleteRole(r.id); }}
+                  className="opacity-0 group-hover:opacity-100 text-muted/40 hover:text-red-500"
+                  role="button"
+                >
+                  <Trash2 size={11} />
+                </span>
+              )}
+            </button>
+          ))}
+          <button
+            onClick={addRole}
+            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-border-subtle text-xs font-semibold text-muted hover:text-primary hover:bg-surface-alt cursor-pointer"
+          >
+            <Plus size={12} /> Add role
+          </button>
+          <button
+            onClick={resetToDefaults}
+            className="w-full mt-3 px-3 py-1.5 text-[10px] text-muted hover:text-primary cursor-pointer"
+          >
+            Reset to defaults
+          </button>
+        </div>
+
+        {/* Editor */}
+        {active && (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">Role name</label>
+              <input
+                type="text"
+                value={active.name}
+                onChange={(e) => updateRole(active.id, { name: e.target.value })}
+                className="w-full rounded-xl border border-border-subtle bg-surface px-3 py-2 text-sm font-semibold text-primary outline-none focus:ring-2 focus:ring-brand"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">Responsibilities</label>
+              <Suspense fallback={<div className="text-muted text-xs py-4">Loading editor…</div>}>
+                <RichTextEditor
+                  content={active.body || ''}
+                  onChange={(html) => updateRole(active.id, { body: html })}
+                />
+              </Suspense>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

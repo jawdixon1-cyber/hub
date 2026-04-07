@@ -106,7 +106,22 @@ export default function TeamManagement() {
     email: memberEmail,
     name: data.name,
     playbooks: data.playbooks || [],
+    roleId: data.roleId || null,
   }));
+
+  // Roles from store (for the role picker)
+  const rolesData = useAppStore((s) => s.roles);
+  const allRoles = (rolesData && rolesData.items) ? rolesData.items : [];
+
+  const updateMemberRole = (memberEmail, newRoleId) => {
+    setPermissions({
+      ...permissions,
+      [memberEmail]: {
+        ...permissions[memberEmail],
+        roleId: newRoleId,
+      },
+    });
+  };
 
   // Helper to find auth user by email
   const getAuthUser = (memberEmail) =>
@@ -522,6 +537,22 @@ export default function TeamManagement() {
 
                     <ChevronRight size={18} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />
                   </button>
+
+                  {/* Role picker */}
+                  {allRoles.length > 0 && (
+                    <select
+                      value={member.roleId || ''}
+                      onChange={(e) => updateMemberRole(member.email, e.target.value || null)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="shrink-0 rounded-xl border border-border-subtle bg-card px-3 py-2.5 text-xs font-semibold text-secondary hover:bg-surface-alt cursor-pointer outline-none focus:ring-2 focus:ring-brand"
+                      title="Role"
+                    >
+                      <option value="">No role</option>
+                      {allRoles.map((r) => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </select>
+                  )}
 
                   {/* Action buttons */}
                   <div className="flex flex-col gap-1 shrink-0">

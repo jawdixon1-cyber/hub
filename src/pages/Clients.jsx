@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
-import { Search, ArrowLeft, ChevronRight, MapPin, Phone, Mail, FileText, User, List, Map as MapIcon, Plus, DollarSign, Send, X } from 'lucide-react';
+import { Search, ArrowLeft, ChevronRight, ChevronDown, MapPin, Phone, Mail, FileText, User, List, Map as MapIcon, Plus, DollarSign, Send, X, Check } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
 import { genId } from '../data';
 import { generateAgreementHTML } from '../utils/generateAgreement';
@@ -82,21 +82,70 @@ const ClientMapInner = lazy(() => import('../components/ClientMapInner'));
 
 /* ─── Client List ─── */
 
-function ClientList({ onSelect }) {
-  const [search, setSearch] = useState('');
-  const [allClients, setAllClients] = useState([]);
-  const [loading, setLoading] = useState(true);
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
-  useEffect(() => {
-    fetch('/api/jobber-data?action=all-clients')
-      .then((r) => r.ok ? r.json() : [])
-      .then(setAllClients)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+function ClientList({ allClients, loading, onSelect }) {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('leads-and-active'); // 'all' | 'leads' | 'active' | 'leads-and-active'
+  const [tagFilter, setTagFilter] = useState(null);
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [selectedRows, setSelectedRows] = useState(new Set());
+
+  // Time-based stats
+  const stats = useMemo(() => {
+    const now = Date.now();
+    const days30 = now - 30 * 86400000;
+    const startOfYear = new Date(new Date().getFullYear(), 0, 1).getTime();
+    let newLeads30 = 0, newClients30 = 0, totalNewYTD = 0;
+    let prevLeads30 = 0, prevClients30 = 0;
+    const days60 = now - 60 * 86400000;
+    for (const c of allClients) {
+      if (!c.createdAt) continue;
+      const t = new Date(c.createdAt).getTime();
+      if (t >= days30) {
+        if (c.isLead) newLeads30++;
+        else newClients30++;
+      } else if (t >= days60) {
+        if (c.isLead) prevLeads30++;
+        else prevClients30++;
+      }
+      if (t >= startOfYear && !c.isLead) totalNewYTD++;
+    }
+    const pct = (a, b) => b > 0 ? Math.round(((a - b) / b) * 100) : (a > 0 ? 100 : 0);
+    return {
+      total: allClients.length,
+      leads: allClients.filter((c) => c.isLead).length,
+      active: allClients.filter((c) => !c.isLead).length,
+      newLeads30, newClients30, totalNewYTD,
+      leadsChange: pct(newLeads30, prevLeads30),
+      clientsChange: pct(newClients30, prevClients30),
+    };
+  }, [allClients]);
+
+  // All available tags
+  const allTags = useMemo(() => {
+    const set = new Set();
+    for (const c of allClients) for (const t of (c.tags || [])) set.add(t);
+    return [...set].sort();
+  }, [allClients]);
 
   const filtered = useMemo(() => {
     let list = [...allClients];
+    if (statusFilter === 'leads') list = list.filter((c) => c.isLead);
+    if (statusFilter === 'active') list = list.filter((c) => !c.isLead);
+    // 'leads-and-active' and 'all' show everything
+    if (tagFilter) list = list.filter((c) => (c.tags || []).includes(tagFilter));
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter((c) =>
@@ -106,77 +155,206 @@ function ClientList({ onSelect }) {
         (c.tags || []).some((t) => t.toLowerCase().includes(q))
       );
     }
-    list.sort((a, b) => a.name.localeCompare(b.name));
+    list.sort((a, b) => {
+      const aT = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const bT = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return bT - aT;
+    });
     return list;
-  }, [allClients, search]);
+  }, [allClients, search, statusFilter, tagFilter]);
 
-  if (loading) return <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-brand-light border-t-brand rounded-full animate-spin" /></div>;
+  const toggleRow = (id) => setSelectedRows((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const toggleAll = () => {
+    if (selectedRows.size === filtered.length) setSelectedRows(new Set());
+    else setSelectedRows(new Set(filtered.map((c) => c.id)));
+  };
+
+  if (loading && allClients.length === 0) {
+    return <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-brand-light border-t-brand rounded-full animate-spin" /></div>;
+  }
+
+  const allSelected = filtered.length > 0 && selectedRows.size === filtered.length;
 
   return (
-    <div className="space-y-3">
-      {/* Stats */}
-      <div className="flex gap-3">
-        <div className="flex-1 bg-card rounded-xl border border-border-subtle p-3 text-center">
-          <p className="text-[9px] font-bold text-muted uppercase">Total Clients</p>
-          <p className="text-2xl font-black text-primary">{allClients.length}</p>
+    <div className="space-y-5">
+      {/* ─── Stat cards row ─── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="bg-card rounded-2xl border border-border-subtle p-5">
+          <p className="text-xs font-semibold text-secondary">New leads</p>
+          <p className="text-[10px] text-muted mt-0.5">Past 30 days</p>
+          <div className="flex items-baseline gap-2 mt-4">
+            <p className="text-4xl font-bold text-primary">{stats.newLeads30}</p>
+            {stats.leadsChange !== 0 && (
+              <span className={`text-xs font-bold ${stats.leadsChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                {stats.leadsChange >= 0 ? '↑' : '↓'} {Math.abs(stats.leadsChange)}%
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex-1 bg-card rounded-xl border border-border-subtle p-3 text-center">
-          <p className="text-[9px] font-bold text-muted uppercase">Leads</p>
-          <p className="text-2xl font-black text-amber-500">{allClients.filter((c) => c.isLead).length}</p>
+        <div className="bg-card rounded-2xl border border-border-subtle p-5">
+          <p className="text-xs font-semibold text-secondary">New clients</p>
+          <p className="text-[10px] text-muted mt-0.5">Past 30 days</p>
+          <div className="flex items-baseline gap-2 mt-4">
+            <p className="text-4xl font-bold text-primary">{stats.newClients30}</p>
+            {stats.clientsChange !== 0 && (
+              <span className={`text-xs font-bold ${stats.clientsChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                {stats.clientsChange >= 0 ? '↑' : '↓'} {Math.abs(stats.clientsChange)}%
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="bg-card rounded-2xl border border-border-subtle p-5">
+          <p className="text-xs font-semibold text-secondary">Total new clients</p>
+          <p className="text-[10px] text-muted mt-0.5">Year to date</p>
+          <p className="text-4xl font-bold text-primary mt-4">{stats.totalNewYTD}</p>
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search clients..."
-          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-card border border-border-subtle text-sm text-primary placeholder:text-muted outline-none focus:ring-1 focus:ring-brand"
-        />
+      {/* ─── Section header ─── */}
+      <div>
+        <h2 className="text-base font-bold text-primary">
+          Filtered clients <span className="text-muted font-normal text-xs">({filtered.length} results)</span>
+        </h2>
       </div>
 
-      <p className="text-[10px] text-muted">{filtered.length} clients</p>
+      {/* ─── Filter row ─── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Filter by tag */}
+          <div className="relative">
+            <button
+              onClick={() => setTagPickerOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-border-subtle text-secondary hover:bg-surface-alt cursor-pointer"
+            >
+              {tagFilter || 'Filter by tag'}
+              <ChevronDown size={12} />
+            </button>
+            {tagPickerOpen && (
+              <div className="absolute z-20 mt-1 left-0 bg-card border border-border-subtle rounded-xl shadow-lg max-h-60 overflow-y-auto min-w-[180px]">
+                <button
+                  onClick={() => { setTagFilter(null); setTagPickerOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-xs text-muted hover:bg-surface-alt cursor-pointer border-b border-border-subtle/50"
+                >
+                  Clear filter
+                </button>
+                {allTags.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-muted">No tags</p>
+                ) : allTags.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => { setTagFilter(t); setTagPickerOpen(false); }}
+                    className="w-full text-left px-3 py-2 text-xs text-primary hover:bg-surface-alt cursor-pointer"
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-      {/* Client list */}
+          {/* Status pill — clickable to cycle */}
+          <button
+            onClick={() => {
+              const cycle = ['leads-and-active', 'leads', 'active', 'all'];
+              const idx = cycle.indexOf(statusFilter);
+              setStatusFilter(cycle[(idx + 1) % cycle.length]);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-brand/10 text-brand-text hover:bg-brand/20 cursor-pointer"
+          >
+            Status: {statusFilter === 'leads-and-active' ? 'Leads and Active' : statusFilter === 'leads' ? 'Leads' : statusFilter === 'active' ? 'Active' : 'All'}
+            <span className="text-[10px]">×</span>
+          </button>
+        </div>
+
+        <div className="relative w-72">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search clients..."
+            className="w-full pl-9 pr-3 py-2 rounded-xl bg-card border border-border-subtle text-xs text-primary placeholder:text-muted outline-none focus:ring-2 focus:ring-brand"
+          />
+        </div>
+      </div>
+
+      {/* ─── Table ─── */}
       {filtered.length === 0 ? (
-        <div className="text-center py-12">
+        <div className="bg-card rounded-2xl border border-border-subtle text-center py-16">
           <User size={32} className="mx-auto text-muted/30 mb-3" />
-          <p className="text-sm text-muted">{search ? 'No clients match' : 'No clients found'}</p>
+          <p className="text-sm text-muted">{search ? 'No clients match your search' : 'No clients found'}</p>
         </div>
       ) : (
-        <div className="space-y-1.5">
-          {filtered.map((c) => (
-            <div
-              key={c.id}
-              className="bg-card rounded-xl border border-border-subtle px-4 py-3 hover:bg-surface-alt/50 transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-primary truncate">{c.name}</p>
-                      {c.isLead && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-500">Lead</span>}
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {c.address && <p className="text-[11px] text-muted truncate">{c.address}{c.city ? `, ${c.city}` : ''}</p>}
-                    </div>
-                    {c.phone && <p className="text-[10px] text-muted mt-0.5">{c.phone}</p>}
-                    {c.tags?.length > 0 && (
-                      <div className="flex gap-1 mt-1">
-                        {c.tags.map((t) => <span key={t} className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-surface-alt text-muted">{t}</span>)}
-                      </div>
-                    )}
-                  </div>
+        <div className="bg-card rounded-2xl border border-border-subtle overflow-hidden">
+          {/* Table header */}
+          <div className="grid grid-cols-[24px_2fr_3fr_1.5fr_100px_100px] gap-4 px-5 py-3 border-b border-border-subtle text-[10px] font-bold text-muted uppercase tracking-wider items-center">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+              className="cursor-pointer accent-brand"
+            />
+            <span>Name</span>
+            <span>Address</span>
+            <span>Tags</span>
+            <span>Status</span>
+            <span className="text-right">Last Activity</span>
+          </div>
+          {/* Rows */}
+          <div className="divide-y divide-border-subtle/40">
+            {filtered.map((c) => (
+              <div
+                key={c.id}
+                className="grid grid-cols-[24px_2fr_3fr_1.5fr_100px_100px] gap-4 px-5 py-3 hover:bg-surface-alt/40 transition-colors items-center group"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedRows.has(c.id)}
+                  onChange={() => toggleRow(c.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="cursor-pointer accent-brand"
+                />
+                <button onClick={() => onSelect && onSelect(c)} className="min-w-0 text-left cursor-pointer">
+                  <p className="text-sm font-semibold text-primary truncate group-hover:text-brand-text-strong">{c.name}</p>
+                </button>
+                <div className="min-w-0">
+                  <p className="text-xs text-secondary truncate">
+                    {c.address ? `${c.address}${c.city ? `, ${c.city}` : ''}${c.state ? `, ${c.state}` : ''}${c.zip ? ` ${c.zip}` : ''}` : <span className="text-muted">—</span>}
+                  </p>
+                </div>
+                <div className="min-w-0 flex flex-wrap gap-1">
+                  {c.tags?.length > 0 ? c.tags.slice(0, 3).map((t) => (
+                    <span key={t} className="px-2 py-0.5 rounded text-[9px] font-semibold bg-surface-alt text-muted">{t}</span>
+                  )) : <span className="text-[10px] text-muted">—</span>}
+                </div>
+                <div>
+                  {c.isLead ? (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-500">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      Lead
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-500">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      Active
+                    </span>
+                  )}
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] text-muted">{timeAgo(c.updatedAt || c.createdAt)}</span>
                 </div>
               </div>
             ))}
           </div>
-        )}
-      </div>
-    );
-  }
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ─── Client Profile ─── */
 
@@ -449,104 +627,204 @@ const PLAN_TIERS = [
 
 /* ─── Raise Prices ─── */
 
-function RaisePrices({ clients, onBack }) {
-  const [message, setMessage] = useState(`Hi [First Name],\n\nThank you for being a valued client of Hey Jude's Lawn Care. We wanted to give you advance notice that starting [Date], there will be a small adjustment to your service rate.\n\nYour new rate will be [New Rate]. This change helps us continue delivering the same high-quality service you've come to expect — sharp results, reliable scheduling, and clear communication every visit.\n\nIf you have any questions, don't hesitate to reach out. We truly appreciate your loyalty.\n\nBest,\nJude\nHey Jude's Lawn Care\n(803) 902-7447`);
+function RaisePrices({ onBack, recurringClients }) {
+  const [selected, setSelected] = useState(() => new Set((recurringClients || []).filter(c => c.monthly > 0).map(c => c.name)));
+  const [increaseType, setIncreaseType] = useState('percent'); // 'percent' | 'flat'
+  const [increaseAmount, setIncreaseAmount] = useState('10');
+  const [effectiveDate, setEffectiveDate] = useState('');
+  const [message, setMessage] = useState(`Hi [First Name],\n\nThank you for being a valued client of Hey Jude's Lawn Care. We wanted to give you advance notice that starting [Effective Date], there will be a small adjustment to your service rate.\n\nYour new rate will be [New Rate] per visit (previously [Old Rate]). This change helps us continue delivering the same high-quality service you've come to expect — sharp results, reliable scheduling, and clear communication every visit.\n\nIf you have any questions, don't hesitate to reach out. We truly appreciate your loyalty.\n\nBest,\nJude\nHey Jude's Lawn Care\n(803) 902-7447`);
+  const [step, setStep] = useState('select');
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
 
-  const recurringClients = clients.filter((c) => {
-    const ids = new Set((c.services || []).map((s) => s.id));
-    return ids.has('lawn') || ids.has('leaf');
-  });
+  const pct = parseFloat(increaseAmount) || 0;
+  const getNewPrice = (perVisit) => {
+    if (increaseType === 'percent') return Math.round(perVisit * (1 + pct / 100));
+    return Math.round(perVisit + pct);
+  };
+
+  const enriched = (recurringClients || []).filter(c => c.monthly > 0).map(c => ({
+    ...c,
+    newPrice: getNewPrice(c.perVisit),
+    increase: getNewPrice(c.perVisit) - c.perVisit,
+  })).sort((a, b) => (b.laborPct ?? -1) - (a.laborPct ?? -1));
+
+  const toggle = (name) => setSelected(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
+  const selectAll = () => setSelected(new Set(enriched.map(c => c.name)));
+  const selectNone = () => setSelected(new Set());
+  const selectUnprofitable = () => setSelected(new Set(enriched.filter(c => c.laborPct != null && c.laborPct > 25).map(c => c.name)));
+
+  const selectedClients = enriched.filter(c => selected.has(c.name));
+
+  const [sendResults, setSendResults] = useState(null);
 
   const handleSend = async () => {
-    if (!message.trim() || recurringClients.length === 0) return;
+    if (!message.trim() || selectedClients.length === 0) return;
     setSending(true);
     try {
-      // Send to GHL webhook — each client gets the message
-      const payload = {
-        action: 'bulk-message',
-        message: message.trim(),
-        clients: recurringClients.map((c) => ({
-          name: c.name,
-          email: c.email,
-          phone: c.phone,
-          address: c.address,
-        })),
-        sentAt: new Date().toISOString(),
-      };
-      await fetch('https://services.leadconnectorhq.com/hooks/Umlo2UnfqbijiGqNU6g2/webhook-trigger/15cc8619-0e39-4f92-943f-9fdf1e622e98', {
+      const dateFmt = effectiveDate ? new Date(effectiveDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '[Date TBD]';
+      const res = await fetch('/api/ghl?action=send-bulk-sms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          clients: selectedClients.map(c => ({
+            name: c.name,
+            phone: c.phone || null,
+            email: c.email || null,
+            oldPrice: c.perVisit,
+            newPrice: c.newPrice,
+            effectiveDate: dateFmt,
+          })),
+          message: message.trim(),
+        }),
       });
-      setSent(true);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      setSendResults(data);
+      setStep('sent');
     } catch (e) {
-      alert('Failed to send: ' + e.message);
+      alert('Failed: ' + e.message);
     } finally {
       setSending(false);
     }
   };
 
-  if (sent) {
+  if (step === 'sent') {
+    const sentCount = sendResults?.sent || 0;
+    const failedResults = (sendResults?.results || []).filter(r => r.status !== 'sent');
     return (
       <div className="space-y-4">
-        <button onClick={onBack} className="flex items-center gap-2 text-sm text-muted hover:text-secondary cursor-pointer">
-          <ArrowLeft size={16} /> Back
-        </button>
-        <div className="text-center py-12 space-y-3">
-          <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto">
-            <Send size={24} className="text-emerald-500" />
-          </div>
-          <p className="text-lg font-bold text-primary">Sent to {recurringClients.length} clients</p>
-          <p className="text-sm text-muted">The message has been sent to your GHL workflow for delivery.</p>
+        <button onClick={onBack} className="flex items-center gap-2 text-sm text-muted hover:text-secondary cursor-pointer"><ArrowLeft size={16} /> Back</button>
+        <div className="text-center py-8 space-y-3">
+          <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto"><Send size={24} className="text-emerald-500" /></div>
+          <p className="text-lg font-bold text-primary">Sent to {sentCount} of {sendResults?.total || selectedClients.length} clients</p>
         </div>
+        {failedResults.length > 0 && (
+          <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4 space-y-1">
+            <p className="text-xs font-bold text-red-500">{failedResults.length} failed:</p>
+            {failedResults.map((r, i) => (
+              <p key={i} className="text-xs text-muted">{r.name} — {r.status === 'not_found' ? 'Not found in GHL' : r.error || r.status}</p>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <button onClick={onBack} className="p-2 rounded-lg hover:bg-surface-alt cursor-pointer">
-          <ArrowLeft size={20} className="text-secondary" />
-        </button>
-        <div>
-          <h1 className="text-xl font-bold text-primary">Raise Prices</h1>
-          <p className="text-xs text-muted">Send a message to all {recurringClients.length} recurring clients</p>
+  if (step === 'message') {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setStep('select')} className="p-2 rounded-lg hover:bg-surface-alt cursor-pointer"><ArrowLeft size={20} className="text-secondary" /></button>
+          <div>
+            <h1 className="text-xl font-bold text-primary">Write Message</h1>
+            <p className="text-xs text-muted">Sending to {selectedClients.length} clients</p>
+          </div>
         </div>
-      </div>
 
-      {/* Recipients */}
-      <div className="bg-card rounded-2xl border border-border-subtle p-4">
-        <p className="text-[11px] font-bold text-muted uppercase tracking-widest mb-2">Sending to</p>
-        <p className="text-sm text-primary font-semibold">{recurringClients.length} recurring clients</p>
-        <div className="flex flex-wrap gap-1 mt-2">
-          {recurringClients.slice(0, 10).map((c) => (
-            <span key={c.id} className="px-2 py-0.5 rounded-full bg-surface-alt text-[10px] text-muted">{c.name.split(' ')[0]}</span>
+        <div className="flex flex-wrap gap-1">
+          {selectedClients.map(c => (
+            <span key={c.name} className="px-2 py-0.5 rounded-full bg-surface-alt text-[10px] text-muted">{c.name.split(' ')[0]}</span>
           ))}
-          {recurringClients.length > 10 && <span className="px-2 py-0.5 rounded-full bg-surface-alt text-[10px] text-muted">+{recurringClients.length - 10} more</span>}
         </div>
-      </div>
 
-      {/* Message */}
-      <div className="bg-card rounded-2xl border border-border-subtle p-4 space-y-2">
-        <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Message</p>
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          rows={12}
-          className="w-full bg-surface-alt border border-border-subtle rounded-xl p-4 text-sm text-primary placeholder:text-muted outline-none focus:ring-1 focus:ring-brand resize-none"
+          rows={14}
+          className="w-full bg-card border border-border-subtle rounded-xl p-4 text-sm text-primary placeholder:text-muted outline-none focus:ring-1 focus:ring-brand resize-none"
         />
-        <p className="text-[10px] text-muted">Use [First Name], [Date], and [New Rate] as placeholders. Your GHL workflow handles the merge fields.</p>
+        <p className="text-[10px] text-muted">Use [First Name], [Date], [New Rate] as placeholders. Your GHL workflow handles merge fields and delivery.</p>
+
+        <button onClick={handleSend} disabled={sending || !message.trim()}
+          className="w-full flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-brand text-on-brand font-black text-lg hover:bg-brand-hover cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]">
+          <Send size={20} /> {sending ? 'Sending...' : `Send to ${selectedClients.length} Clients`}
+        </button>
+      </div>
+    );
+  }
+
+  // Step: select clients
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="p-2 rounded-lg hover:bg-surface-alt cursor-pointer"><ArrowLeft size={20} className="text-secondary" /></button>
+        <div className="flex-1">
+          <h1 className="text-xl font-bold text-primary">Raise Prices</h1>
+          <p className="text-xs text-muted">Select which clients to notify</p>
+        </div>
+        <span className="text-sm font-bold text-brand-text">{selected.size} selected</span>
       </div>
 
-      <button
-        onClick={handleSend}
-        disabled={sending || !message.trim() || recurringClients.length === 0}
-        className="w-full flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-brand text-on-brand font-black text-lg hover:bg-brand-hover cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
-      >
-        <Send size={20} /> {sending ? 'Sending...' : `Send to ${recurringClients.length} Clients`}
+      {/* Price increase controls */}
+      <div className="bg-card rounded-2xl border border-border-subtle p-4 space-y-3">
+        <p className="text-[11px] font-bold text-muted uppercase tracking-widest">Increase Amount</p>
+        <div className="flex gap-2 items-center">
+          <div className="flex gap-1 bg-surface-alt p-1 rounded-lg">
+            <button onClick={() => setIncreaseType('percent')} className={`px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${increaseType === 'percent' ? 'bg-card text-primary shadow-sm' : 'text-muted'}`}>%</button>
+            <button onClick={() => setIncreaseType('flat')} className={`px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${increaseType === 'flat' ? 'bg-card text-primary shadow-sm' : 'text-muted'}`}>$</button>
+          </div>
+          <input type="number" value={increaseAmount} onChange={(e) => setIncreaseAmount(e.target.value)}
+            className="w-24 px-3 py-2 rounded-lg bg-surface-alt border border-border-subtle text-sm text-primary font-bold text-center outline-none focus:ring-1 focus:ring-brand" />
+          <span className="text-sm text-muted">{increaseType === 'percent' ? '% increase' : '$ per visit increase'}</span>
+        </div>
+        <div>
+          <label className="text-[10px] text-muted font-bold">Effective Date</label>
+          <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)}
+            className="w-full mt-1 px-3 py-2 rounded-lg bg-surface-alt border border-border-subtle text-sm text-primary outline-none focus:ring-1 focus:ring-brand" />
+        </div>
+      </div>
+
+      {/* Quick select buttons */}
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={selectAll} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-surface-alt text-secondary hover:bg-brand-light cursor-pointer">Select All</button>
+        <button onClick={selectNone} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-surface-alt text-secondary hover:bg-brand-light cursor-pointer">Deselect All</button>
+        <button onClick={selectUnprofitable} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/10 text-red-500 hover:bg-red-500/20 cursor-pointer">Select Unprofitable (25%+)</button>
+      </div>
+
+      {/* Client list with checkboxes */}
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-3 px-4 text-[9px] font-bold text-muted uppercase">
+          <span className="w-6"></span>
+          <span className="flex-1">Client</span>
+          <span className="w-16 text-right">Current</span>
+          <span className="w-16 text-right">New</span>
+          <span className="w-12 text-right">+$</span>
+          <span className="w-14 text-right">Labor</span>
+        </div>
+        {enriched.map(c => (
+          <button key={c.name} onClick={() => toggle(c.name)}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left cursor-pointer transition-colors ${selected.has(c.name) ? 'bg-brand-light/10 border-brand/20' : 'bg-card border-border-subtle hover:bg-surface-alt/50'}`}>
+            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${selected.has(c.name) ? 'bg-brand border-brand' : 'border-border-strong'}`}>
+              {selected.has(c.name) && <Check size={12} className="text-on-brand" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-primary truncate">{c.name}</p>
+              <p className="text-[10px] text-muted">{c.jobs?.[0]?.frequency || 'Recurring'}</p>
+            </div>
+            <span className="w-16 text-right text-[11px] text-muted">${Math.round(c.perVisit)}</span>
+            <span className="w-16 text-right text-[11px] font-black text-brand-text">${c.newPrice}</span>
+            <span className="w-12 text-right text-[11px] font-bold text-emerald-500">+${c.increase}</span>
+            <span className={`w-14 text-right text-[11px] font-black ${c.laborPct != null ? (c.laborPct > 30 ? 'text-red-500' : c.laborPct > 25 ? 'text-amber-500' : 'text-emerald-500') : 'text-muted'}`}>{c.laborPct != null ? `${c.laborPct}%` : '--'}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Summary */}
+      {selected.size > 0 && (() => {
+        const sel = enriched.filter(c => selected.has(c.name));
+        const totalCurrentMonthly = sel.reduce((s, c) => s + c.monthly, 0);
+        const totalNewMonthly = sel.reduce((s, c) => s + (c.newPrice * (c.monthly / (c.perVisit || 1))), 0);
+        return (
+          <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 flex items-center justify-between">
+            <span className="text-xs text-muted">Additional monthly revenue</span>
+            <span className="text-lg font-black text-emerald-500">+${fmt(totalNewMonthly - totalCurrentMonthly)}/mo</span>
+          </div>
+        );
+      })()}
+
+      <button onClick={() => setStep('message')} disabled={selected.size === 0}
+        className="w-full flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-brand text-on-brand font-black text-lg hover:bg-brand-hover cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]">
+        Next: Write Message ({selected.size})
       </button>
     </div>
   );
@@ -564,22 +842,29 @@ export default function Clients() {
   const [expandedVisit, setExpandedVisit] = useState(null);
   const [jobberClients, setJobberClients] = useState([]);
   const [loadingJobber, setLoadingJobber] = useState(true);
+  const [allJobberClients, setAllJobberClients] = useState([]);
+  const [loadingAllClients, setLoadingAllClients] = useState(true);
 
-  // Fetch recurring clients from Jobber (with timeout)
+  // Fetch all data once on mount
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
     const yearStart = today.slice(0, 4) + '-01-01';
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15s max
-    fetch(`/api/commander/summary?start=${yearStart}&end=${today}`, { signal: controller.signal })
+
+    // Recurring clients
+    fetch(`/api/commander/summary?start=${yearStart}&end=${today}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
-        if (data?.recurringClientList) {
-          setJobberClients(data.recurringClientList);
-        }
+        if (data?.recurringClientList) setJobberClients(data.recurringClientList);
       })
       .catch(() => {})
-      .finally(() => { clearTimeout(timeout); setLoadingJobber(false); });
+      .finally(() => setLoadingJobber(false));
+
+    // All clients (CRM)
+    fetch('/api/jobber-data?action=all-clients')
+      .then((r) => r.ok ? r.json() : [])
+      .then(setAllJobberClients)
+      .catch(() => {})
+      .finally(() => setLoadingAllClients(false));
   }, []);
 
   // Build agreements lookup by client name
@@ -849,7 +1134,7 @@ export default function Clients() {
 
   // Raise prices view
   if (view === 'raise') {
-    return <RaisePrices clients={clientList} onBack={() => setView('list')} />;
+    return <RaisePrices onBack={() => setView('crm')} recurringClients={jobberClients} />;
   }
 
   // Contract builder view (new or edit)
@@ -865,48 +1150,65 @@ export default function Clients() {
 
   // Main view with tabs
   return (
-    <div className="space-y-4">
-      {/* Tab bar + actions */}
-      <div className="flex items-center gap-2">
-        <div className="flex gap-1 bg-surface-alt p-1 rounded-xl flex-1">
-          <button
-            onClick={() => setView('crm')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex-1 justify-center ${view === 'crm' ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'}`}
-          >
-            <User size={14} /> Clients
-          </button>
-          <button
-            onClick={() => setView('recurring')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex-1 justify-center ${view === 'recurring' ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'}`}
-          >
-            <List size={14} /> Recurring
-          </button>
-          <button
-            onClick={() => setView('map')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex-1 justify-center ${view === 'map' ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'}`}
-          >
-            <MapIcon size={14} /> Map
-          </button>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-end justify-between pt-6">
+        <div>
+          <h1 className="text-3xl font-bold text-primary tracking-tight">Clients</h1>
+          <p className="text-sm text-muted mt-1">Your CRM — clients, recurring services, and territory map</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setView('raise')}
-            className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-border-subtle text-xs font-semibold text-secondary cursor-pointer hover:bg-surface-alt transition-colors"
-          >
-            <DollarSign size={14} /> Raise Prices
-          </button>
+        <div className="flex items-center gap-2">
+          {view === 'recurring' && (
+            <button
+              onClick={() => setView('raise')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border-subtle text-xs font-semibold text-secondary cursor-pointer hover:bg-surface-alt transition-colors"
+            >
+              <DollarSign size={14} /> Raise Prices
+            </button>
+          )}
           <button
             onClick={() => { setEditingContractId(null); setView('contract'); }}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand text-on-brand text-xs font-semibold cursor-pointer hover:bg-brand-hover transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand text-on-brand text-xs font-semibold cursor-pointer hover:bg-brand-hover transition-colors"
           >
-            <Plus size={14} /> New Contract
+            <Plus size={14} /> New Client
+          </button>
+          <button
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border-subtle text-xs font-semibold text-secondary hover:bg-surface-alt cursor-pointer transition-colors"
+          >
+            More Actions <ChevronDown size={12} />
           </button>
         </div>
       </div>
 
-      {/* Content */}
-      {view === 'crm' && <ClientList onSelect={(c) => { setSelectedId(c.id); }} />}
-      {view === 'recurring' && <RecurringView onSelectClient={(c) => { setSelectedRecurring(c); }} />}
+      {/* Tab bar */}
+      <div className="flex gap-1 bg-surface-alt p-1 rounded-xl">
+        <button
+          onClick={() => setView('crm')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex-1 justify-center ${view === 'crm' ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'}`}
+        >
+          <User size={14} /> Clients
+        </button>
+        <button
+          onClick={() => setView('recurring')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex-1 justify-center ${view === 'recurring' ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'}`}
+        >
+          <List size={14} /> Recurring
+        </button>
+        <button
+          onClick={() => setView('map')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex-1 justify-center ${view === 'map' ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'}`}
+        >
+          <MapIcon size={14} /> Map
+        </button>
+      </div>
+
+      {/* Content — keep mounted, hide with CSS to prevent re-fetching */}
+      <div style={{ display: view === 'crm' ? 'block' : 'none' }}>
+        <ClientList allClients={allJobberClients} loading={loadingAllClients} onSelect={(c) => { setSelectedId(c.id); }} />
+      </div>
+      <div style={{ display: view === 'recurring' ? 'block' : 'none' }}>
+        <RecurringView initialClients={jobberClients.length > 0 ? jobberClients : undefined} onSelectClient={(c) => { setSelectedRecurring(c); }} />
+      </div>
       {view === 'map' && (
         <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="w-8 h-8 border-4 border-brand-light border-t-brand rounded-full animate-spin" /></div>}>
           <Dominate />

@@ -23,12 +23,18 @@ import {
   FileText,
   TrendingUp,
   Settings as SettingsIcon,
+  MessageSquare,
+  Inbox,
+  Briefcase,
+  CreditCard,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
 import { useAuth } from './contexts/AuthContext';
 import { AppStoreProvider, useAppStore } from './store/AppStoreContext';
 import LoginForm from './components/LoginForm';
+import IdeaBank from './components/IdeaBank';
+import MessagesButton from './components/MessagesButton';
 
 /* ─── Lazy-loaded pages (code-split per route) ─── */
 const Home = lazy(() => import('./pages/Home'));
@@ -58,6 +64,11 @@ const LaborEfficiency = lazy(() => import('./pages/LaborEfficiency'));
 const Sales = lazy(() => import('./pages/Sales'));
 const Marketing = lazy(() => import('./pages/Marketing'));
 const Clients = lazy(() => import('./pages/Clients'));
+const Messages = lazy(() => import('./pages/Messages'));
+const Requests = lazy(() => import('./pages/Requests'));
+const Jobs = lazy(() => import('./pages/Jobs'));
+const Invoices = lazy(() => import('./pages/Invoices'));
+const Payments = lazy(() => import('./pages/Payments'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -74,10 +85,17 @@ const TEAM_ITEMS = [
   { id: 'agreement', path: '/agreement', label: 'Agreement', icon: FileText },
 ];
 
+const OPERATIONS_ITEMS = [
+  { id: 'clients', path: '/clients', label: 'Clients', icon: Users },
+  { id: 'requests', path: '/requests', label: 'Requests', icon: Inbox },
+  { id: 'sales', path: '/sales', label: 'Quotes', icon: Crosshair },
+  { id: 'jobs', path: '/jobs', label: 'Jobs', icon: Briefcase },
+  { id: 'invoices', path: '/invoices', label: 'Invoices', icon: FileText },
+  { id: 'payments', path: '/payments', label: 'Payments', icon: CreditCard },
+];
+
 const OWNER_ITEMS = [
   { id: 'marketing', path: '/marketing', label: 'Leads', icon: MapPinned },
-  { id: 'sales', path: '/sales', label: 'Quotes', icon: Crosshair },
-  { id: 'clients', path: '/clients', label: 'Clients', icon: Users },
   { id: 'labor', path: '/labor', label: 'Profitability', icon: TrendingUp },
   { id: 'finance', path: '/finance', label: 'Finance', icon: DollarSign },
 ];
@@ -372,6 +390,28 @@ function AppShell() {
       {ownerMode && (
         <>
           <div className="h-px bg-border-subtle my-3 mx-2" />
+          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Operations</p>}
+          {OPERATIONS_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.path);
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleNav(item.path)}
+                title={collapsed ? item.label : undefined}
+                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                  active
+                    ? 'bg-brand-light text-brand-text-strong'
+                    : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                }`}
+              >
+                <Icon size={20} className="shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </button>
+            );
+          })}
+
+          <div className="h-px bg-border-subtle my-3 mx-2" />
           {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Owner Tools</p>}
           {OWNER_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -538,7 +578,7 @@ function AppShell() {
             </button>
           </div>
         )}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8">
+        <div className={location.pathname === '/messages' ? '' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8'}>
           <Suspense fallback={
             <div className="flex items-center justify-center py-20">
               <div className="w-8 h-8 border-4 border-brand-light border-t-brand rounded-full animate-spin" />
@@ -554,6 +594,11 @@ function AppShell() {
                 <Route path="/mowing" element={<MowingSchedule />} />
                 <Route path="/sales" element={<Sales />} />
                 <Route path="/clients" element={<Clients />} />
+                <Route path="/messages" element={<Messages />} />
+                <Route path="/requests" element={<Requests />} />
+                <Route path="/jobs" element={<Jobs />} />
+                <Route path="/invoices" element={<Invoices />} />
+                <Route path="/payments" element={<Payments />} />
                 <Route path="/marketing" element={<Marketing />} />
                 <Route path="/finance" element={<Finance />} />
                 <Route path="/labor" element={<LaborEfficiency />} />
@@ -579,6 +624,8 @@ function AppShell() {
         </div>
       </main>
 
+      {ownerMode && <MessagesButton />}
+      {ownerMode && <IdeaBank />}
     </div>
   );
 }

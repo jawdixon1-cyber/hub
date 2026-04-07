@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Truck, Calendar } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Truck, Calendar, ExternalLink, Link } from 'lucide-react';
 import { genId } from '../data';
 
 const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -57,6 +57,26 @@ export function ChecklistSection({ items, setItems }) {
   }));
 
   const [showDays, setShowDays] = useState(null); // item id showing day picker
+  const [showLinks, setShowLinks] = useState(null); // item id showing link editor
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkLabel, setLinkLabel] = useState('');
+
+  const addLink = (id) => {
+    if (!linkUrl.trim()) return;
+    setItems(all.map((i) => {
+      if (i.id !== id) return i;
+      const links = [...(i.links || []), { id: genId(), url: linkUrl.trim(), label: linkLabel.trim() || linkUrl.trim() }];
+      return { ...i, links };
+    }));
+    setLinkUrl('');
+    setLinkLabel('');
+  };
+  const removeLink = (itemId, linkId) => {
+    setItems(all.map((i) => {
+      if (i.id !== itemId) return i;
+      return { ...i, links: (i.links || []).filter((l) => l.id !== linkId) };
+    }));
+  };
 
   const update = (id, text) => setItems(all.map((i) => (i.id === id ? { ...i, text } : i)));
   const remove = (id) => setItems(all.filter((i) => i.id !== id));
@@ -162,6 +182,12 @@ export function ChecklistSection({ items, setItems }) {
                         <Calendar size={11} />
                         {item.days?.length ? item.days.map((d) => d[0]).join('') : ''}
                       </button>
+                      <button onClick={() => { setShowLinks(showLinks === item.id ? null : item.id); setLinkUrl(''); setLinkLabel(''); }}
+                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg cursor-pointer shrink-0 transition-colors text-[9px] font-bold ${item.links?.length ? 'bg-emerald-500/10 text-emerald-600' : 'text-muted/40 group-hover:text-muted/60'}`}
+                        title="External links">
+                        <Link size={11} />
+                        {item.links?.length ? item.links.length : ''}
+                      </button>
                       <button onClick={() => toggleFieldWork(item.id)} className={`p-1 cursor-pointer shrink-0 transition-colors ${item.fieldWorkOnly ? 'text-brand-text' : 'text-transparent group-hover:text-muted/30 hover:!text-brand-text'}`} title="Field work only"><Truck size={12} /></button>
                       <button onClick={() => remove(item.id)} className="p-1 text-transparent group-hover:text-muted/40 hover:!text-red-500 cursor-pointer shrink-0"><Trash2 size={12} /></button>
                     </div>
@@ -176,6 +202,41 @@ export function ChecklistSection({ items, setItems }) {
                             </button>
                           );
                         })}
+                      </div>
+                    )}
+                    {showLinks === item.id && (
+                      <div className="px-4 py-3 ml-[24px] bg-surface-alt/50 border-t border-border-subtle/30 space-y-2">
+                        {/* Existing links */}
+                        {(item.links || []).map((link) => (
+                          <div key={link.id} className="flex items-center gap-2 text-xs">
+                            <ExternalLink size={11} className="text-emerald-500 shrink-0" />
+                            <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline truncate flex-1">{link.label || link.url}</a>
+                            <button onClick={() => removeLink(item.id, link.id)} className="p-0.5 text-muted/40 hover:text-red-500 cursor-pointer shrink-0"><Trash2 size={11} /></button>
+                          </div>
+                        ))}
+                        {/* Add new link */}
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={linkLabel}
+                            onChange={(e) => setLinkLabel(e.target.value)}
+                            placeholder="Label (optional)"
+                            className="w-24 bg-transparent border border-border-subtle rounded-lg px-2 py-1.5 text-xs text-primary outline-none focus:ring-1 focus:ring-brand placeholder:text-muted/40"
+                          />
+                          <input
+                            value={linkUrl}
+                            onChange={(e) => setLinkUrl(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') addLink(item.id); }}
+                            placeholder="https://..."
+                            className="flex-1 bg-transparent border border-border-subtle rounded-lg px-2 py-1.5 text-xs text-primary outline-none focus:ring-1 focus:ring-brand placeholder:text-muted/40"
+                          />
+                          <button
+                            onClick={() => addLink(item.id)}
+                            disabled={!linkUrl.trim()}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-500 text-white text-[10px] font-bold hover:bg-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                          >
+                            Add
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

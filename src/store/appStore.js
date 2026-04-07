@@ -28,6 +28,7 @@ import {
   initialMowingSettings,
   initialMowingNotifications,
 } from '../data';
+import { DEFAULT_ROLES, DEFAULT_ROLES_VERSION } from '../data/roleTemplates';
 
 const DATA_CACHE_KEY = 'greenteam-data-cache';
 
@@ -72,6 +73,7 @@ const STATE_KEYS = [
   { key: 'mowingNotifications', supaKey: 'greenteam-mowingNotifications', initial: initialMowingNotifications },
   { key: 'strikes',             supaKey: 'greenteam-strikes',             initial: [] },
   { key: 'clients',             supaKey: 'greenteam-clients',             initial: [] },
+  { key: 'roles',               supaKey: 'greenteam-roles',               initial: { version: DEFAULT_ROLES_VERSION, items: DEFAULT_ROLES } },
 ];
 
 function resolveInitial(cloudValue, initial) {

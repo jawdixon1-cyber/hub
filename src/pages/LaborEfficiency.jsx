@@ -447,26 +447,34 @@ function CrewView({ crew, totalRevenue }) {
 //  TAB: RECURRING CLIENTS
 // ══════════════════════════════════════════
 
-export function RecurringView({ onSelectClient }) {
-  const [clients, setClients] = useState([]);
+export function RecurringView({ onSelectClient, initialClients }) {
+  const [clients, setClients] = useState(initialClients || []);
   const [laborByClient, setLaborByClient] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState('newest');
   const [sortDir, setSortDir] = useState('desc');
   const [expanded, setExpanded] = useState(null);
   const [error, setError] = useState(null);
 
+  // Sync with parent's data
+  useEffect(() => {
+    if (initialClients?.length > 0) setClients(initialClients);
+  }, [initialClients]);
+
   useEffect(() => {
     const today = getTodayInTimezone();
-    const yearStart = today.slice(0, 4) + '-01-01';
     const thirtyAgo = new Date(); thirtyAgo.setDate(thirtyAgo.getDate() - 30);
     const thirtyStr = thirtyAgo.toISOString().split('T')[0];
 
-    // Fetch commander first (cached), then labor sequentially
+    // Fetch commander only if no initialClients, then labor
     (async () => {
-      const commanderData = await fetch(`/api/commander/summary?start=${yearStart}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null);
-      if (commanderData?.recurringClientList) setClients(commanderData.recurringClientList);
+      if (!initialClients || initialClients.length === 0) {
+        const yearStart = today.slice(0, 4) + '-01-01';
+        setLoading(true);
+        const commanderData = await fetch(`/api/commander/summary?start=${yearStart}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null);
+        if (commanderData?.recurringClientList) setClients(commanderData.recurringClientList);
+      }
 
       // Now fetch labor (30 days) — sequential so we don't throttle
       const laborData = await fetch(`/api/jobber-data?action=labor&start=${thirtyStr}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null);
@@ -565,7 +573,7 @@ export function RecurringView({ onSelectClient }) {
   const totalMonthly = activeClients.reduce((s, c) => s + c.monthly, 0);
   const avgMonthly = activeClients.length > 0 ? totalMonthly / activeClients.length : 0;
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 size={20} className="animate-spin text-brand" /></div>;
+  if (loading && clients.length === 0) return <div className="flex justify-center py-12"><Loader2 size={20} className="animate-spin text-brand" /></div>;
   if (error) return (
     <div className="flex flex-col items-center gap-2 py-8">
       <p className="text-muted text-sm">{error.includes('Throttled') ? 'Jobber is rate limiting — wait a moment and try again.' : error}</p>

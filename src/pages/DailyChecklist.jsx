@@ -1143,7 +1143,19 @@ export default function DailyChecklist() {
 
         {/* Left column — main content */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Growth Goals */}
+          {/* Quick checklist triggers */}
+          <div className="flex gap-2">
+            <button onClick={() => setActiveFlow('morning')}
+              className={`flex-1 px-4 py-3 rounded-xl text-sm font-bold cursor-pointer transition-colors ${morningAllDone ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-card border border-border-subtle text-primary hover:bg-surface-alt'}`}>
+              {morningAllDone ? 'Start Day ✓' : 'Start Day'}
+            </button>
+            <button onClick={() => setActiveFlow('evening')}
+              className={`flex-1 px-4 py-3 rounded-xl text-sm font-bold cursor-pointer transition-colors ${eveningAllDone ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-card border border-border-subtle text-primary hover:bg-surface-alt'}`}>
+              {eveningAllDone ? 'End Day ✓' : 'End Day'}
+            </button>
+          </div>
+
+          {/* Dashboard stats */}
           <OwnerDashboard />
 
           {/* Custom widgets */}

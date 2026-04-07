@@ -64,11 +64,12 @@ async function handleAllClients(req, res) {
   let cursor = null, hasNext = true;
   while (hasNext) {
     const after = cursor ? `, after: "${cursor}"` : '';
-    const data = await jobberQuery(`{ clients(first: 100${after}) { nodes { id firstName lastName companyName phones { number } emails { address } billingAddress { street1 street2 city province postalCode } tags { label } isLead } pageInfo { hasNextPage endCursor } } }`);
+    const data = await jobberQuery(`{ clients(first: 100${after}) { nodes { id firstName lastName companyName phones { number } emails { address } billingAddress { street1 street2 city province postalCode } tags { nodes { label } } isLead createdAt updatedAt } pageInfo { hasNextPage endCursor } } }`);
     all.push(...(data.clients?.nodes || []));
     hasNext = data.clients?.pageInfo?.hasNextPage || false;
     cursor = data.clients?.pageInfo?.endCursor || null;
     if (all.length > 1000) break;
+    if (hasNext) await new Promise((r) => setTimeout(r, 600)); // throttle guard
   }
 
   const results = all.map(c => {
@@ -80,7 +81,9 @@ async function handleAllClients(req, res) {
       email: c.emails?.[0]?.address || null,
       address, city, state, zip,
       isLead: c.isLead,
-      tags: (c.tags || []).map(t => t.label),
+      tags: (c.tags?.nodes || []).map(t => t.label),
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
     };
   });
 

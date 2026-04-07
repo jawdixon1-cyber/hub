@@ -1,5 +1,6 @@
 import { useState, lazy, Suspense, useCallback } from 'react';
-import { Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Save, Eye, Edit3, AlertTriangle, Check, FileText, X } from 'lucide-react';
+import { Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Save, Eye, Edit3, AlertTriangle, Check, FileText, X, Shield } from 'lucide-react';
+import { DEFAULT_ROLES, DEFAULT_ROLES_VERSION } from '../data/roleTemplates';
 
 const RichTextEditor = lazy(() => import('../components/RichTextEditor'));
 import { useAuth } from '../contexts/AuthContext';
@@ -12,11 +13,65 @@ import {
 
 const AgreementSigningFlow = lazy(() => import('../components/AgreementSigningFlow'));
 
+// Migrate old sections (expectations + accountability + policies) into a single { standards & policies }
+// Also force WHO WE ARE to include the "What being the best means" content
+function migrateSections(sections) {
+  if (!Array.isArray(sections)) return sections;
+  const defaultStandards = DEFAULT_SECTIONS.find((s) => s.id === 'standards');
+  const defaultStandardsBody = defaultStandards?.body || '';
+  const defaultValues = DEFAULT_SECTIONS.find((s) => s.id === 'values');
+  const defaultValuesBody = defaultValues?.body || '';
+
+  // Step 1a: ensure WHO WE ARE has the "Our Goal" mission content
+  let migrated = sections.map((s) => {
+    if (s.id === 'values' && !s.body?.includes('Our Goal') && !s.body?.includes('What Being the Best')) {
+      return { ...s, body: defaultValuesBody };
+    }
+    return s;
+  });
+  // Step 1b: if WHO WE ARE has the OLD bold mission, replace with new softer version
+  migrated = migrated.map((s) => {
+    if (s.id === 'values' && s.body?.includes('What Being the Best Actually Means')) {
+      return { ...s, body: defaultValuesBody };
+    }
+    return s;
+  });
+  // Step 1c: if standards section exists but doesn't have the new sub-headings, refresh it
+  migrated = migrated.map((s) => {
+    if (s.id === 'standards' && !s.body?.includes('font-weight:900')) {
+      return { ...s, title: 'STANDARDS & POLICIES', body: defaultStandardsBody };
+    }
+    return s;
+  });
+
+  // Step 2: collapse old sections into 'standards'
+  const hasOld = migrated.some((s) => s.id === 'expectations' || s.id === 'accountability' || s.id === 'policies');
+  if (!hasOld && migrated.some((s) => s.id === 'standards')) {
+    return migrated.map((s) => s.id === 'standards' ? { ...s, title: 'STANDARDS & POLICIES' } : s);
+  }
+  if (!hasOld) return migrated;
+
+  const out = [];
+  let inserted = false;
+  for (const s of migrated) {
+    if (s.id === 'expectations' || s.id === 'accountability' || s.id === 'policies') {
+      if (!inserted) {
+        out.push({ id: 'standards', title: 'STANDARDS & POLICIES', body: defaultStandardsBody });
+        inserted = true;
+      }
+      continue;
+    }
+    out.push(s);
+  }
+  return out;
+}
+
 // Helper to get live agreement config (from store or defaults)
 function useAgreementConfig() {
   const config = useAppStore((s) => s.agreementConfig);
-  // Always use defaults if stored config has fewer sections than defaults
-  if (config && config.sections && config.sections.length >= DEFAULT_SECTIONS.length) return config;
+  if (config && config.sections) {
+    return { ...config, sections: migrateSections(config.sections) };
+  }
   return {
     version: DEFAULT_AGREEMENT_VERSION,
     sections: DEFAULT_SECTIONS,
@@ -75,6 +130,121 @@ function SectionEditor({ section, index, total, onChange, onDelete, onMove, onDr
             onChange={(html) => onChange(index, { ...section, body: html })}
           />
         </Suspense>
+      </div>
+    </div>
+  );
+}
+
+/* ── Roles Editor (lives inside the agreement editor) ── */
+
+function RolesEditor() {
+  const stored = useAppStore((s) => s.roles);
+  const setRoles = useAppStore((s) => s.setRoles);
+  const data = stored && stored.items ? stored : { version: DEFAULT_ROLES_VERSION, items: DEFAULT_ROLES };
+
+  const [items, setItems] = useState(data.items);
+  const [activeId, setActiveId] = useState(data.items[0]?.id || null);
+  const [dirty, setDirty] = useState(false);
+
+  const active = items.find((r) => r.id === activeId) || items[0];
+
+  const updateRole = (id, patch) => {
+    setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    setDirty(true);
+  };
+
+  const addRole = () => {
+    const id = `role-${Date.now()}`;
+    const newRole = { id, name: 'New Role', body: '<p>Describe this role\u2019s responsibilities here.</p>' };
+    setItems((prev) => [...prev, newRole]);
+    setActiveId(id);
+    setDirty(true);
+  };
+
+  const deleteRole = (id) => {
+    if (items.length <= 1) return;
+    if (!confirm('Delete this role?')) return;
+    const next = items.filter((r) => r.id !== id);
+    setItems(next);
+    if (activeId === id) setActiveId(next[0]?.id || null);
+    setDirty(true);
+  };
+
+  const save = () => {
+    const parts = (data.version || '1.0').split('.');
+    const minor = parseInt(parts[1] || '0', 10) + 1;
+    const newVersion = dirty ? `${parts[0]}.${minor}` : data.version;
+    setRoles({ version: newVersion, items });
+    setDirty(false);
+  };
+
+  return (
+    <div className="rounded-xl border-2 border-brand/30 bg-card p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Shield size={14} className="text-brand" />
+          <p className="text-[10px] font-black text-brand uppercase tracking-widest">Roles & Responsibilities</p>
+          <span className="text-[9px] font-bold text-muted">v{data.version}{dirty && <span className="text-amber-500"> · unsaved</span>}</span>
+        </div>
+        <button
+          onClick={save}
+          disabled={!dirty}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-[10px] font-bold hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+        >
+          <Save size={11} /> Save Roles
+        </button>
+      </div>
+      <p className="text-[10px] text-muted">Each team member is assigned a role in Team management. Their agreement automatically shows the responsibilities for their role.</p>
+
+      <div className="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-3">
+        {/* Role list */}
+        <div className="space-y-1">
+          {items.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setActiveId(r.id)}
+              className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left transition-colors cursor-pointer ${
+                activeId === r.id ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt'
+              }`}
+            >
+              <span className="text-[11px] font-semibold truncate">{r.name}</span>
+              {items.length > 1 && (
+                <span
+                  onClick={(e) => { e.stopPropagation(); deleteRole(r.id); }}
+                  className="text-muted/30 hover:text-red-500 shrink-0"
+                  role="button"
+                >
+                  <Trash2 size={10} />
+                </span>
+              )}
+            </button>
+          ))}
+          <button
+            onClick={addRole}
+            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-border-subtle text-[10px] font-semibold text-muted hover:text-primary hover:bg-surface-alt cursor-pointer"
+          >
+            <Plus size={11} /> Add role
+          </button>
+        </div>
+
+        {/* Editor */}
+        {active && (
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={active.name}
+              onChange={(e) => updateRole(active.id, { name: e.target.value })}
+              placeholder="Role name"
+              className="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-brand"
+            />
+            <Suspense fallback={<div className="text-muted text-xs py-2">Loading editor…</div>}>
+              <RichTextEditor
+                content={active.body || ''}
+                onChange={(html) => updateRole(active.id, { body: html })}
+              />
+            </Suspense>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -213,6 +383,9 @@ function AgreementEditor() {
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-border-subtle hover:border-brand text-muted hover:text-brand transition-colors cursor-pointer">
             <Plus size={16} /> Add Section
           </button>
+
+          {/* Roles editor */}
+          <RolesEditor />
 
           {/* Final text editor */}
           <div className="rounded-xl border-2 border-brand/30 bg-card p-4 space-y-2">
@@ -382,12 +555,63 @@ function AgreementSection({ section, accent, changed }) {
   );
 }
 
+function RolesAgreementBlock({ allRoles, myRoleId }) {
+  const myRole = allRoles.find((r) => r.id === myRoleId) || null;
+  return (
+    <div className="rounded-2xl border-2 border-brand/40 bg-card p-5 space-y-4">
+      <div className="flex items-center gap-2 mb-1">
+        <Shield size={16} className="text-brand" />
+        <p className="text-sm font-black text-primary uppercase tracking-wider">Your Role & Responsibilities</p>
+      </div>
+      <p className="text-[11px] text-muted -mt-2">Every role on the crew is laid out below. Your assigned role is highlighted.</p>
+
+      {allRoles.map((role) => {
+        const isMine = myRoleId === role.id;
+        return (
+          <div
+            key={role.id}
+            className={`rounded-xl p-4 border ${isMine ? 'border-brand bg-brand/5 ring-1 ring-brand/30' : 'border-border-subtle bg-surface-alt/30'}`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-black text-primary uppercase tracking-wider">{role.name}</h3>
+              {isMine ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand bg-brand/15 px-2 py-0.5 rounded-full">
+                  <Check size={10} /> Your Role
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-muted bg-surface-alt px-2 py-0.5 rounded-full">
+                  Not Your Role
+                </span>
+              )}
+            </div>
+            <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: role.body }} />
+          </div>
+        );
+      })}
+
+      {!myRole && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 flex items-start gap-2">
+          <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-amber-500">No role assigned yet — ask the owner to assign you a role in Team management.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TeamMemberAgreementView() {
   const { user, currentUser } = useAuth();
   const userEmail = user?.email?.toLowerCase();
   const config = useAgreementConfig();
   const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
   const setSignedAgreements = useAppStore((s) => s.setSignedAgreements);
+
+  // Look up this member's assigned role
+  const permissions = useAppStore((s) => s.permissions) || {};
+  const rolesData = useAppStore((s) => s.roles);
+  const allRoles = (rolesData && rolesData.items) ? rolesData.items : DEFAULT_ROLES;
+  const myRoleId = permissions[userEmail]?.roleId || null;
+  const myRole = allRoles.find((r) => r.id === myRoleId) || null;
 
   const myAgreements = signedAgreements.filter((a) => a.memberEmail === userEmail);
   const latestAgreement = myAgreements.length > 0 ? myAgreements[myAgreements.length - 1] : null;
@@ -478,10 +702,18 @@ function TeamMemberAgreementView() {
         </div>
       )}
 
-      {/* Sections */}
+      {/* Sections — render Roles section right after WHO WE ARE (id 'values') */}
       {sections.map((section, i) => (
-        <AgreementSection key={section.id || i} section={section} accent={accents[i]} changed={sectionChanges[section.id]} />
+        <div key={section.id || i}>
+          <AgreementSection section={section} accent={accents[i]} changed={sectionChanges[section.id]} />
+          {section.id === 'values' && allRoles.length > 0 && (
+            <div className="mt-5">
+              <RolesAgreementBlock allRoles={allRoles} myRoleId={myRoleId} />
+            </div>
+          )}
+        </div>
       ))}
+
 
       {/* Sign section — only if not signed */}
       {!isSigned && (

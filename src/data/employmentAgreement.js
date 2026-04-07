@@ -17,12 +17,28 @@ export const AGREEMENT_SECTIONS = [
 <li><strong>Over-Deliver for Clients</strong></li>
 <li><strong>Keep Your Word</strong></li>
 <li><strong>Never Quit</strong></li>
-</ul>`,
+</ul>
+
+<h3>Our Goal</h3>
+<p>We aim to be the best landscaping company in Rock Hill.</p>
+
+<p>Being the best isn't about making the most money. It isn't about being the fastest, and it isn't about doing the most jobs in a day. Being the best means:</p>
+<ul>
+<li>We don't miss spots. Ever.</li>
+<li>We don't create confusion — for our clients or for each other.</li>
+<li>The client has a seamless, perfect experience from the moment we pull up to the moment we leave.</li>
+</ul>
+
+<p>That's the bar. Every job, every property, every time.</p>
+
+<p>When you walk a property and find a missed spot, that's not a failure — that's the system working. The failure is leaving without checking. The failure is letting one missed spot leave with the truck. This is how we become the best landscaping company in Rock Hill.</p>`,
   },
   {
-    id: 'expectations',
-    title: "WHAT'S EXPECTED",
-    body: `<p><strong>⚡ = Strike &nbsp;&nbsp; 🚫 = Immediate Termination &nbsp;&nbsp; 💰 = Bonus Removed</strong></p>
+    id: 'standards',
+    title: "STANDARDS & POLICIES",
+    body: `<h2 style="font-size:20px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;margin-top:0;margin-bottom:8px;border-bottom:2px solid currentColor;padding-bottom:8px;">Standards</h2>
+<p><em>The standards below are how we run a job. Violating any of them earns the consequence shown:</em></p>
+<p><strong>⚡ = Strike &nbsp;&nbsp; 🚫 = Termination &nbsp;&nbsp; 💰 = Bonus Removed</strong></p>
 
 <h3>Show Up Ready</h3>
 <ul>
@@ -87,12 +103,9 @@ export const AGREEMENT_SECTIONS = [
 </ul>
 
 <h3>Breaks</h3>
-<p><strong>15 minutes or less.</strong> Stay near the truck. Be ready to move when it's time.</p>`,
-  },
-  {
-    id: 'accountability',
-    title: 'ACCOUNTABILITY',
-    body: `<h3>How It Works</h3>
+<p><strong>15 minutes or less.</strong> Stay near the truck. Be ready to move when it's time.</p>
+
+<h3>How Accountability Works</h3>
 <p>We use a <strong>rolling 30-day</strong> accountability system. Strikes expire after 30 days, but the record stays.</p>
 
 <ul>
@@ -103,7 +116,7 @@ export const AGREEMENT_SECTIONS = [
 
 <p>Every standard marked with ⚡ above earns a strike when violated. It's that simple.</p>
 
-<h3>You Will Be Fired Immediately For</h3>
+<h3>You Will Be Fired For</h3>
 <ul>
 <li>Theft</li>
 <li>Violence or threats</li>
@@ -120,12 +133,12 @@ export const AGREEMENT_SECTIONS = [
 <li>You don't complete your checklists</li>
 <li>You don't complete job forms, photos, or closeout steps</li>
 </ul>
-<p>No strike — but no bonus either. Every day is a fresh chance to earn it.</p>`,
-  },
-  {
-    id: 'policies',
-    title: 'POLICIES',
-    body: `<h3>Time Off</h3>
+<p>No strike — but no bonus either. Every day is a fresh chance to earn it.</p>
+
+<h2 style="font-size:20px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;margin-top:32px;margin-bottom:8px;border-bottom:2px solid currentColor;padding-bottom:8px;">Policies</h2>
+<p><em>These are the terms of employment — how time off, pay, leaving, and injuries work. They aren't strike-related, they're how the job works.</em></p>
+
+<h3>Time Off</h3>
 <p>Time off must be requested at least <strong>2 weeks in advance</strong> and is not approved until confirmed by management. Approval depends on schedule and coverage.</p>
 <ul>
 <li><strong>10 workdays off per year</strong> maximum</li>

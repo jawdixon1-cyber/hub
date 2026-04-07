@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { MapContainer, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, useMap, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { calculateSqFt } from './mapUtils';
@@ -298,7 +298,26 @@ function DrawLayer({ onMeasurementsChange, measurements }) {
   return null;
 }
 
-export default function MapView({ center, onMeasurementsChange, measurements }) {
+// Custom pulsing pin icon for the property location
+const propertyPinIcon = L.divIcon({
+  className: 'property-pin-marker',
+  html: `
+    <div style="position:relative;width:36px;height:36px;">
+      <div style="position:absolute;inset:0;border-radius:50%;background:rgba(34,197,94,0.35);animation:pulse 2s ease-out infinite;"></div>
+      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#22c55e;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.5);"></div>
+    </div>
+    <style>
+      @keyframes pulse {
+        0% { transform: scale(0.8); opacity: 1; }
+        100% { transform: scale(2.2); opacity: 0; }
+      }
+    </style>
+  `,
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+});
+
+export default function MapView({ center, onMeasurementsChange, measurements, propertyAddress }) {
   return (
     <MapContainer
       center={center || [39.8283, -98.5795]}
@@ -314,6 +333,11 @@ export default function MapView({ center, onMeasurementsChange, measurements }) 
       />
       <ResizeHandler />
       {center && <FlyTo center={center} zoom={19} />}
+      {center && (
+        <Marker position={center} icon={propertyPinIcon}>
+          {propertyAddress && <Popup>{propertyAddress}</Popup>}
+        </Marker>
+      )}
       <DrawLayer
         onMeasurementsChange={onMeasurementsChange}
         measurements={measurements}
