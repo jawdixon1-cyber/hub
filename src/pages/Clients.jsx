@@ -662,7 +662,7 @@ function RaisePrices({ onBack, recurringClients }) {
     setSending(true);
     try {
       const dateFmt = effectiveDate ? new Date(effectiveDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '[Date TBD]';
-      const res = await fetch('/api/ghl?action=send-bulk-sms', {
+      const res = await fetch('/api/app-state?key=ghl&action=send-bulk-sms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

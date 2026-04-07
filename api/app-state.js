@@ -1,6 +1,7 @@
-// Server-side proxy for app_state + team auth — bypasses RLS using service role key
+// Server-side proxy for app_state + team auth + GHL — bypasses RLS using service role key
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
 import { promises as dns } from 'dns';
+import ghlHandler from '../lib/ghlHandler.js';
 
 // ── Email MX validation ──
 async function validateEmail(email) {
@@ -59,6 +60,11 @@ export default async function handler(req, res) {
     // Team auth: POST to /api/app-state?key=team-auth OR POST to /api/team-auth
     if (req.method === 'POST' && (req.query.key === 'team-auth' || req.url?.includes('team-auth'))) {
       return handleTeamAuth(req, res);
+    }
+
+    // GHL proxy: any method to /api/app-state?key=ghl&action=...
+    if (req.query.key === 'ghl') {
+      return ghlHandler(req, res);
     }
 
     const db = getSupabaseAdmin();
