@@ -4,11 +4,11 @@ import { createAppStore } from './appStore';
 
 const AppStoreContext = createContext(null);
 
-export function AppStoreProvider({ cloudData, children }) {
+export function AppStoreProvider({ cloudData, orgId, children }) {
   const storeRef = useRef(null);
   const initializedRef = useRef(false);
   if (!storeRef.current) {
-    storeRef.current = createAppStore(cloudData);
+    storeRef.current = createAppStore(cloudData, orgId);
   }
 
   // When Supabase data arrives after initial cache-based load, hydrate the store

@@ -672,29 +672,8 @@ export default function Home() {
         </div>
       )}
 
-      {/* Flow State: needs-opening */}
-      {flowState === 'needs-opening' && !startedDay && (
-        <div className="flex flex-col items-center justify-center text-center flex-1 py-12 sm:py-20">
-          <ClipboardCheck size={56} className="text-brand-text mb-4" />
-          <h2 className="text-2xl sm:text-3xl font-bold text-primary mb-3">Good morning, {firstName}!</h2>
-          <p className="text-sm italic text-secondary max-w-xs mb-1">"{weeklyVerse.text}"</p>
-          <p className="text-xs text-muted mb-8">— {weeklyVerse.ref}</p>
-          <button
-            onClick={() => setStartedDay(true)}
-            className="px-10 py-4 rounded-2xl bg-brand text-on-brand font-bold text-lg hover:bg-brand-hover transition-colors cursor-pointer shadow-lg"
-          >
-            Start My Day
-          </button>
-        </div>
-      )}
-
-      {/* Flow State: needs-opening — checklist */}
-      {flowState === 'needs-opening' && startedDay && (
-        <ChecklistPanel title="Opening" items={teamChecklist} checklistType="team-start" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
-      )}
-
-      {/* Flow State: working */}
-      {flowState === 'working' && (
+      {/* Flow State: working (also shown for needs-opening — owner prefers always-on dashboard) */}
+      {(flowState === 'working' || flowState === 'needs-opening') && (
         <>
           <button
             onClick={() => navigate('/standards')}

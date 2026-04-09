@@ -92,7 +92,7 @@ function seedMissingGuides(guides, allInitialGuides) {
   return missing.length > 0 ? [...guides, ...missing] : guides;
 }
 
-export function createAppStore(cloudData) {
+export function createAppStore(cloudData, orgId) {
   const allInitialGuides = [...initialGuides, ...initialFieldOpsGuides, ...initialPMEGuides, ...initialGMGuides];
   const initialState = {};
   for (const { key, supaKey, initial } of STATE_KEYS) {
@@ -168,6 +168,7 @@ export function createAppStore(cloudData) {
             const entry = STATE_KEYS.find((e) => e.supaKey === sk);
             if (entry) {
               const payload = { key: sk, value: state[entry.key] };
+              if (orgId) payload.org_id = orgId;
               supabase
                 .from('app_state')
                 .upsert(payload, { onConflict: 'key' })

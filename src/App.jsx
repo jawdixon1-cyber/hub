@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import {
   Home as HomeIcon,
@@ -27,6 +27,12 @@ import {
   Inbox,
   Briefcase,
   CreditCard,
+  CalendarDays,
+  PlusCircle,
+  UserPlus,
+  ClipboardList,
+  FileSignature,
+  Hammer,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -66,16 +72,19 @@ const Marketing = lazy(() => import('./pages/Marketing'));
 const Clients = lazy(() => import('./pages/Clients'));
 const Messages = lazy(() => import('./pages/Messages'));
 const Requests = lazy(() => import('./pages/Requests'));
+const NewClient = lazy(() => import('./pages/NewClient'));
+const Schedule = lazy(() => import('./pages/Schedule'));
 const Jobs = lazy(() => import('./pages/Jobs'));
 const Invoices = lazy(() => import('./pages/Invoices'));
 const Payments = lazy(() => import('./pages/Payments'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
-  { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
+  { id: 'schedule', path: '/schedule', label: 'Schedule', icon: CalendarDays },
 ];
 
 const TEAM_TOOLS_ITEMS = [
+  { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
@@ -106,7 +115,7 @@ const OWNER_ITEMS = [
 const DATA_CACHE_KEY = 'greenteam-data-cache';
 
 function App() {
-  const { session, user, ownerMode, loading: authLoading, signOut } = useAuth();
+  const { session, user, ownerMode, orgId, loading: authLoading, signOut } = useAuth();
   const [cloudData, setCloudData] = useState(() => {
     try {
       const cached = localStorage.getItem(DATA_CACHE_KEY);
@@ -120,9 +129,10 @@ function App() {
   const loadData = useCallback(async () => {
     setDataError(null);
     try {
-      const { data, error } = await supabase
-        .from('app_state')
-        .select('key, value');
+      let query = supabase.from('app_state').select('key, value');
+      // Scope to org if available (after multi-tenancy migration)
+      if (orgId) query = query.eq('org_id', orgId);
+      const { data, error } = await query;
       if (error) throw error;
       const map = {};
       if (data) {
@@ -136,7 +146,7 @@ function App() {
         return prev;
       });
     }
-  }, []);
+  }, [orgId]);
 
   useEffect(() => {
     if (session) loadData();
@@ -215,9 +225,65 @@ function App() {
   }
 
   return (
-    <AppStoreProvider cloudData={cloudData}>
+    <AppStoreProvider cloudData={cloudData} orgId={orgId}>
       <AppShell />
     </AppStoreProvider>
+  );
+}
+
+/* ─── Create Button (Jobber style) ─── */
+const CREATE_ITEMS = [
+  { id: 'client', label: 'Client', icon: UserPlus, path: '/clients/new' },
+  { id: 'request', label: 'Request', icon: ClipboardList, path: '/requests?new=1' },
+  { id: 'quote', label: 'Quote', icon: FileSignature, path: '/sales?new=1' },
+  { id: 'job', label: 'Job', icon: Hammer, path: '/jobs?new=1' },
+  { id: 'invoice', label: 'Invoice', icon: FileText, path: '/invoices?new=1' },
+];
+
+function CreateButton({ collapsed, onNav }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const btnRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  const handleOpen = () => {
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.top, left: r.right + 8 });
+    }
+    setOpen(o => !o);
+  };
+
+  return (
+    <div ref={ref} className="px-2 pt-3 pb-1">
+      <button ref={btnRef} onClick={handleOpen}
+        className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-bold transition-colors text-brand-text-strong hover:bg-surface-alt cursor-pointer`}>
+        <PlusCircle size={20} className="shrink-0 text-brand" />
+        {!collapsed && <span>Create</span>}
+      </button>
+      {open && (
+        <div className="fixed z-[100] bg-card border border-border-subtle rounded-xl shadow-2xl p-2 flex gap-1"
+          style={{ top: pos.top, left: pos.left }}>
+          {CREATE_ITEMS.map(item => {
+            const Icon = item.icon;
+            return (
+              <button key={item.id} onClick={() => { onNav(item.path); setOpen(false); }}
+                className="flex flex-col items-center gap-1.5 px-4 py-3 rounded-lg text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer transition-colors min-w-[72px]">
+                <Icon size={20} className="text-muted" />
+                <span className="text-[11px] font-semibold">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -335,7 +401,9 @@ function AppShell() {
 
   // Sidebar nav renderer (shared between desktop & mobile)
   const renderSidebarNav = (collapsed) => (
-    <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
+    <nav className="flex-1 overflow-y-auto">
+      {ownerMode && <CreateButton collapsed={collapsed} onNav={handleNav} />}
+      <div className="py-3 px-2 space-y-1">
       {NAV_ITEMS.filter((item) => !item.ownerOnly || ownerMode).map((item) => {
         const Icon = item.icon;
         const active = isActive(item.path);
@@ -356,37 +424,6 @@ function AppShell() {
         );
       })}
 
-      <div className="h-px bg-border-subtle my-3 mx-2" />
-
-      {/* Team Tools — collapsible */}
-      {!collapsed && (
-        <button onClick={() => setTeamToolsOpen((o) => !o)}
-          className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
-          <span>Team Tools</span>
-          <ChevronDown size={14} className={`transition-transform ${teamToolsOpen ? 'rotate-180' : ''}`} />
-        </button>
-      )}
-      {(teamToolsOpen || collapsed) && TEAM_TOOLS_ITEMS.map((item) => {
-        const Icon = item.icon;
-        const active = isActive(item.path);
-        return (
-          <button
-            key={item.id}
-            onClick={() => handleNav(item.path)}
-            title={collapsed ? item.label : undefined}
-            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-              active
-                ? 'bg-brand-light text-brand-text-strong'
-                : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-            }`}
-          >
-            <Icon size={18} className="shrink-0" />
-            {!collapsed && <span className="truncate">{item.label}</span>}
-          </button>
-        );
-      })}
-
-
       {ownerMode && (
         <>
           <div className="h-px bg-border-subtle my-3 mx-2" />
@@ -406,6 +443,35 @@ function AppShell() {
                 }`}
               >
                 <Icon size={20} className="shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </button>
+            );
+          })}
+
+          <div className="h-px bg-border-subtle my-3 mx-2" />
+          {/* Team Tools — collapsible */}
+          {!collapsed && (
+            <button onClick={() => setTeamToolsOpen((o) => !o)}
+              className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
+              <span>Team Tools</span>
+              <ChevronDown size={14} className={`transition-transform ${teamToolsOpen ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+          {(teamToolsOpen || collapsed) && TEAM_TOOLS_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.path);
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleNav(item.path)}
+                title={collapsed ? item.label : undefined}
+                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                  active
+                    ? 'bg-brand-light text-brand-text-strong'
+                    : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                }`}
+              >
+                <Icon size={18} className="shrink-0" />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </button>
             );
@@ -435,6 +501,7 @@ function AppShell() {
 
         </>
       )}
+      </div>
     </nav>
   );
 
@@ -578,7 +645,7 @@ function AppShell() {
             </button>
           </div>
         )}
-        <div className={location.pathname === '/messages' ? '' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8'}>
+        <div className={location.pathname === '/messages' || location.pathname === '/schedule' ? 'px-4 py-3' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8'}>
           <Suspense fallback={
             <div className="flex items-center justify-center py-20">
               <div className="w-8 h-8 border-4 border-brand-light border-t-brand rounded-full animate-spin" />
@@ -594,8 +661,10 @@ function AppShell() {
                 <Route path="/mowing" element={<MowingSchedule />} />
                 <Route path="/sales" element={<Sales />} />
                 <Route path="/clients" element={<Clients />} />
+                <Route path="/clients/new" element={<NewClient />} />
                 <Route path="/messages" element={<Messages />} />
                 <Route path="/requests" element={<Requests />} />
+                <Route path="/schedule" element={<Schedule />} />
                 <Route path="/jobs" element={<Jobs />} />
                 <Route path="/invoices" element={<Invoices />} />
                 <Route path="/payments" element={<Payments />} />

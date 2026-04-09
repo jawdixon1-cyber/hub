@@ -100,14 +100,12 @@ async function fetchVisits(start, end) {
   endPlusOne.setDate(endPlusOne.getDate() + 1);
   const endISO = endPlusOne.toISOString();
 
-  // Never fetch lineItems — it triggers Jobber throttling
-  const lineItemsField = '';
-
+  // Lean visit query — line items are fetched per-job below (deduped + cached).
   const allVisits = [];
   let cursor = null, hasNext = true;
   while (hasNext) {
     const after = cursor ? `, after: "${cursor}"` : '';
-    const data = await jobberQuery(`{ visits(first: 100${after}, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title completedAt startAt endAt${lineItemsField} job { id jobNumber total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
+    const data = await jobberQuery(`{ visits(first: 100${after}, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title completedAt startAt endAt job { id jobNumber total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
     allVisits.push(...(data.visits?.nodes || []));
     hasNext = data.visits?.pageInfo?.hasNextPage || false;
     cursor = data.visits?.pageInfo?.endCursor || null;
@@ -174,6 +172,45 @@ async function fetchVisitsForJob(jobId) {
 const laborCache = {};
 const LABOR_CACHE_TTL = 5 * 60 * 1000;
 
+// Per-VISIT line items cache — the actual price for that specific visit,
+// including any per-visit overrides/discounts. Cached briefly so the
+// page is responsive but stays accurate.
+const visitLineItemsCache = new Map(); // visitId -> { total, time }
+const VISIT_LINEITEMS_TTL = 30 * 60 * 1000;
+// Per-job expenses cache — catches expenses linked to a job whose
+// own `date` field falls outside the queried window.
+const jobExpensesCache = new Map(); // jobId -> { items, time }
+const JOB_EXPENSES_TTL = 10 * 60 * 1000;
+async function fetchJobExpenses(jobId) {
+  const cached = jobExpensesCache.get(jobId);
+  if (cached && Date.now() - cached.time < JOB_EXPENSES_TTL) return cached.items;
+  try {
+    const data = await jobberQuery(`{ job(id: "${jobId}") { expenses { nodes { id title total date description paidBy { name { full } } } } } }`);
+    const items = data.job?.expenses?.nodes || [];
+    jobExpensesCache.set(jobId, { items, time: Date.now() });
+    return items;
+  } catch (err) {
+    if (cached) return cached.items;
+    return [];
+  }
+}
+
+async function fetchVisitLineItemsTotal(visitId) {
+  const cached = visitLineItemsCache.get(visitId);
+  if (cached && Date.now() - cached.time < VISIT_LINEITEMS_TTL) return cached.total;
+  try {
+    const data = await jobberQuery(`{ visit(id: "${visitId}") { lineItems { nodes { totalPrice } } } }`);
+    const nodes = data.visit?.lineItems?.nodes || [];
+    if (nodes.length === 0) return null; // no per-visit line items
+    const total = nodes.reduce((s, li) => s + (parseFloat(li.totalPrice) || 0), 0);
+    visitLineItemsCache.set(visitId, { total, time: Date.now() });
+    return total;
+  } catch (err) {
+    if (cached) return cached.total;
+    return null;
+  }
+}
+
 async function handleLaborData(req, res) {
   const { start, end } = req.query;
   if (!start || !end) return res.status(400).json({ error: 'start and end required' });
@@ -209,14 +246,47 @@ async function handleLaborData(req, res) {
   const endDate = new Date(end + 'T00:00:00');
   while (cur <= endDate) { const ds = cur.toISOString().split('T')[0]; grouped[ds] = { visits: [], revenue: 0, expenses: { total: 0, items: [] }, labor: { totalHours: 0, totalCost: 0, byPerson: {} } }; cur.setDate(cur.getDate() + 1); }
 
+  // ── Per-visit line item totals (the actual price for THAT visit) ──
+  // Throttled separate fetch to avoid Jobber rate limiting.
+  const visitLineItemTotals = {};
+  for (const v of visits) {
+    if (!v.id) continue;
+    visitLineItemTotals[v.id] = await fetchVisitLineItemsTotal(v.id);
+    await new Promise((r) => setTimeout(r, 350));
+  }
+
+  // ── Per-job expenses (catches expenses whose own date falls outside the window) ──
+  const uniqueJobIdsForExpenses = [...new Set(visits.map(v => v.job?.id).filter(Boolean))];
+  const seenExpenseIds = new Set(expenses.map(e => e.id));
+  for (const jobId of uniqueJobIdsForExpenses) {
+    const jobExps = await fetchJobExpenses(jobId);
+    for (const e of jobExps) {
+      if (seenExpenseIds.has(e.id)) continue;
+      // Anchor to a date inside the queried window so it gets attributed.
+      // Prefer the expense's own date if it's in range, else use the first visit date for this job.
+      const expDate = (e.date || '').split('T')[0];
+      let anchorDate = expDate && grouped[expDate] ? expDate : null;
+      if (!anchorDate) {
+        const visitDates = visits.filter(v => v.job?.id === jobId).map(v => (v.completedAt || v.startAt || '').split('T')[0]).filter(Boolean).sort();
+        anchorDate = visitDates.find(d => grouped[d]) || null;
+      }
+      if (!anchorDate) continue;
+      expenses.push({ ...e, date: anchorDate + 'T12:00:00', linkedJob: { id: jobId, jobNumber: visits.find(v => v.job?.id === jobId)?.job?.jobNumber || null } });
+      seenExpenseIds.add(e.id);
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+
   // ── Collect all visits ──
   const allVisitRefs = []; // { dateStr, visitObj, jobId, rawTotal }
   for (const visit of visits) {
     const dateStr = (visit.completedAt || visit.startAt || '').split('T')[0];
     if (!dateStr || !grouped[dateStr]) continue;
-    // Use visit-level line items total if available (actual visit price), fall back to job total
-    const visitLineItemsTotal = (visit.lineItems?.nodes || []).reduce((s, li) => s + (parseFloat(li.totalPrice) || 0), 0);
-    const rawTotal = visitLineItemsTotal > 0 ? visitLineItemsTotal : (parseFloat(visit.job?.total) || 0);
+    // Prefer the visit's own line items (today's actual price). Fall back to job.total.
+    const visitLineTotal = visitLineItemTotals[visit.id];
+    const rawTotal = (visitLineTotal !== null && visitLineTotal !== undefined)
+      ? visitLineTotal
+      : (parseFloat(visit.job?.total) || 0);
     const jobId = visit.job?.id || null;
     // Compute visit duration from start/end for proportional hour allocation
     let visitDuration = 0;

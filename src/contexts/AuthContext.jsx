@@ -6,6 +6,22 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [orgId, setOrgId] = useState(null);
+
+  // Look up user's org_id from org_members when session changes
+  useEffect(() => {
+    if (!session?.user?.id) { setOrgId(null); return; }
+    supabase
+      .from('org_members')
+      .select('org_id')
+      .eq('user_id', session.user.id)
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        setOrgId(data?.org_id ?? null);
+      })
+      .catch(() => setOrgId(null));
+  }, [session?.user?.id]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
@@ -46,7 +62,7 @@ export function AuthProvider({ children }) {
   const ownerMode = user?.user_metadata?.role === 'owner';
 
   return (
-    <AuthContext.Provider value={{ session, user, currentUser, ownerMode, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, user, currentUser, ownerMode, orgId, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -16,6 +16,7 @@ function fmtHrs(h) {
   return `${hr}h ${m}m`;
 }
 function fmtDollars(v) { return v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v.toFixed(0)}`; }
+function fmtDollarsExact(v) { return `$${(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function pct(v) { return v > 0 ? `${v.toFixed(0)}%` : '--'; }
 
 // ── Date helpers ──
@@ -91,7 +92,7 @@ function ClockBadge({ person, elapsedMin }) {
   );
 }
 
-function TodayView({ allJobs }) {
+function TodayView({ allJobs, dayData }) {
   const todayStr = getTodayInTimezone();
   const todayJobs = allJobs.filter(j => j.date === todayStr);
   const crewStatus = useCrewStatus();
@@ -116,6 +117,18 @@ function TodayView({ allJobs }) {
   const totalLabor = todayJobs.reduce((s, j) => s + j.laborCost, 0);
   const totalExpenses = todayJobs.reduce((s, j) => s + j.expenses, 0);
   const overallLaborPct = totalVisitRevenue > 0 ? (totalLabor / totalVisitRevenue) * 100 : 0;
+
+  // Build jobId -> expense items list from dayData
+  const expensesByJobId = useMemo(() => {
+    const m = {};
+    for (const item of (dayData?.expenses?.items || [])) {
+      const jid = item.jobId;
+      if (!jid) continue;
+      if (!m[jid]) m[jid] = [];
+      m[jid].push(item);
+    }
+    return m;
+  }, [dayData]);
 
   // Active jobs (clocked in but not in allJobs yet)
   const activeNotInJobs = (crewStatus?.active || []).filter(a => {
@@ -163,7 +176,7 @@ function TodayView({ allJobs }) {
                   )}
                 </div>
                 <div className="text-right shrink-0 ml-3">
-                  <p className="text-sm font-black text-primary">{fmtDollars(j.visitTotal || j.revenue)}</p>
+                  <p className="text-sm font-black text-primary">{fmtDollarsExact(j.visitTotal || j.revenue)}</p>
                   <p className={`text-[11px] font-bold ${laborColor(j.laborPct)}`}>{pct(j.laborPct)} labor</p>
                 </div>
               </div>
@@ -185,18 +198,31 @@ function TodayView({ allJobs }) {
                 </div>
               )}
 
-              {/* Expenses */}
+              {/* Expenses (per-item breakdown) */}
               {j.expenses > 0 && (
-                <div className="flex items-center justify-between text-[11px] text-red-400 font-semibold mt-1 pt-1 border-t border-white/10">
-                  <span>Expenses</span>
-                  <span>-${j.expenses.toFixed(2)}</span>
+                <div className="mt-2 pt-2 border-t border-white/10 space-y-1">
+                  {(expensesByJobId[j.jobId] || []).length > 0 ? (
+                    (expensesByJobId[j.jobId] || []).map((it) => (
+                      <div key={it.id} className="flex items-center justify-between text-[11px] text-red-400">
+                        <span className="font-medium truncate">{it.title || 'Expense'}</span>
+                        <span className="font-bold">-${it.amount.toFixed(2)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex items-center justify-between text-[11px] text-red-400 font-semibold">
+                      <span>Expenses</span>
+                      <span>-${j.expenses.toFixed(2)}</span>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Profit line */}
-              <div className="flex items-center justify-between text-xs mt-1.5 pt-1.5 border-t border-white/10">
-                <span className="text-muted font-bold">Profit</span>
-                <span className={`font-black ${profitColor(profit)}`}>{fmtDollars(profit)}</span>
+              {/* Math line: revenue − expenses − labor = profit */}
+              <div className="mt-2 pt-2 border-t border-white/10">
+                <p className="text-center text-[11px] font-semibold text-primary">
+                  {fmtDollarsExact(j.visitTotal || j.revenue)} <span className="text-muted">−</span> {fmtDollarsExact(j.expenses)} <span className="text-muted">−</span> {fmtDollarsExact(j.laborCost)} <span className="text-muted">=</span> <span className={`font-black ${profitColor(profit)}`}>{fmtDollarsExact(profit)}</span>
+                </p>
+                <p className="text-center text-[9px] uppercase tracking-widest text-muted">rev − expenses − labor = profit</p>
               </div>
             </div>
           </div>
@@ -208,12 +234,83 @@ function TodayView({ allJobs }) {
         <div className="flex items-center justify-between text-xs">
           <span className="font-bold text-muted">{todayJobs.length} jobs today</span>
           <div className="flex items-center gap-4">
-            <span className="text-primary font-black">{fmtDollars(totalVisitRevenue)} rev</span>
+            <span className="text-primary font-black">{fmtDollarsExact(totalVisitRevenue)} rev</span>
             <span className={`font-black ${laborColor(overallLaborPct)}`}>{pct(overallLaborPct)} labor</span>
-            <span className={`font-black ${profitColor(totalVisitRevenue - totalLabor - totalExpenses)}`}>{fmtDollars(totalVisitRevenue - totalLabor - totalExpenses)} profit</span>
+            <span className={`font-black ${profitColor(totalVisitRevenue - totalLabor - totalExpenses)}`}>{fmtDollarsExact(totalVisitRevenue - totalLabor - totalExpenses)} profit</span>
           </div>
         </div>
       </div>
+
+      {/* ── Day Summary (full-day labor incl. general time) ── */}
+      {(() => {
+        const fullLabor = dayData?.labor?.totalCost || 0;
+        const fullLaborHrs = dayData?.labor?.totalHours || 0;
+        const jobLabor = dayData?.labor?.jobCost || 0;
+        const generalLabor = dayData?.labor?.generalCost || 0;
+        const byPerson = dayData?.labor?.byPerson || {};
+        const netRevenue = totalVisitRevenue - totalExpenses;
+        const laborMargin = netRevenue > 0 ? (fullLabor / netRevenue) * 100 : 0;
+        const dayProfit = totalVisitRevenue - totalExpenses - fullLabor;
+        const people = Object.entries(byPerson).sort((a, b) => b[1].cost - a[1].cost);
+        return (
+          <div className="rounded-xl bg-gradient-to-br from-brand-light/20 to-card border border-brand/20 p-4 mt-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-brand-text mb-3">Day Summary</p>
+
+            {/* Formula row: Revenue − Job Expenses − Full Labor = Profit */}
+            <div className="flex items-stretch gap-1 mb-3">
+              <div className="flex-1 rounded-lg bg-card border border-border-subtle p-2 text-center">
+                <p className="text-[8px] font-bold text-muted uppercase tracking-wider">Revenue</p>
+                <p className="text-sm font-black text-primary mt-0.5">{fmtDollarsExact(totalVisitRevenue)}</p>
+              </div>
+              <div className="flex items-center text-muted font-black text-lg px-0.5">−</div>
+              <div className="flex-1 rounded-lg bg-card border border-border-subtle p-2 text-center">
+                <p className="text-[8px] font-bold text-muted uppercase tracking-wider">Job Expenses</p>
+                <p className="text-sm font-black text-red-400 mt-0.5">{fmtDollarsExact(totalExpenses)}</p>
+              </div>
+              <div className="flex items-center text-muted font-black text-lg px-0.5">−</div>
+              <div className="flex-1 rounded-lg bg-card border border-border-subtle p-2 text-center">
+                <p className="text-[8px] font-bold text-muted uppercase tracking-wider">Full Labor</p>
+                <p className="text-sm font-black text-amber-400 mt-0.5">{fmtDollarsExact(fullLabor)}</p>
+                <p className="text-[9px] text-muted mt-0.5">{fmtHrs(fullLaborHrs)}</p>
+              </div>
+              <div className="flex items-center text-muted font-black text-lg px-0.5">=</div>
+              <div className="flex-1 rounded-lg bg-card border border-border-subtle p-2 text-center">
+                <p className="text-[8px] font-bold text-muted uppercase tracking-wider">Profit</p>
+                <p className={`text-sm font-black mt-0.5 ${profitColor(dayProfit)}`}>{fmtDollarsExact(dayProfit)}</p>
+              </div>
+            </div>
+
+            {/* Full labor breakdown — nested INSIDE Full Labor */}
+            {people.length > 0 && (
+              <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 p-3 mb-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-2">Full Labor Breakdown</p>
+                <div className="space-y-1.5">
+                  {people.map(([name, info]) => (
+                    <div key={name} className="flex items-center justify-between text-[11px]">
+                      <span className="text-primary font-semibold flex-1 truncate">{name}</span>
+                      <span className="text-muted mx-2">{fmtHrs(info.hours)} × ${info.rate || 0}/hr</span>
+                      <span className="text-primary font-black w-16 text-right">${(info.cost || 0).toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-amber-500/20 text-[11px]">
+                    <span className="text-muted font-bold">Total · job {fmtDollarsExact(jobLabor)} + gen {fmtDollarsExact(generalLabor)}</span>
+                    <span className="text-amber-400 font-black">${fullLabor.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className={`rounded-xl border px-4 py-4 ${laborBg(laborMargin)}`}>
+              <p className="text-center text-[13px] font-semibold text-primary mb-1">
+                {fmtDollarsExact(totalVisitRevenue)} <span className="text-muted">−</span> {fmtDollarsExact(totalExpenses)} <span className="text-muted">−</span> {fmtDollarsExact(fullLabor)} <span className="text-muted">=</span> <span className={`font-black ${profitColor(dayProfit)}`}>{fmtDollarsExact(dayProfit)}</span>
+              </p>
+              <p className="text-center text-[9px] font-bold uppercase tracking-widest text-muted mb-2">revenue − job expenses − full labor = profit</p>
+              <p className="text-center text-[10px] font-bold uppercase tracking-widest text-muted mt-3">Full Labor %</p>
+              <p className={`text-center text-5xl font-black leading-none mt-1 ${laborColor(laborMargin)}`}>{pct(laborMargin)}</p>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -938,7 +1035,7 @@ export default function LaborEfficiency() {
           </div>
 
           {/* Tab content */}
-          {tab === 'today' && <TodayView allJobs={analysis.allJobs} />}
+          {tab === 'today' && <TodayView allJobs={analysis.allJobs} dayData={data[todayStr]} />}
           {tab === 'numbers' && <NumbersView analysis={analysis} dates={dates} data={data} milesByDate={milesByDate} allJobs={analysis.allJobs} crew={analysis.crew} startDate={startDate} endDate={endDate} setStartDate={setStartDate} setEndDate={setEndDate} fetchData={fetchData} loading={loading} />}
           {tab === 'crew' && <CrewView crew={analysis.crew} totalRevenue={analysis.revenue} />}
         </>

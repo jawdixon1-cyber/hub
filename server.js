@@ -15,6 +15,7 @@ import qbData from './api/qb-data.js';
 import jobberDataHandler from './api/jobber-data.js';
 import teamAuthHandler from './lib/teamAuth.js';
 import ghlHandler from './lib/ghlHandler.js';
+import requestWebhook from './api/webhooks/request.js';
 
 config({ path: '.env.local' });
 
@@ -49,6 +50,9 @@ app.post('/api/team-auth', teamAuthHandler);
 
 // GHL API (send SMS, search contacts)
 app.all('/api/ghl', ghlHandler);
+
+// Webhook: request intake from website forms
+app.post('/api/webhooks/request', requestWebhook);
 
 // Backwards compat routes (Express 5: req.query is read-only, so redirect instead)
 app.get('/api/jobber-clients', (req, res) => res.redirect(`/api/jobber-data?action=clients&${new URL(req.url, 'http://x').search.slice(1)}`));

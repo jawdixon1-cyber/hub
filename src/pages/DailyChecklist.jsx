@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Check, ChevronRight, ChevronDown, RotateCcw, Pencil, Plus, Trash2, GripVertical, X, ExternalLink, StickyNote, Link2, Type, Clock, Target, Circle } from 'lucide-react';
+import { Check, ChevronRight, ChevronDown, RotateCcw, Pencil, Plus, Trash2, GripVertical, X, ExternalLink, StickyNote, Link2, Type, Clock, Target, Circle, CircleCheck, ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -573,7 +573,7 @@ function ChecklistFlow({ items, setItems, onClose, title, onEdit, userName }) {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const firstName = (userName || '').split(' ')[0] || '';
-  const [started, setStarted] = useState(false);
+  const [started, setStarted] = useState(true);
   const [dismissing, setDismissing] = useState(new Set());
 
   const groups = useMemo(() => {
@@ -624,12 +624,14 @@ function ChecklistFlow({ items, setItems, onClose, title, onEdit, userName }) {
     <div className="min-h-[calc(100svh-80px)] bg-surface">
       <div className="h-full flex flex-col max-w-lg mx-auto">
         <div className="flex items-center justify-between px-5 py-3 shrink-0">
+          <button onClick={onClose} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-muted hover:text-primary hover:bg-surface-alt cursor-pointer">
+            <ChevronLeft size={16} /> Back
+          </button>
+          <span className={`text-xs font-semibold ${allDone ? 'text-emerald-500' : done > 0 ? 'text-amber-500' : 'text-muted'}`}>{done} of {checkable.length} complete</span>
           <div className="flex items-center gap-2">
             <button onClick={onEdit} className="p-2 rounded-xl text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer"><Pencil size={16} /></button>
             <button onClick={() => setItems((prev) => prev.map((i) => (i.type === 'header' ? i : { ...i, done: false })))} className="p-2 rounded-xl text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer"><RotateCcw size={16} /></button>
           </div>
-          <span className="text-xs text-muted">{done}/{checkable.length}</span>
-          <button onClick={onClose} className="px-3 py-1.5 rounded-xl text-xs font-semibold text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer">Skip</button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-5">
@@ -1076,10 +1078,8 @@ export default function DailyChecklist() {
     if (activeFlow === 'evening' && eveningAllDone) setTimeout(() => setActiveFlow(null), 1200);
   }, [activeFlow, morningAllDone, eveningAllDone]);
 
-  // Auto-open the flow when autoFlow says so
-  useEffect(() => {
-    if (autoFlow && !activeFlow && !showEditor) setActiveFlow(autoFlow);
-  }, [autoFlow, activeFlow, showEditor]);
+  // Auto-open disabled — owner prefers always-on dashboard.
+  // Use the Start Day / End Day buttons to open checklists manually.
 
   // Skip = dismiss for 2 minutes, then it comes back
   const skipFlow = (type) => {
@@ -1145,14 +1145,27 @@ export default function DailyChecklist() {
         <div className="lg:col-span-2 space-y-4">
           {/* Quick checklist triggers */}
           <div className="flex gap-2">
-            <button onClick={() => setActiveFlow('morning')}
-              className={`flex-1 px-4 py-3 rounded-xl text-sm font-bold cursor-pointer transition-colors ${morningAllDone ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-card border border-border-subtle text-primary hover:bg-surface-alt'}`}>
-              {morningAllDone ? 'Start Day ✓' : 'Start Day'}
-            </button>
-            <button onClick={() => setActiveFlow('evening')}
-              className={`flex-1 px-4 py-3 rounded-xl text-sm font-bold cursor-pointer transition-colors ${eveningAllDone ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-card border border-border-subtle text-primary hover:bg-surface-alt'}`}>
-              {eveningAllDone ? 'End Day ✓' : 'End Day'}
-            </button>
+            {[
+              { key: 'morning', label: 'Start Day', done: morningDone, total: morningItems.length, allDone: morningAllDone },
+              { key: 'evening', label: 'End Day', done: eveningDone, total: eveningItems.length, allDone: eveningAllDone },
+            ].map((c) => {
+              const partial = c.done > 0 && !c.allDone;
+              const cls = c.allDone
+                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-2 border-emerald-500/40'
+                : partial
+                  ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-2 border-amber-500/40'
+                  : 'bg-card border border-border-subtle text-primary hover:bg-surface-alt';
+              return (
+                <button key={c.key} onClick={() => setActiveFlow(c.key)}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold cursor-pointer transition-colors ${cls}`}>
+                  {c.allDone && <CircleCheck size={18} className="text-emerald-500" />}
+                  <span>
+                    {c.label}
+                    {c.total > 0 && <span className="ml-2 font-semibold opacity-80">{c.done}/{c.total}</span>}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {/* Dashboard stats */}

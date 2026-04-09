@@ -21,8 +21,8 @@ async function readTokenData() {
   try {
     const { getSupabaseAdmin } = await import('../lib/supabaseAdmin.js');
     const db = getSupabaseAdmin();
-    const { data } = await db.from('app_tokens').select('value').eq('key', 'jobber').maybeSingle();
-    if (data?.value?.access_token) return data.value;
+    const { data } = await db.from('app_tokens').select('value, org_id').eq('key', 'jobber').maybeSingle();
+    if (data?.value?.access_token) { data.value._org_id = data.org_id; return data.value; }
   } catch {}
   try {
     if (existsSync(TOKENS_PATH)) {
@@ -41,7 +41,9 @@ async function saveTokenData(tokenData) {
   try {
     const { getSupabaseAdmin } = await import('../lib/supabaseAdmin.js');
     const db = getSupabaseAdmin();
-    await db.from('app_tokens').upsert({ key: 'jobber', value: tokenData, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    const payload = { key: 'jobber', value: tokenData, updated_at: new Date().toISOString() };
+    if (tokenData._org_id) payload.org_id = tokenData._org_id;
+    await db.from('app_tokens').upsert(payload, { onConflict: 'key' });
   } catch {}
 }
 

@@ -14,46 +14,19 @@ import {
 const AgreementSigningFlow = lazy(() => import('../components/AgreementSigningFlow'));
 
 // Migrate old sections (expectations + accountability + policies) into a single { standards & policies }
-// Also force WHO WE ARE to include the "What being the best means" content
+// Migrate legacy section IDs only — never overwrite user-edited content
 function migrateSections(sections) {
   if (!Array.isArray(sections)) return sections;
   const defaultStandards = DEFAULT_SECTIONS.find((s) => s.id === 'standards');
   const defaultStandardsBody = defaultStandards?.body || '';
-  const defaultValues = DEFAULT_SECTIONS.find((s) => s.id === 'values');
-  const defaultValuesBody = defaultValues?.body || '';
 
-  // Step 1a: ensure WHO WE ARE has the "Our Goal" mission content
-  let migrated = sections.map((s) => {
-    if (s.id === 'values' && !s.body?.includes('Our Goal') && !s.body?.includes('What Being the Best')) {
-      return { ...s, body: defaultValuesBody };
-    }
-    return s;
-  });
-  // Step 1b: if WHO WE ARE has the OLD bold mission, replace with new softer version
-  migrated = migrated.map((s) => {
-    if (s.id === 'values' && s.body?.includes('What Being the Best Actually Means')) {
-      return { ...s, body: defaultValuesBody };
-    }
-    return s;
-  });
-  // Step 1c: if standards section exists but doesn't have the new sub-headings, refresh it
-  migrated = migrated.map((s) => {
-    if (s.id === 'standards' && !s.body?.includes('font-weight:900')) {
-      return { ...s, title: 'STANDARDS & POLICIES', body: defaultStandardsBody };
-    }
-    return s;
-  });
-
-  // Step 2: collapse old sections into 'standards'
-  const hasOld = migrated.some((s) => s.id === 'expectations' || s.id === 'accountability' || s.id === 'policies');
-  if (!hasOld && migrated.some((s) => s.id === 'standards')) {
-    return migrated.map((s) => s.id === 'standards' ? { ...s, title: 'STANDARDS & POLICIES' } : s);
-  }
-  if (!hasOld) return migrated;
+  // Only migration needed: collapse old section IDs into 'standards'
+  const hasOld = sections.some((s) => s.id === 'expectations' || s.id === 'accountability' || s.id === 'policies');
+  if (!hasOld) return sections;
 
   const out = [];
   let inserted = false;
-  for (const s of migrated) {
+  for (const s of sections) {
     if (s.id === 'expectations' || s.id === 'accountability' || s.id === 'policies') {
       if (!inserted) {
         out.push({ id: 'standards', title: 'STANDARDS & POLICIES', body: defaultStandardsBody });

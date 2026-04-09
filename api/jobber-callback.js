@@ -76,11 +76,11 @@ export default async function handler(req, res) {
     // Save to Supabase (production/Vercel)
     try {
       const db = getSupabaseAdmin();
-      await db.from('app_tokens').upsert({
-        key: 'jobber',
-        value: tokenData,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'key' });
+      // Get org_id from existing token row (multi-tenancy)
+      const { data: existing } = await db.from('app_tokens').select('org_id').eq('key', 'jobber').maybeSingle();
+      const payload = { key: 'jobber', value: tokenData, updated_at: new Date().toISOString() };
+      if (existing?.org_id) payload.org_id = existing.org_id;
+      await db.from('app_tokens').upsert(payload, { onConflict: 'key' });
       console.log('[Jobber OAuth] Tokens saved to Supabase');
     } catch (err) {
       console.error('[Jobber OAuth] Failed to save to Supabase:', err.message);
