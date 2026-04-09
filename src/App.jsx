@@ -80,7 +80,7 @@ const Payments = lazy(() => import('./pages/Payments'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
-  { id: 'schedule', path: '/schedule', label: 'Schedule', icon: CalendarDays },
+  { id: 'schedule', path: '/schedule', label: 'Schedule', icon: CalendarDays, ownerOnly: true },
 ];
 
 const TEAM_TOOLS_ITEMS = [
@@ -374,6 +374,7 @@ function AppShell() {
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [teamToolsOpen, setTeamToolsOpen] = useState(false);
+  const [ownerToolsOpen, setOwnerToolsOpen] = useState(false);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((v) => {
@@ -424,6 +425,36 @@ function AppShell() {
         );
       })}
 
+      {/* Team Tools — always visible for everyone */}
+      <div className="h-px bg-border-subtle my-3 mx-2" />
+      {!collapsed && !ownerMode && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Team Tools</p>}
+      {ownerMode && !collapsed && (
+        <button onClick={() => setTeamToolsOpen((o) => !o)}
+          className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
+          <span>Team Tools</span>
+          <ChevronDown size={14} className={`transition-transform ${teamToolsOpen ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+      {(!ownerMode || teamToolsOpen || collapsed) && TEAM_TOOLS_ITEMS.map((item) => {
+        const Icon = item.icon;
+        const active = isActive(item.path);
+        return (
+          <button
+            key={item.id}
+            onClick={() => handleNav(item.path)}
+            title={collapsed ? item.label : undefined}
+            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : ownerMode ? 'px-3 pl-6' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              active
+                ? 'bg-brand-light text-brand-text-strong'
+                : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+            }`}
+          >
+            <Icon size={ownerMode ? 18 : 20} className="shrink-0" />
+            {!collapsed && <span className="truncate">{item.label}</span>}
+          </button>
+        );
+      })}
+
       {ownerMode && (
         <>
           <div className="h-px bg-border-subtle my-3 mx-2" />
@@ -449,15 +480,14 @@ function AppShell() {
           })}
 
           <div className="h-px bg-border-subtle my-3 mx-2" />
-          {/* Team Tools — collapsible */}
           {!collapsed && (
-            <button onClick={() => setTeamToolsOpen((o) => !o)}
+            <button onClick={() => setOwnerToolsOpen((o) => !o)}
               className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
-              <span>Team Tools</span>
-              <ChevronDown size={14} className={`transition-transform ${teamToolsOpen ? 'rotate-180' : ''}`} />
+              <span>Owner Tools</span>
+              <ChevronDown size={14} className={`transition-transform ${ownerToolsOpen ? 'rotate-180' : ''}`} />
             </button>
           )}
-          {(teamToolsOpen || collapsed) && TEAM_TOOLS_ITEMS.map((item) => {
+          {(ownerToolsOpen || collapsed) && OWNER_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
             return (
@@ -476,29 +506,6 @@ function AppShell() {
               </button>
             );
           })}
-
-          <div className="h-px bg-border-subtle my-3 mx-2" />
-          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Owner Tools</p>}
-          {OWNER_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleNav(item.path)}
-                title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                  active
-                    ? 'bg-brand-light text-brand-text-strong'
-                    : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-                }`}
-              >
-                <Icon size={20} className="shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
-            );
-          })}
-
         </>
       )}
       </div>
@@ -645,7 +652,7 @@ function AppShell() {
             </button>
           </div>
         )}
-        <div className={location.pathname === '/messages' || location.pathname === '/schedule' ? 'px-4 py-3' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8'}>
+        <div className={location.pathname === '/messages' || location.pathname === '/schedule' || location.pathname === '/clients' ? 'px-4 py-3' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8'}>
           <Suspense fallback={
             <div className="flex items-center justify-center py-20">
               <div className="w-8 h-8 border-4 border-brand-light border-t-brand rounded-full animate-spin" />
@@ -662,6 +669,7 @@ function AppShell() {
                 <Route path="/sales" element={<Sales />} />
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/clients/new" element={<NewClient />} />
+                <Route path="/clients/:clientId" element={<Clients />} />
                 <Route path="/messages" element={<Messages />} />
                 <Route path="/requests" element={<Requests />} />
                 <Route path="/schedule" element={<Schedule />} />

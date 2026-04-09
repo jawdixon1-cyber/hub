@@ -131,70 +131,166 @@ function EventCard({ item, onClick }) {
   );
 }
 
-/* ─── New Event Modal ─── */
-function NewEventModal({ onClose, onSave, defaultDate }) {
+/* ─── New Event Modal (Jobber style) ─── */
+const TEAM_MEMBERS = ['Jude', 'Devin Rogers', 'Ethan Brant', 'Braden Andrus'];
+
+function NewEventModal({ onClose, onSave, defaultDate, orgId }) {
   const [form, setForm] = useState({
     title: '', type: 'task', date: defaultDate || ds(new Date()),
-    start_time: '09:00', end_time: '10:00', all_day: false, anytime: false, notes: '',
+    start_time: '09:00', anytime: true, notes: '', assigned_to: [],
+    client_id: null, client_name: '',
   });
   const [saving, setSaving] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientResults, setClientResults] = useState([]);
+  const [showClientDropdown, setShowClientDropdown] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
+  const [showAssign, setShowAssign] = useState(false);
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
-  const inputCls = "mt-1 w-full px-3 py-2.5 rounded-lg bg-surface-alt border border-border-subtle text-sm text-primary focus:outline-none focus:border-brand/50";
+  const inputCls = "w-full px-3 py-2.5 rounded-lg bg-surface-alt border border-border-subtle text-sm text-primary placeholder:text-muted focus:outline-none focus:border-brand/50";
+
+  const TYPE_TABS = [
+    { id: 'visit', label: 'Job' },
+    { id: 'assessment', label: 'Request' },
+    { id: 'task', label: 'Task' },
+    { id: 'event', label: 'Event' },
+  ];
+
+  // Client search
+  const searchClients = async (q) => {
+    setClientSearch(q);
+    if (!q.trim() || !orgId) { setClientResults([]); return; }
+    const { data } = await supabase.from('clients').select('id, first_name, last_name, company_name, billing_street, billing_city')
+      .eq('org_id', orgId).or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,company_name.ilike.%${q}%`).limit(6);
+    setClientResults(data || []);
+    setShowClientDropdown(true);
+  };
+
+  const selectClient = (c) => {
+    const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || c.company_name || '';
+    set('client_id', c.id);
+    set('client_name', name);
+    setClientSearch(name);
+    setShowClientDropdown(false);
+  };
+
+  const toggleAssign = (name) => {
+    set('assigned_to', form.assigned_to.includes(name)
+      ? form.assigned_to.filter(n => n !== name)
+      : [...form.assigned_to, name]);
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-8 px-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-6 px-4">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative bg-card border border-border-subtle rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
-        <div className="h-1 bg-brand rounded-t-2xl shrink-0" />
-        <div className="flex items-center justify-between px-6 py-3 border-b border-border-subtle">
-          <h2 className="text-base font-black text-primary">New Event</h2>
-          <button onClick={onClose} className="p-1 text-muted hover:text-primary cursor-pointer"><X size={16} /></button>
+      <div className="relative bg-card border border-border-subtle rounded-2xl shadow-2xl w-full max-w-sm flex flex-col">
+        {/* Type tabs at top — Jobber style */}
+        <div className="flex border-b border-border-subtle">
+          {TYPE_TABS.map(t => (
+            <button key={t.id} onClick={() => set('type', t.id)}
+              className={`flex-1 py-3 text-xs font-bold text-center cursor-pointer transition-colors ${
+                form.type === t.id
+                  ? 'text-brand border-b-2 border-brand'
+                  : 'text-muted hover:text-secondary'
+              }`}>{t.label}</button>
+          ))}
         </div>
-        <div className="p-5 space-y-4">
-          <div>
-            <label className="text-[10px] font-bold text-muted uppercase">Title</label>
-            <input value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Smith - Mowing" className={inputCls} />
+
+        <div className="p-4 space-y-3">
+          {/* Status pill */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-muted">Status</span>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">Active</span>
           </div>
-          <div>
-            <label className="text-[10px] font-bold text-muted uppercase">Type</label>
-            <div className="flex gap-1.5 mt-1.5">
-              {Object.entries(TYPE_COLORS).map(([t, c]) => (
-                <button key={t} onClick={() => set('type', t)}
-                  className={`px-2.5 py-1.5 rounded text-[10px] font-bold cursor-pointer capitalize ${
-                    form.type === t ? c.bg + ' text-white' : 'bg-surface-alt text-muted border border-border-subtle'
-                  }`}>{t}</button>
-              ))}
-            </div>
+
+          {/* Client search */}
+          <div className="relative">
+            <input value={clientSearch} onChange={e => searchClients(e.target.value)}
+              placeholder="Search client or address" className={inputCls} />
+            {showClientDropdown && clientResults.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-card border border-border-subtle rounded-lg shadow-xl max-h-40 overflow-y-auto">
+                {clientResults.map(c => {
+                  const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || c.company_name;
+                  const addr = [c.billing_street, c.billing_city].filter(Boolean).join(', ');
+                  return (
+                    <button key={c.id} onClick={() => selectClient(c)}
+                      className="w-full px-3 py-2 text-left hover:bg-surface-alt cursor-pointer">
+                      <p className="text-xs font-semibold text-primary">{name}</p>
+                      {addr && <p className="text-[10px] text-muted">{addr}</p>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <div>
-            <label className="text-[10px] font-bold text-muted uppercase">Date</label>
-            <input type="date" value={form.date} onChange={e => set('date', e.target.value)} className={inputCls} />
-          </div>
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-[11px] font-semibold text-secondary cursor-pointer">
-              <input type="checkbox" checked={form.all_day} onChange={e => { set('all_day', e.target.checked); if (e.target.checked) set('anytime', false); }} /> All day
-            </label>
-            <label className="flex items-center gap-2 text-[11px] font-semibold text-secondary cursor-pointer">
-              <input type="checkbox" checked={form.anytime} onChange={e => { set('anytime', e.target.checked); if (e.target.checked) set('all_day', false); }} /> Anytime
-            </label>
-          </div>
-          {!form.all_day && !form.anytime && (
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[10px] font-bold text-muted uppercase">Start</label><input type="time" value={form.start_time} onChange={e => set('start_time', e.target.value)} className={inputCls} /></div>
-              <div><label className="text-[10px] font-bold text-muted uppercase">End</label><input type="time" value={form.end_time} onChange={e => set('end_time', e.target.value)} className={inputCls} /></div>
+
+          {/* Title */}
+          <input value={form.title} onChange={e => set('title', e.target.value)}
+            placeholder="Title" className={inputCls} />
+
+          {/* Add Instructions toggle */}
+          {!showInstructions ? (
+            <button onClick={() => setShowInstructions(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-brand-text hover:underline cursor-pointer">
+              <Plus size={13} /> Add Instructions
+            </button>
+          ) : (
+            <textarea value={form.notes} onChange={e => set('notes', e.target.value)}
+              placeholder="Instructions..." rows={2} className={inputCls + ' resize-none'} />
+          )}
+
+          {/* Assign toggle */}
+          {!showAssign ? (
+            <button onClick={() => setShowAssign(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-brand-text hover:underline cursor-pointer">
+              <User size={13} /> Assign
+            </button>
+          ) : (
+            <div className="space-y-1">
+              <p className="text-[10px] font-bold text-muted uppercase">Assign to</p>
+              <div className="flex flex-wrap gap-1.5">
+                {TEAM_MEMBERS.map(name => (
+                  <button key={name} onClick={() => toggleAssign(name)}
+                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition-colors ${
+                      form.assigned_to.includes(name)
+                        ? 'bg-brand/20 text-brand-text border border-brand/40'
+                        : 'bg-surface-alt text-muted border border-border-subtle'
+                    }`}>{name}</button>
+                ))}
+              </div>
             </div>
           )}
-          <div>
-            <label className="text-[10px] font-bold text-muted uppercase">Notes</label>
-            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} className={inputCls + ' resize-none'} />
+
+          {/* Date + Anytime */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <input type="date" value={form.date} onChange={e => set('date', e.target.value)} className={inputCls} />
+            </div>
+            <label className="flex items-center gap-2 text-[11px] font-semibold text-secondary cursor-pointer whitespace-nowrap">
+              <input type="checkbox" checked={form.anytime} onChange={e => set('anytime', e.target.checked)}
+                className="accent-brand" /> Anytime
+            </label>
           </div>
+
+          {/* Time picker — only if not anytime */}
+          {!form.anytime && (
+            <div>
+              <label className="text-[10px] font-bold text-muted uppercase">Start time</label>
+              <input type="time" value={form.start_time} onChange={e => set('start_time', e.target.value)} className={inputCls + ' mt-1'} />
+            </div>
+          )}
         </div>
-        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border-subtle">
-          <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-muted hover:text-primary cursor-pointer">Cancel</button>
-          <button onClick={async () => { setSaving(true); await onSave(form); setSaving(false); }} disabled={saving || !form.title}
-            className="px-5 py-2 rounded-lg bg-brand text-on-brand text-xs font-bold hover:bg-brand-hover cursor-pointer disabled:opacity-50">
-            {saving ? '...' : 'Save'}
-          </button>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border-subtle">
+          <button onClick={onClose} className="text-xs font-semibold text-muted hover:text-primary cursor-pointer">More Options</button>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-muted hover:text-primary cursor-pointer">Cancel</button>
+            <button onClick={async () => { setSaving(true); await onSave(form); setSaving(false); }} disabled={saving || !form.title}
+              className="px-5 py-2 rounded-lg bg-brand text-on-brand text-xs font-bold hover:bg-brand-hover cursor-pointer disabled:opacity-50">
+              {saving ? '...' : 'Save'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -300,9 +396,15 @@ export default function Schedule() {
 
   const createEvent = async (form) => {
     if (!orgId) return;
-    const startAt = form.all_day || form.anytime ? new Date(`${form.date}T00:00:00`).toISOString() : new Date(`${form.date}T${form.start_time}:00`).toISOString();
-    const endAt = form.all_day || form.anytime ? null : new Date(`${form.date}T${form.end_time}:00`).toISOString();
-    await supabase.from('schedule_items').insert({ org_id: orgId, type: form.type, title: form.title, start_at: startAt, end_at: endAt, all_day: form.all_day, anytime: form.anytime, notes: form.notes || null, status: 'scheduled' });
+    const startAt = form.anytime ? new Date(`${form.date}T00:00:00`).toISOString() : new Date(`${form.date}T${form.start_time}:00`).toISOString();
+    await supabase.from('schedule_items').insert({
+      org_id: orgId, type: form.type, title: form.title,
+      start_at: startAt, end_at: null,
+      all_day: false, anytime: form.anytime,
+      notes: form.notes || null, status: 'scheduled',
+      assigned_to: form.assigned_to?.length > 0 ? form.assigned_to : [],
+      client_id: form.client_id || null,
+    });
     setShowNewEvent(null); fetchItems();
   };
 
@@ -328,7 +430,7 @@ export default function Schedule() {
 
   return (
     <div className="space-y-3">
-      {showNewEvent && <NewEventModal onClose={() => setShowNewEvent(null)} onSave={createEvent} defaultDate={showNewEvent} />}
+      {showNewEvent && <NewEventModal onClose={() => setShowNewEvent(null)} onSave={createEvent} defaultDate={showNewEvent} orgId={orgId} />}
       {selectedItem && <EventDetail item={selectedItem} onClose={() => setSelectedItem(null)} onStatusChange={updateStatus} />}
 
       {/* Header — Jobber style */}

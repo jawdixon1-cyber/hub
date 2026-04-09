@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Search, Loader2, Users, Phone, Mail, MapPin, ArrowLeft,
   Plus, X, RefreshCw, Home, ChevronDown, Check, TrendingUp,
+  Tag, MoreHorizontal, Archive, Trash2, ExternalLink,
 } from 'lucide-react';
 import { getTimezone, getTodayInTimezone } from '../utils/timezone';
 
@@ -125,63 +126,364 @@ function NewClientModal({ onClose, onSave }) {
   );
 }
 
-/* ─── Client Detail ─── */
+/* ─── Tag Editor Modal ─── */
+const DEFAULT_TAGS = ['pct wt', 'syncing', 'vip', 'commercial', 'residential', 'referral'];
+
+function TagEditor({ client, onClose, onSave }) {
+  const [tags, setTags] = useState(client.tags || []);
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+  const name = [client.first_name, client.last_name].filter(Boolean).join(' ') || client.company_name || 'Unknown';
+
+  const allTags = [...new Set([...DEFAULT_TAGS, ...tags])];
+  const filtered = search ? allTags.filter(t => t.toLowerCase().includes(search.toLowerCase())) : allTags;
+  const canAddNew = search.trim() && !allTags.some(t => t.toLowerCase() === search.trim().toLowerCase());
+
+  const toggle = (tag) => setTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
+  const addNew = () => { if (canAddNew) { setTags(prev => [...prev, search.trim()]); setSearch(''); } };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-card border border-border-subtle rounded-2xl shadow-2xl w-full max-w-sm">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle">
+          <h2 className="text-sm font-bold text-primary">Edit tags for {name}</h2>
+          <button onClick={onClose} className="p-1 text-muted hover:text-primary cursor-pointer"><X size={16} /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {tags.map(t => (
+              <span key={t} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-brand/15 text-brand-text text-[11px] font-semibold border border-brand/30">
+                {t}
+                <button onClick={() => toggle(t)} className="hover:text-red-400 cursor-pointer"><X size={10} /></button>
+              </span>
+            ))}
+            {tags.length === 0 && <span className="text-xs text-muted">Select tags +</span>}
+          </div>
+          <div>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tags"
+              className="w-full px-3 py-2 rounded-lg bg-surface-alt border border-border-subtle text-xs text-primary placeholder:text-muted focus:outline-none" />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-muted">Select tags</span>
+            <button onClick={() => setTags([])} className="text-[10px] font-bold text-brand-text hover:underline cursor-pointer">Select all</button>
+          </div>
+          <div className="max-h-32 overflow-y-auto space-y-0.5">
+            {filtered.map(t => (
+              <button key={t} onClick={() => toggle(t)}
+                className={`w-full flex items-center justify-between px-3 py-1.5 rounded text-xs cursor-pointer hover:bg-surface-alt ${
+                  tags.includes(t) ? 'text-brand-text font-semibold' : 'text-secondary'
+                }`}>
+                {t}
+                {tags.includes(t) && <Check size={12} className="text-brand" />}
+              </button>
+            ))}
+            {canAddNew && (
+              <button onClick={addNew}
+                className="w-full flex items-center gap-1.5 px-3 py-1.5 rounded text-xs text-brand-text font-semibold cursor-pointer hover:bg-surface-alt">
+                <Plus size={12} /> Create "{search.trim()}"
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border-subtle">
+          <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-muted hover:text-primary cursor-pointer">Cancel</button>
+          <button onClick={async () => { setSaving(true); await onSave(client.id, tags); setSaving(false); onClose(); }}
+            className="px-4 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold hover:bg-brand-hover cursor-pointer disabled:opacity-50" disabled={saving}>
+            {saving ? '...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Client Detail (Jobber style) ─── */
 function ClientDetail({ client, properties, onBack }) {
   const name = [client.first_name, client.last_name].filter(Boolean).join(' ') || client.company_name || 'Unknown';
   const phone = primaryPhone(client.phones);
   const email = primaryEmail(client.emails);
-  const addr = [client.billing_street, client.billing_city, client.billing_state, client.billing_zip].filter(Boolean).join(', ');
+  const primaryProp = properties[0];
+  const propAddr = primaryProp ? [primaryProp.street, primaryProp.city, primaryProp.state, primaryProp.zip].filter(Boolean).join(', ') : null;
+  const [workTab, setWorkTab] = useState('active');
+  const [note, setNote] = useState('');
+
+  const contactInfo = [
+    { label: 'Mobile phone', value: phone, link: phone ? `tel:${phone}` : null, color: 'text-brand-text' },
+    { label: 'Email', value: email, link: email ? `mailto:${email}` : null, color: 'text-brand-text' },
+    { label: 'Company', value: client.company_name || '—' },
+    { label: 'Lead source', value: client.lead_source || '—' },
+    { label: 'Tags', value: (client.tags || []).length > 0 ? (client.tags || []).join(', ') : 'None' },
+    { label: 'Created', value: client.created_at ? new Date(client.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—' },
+  ];
+
+  const WORK_TABS = [
+    { id: 'active', label: 'Active' },
+    { id: 'requests', label: 'Requests' },
+    { id: 'quotes', label: 'Quotes' },
+    { id: 'jobs', label: 'Jobs' },
+    { id: 'invoices', label: 'Invoices' },
+  ];
+
+  // Client lifetime value (placeholder — will be real once invoices exist)
+  const totalJobs = 0;
+  const lifetimeValue = 0;
 
   return (
-    <div className="space-y-4 max-w-2xl mx-auto">
-      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted hover:text-primary cursor-pointer">
-        <ArrowLeft size={16} /> Back to clients
+    <div className="space-y-0">
+      {/* Back + breadcrumb */}
+      <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-muted hover:text-primary cursor-pointer mb-3">
+        <ArrowLeft size={14} /> {client.is_lead ? 'Lead' : 'Client'}
       </button>
-      <div className="rounded-xl bg-card border border-border-subtle p-5">
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-xl font-black text-primary">{name}</h2>
-            {client.company_name && client.first_name && <p className="text-sm text-muted">{client.company_name}</p>}
-          </div>
-          {client.is_lead ? (
-            <span className="px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 text-[11px] font-bold border border-amber-500/30">Lead</span>
-          ) : (
-            <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-bold border border-emerald-500/30">Active</span>
-          )}
-        </div>
-        <div className="space-y-2 mt-4">
-          {phone && <a href={`tel:${phone}`} className="flex items-center gap-2 text-sm text-brand-text hover:underline"><Phone size={14} /> {phone}</a>}
-          {email && <a href={`mailto:${email}`} className="flex items-center gap-2 text-sm text-brand-text hover:underline"><Mail size={14} /> {email}</a>}
-          {addr && <p className="flex items-center gap-2 text-sm text-secondary"><MapPin size={14} className="shrink-0" /> {addr}</p>}
-        </div>
-        {client.tags?.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-4">
-            {client.tags.map(t => <span key={t} className="px-2 py-0.5 rounded-md bg-surface-alt text-[11px] font-semibold text-secondary border border-border-subtle">{t}</span>)}
-          </div>
-        )}
-        {client.notes && (
-          <div className="mt-4 pt-3 border-t border-border-subtle">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1">Notes</p>
-            <p className="text-sm text-secondary">{client.notes}</p>
-          </div>
-        )}
-      </div>
-      <div className="rounded-xl bg-card border border-border-subtle p-5">
-        <div className="flex items-center gap-2 mb-3">
-          <Home size={16} className="text-brand-text" />
-          <h3 className="text-sm font-bold text-primary">Properties</h3>
-          <span className="text-xs text-muted">({properties.length})</span>
-        </div>
-        {properties.length === 0 && <p className="text-sm text-muted">No properties on file.</p>}
-        {properties.map(p => (
-          <div key={p.id} className="flex items-start gap-3 py-2.5 border-b border-border-subtle/50 last:border-0">
-            <MapPin size={14} className="text-muted mt-0.5 shrink-0" />
+
+      {/* Two-column layout: main + sidebar */}
+      <div className="flex gap-6">
+        {/* ─── Main column ─── */}
+        <div className="flex-1 min-w-0 space-y-5">
+          {/* Header */}
+          <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-semibold text-primary">{p.label || 'Property'}</p>
-              <p className="text-xs text-secondary">{[p.street, p.city, p.state, p.zip].filter(Boolean).join(', ')}</p>
+              <div className="flex items-center gap-2 mb-1">
+                {client.is_lead ? (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[10px] font-bold border border-amber-500/30">Lead</span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">Active</span>
+                )}
+              </div>
+              <h1 className="text-2xl font-black text-primary">{name}</h1>
+              {client.company_name && client.first_name && (
+                <p className="text-sm text-muted mt-0.5">{client.company_name}</p>
+              )}
+            </div>
+            {/* Quick action buttons */}
+            <div className="flex items-center gap-1.5">
+              {phone && (
+                <a href={`tel:${phone}`} className="p-2 rounded-lg bg-surface-alt border border-border-subtle text-muted hover:text-primary hover:border-border-strong cursor-pointer" title="Call">
+                  <Phone size={15} />
+                </a>
+              )}
+              {email && (
+                <a href={`mailto:${email}`} className="p-2 rounded-lg bg-surface-alt border border-border-subtle text-muted hover:text-primary hover:border-border-strong cursor-pointer" title="Email">
+                  <Mail size={15} />
+                </a>
+              )}
             </div>
           </div>
-        ))}
+
+          {/* Contact info grid */}
+          <div className="rounded-xl bg-card border border-border-subtle">
+            <div className="grid grid-cols-2 sm:grid-cols-3 divide-x divide-border-subtle/50">
+              {contactInfo.map((item, i) => (
+                <div key={i} className={`px-4 py-3 ${i >= (window.innerWidth >= 640 ? 3 : 2) ? 'border-t border-border-subtle/50' : ''}`}>
+                  <p className="text-[10px] font-bold text-muted uppercase tracking-wider mb-0.5">{item.label}</p>
+                  {item.link ? (
+                    <a href={item.link} className={`text-sm font-medium ${item.color || 'text-primary'} hover:underline`}>{item.value}</a>
+                  ) : (
+                    <p className="text-sm font-medium text-primary">{item.value || '—'}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Work overview */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-bold text-primary">Work overview</h2>
+              <Plus size={16} className="text-muted" />
+            </div>
+            <div className="flex items-center gap-1 mb-3">
+              {WORK_TABS.map(t => (
+                <button key={t.id} onClick={() => setWorkTab(t.id)}
+                  className={`px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${
+                    workTab === t.id ? 'bg-surface-alt text-primary' : 'text-muted hover:text-secondary'
+                  }`}>{t.label}</button>
+              ))}
+            </div>
+            <div className="rounded-xl bg-card border border-border-subtle">
+              <div className="grid grid-cols-4 bg-surface-alt/50 border-b border-border-subtle px-4 py-2">
+                <span className="text-[10px] font-semibold text-muted">Item</span>
+                <span className="text-[10px] font-semibold text-muted">Date</span>
+                <span className="text-[10px] font-semibold text-muted">Status</span>
+                <span className="text-[10px] font-semibold text-muted text-right">Amount</span>
+              </div>
+              <div className="px-4 py-8 text-center">
+                <p className="text-xs text-muted">No results match your search</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Additional contacts */}
+          <div className="rounded-xl bg-card border border-border-subtle p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-primary">Additional contacts</h2>
+              <button className="text-xs font-semibold text-brand-text hover:underline cursor-pointer">Add Contact</button>
+            </div>
+            <p className="text-xs text-muted mt-2">Add contacts to keep track of everyone you communicate with</p>
+          </div>
+
+          {/* Properties — each one is a card with its own details */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-bold text-primary">Properties</h2>
+              <button className="text-xs font-semibold text-brand-text hover:underline cursor-pointer">Add Property</button>
+            </div>
+            {properties.length === 0 ? (
+              <div className="rounded-xl bg-card border border-border-subtle p-5">
+                <p className="text-xs text-muted">Add properties so you can organize work by location</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {properties.map(p => {
+                  const pAddr = [p.street, p.city, p.state, p.zip].filter(Boolean).join(', ');
+                  const propNotes = p.notes ? p.notes.split(', ').filter(Boolean) : [];
+                  return (
+                    <div key={p.id} className="rounded-xl bg-card border border-border-subtle p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-start gap-2.5">
+                          <MapPin size={16} className="text-brand-text mt-0.5 shrink-0" />
+                          <div>
+                            <p className="text-sm font-bold text-primary">{p.label || 'Primary'}</p>
+                            <p className="text-xs text-secondary">{pAddr || 'No address'}</p>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-surface-alt text-[10px] font-bold text-muted border border-border-subtle">
+                          {p.label || 'Primary'}
+                        </span>
+                      </div>
+                      {/* Property details grid */}
+                      <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-border-subtle/50">
+                        <div>
+                          <p className="text-[10px] font-bold text-muted uppercase">Lot size</p>
+                          <p className="text-xs font-medium text-primary">{p.lot_size_sqft ? `${p.lot_size_sqft.toLocaleString()} sqft` : '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-muted uppercase">Gate access</p>
+                          <p className="text-xs font-medium text-primary">{propNotes.includes('Lockout gate') ? 'Lockout' : propNotes.includes('Narrow gate') ? 'Narrow' : 'Open'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-muted uppercase">Dog</p>
+                          <p className="text-xs font-medium text-primary">{propNotes.includes('Dog on property') ? 'Yes' : 'No'}</p>
+                        </div>
+                      </div>
+                      {p.notes && !['Dog on property', 'Lockout gate', 'Narrow gate'].some(n => p.notes === n) && (
+                        <div className="mt-2 pt-2 border-t border-border-subtle/50">
+                          <p className="text-[10px] font-bold text-muted uppercase">Notes</p>
+                          <p className="text-xs text-secondary">{p.notes}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Billing */}
+          <div className="rounded-xl bg-card border border-border-subtle p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-primary">Billing</h2>
+              <button className="text-xs font-semibold text-brand-text hover:underline cursor-pointer">Add billing information</button>
+            </div>
+            <p className="text-xs text-muted mt-2">Bill this client to see billing history</p>
+          </div>
+
+          {/* Payment methods */}
+          <div className="rounded-xl bg-card border border-border-subtle p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-primary">Payment methods</h2>
+              <button className="text-xs font-semibold text-brand-text hover:underline cursor-pointer">Add or request</button>
+            </div>
+            <p className="text-xs text-muted mt-2">Once a payment method is requested or added it can be used to automate payment collection</p>
+          </div>
+
+          {/* Client schedule */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-bold text-primary">Client schedule</h2>
+              <Plus size={16} className="text-muted" />
+            </div>
+            <div className="rounded-xl bg-card border border-border-subtle">
+              <div className="grid grid-cols-3 bg-surface-alt/50 border-b border-border-subtle px-4 py-2">
+                <span className="text-[10px] font-semibold text-muted">Schedule</span>
+                <span className="text-[10px] font-semibold text-muted">Title</span>
+                <span className="text-[10px] font-semibold text-muted text-right">Assigned</span>
+              </div>
+              <div className="px-4 py-8 text-center">
+                <p className="text-xs text-muted">No scheduled items</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ─── Right sidebar ─── */}
+        <div className="hidden lg:block w-72 shrink-0 space-y-4">
+          {/* Financial overview */}
+          <div className="rounded-xl bg-card border border-border-subtle p-4">
+            <h3 className="text-xs font-bold text-muted uppercase mb-3">Overview</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted">Overdue</span>
+                <span className="text-lg font-black text-primary">$0.00</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted">Current balance</span>
+                <span className="text-lg font-black text-primary">$0.00</span>
+              </div>
+              <div className="h-px bg-border-subtle" />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted">Lifetime value</span>
+                <span className="text-sm font-bold text-emerald-400">$0.00</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted">Total jobs</span>
+                <span className="text-sm font-bold text-primary">0</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Client since */}
+          <div className="rounded-xl bg-card border border-border-subtle p-4">
+            <h3 className="text-xs font-bold text-muted uppercase mb-2">Client since</h3>
+            <p className="text-sm font-semibold text-primary">
+              {client.created_at ? new Date(client.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—'}
+            </p>
+            {client.created_at && (
+              <p className="text-[10px] text-muted mt-0.5">
+                {Math.floor((Date.now() - new Date(client.created_at).getTime()) / 86400000)} days ago
+              </p>
+            )}
+          </div>
+
+          {/* Notes — editable */}
+          <div className="rounded-xl bg-card border border-border-subtle p-4">
+            <h3 className="text-xs font-bold text-muted uppercase mb-2">Notes</h3>
+            {client.notes ? (
+              <p className="text-xs text-secondary whitespace-pre-wrap">{client.notes}</p>
+            ) : (
+              <div className="text-center py-3">
+                <p className="text-[11px] text-muted">Leave an internal note for yourself or a team member</p>
+              </div>
+            )}
+          </div>
+
+          {/* Quick actions */}
+          <div className="rounded-xl bg-card border border-border-subtle p-4 space-y-1.5">
+            <h3 className="text-xs font-bold text-muted uppercase mb-2">Quick actions</h3>
+            <button className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              Create request
+            </button>
+            <button className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              Create quote
+            </button>
+            <button className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              Schedule visit
+            </button>
+            <button className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              Create invoice
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -191,6 +493,7 @@ function ClientDetail({ client, properties, onBack }) {
 export default function Clients() {
   const { orgId } = useAuth();
   const navigate = useNavigate();
+  const { clientId: urlClientId } = useParams();
   const [allClients, setAllClients] = useState([]);
   const [properties, setProperties] = useState({});
   const [loading, setLoading] = useState(true);
@@ -199,6 +502,9 @@ export default function Clients() {
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [selected, setSelected] = useState(null);
   const [showNewClient, setShowNewClient] = useState(false);
+  const [hoveredRow, setHoveredRow] = useState(null);
+  const [moreMenuId, setMoreMenuId] = useState(null);
+  const [tagEditClient, setTagEditClient] = useState(null);
 
   const fetchClients = useCallback(async () => {
     if (!orgId) return;
@@ -266,6 +572,33 @@ export default function Clients() {
     fetchClients();
   };
 
+  // Auto-open client from URL param
+  useEffect(() => {
+    if (urlClientId && allClients.length > 0 && !selected) {
+      const c = allClients.find(cl => cl.id === urlClientId);
+      if (c) selectClient(c);
+    }
+  }, [urlClientId, allClients]);
+
+  const saveTags = async (id, tags) => {
+    await supabase.from('clients').update({ tags, updated_at: new Date().toISOString() }).eq('id', id);
+    fetchClients();
+  };
+
+  const archiveClient = async (id) => {
+    await supabase.from('clients').update({ tags: ['archived'], updated_at: new Date().toISOString() }).eq('id', id);
+    setMoreMenuId(null);
+    fetchClients();
+  };
+
+  const deleteClient = async (id) => {
+    if (!confirm('Delete this client? This cannot be undone.')) return;
+    await supabase.from('properties').delete().eq('client_id', id);
+    await supabase.from('clients').delete().eq('id', id);
+    setMoreMenuId(null);
+    fetchClients();
+  };
+
   // Stats
   const leadCount = allClients.filter(c => c.is_lead).length;
   const clientCount = allClients.filter(c => !c.is_lead).length;
@@ -287,6 +620,7 @@ export default function Clients() {
   return (
     <div className="space-y-5">
       {showNewClient && <NewClientModal onClose={() => setShowNewClient(false)} onSave={createClient} />}
+      {tagEditClient && <TagEditor client={tagEditClient} onClose={() => setTagEditClient(null)} onSave={saveTags} />}
 
       {/* Header — title left, search + New Client right */}
       <div className="flex items-center justify-between">
@@ -400,9 +734,12 @@ export default function Clients() {
                   const phone = primaryPhone(c.phones);
                   const email = primaryEmail(c.emails);
                   const addr = [c.billing_street, c.billing_city, c.billing_state, c.billing_zip].filter(Boolean).join(', ');
+                  const isHovered = hoveredRow === c.id;
                   return (
                     <tr key={c.id} onClick={() => selectClient(c)}
-                      className={`cursor-pointer transition-colors hover:bg-white/[0.02] ${i > 0 ? 'border-t border-border-subtle/50' : ''}`}>
+                      onMouseEnter={() => setHoveredRow(c.id)}
+                      onMouseLeave={() => { setHoveredRow(null); if (moreMenuId === c.id) setMoreMenuId(null); }}
+                      className={`cursor-pointer transition-colors hover:bg-white/[0.03] ${i > 0 ? 'border-t border-border-subtle/50' : ''}`}>
                       <td className="px-4 py-3">
                         <p className="font-bold text-primary">{name}</p>
                         {c.company_name && c.first_name && <p className="text-[11px] text-muted">{c.company_name}</p>}
@@ -430,7 +767,44 @@ export default function Clients() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <p className="text-xs text-muted">{lastActivity(c.updated_at)}</p>
+                        {isHovered ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <button onClick={(e) => { e.stopPropagation(); setTagEditClient(c); }}
+                              title="Tag" className="p-1.5 rounded-lg hover:bg-surface-alt text-muted hover:text-primary cursor-pointer">
+                              <Tag size={14} />
+                            </button>
+                            {email && (
+                              <a href={`mailto:${email}`} onClick={(e) => e.stopPropagation()}
+                                title="Email" className="p-1.5 rounded-lg hover:bg-surface-alt text-muted hover:text-primary cursor-pointer">
+                                <Mail size={14} />
+                              </a>
+                            )}
+                            <div className="relative">
+                              <button onClick={(e) => { e.stopPropagation(); setMoreMenuId(moreMenuId === c.id ? null : c.id); }}
+                                title="More actions" className="p-1.5 rounded-lg hover:bg-surface-alt text-muted hover:text-primary cursor-pointer">
+                                <MoreHorizontal size={14} />
+                              </button>
+                              {moreMenuId === c.id && (
+                                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border-subtle rounded-lg shadow-2xl min-w-[160px] py-1">
+                                  <button onClick={(e) => { e.stopPropagation(); archiveClient(c.id); }}
+                                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-alt cursor-pointer">
+                                    <Archive size={13} /> Archive
+                                  </button>
+                                  <button onClick={(e) => { e.stopPropagation(); deleteClient(c.id); }}
+                                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-red-400 hover:bg-surface-alt cursor-pointer">
+                                    <Trash2 size={13} /> Delete
+                                  </button>
+                                  <button onClick={(e) => { e.stopPropagation(); window.open(`/clients/${c.id}`, '_blank'); setMoreMenuId(null); }}
+                                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-alt cursor-pointer">
+                                    <ExternalLink size={13} /> Open in new tab
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted">{lastActivity(c.updated_at)}</p>
+                        )}
                       </td>
                     </tr>
                   );
