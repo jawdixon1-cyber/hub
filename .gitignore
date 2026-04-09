@@ -33,3 +33,4 @@ dist-ssr
 .vercel
 .env*.local
 .geocode-cache.json
+.env.vercel-check
