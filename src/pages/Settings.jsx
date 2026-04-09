@@ -278,8 +278,8 @@ function QBConnectionPanel() {
             </span>
           ) : (
             <a
-              href="/api/qb-auth"
-              onClick={(e) => { e.preventDefault(); window.location.href = '/api/qb-auth'; }}
+              href="/api/qb-data?action=auth"
+              onClick={(e) => { e.preventDefault(); window.location.href = '/api/qb-data?action=auth'; }}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#2ca01c] text-white text-xs font-semibold hover:bg-[#238a17] transition-colors"
             >
               <Link2 size={14} />

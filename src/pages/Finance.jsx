@@ -208,8 +208,8 @@ export default function Finance() {
           Link your QuickBooks account to see invoices, expenses, profit & loss, and more — all inside Hub.
         </p>
         <a
-          href="/api/qb-auth"
-          onClick={(e) => { e.preventDefault(); window.location.href = '/api/qb-auth'; }}
+          href="/api/qb-data?action=auth"
+          onClick={(e) => { e.preventDefault(); window.location.href = '/api/qb-data?action=auth'; }}
           className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#2ca01c] text-white font-semibold hover:bg-[#238a17] transition-colors text-sm"
         >
           <Link2 size={18} />

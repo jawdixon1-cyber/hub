@@ -23,12 +23,6 @@
     "api/mowing.js": {
       "maxDuration": 30
     },
-    "api/qb-auth.js": {
-      "maxDuration": 15
-    },
-    "api/qb-callback.js": {
-      "maxDuration": 15
-    },
     "api/qb-data.js": {
       "maxDuration": 30
     },
