@@ -595,9 +595,9 @@ export default function Home() {
       {flowState !== 'done' && (
         <div className="flex items-center bg-card rounded-xl border border-border-subtle p-1 mb-5">
           {[
-            { id: 'needs-opening', label: 'Start Day', done: openingDone, icon: ClipboardCheck },
+            { id: 'needs-opening', label: 'Open', done: openingDone, icon: ClipboardCheck },
             { id: 'working', label: 'Working', done: openingDone && !closingDone, icon: CheckCircle },
-            { id: 'needs-closing', label: 'End Day', done: closingDone, icon: FlagTriangleRight },
+            { id: 'needs-closing', label: 'Close', done: closingDone, icon: FlagTriangleRight },
           ].map((step) => {
             const Icon = step.icon;
             const isActive = flowState === step.id;
@@ -626,7 +626,7 @@ export default function Home() {
       {/* ─── Start Day Checklist ─── */}
       {flowState === 'needs-opening' && (
         <div className="rounded-xl bg-card border border-border-subtle p-5">
-          <h2 className="text-lg font-bold text-primary mb-4">Start of Day</h2>
+          <h2 className="text-lg font-bold text-primary mb-4">Opening Checklist</h2>
           <ChecklistPanel title="Opening" items={teamStartChecklist} checklistType="team-start" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
         </div>
       )}
@@ -634,7 +634,7 @@ export default function Home() {
       {/* ─── Working Dashboard ─── */}
       {flowState === 'working' && (
         <div className="space-y-4">
-          <p className="text-sm text-muted">Opening checklist done. Tap <strong className="text-primary">End Day</strong> when you're finished.</p>
+          <p className="text-sm text-muted">Opening done. Tap <strong className="text-primary">Close</strong> when you're finished for the day.</p>
           {quickLinks}
         </div>
       )}
@@ -642,7 +642,7 @@ export default function Home() {
       {/* ─── End Day Checklist ─── */}
       {flowState === 'needs-closing' && (
         <div className="rounded-xl bg-card border border-border-subtle p-5">
-          <h2 className="text-lg font-bold text-primary mb-4">End of Day</h2>
+          <h2 className="text-lg font-bold text-primary mb-4">Closing Checklist</h2>
           <ChecklistPanel title="Closing" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} mileage={{ vehicles, onSubmit: handleInlineMileage }} />
         </div>
       )}
