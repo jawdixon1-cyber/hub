@@ -41,6 +41,8 @@ export default defineConfig({
       manifest: {
         name: "Hey Jude's Lawn Care",
         short_name: 'LawnCare',
+        start_url: '/',
+        display: 'standalone',
         theme_color: '#000000',
         background_color: '#000000',
         icons: [
