@@ -531,7 +531,7 @@ export default function Home() {
   );
 
   return (
-    <div ref={containerRef} className="flex flex-col h-[calc(100svh-9rem)] overflow-y-auto md:h-auto md:overflow-visible">
+    <div ref={containerRef} className="flex flex-col pb-8">
       {/* Blocking strike acknowledge modal — shows BEFORE anything else */}
       {unacknowledgedStrike && (
         <StrikeAcknowledgeModal
