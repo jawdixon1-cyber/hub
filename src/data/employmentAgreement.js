@@ -18,7 +18,25 @@ export const AGREEMENT_SECTIONS = [
 
 <h2 style="font-size:22px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Standards</h2>
 <p style="margin-bottom:16px;"><em>These are the rules we follow on every job. Breaking them has consequences.</em></p>
-<p style="margin-bottom:20px;"><strong>⚡ = Strike &nbsp;&nbsp;&nbsp; 🚫 = Fired &nbsp;&nbsp;&nbsp; 💰 = Bonus Removed</strong></p>
+<p style="margin-bottom:16px;"><strong>⚡ = Strike &nbsp;&nbsp;&nbsp; 🚫 = Fired &nbsp;&nbsp;&nbsp; 💰 = Bonus Removed</strong></p>
+
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-bottom:4px;">How Accountability Works</h3>
+<p>We use a <strong>rolling 30-day</strong> system. Strikes expire after 30 days, but the record stays on file.</p>
+<p><strong>Strike 1</strong> - Warning<br/>
+<strong>Strike 2</strong> - Final Warning<br/>
+<strong>Strike 3</strong> - You're let go</p>
+
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">What Gets You a Strike ⚡</h3>
+<p>Late without approval · Missing uniform or eye protection · Not following the playbook · Sloppy work · Disrespect or attitude · Personal phone use · Reckless equipment use · Failing to report damage · Ignoring safety rules · Substance violations · Vehicle violations</p>
+
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Immediate Termination 🚫</h3>
+<p>Theft · Violence or threats · Falsifying time records · Showing up under the influence · Clocking in/out for someone else · Anything that puts someone's safety at serious risk</p>
+
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Bonus Removed 💰</h3>
+<p>Not clocking in/out correctly · Not clocking in/out of jobs · Not completing checklists · Not completing job forms, photos, or closeout steps</p>
+<p>Every day is a fresh chance to earn it.</p>
+
+<hr style="border:none;border-top:1px solid rgba(255,255,255,0.06);margin:24px 0;" />
 
 <h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-bottom:4px;">On Time</h3>
 <p>Be at the shop by <strong>8:50 AM</strong> ready to work. If you need to arrive late, text management your expected arrival time and get <strong>written approval before 9:00 AM</strong>. If approved, that time becomes your start time for the day -miss it and it's a strike. No approval = strike.</p>
@@ -30,7 +48,7 @@ export const AGREEMENT_SECTIONS = [
 
 <h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Playbook</h3>
 <p>Every service has a playbook. Have it open. Follow it -not your own way. The playbook exists so every property gets the same quality no matter who's working it. If the work doesn't match the playbook standard, it's not done.</p>
-<p><strong>Not using the playbook or sloppy work = ⚡</strong></p>
+<p><strong>Not following the playbook standard = ⚡</strong></p>
 
 <h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Conduct</h3>
 <p>Be professional with clients and teammates at all times. No attitude. No drama. Take correction, fix mistakes immediately, and move on. We're here to work, not to argue.</p>
@@ -59,7 +77,7 @@ export const AGREEMENT_SECTIONS = [
 
 <h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Vehicles</h3>
 <p>Seatbelts on, always. Drive responsibly -you're representing the company on the road. Report any accidents or damage immediately. Company vehicles are for company use only.</p>
-<p><strong>Violation = ⚡ or 🚫 depending on severity</strong></p>
+<p><strong>Violation = ⚡ or 🚫</strong></p>
 
 <h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Clients</h3>
 <p>Never give a client your personal number. All communication goes through the company. Don't promise anything about pricing, scheduling, or extra work -that's not your call to make.</p>
@@ -74,27 +92,6 @@ export const AGREEMENT_SECTIONS = [
 
 <hr style="border:none;border-top:2px solid rgba(255,255,255,0.1);margin:28px 0;" />
 
-<h2 style="font-size:18px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">How Accountability Works</h2>
-
-<p>We use a <strong>rolling 30-day</strong> system. Strikes expire after 30 days, but the record stays on file.</p>
-
-<p><strong>Strike 1</strong> -Warning<br/>
-<strong>Strike 2</strong> -Final Warning<br/>
-<strong>Strike 3</strong> -You're let go</p>
-
-<p>Every standard marked ⚡ above earns a strike when violated. Simple.</p>
-
-<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Immediate Termination 🚫</h3>
-<p>These things will get you fired on the spot -no strikes, no warnings:</p>
-<p>Theft · Violence or threats · Falsifying time records · Showing up under the influence · Clocking in/out for someone else · Anything that puts someone's safety at serious risk</p>
-
-<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Bonus Removed 💰</h3>
-<p>You won't get a strike, but you won't get your bonus for the day either:</p>
-<p>Not clocking in/out correctly · Not clocking in/out of jobs · Not completing checklists · Not completing job forms, photos, or closeout steps</p>
-<p>Every day is a fresh chance to earn it.</p>
-
-<hr style="border:none;border-top:2px solid rgba(255,255,255,0.1);margin:28px 0;" />
-
 <h2 style="font-size:22px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Policies</h2>
 <p style="margin-bottom:16px;"><em>These aren't strike-related -they're how the job works.</em></p>
 
@@ -102,7 +99,7 @@ export const AGREEMENT_SECTIONS = [
 <p>Request time off at least <strong>2 weeks in advance</strong>. It's not approved until management confirms it. You get up to <strong>10 workdays off per year</strong> and a max of <strong>5 consecutive days</strong> unless otherwise approved. Additional time off is at management's discretion based on your reliability and coverage. A no-call no-show is treated as voluntary resignation.</p>
 
 <h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Pay</h3>
-<p>Pay period runs <strong>Sunday through Saturday</strong>. Checks go out every <strong>Tuesday</strong>. Bonuses are daily -you earn them by completing all time tracking, checklists, and job closeout steps. Pay rate changes are at management's discretion based on how you perform.</p>
+<p>Pay period runs <strong>Sunday through Saturday</strong>. Checks go out every <strong>Tuesday</strong>. Bonuses are daily -you earn them by completing all time tracking, checklists, and job closeout steps. Hours over 40 in a week are overtime and paid at <strong>time and a half</strong>. Pay rate changes are at management's discretion based on how you perform.</p>
 
 <h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Resignation & Termination</h3>
 <p>This is at-will employment -either side can end it at any time. If you choose to leave, we expect <strong>2 weeks notice</strong>. Leaving without notice may affect your rehire eligibility and when you get your final pay.</p>
@@ -115,8 +112,7 @@ export const AGREEMENT_SECTIONS = [
 
 <hr style="border:none;border-top:2px solid rgba(255,255,255,0.1);margin:28px 0;" />
 
-<p><strong>By signing below, you confirm:</strong></p>
-<p>You've read and understand everything in this agreement. You agree to follow all standards, rules, and playbooks. You understand the 3-strike system and that repeated strikes lead to termination. You understand that missing time tracking or checklists removes your bonus for the day. You are physically able to perform the work. You understand this is at-will employment.</p>
+<p><strong>By signing, you confirm you've read and understand everything above, including the 3-strike system.</strong></p>
 `,
   },
 ];
