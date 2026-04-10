@@ -228,6 +228,7 @@ export default function Home() {
   const announcements = useAppStore((s) => s.announcements);
   const setAnnouncements = useAppStore((s) => s.setAnnouncements);
   const teamChecklist = useAppStore((s) => s.teamChecklist);
+  const teamStartChecklist = useAppStore((s) => s.teamChecklist);
   const teamEndChecklist = useAppStore((s) => s.teamEndChecklist);
   const checklistLog = useAppStore((s) => s.checklistLog);
   const setChecklistLog = useAppStore((s) => s.setChecklistLog);
@@ -506,80 +507,26 @@ export default function Home() {
   };
 
   const quickLinks = (
-    <div className="space-y-3">
-      {/* Jobs */}
-      <div className="bg-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden">
-        <div className="px-4 py-2 border-b border-border-subtle">
-          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted">Jobs</h3>
-        </div>
-        <div className="p-2 space-y-1">
-          <a
-            href="jobber://"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors"
-          >
-            <div className="w-8 h-8 rounded-lg bg-blue-500/15 flex items-center justify-center shrink-0">
-              <ChevronRight size={16} className="text-blue-500" />
+    <div className="grid grid-cols-2 gap-3">
+      {[
+        { label: 'Jobber', icon: ChevronRight, color: 'blue', action: () => window.open('jobber://', '_blank') },
+        { label: 'Playbooks', icon: BookOpen, color: 'purple', action: () => navigate('/guides') },
+        { label: 'Mileage', icon: Gauge, color: 'emerald', action: () => setShowMileageModal(true) },
+        { label: 'Receipts', icon: Receipt, color: 'violet', action: () => setShowReceiptModal(true) },
+        { label: 'Report Repair', icon: Wrench, color: 'orange', action: () => setShowRepairModal(true) },
+        { label: 'Equipment', icon: Wrench, color: 'amber', action: () => navigate('/equipment') },
+      ].map(item => {
+        const Icon = item.icon;
+        return (
+          <button key={item.label} onClick={item.action}
+            className="flex items-center gap-3 p-4 rounded-xl bg-card border border-border-subtle hover:border-border-strong transition-colors cursor-pointer text-left">
+            <div className={`w-9 h-9 rounded-lg bg-${item.color}-500/15 flex items-center justify-center shrink-0`}>
+              <Icon size={16} className={`text-${item.color}-500`} />
             </div>
-            <span className="text-sm font-semibold text-primary">Open Jobber</span>
-          </a>
-          <button
-            onClick={() => navigate('/guides')}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
-          >
-            <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center shrink-0">
-              <BookOpen size={16} className="text-purple-500" />
-            </div>
-            <span className="text-sm font-semibold text-primary">Playbooks</span>
+            <span className="text-sm font-semibold text-primary">{item.label}</span>
           </button>
-        </div>
-      </div>
-
-      {/* Log & Track */}
-      <div className="bg-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden">
-        <div className="px-4 py-2 border-b border-border-subtle">
-          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted">Log & Track</h3>
-        </div>
-        <div className="p-2 space-y-1">
-          <button
-            onClick={() => setShowMileageModal(true)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
-          >
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center shrink-0">
-              <Gauge size={16} className="text-emerald-500" />
-            </div>
-            <span className="text-sm font-semibold text-primary">Mileage</span>
-          </button>
-          <button
-            onClick={() => setShowReceiptModal(true)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
-          >
-            <div className="w-8 h-8 rounded-lg bg-violet-500/15 flex items-center justify-center shrink-0">
-              <Receipt size={16} className="text-violet-500" />
-            </div>
-            <span className="text-sm font-semibold text-primary">Receipts</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Report */}
-      <div className="bg-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden">
-        <div className="px-4 py-2 border-b border-border-subtle">
-          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted">Report</h3>
-        </div>
-        <div className="p-2 space-y-1">
-          <button
-            onClick={() => setShowRepairModal(true)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-alt transition-colors text-left cursor-pointer"
-          >
-            <div className="w-8 h-8 rounded-lg bg-orange-500/15 flex items-center justify-center shrink-0">
-              <Wrench size={16} className="text-orange-500" />
-            </div>
-            <span className="text-sm font-semibold text-primary">Report Repair</span>
-          </button>
-        </div>
-      </div>
+        );
+      })}
     </div>
   );
 
@@ -644,105 +591,84 @@ export default function Home() {
         </div>
       )}
 
-      {/* Day progress bar — hidden on initial splash and done state */}
-      {!(flowState === 'needs-opening' && !startedDay) && flowState !== 'done' && (
-        <div className="flex items-center gap-1.5 mb-4">
+      {/* ─── Day Progress Tabs (clickable) ─── */}
+      {flowState !== 'done' && (
+        <div className="flex items-center bg-card rounded-xl border border-border-subtle p-1 mb-5">
           {[
-            { label: 'Opening', done: openingDone, active: flowState === 'needs-opening' },
-            { label: 'Working', done: flowState === 'needs-closing' || closingDone, active: flowState === 'working' },
-            { label: 'Closing', done: closingDone, active: flowState === 'needs-closing' },
-          ].map((step, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <div className={`w-full h-1.5 rounded-full transition-colors ${
-                step.done
-                  ? 'bg-brand'
-                  : step.active
-                    ? 'bg-brand/50'
-                    : 'bg-border-subtle'
-              }`} />
-              <span className={`text-[10px] font-semibold transition-colors ${
-                step.done
-                  ? 'text-brand-text'
-                  : step.active
-                    ? 'text-primary'
-                    : 'text-muted'
-              }`}>{step.label}</span>
-            </div>
-          ))}
+            { id: 'needs-opening', label: 'Start Day', done: openingDone, icon: ClipboardCheck },
+            { id: 'working', label: 'Working', done: openingDone && !closingDone, icon: CheckCircle },
+            { id: 'needs-closing', label: 'End Day', done: closingDone, icon: FlagTriangleRight },
+          ].map((step) => {
+            const Icon = step.icon;
+            const isActive = flowState === step.id;
+            const canClick = step.id === 'needs-opening' || (step.id === 'working' && openingDone) || (step.id === 'needs-closing' && openingDone);
+            return (
+              <button key={step.id}
+                onClick={() => {
+                  if (!canClick) return;
+                  if (step.id === 'needs-opening') { setClosingMode(false); }
+                  else if (step.id === 'working') { setClosingMode(false); }
+                  else if (step.id === 'needs-closing') { setClosingMode(true); }
+                }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold transition-all ${
+                  isActive ? 'bg-brand text-on-brand shadow-sm' :
+                  step.done ? 'text-brand-text cursor-pointer hover:bg-surface-alt' :
+                  canClick ? 'text-muted cursor-pointer hover:bg-surface-alt' : 'text-muted/40'
+                }`}>
+                {step.done && !isActive ? <Check size={13} /> : <Icon size={13} />}
+                {step.label}
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* Flow State: working (also shown for needs-opening — owner prefers always-on dashboard) */}
-      {(flowState === 'working' || flowState === 'needs-opening') && (
-        <>
-          <button
-            onClick={() => navigate('/standards')}
-            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-gradient-to-r from-violet-500/10 to-purple-500/10 border border-violet-500/20 hover:border-violet-500/40 transition-colors cursor-pointer mb-4 text-left"
-          >
-            <div className="w-9 h-9 rounded-lg bg-violet-500/15 flex items-center justify-center shrink-0">
-              <ShieldCheck size={18} className="text-violet-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-primary">What&apos;s Expected</p>
-              <p className="text-xs text-muted">The standard. No exceptions.</p>
-            </div>
-            <ChevronRight size={16} className="text-muted shrink-0" />
-          </button>
-
-          {quickLinks}
-
-          <button
-            onClick={() => setClosingMode(true)}
-            className="mt-4 flex items-center justify-center gap-2 w-full py-4 rounded-2xl bg-brand-light text-brand-text font-bold text-base hover:bg-brand-light/80 transition-colors cursor-pointer border border-brand/20 shadow-sm"
-          >
-            <FlagTriangleRight size={18} />
-            <span className="flex flex-col items-start leading-tight">
-              <span>Done for the day? Closing</span>
-              <span className="text-xs font-normal opacity-70">Complete your closing checklist</span>
-            </span>
-          </button>
-        </>
+      {/* ─── Start Day Checklist ─── */}
+      {flowState === 'needs-opening' && (
+        <div className="rounded-xl bg-card border border-border-subtle p-5">
+          <h2 className="text-lg font-bold text-primary mb-4">Start of Day</h2>
+          <ChecklistPanel title="Opening" items={teamStartChecklist} checklistType="team-start" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
+        </div>
       )}
 
-      {/* Flow State: needs-closing */}
+      {/* ─── Working Dashboard ─── */}
+      {flowState === 'working' && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted">Opening checklist done. Tap <strong className="text-primary">End Day</strong> when you're finished.</p>
+          {quickLinks}
+        </div>
+      )}
+
+      {/* ─── End Day Checklist ─── */}
       {flowState === 'needs-closing' && (
-        <>
-          <div className="flex items-center gap-3 mb-4 sm:mb-6">
-            <FlagTriangleRight size={24} className="text-indigo-500" />
-            <h2 className="text-xl sm:text-2xl font-bold text-primary">Closing Checklist</h2>
-          </div>
-          <button
-            onClick={() => setClosingMode(false)}
-            className="inline-flex items-center gap-1.5 text-sm text-secondary hover:text-primary mb-3 cursor-pointer"
-          >
-            <ArrowLeft size={16} />
-            Back to dashboard
-          </button>
+        <div className="rounded-xl bg-card border border-border-subtle p-5">
+          <h2 className="text-lg font-bold text-primary mb-4">End of Day</h2>
           <ChecklistPanel title="Closing" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} mileage={{ vehicles, onSubmit: handleInlineMileage }} />
-        </>
+        </div>
       )}
 
-      {/* Flow State: done */}
+      {/* ─── Done ─── */}
       {flowState === 'done' && (
-        <>
-          <div className="flex flex-col items-center text-center py-6 sm:py-10 mb-4 sm:mb-6">
-            <PartyPopper size={48} className="text-amber-500 mb-3" />
-            <h2 className="text-2xl sm:text-3xl font-bold text-primary mb-2">Great work today!</h2>
+        <div className="space-y-4">
+          <div className="rounded-xl bg-card border border-border-subtle p-6 text-center">
+            <PartyPopper size={40} className="text-amber-500 mx-auto mb-3" />
+            <h2 className="text-xl font-bold text-primary mb-1">Great work today!</h2>
+            <p className="text-sm text-muted">Both checklists complete. See you tomorrow.</p>
           </div>
           {quickLinks}
-        </>
+        </div>
       )}
 
-      {/* DEV: Reset daily flow for testing */}
+      {/* Reset (testing) */}
       <button
         onClick={() => {
           setChecklistLog(checklistLog.filter((e) => e.date !== today));
           setClosingMode(false);
           setStartedDay(false);
         }}
-        className="mt-6 self-center text-xs text-muted hover:text-secondary underline cursor-pointer"
+        className="mt-4 self-center text-[10px] text-muted/40 hover:text-muted cursor-pointer"
       >
-        Reset daily flow (testing)
+        Reset
       </button>
 
       {/* Report Repair Modal */}

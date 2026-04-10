@@ -1,187 +1,124 @@
-export const DEFAULT_AGREEMENT_VERSION = '1.0';
+export const DEFAULT_AGREEMENT_VERSION = '2.0';
 export const DEFAULT_AGREEMENT_DATE = '2026-03-30';
 
 export const AGREEMENT_SECTIONS = [
   {
-    id: 'values',
-    title: 'WHO WE ARE',
-    body: `<p><strong>At Hey Jude's Lawn Care, these values aren't on a wall — they're how we operate every single day.</strong></p>
-<ul>
-<li><strong>Trust in God</strong></li>
-<li><strong>Own the Outcome</strong> — your work, your responsibility</li>
-<li><strong>Set the Standard</strong> — don't wait to be told</li>
-<li><strong>Discipline is Freedom</strong></li>
-<li><strong>No Shortcuts. No Excuses.</strong></li>
-<li><strong>Integrity Always</strong></li>
-<li><strong>Win as a Team</strong></li>
-<li><strong>Over-Deliver for Clients</strong></li>
-<li><strong>Keep Your Word</strong></li>
-<li><strong>Never Quit</strong></li>
-</ul>
+    id: 'main',
+    title: 'Agreement',
+    body: `
+<h2 style="font-size:22px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;">Who We Are</h2>
 
-<h3>Our Goal</h3>
-<p>We aim to be the best landscaping company in Rock Hill.</p>
+<p>These are the values we live by.</p>
 
-<p>Being the best isn't about making the most money. It isn't about being the fastest, and it isn't about doing the most jobs in a day. Being the best means:</p>
-<ul>
-<li>We don't miss spots. Ever.</li>
-<li>We don't create confusion — for our clients or for each other.</li>
-<li>The client has a seamless, perfect experience from the moment we pull up to the moment we leave.</li>
-</ul>
+<p><strong>Trust in God · Own the Outcome · Set the Standard · Discipline is Freedom · No Shortcuts, No Excuses · Integrity Always · Win as a Team · Over-Deliver for Clients · Keep Your Word · Never Quit</strong></p>
 
-<p>That's the bar. Every job, every property, every time.</p>
+<p>Our goal is to deliver the best lawn care experience in Rock Hill -for every single client, every single time. No missed spots, no confusion, no cutting corners. When we pull up to a property, the client should feel taken care of from start to finish. That's the standard we hold ourselves to.</p>
 
-<p>When you walk a property and find a missed spot, that's not a failure — that's the system working. The failure is leaving without checking. The failure is letting one missed spot leave with the truck. This is how we become the best landscaping company in Rock Hill.</p>`,
-  },
-  {
-    id: 'standards',
-    title: "STANDARDS & POLICIES",
-    body: `<h2 style="font-size:20px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;margin-top:0;margin-bottom:8px;border-bottom:2px solid currentColor;padding-bottom:8px;">Standards</h2>
-<p><em>The standards below are how we run a job. Violating any of them earns the consequence shown:</em></p>
-<p><strong>⚡ = Strike &nbsp;&nbsp; 🚫 = Termination &nbsp;&nbsp; 💰 = Bonus Removed</strong></p>
+<hr style="border:none;border-top:2px solid rgba(255,255,255,0.1);margin:28px 0;" />
 
-<h3>Show Up Ready</h3>
-<ul>
-<li>Be at the shop by <strong>8:50 AM</strong>. After 9:00 = ⚡</li>
-<li>Full uniform every day: work pants, belt, boots, company shirt (outer layer). Missing any = ⚡</li>
-<li>Eye protection on every job site — no exceptions. Without them = ⚡</li>
-</ul>
+<h2 style="font-size:22px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Standards</h2>
+<p style="margin-bottom:16px;"><em>These are the rules we follow on every job. Breaking them has consequences.</em></p>
+<p style="margin-bottom:20px;"><strong>⚡ = Strike &nbsp;&nbsp;&nbsp; 🚫 = Fired &nbsp;&nbsp;&nbsp; 💰 = Bonus Removed</strong></p>
 
-<h3>Work the Playbook</h3>
-<ul>
-<li>Have the correct playbook open while working — follow it, not personal preference. Not using it = ⚡</li>
-<li>All work must match playbook quality. Sloppy or incomplete work = ⚡</li>
-</ul>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-bottom:4px;">On Time</h3>
+<p>Be at the shop by <strong>8:50 AM</strong> ready to work. If you need to arrive late, text management your expected arrival time and get <strong>written approval before 9:00 AM</strong>. If approved, that time becomes your start time for the day -miss it and it's a strike. No approval = strike.</p>
+<p><strong>Late after 9:00 without approval = ⚡</strong></p>
 
-<h3>Conduct & Respect</h3>
-<ul>
-<li>Professional at all times. No attitude, no disrespect toward clients or teammates = ⚡ or 🚫</li>
-<li>Take correction and fix mistakes immediately</li>
-<li>No violence, threats, or aggressive behavior = 🚫</li>
-</ul>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Uniform</h3>
+<p>Full uniform every day -work pants, belt (tight enough to hold your pants up), boots, and company shirt as the outer layer. Eye protection on every job site, no exceptions. Looking professional isn't optional.</p>
+<p><strong>Missing any part of the uniform or no eye protection = ⚡</strong></p>
 
-<h3>Phone</h3>
-<p>Allowed only for: playbooks, job forms, work communication, quick music changes, and breaks. Everything else = ⚡</p>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Playbook</h3>
+<p>Every service has a playbook. Have it open. Follow it -not your own way. The playbook exists so every property gets the same quality no matter who's working it. If the work doesn't match the playbook standard, it's not done.</p>
+<p><strong>Not using the playbook or sloppy work = ⚡</strong></p>
 
-<h3>Equipment</h3>
-<ul>
-<li>Only use what you're trained on. Ask first if unsure</li>
-<li>Treat everything with care. Report damage immediately</li>
-<li>Reckless or unauthorized use = ⚡ or 🚫</li>
-</ul>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Conduct</h3>
+<p>Be professional with clients and teammates at all times. No attitude. No drama. Take correction, fix mistakes immediately, and move on. We're here to work, not to argue.</p>
+<p><strong>Disrespect or attitude = ⚡ &nbsp;&nbsp; Violence or threats = 🚫</strong></p>
 
-<h3>Safety</h3>
-<ul>
-<li>Work carefully around people, vehicles, and property</li>
-<li>Stop and ask if unsure. Report injuries or unsafe conditions immediately</li>
-<li>Ignoring safety rules = ⚡ or 🚫</li>
-</ul>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Phone</h3>
+<p>Your phone is a work tool -playbooks, job forms, work communication, and quick music changes. That's it. Save the scrolling and texting for breaks. If it's not work-related, put it away.</p>
+<p><strong>Personal phone use on the job = ⚡</strong></p>
 
-<h3>Substances</h3>
-<p>No alcohol, drugs, nicotine, or anything that affects performance — not on jobs, not in vehicles, not on your person while working. Violation = ⚡ or 🚫</p>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Equipment</h3>
+<p>Only use equipment you've been trained on. If you're not sure, ask before you touch it. Treat every piece of equipment like you paid for it.</p>
+<p><strong>Reckless or unauthorized use = ⚡ or 🚫</strong></p>
 
-<h3>Vehicles</h3>
-<ul>
-<li>Seatbelts at all times. No reckless driving</li>
-<li>Report any accidents or damage immediately</li>
-<li>No personal use of company vehicles</li>
-<li>Violation = ⚡ or 🚫 depending on severity</li>
-</ul>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Damage</h3>
+<p>If <strong>anything</strong> gets damaged -company equipment, company vehicles, a client's lawn, fence, mailbox, driveway, sprinkler head, anything at all -you must report it to management <strong>immediately</strong>. Text your manager right away and send photos of the damage. No waiting until end of day. No hoping nobody notices. No hiding it.</p>
+<p>Accidents happen. What's not acceptable is hiding them. If we find out about damage you didn't report, that's a much bigger problem than the damage itself. Reporting it fast lets us fix it fast and keep the client's trust.</p>
+<p><strong>Failure to report damage immediately with photos = ⚡ or 🚫</strong></p>
 
-<h3>Client Communication</h3>
-<ul>
-<li>Don't give clients your personal number — route everything through the company</li>
-<li>Don't make promises about pricing, scheduling, or extra work</li>
-</ul>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Safety</h3>
+<p>Work carefully around people, cars, and property. If you're not sure about something, stop and ask. Never try to push through a situation that feels unsafe. Report injuries or hazards the second they happen.</p>
+<p><strong>Ignoring safety rules = ⚡ or 🚫</strong></p>
 
-<h3>Track Everything</h3>
-<ul>
-<li>Clock in/out of every day and every job</li>
-<li>Complete all checklists, job forms, photos, and closeout steps</li>
-<li>Miss any of the above = 💰 (no bonus for that day)</li>
-<li>Falsifying time records or clocking in/out for someone else = 🚫</li>
-</ul>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Substances</h3>
+<p>No alcohol, drugs, nicotine, or anything that affects your ability to work. Not on jobs, not in vehicles, not on your person. Zero tolerance.</p>
+<p><strong>Violation = ⚡ or 🚫</strong></p>
 
-<h3>Breaks</h3>
-<p><strong>15 minutes or less.</strong> Stay near the truck. Be ready to move when it's time.</p>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Vehicles</h3>
+<p>Seatbelts on, always. Drive responsibly -you're representing the company on the road. Report any accidents or damage immediately. Company vehicles are for company use only.</p>
+<p><strong>Violation = ⚡ or 🚫 depending on severity</strong></p>
 
-<h3>How Accountability Works</h3>
-<p>We use a <strong>rolling 30-day</strong> accountability system. Strikes expire after 30 days, but the record stays.</p>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Clients</h3>
+<p>Never give a client your personal number. All communication goes through the company. Don't promise anything about pricing, scheduling, or extra work -that's not your call to make.</p>
 
-<ul>
-<li><strong>Strike 1</strong> — Warning</li>
-<li><strong>Strike 2</strong> — Final Warning</li>
-<li><strong>Strike 3</strong> — You're let go</li>
-</ul>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Tracking</h3>
+<p>Clock in and out every day. Clock in and out of every job. Complete all checklists, job forms, photos, and closeout steps. This is how we stay organized and how you earn your bonus. Miss any of it and the bonus is gone for that day -no exceptions.</p>
+<p><strong>Missing time tracking or closeout steps = 💰</strong></p>
+<p><strong>Falsifying time records or clocking in/out for someone else = 🚫</strong></p>
 
-<p>Every standard marked with ⚡ above earns a strike when violated. It's that simple.</p>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Breaks</h3>
+<p>15 minutes or less. Stay near the truck. Be ready to move when it's time.</p>
 
-<h3>You Will Be Fired For</h3>
-<ul>
-<li>Theft</li>
-<li>Violence or threats</li>
-<li>Falsifying time records</li>
-<li>Showing up under the influence</li>
-<li>Clocking in/out for someone else</li>
-<li>Anything that puts someone's safety at serious risk</li>
-</ul>
+<hr style="border:none;border-top:2px solid rgba(255,255,255,0.1);margin:28px 0;" />
 
-<h3>You Will Lose Your Bonus For The Day If</h3>
-<ul>
-<li>You don't clock in/out correctly</li>
-<li>You don't clock in/out of jobs</li>
-<li>You don't complete your checklists</li>
-<li>You don't complete job forms, photos, or closeout steps</li>
-</ul>
-<p>No strike — but no bonus either. Every day is a fresh chance to earn it.</p>
+<h2 style="font-size:18px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">How Accountability Works</h2>
 
-<h2 style="font-size:20px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;margin-top:32px;margin-bottom:8px;border-bottom:2px solid currentColor;padding-bottom:8px;">Policies</h2>
-<p><em>These are the terms of employment — how time off, pay, leaving, and injuries work. They aren't strike-related, they're how the job works.</em></p>
+<p>We use a <strong>rolling 30-day</strong> system. Strikes expire after 30 days, but the record stays on file.</p>
 
-<h3>Time Off</h3>
-<p>Time off must be requested at least <strong>2 weeks in advance</strong> and is not approved until confirmed by management. Approval depends on schedule and coverage.</p>
-<ul>
-<li><strong>10 workdays off per year</strong> maximum</li>
-<li><strong>5 consecutive workdays</strong> maximum unless otherwise approved</li>
-<li>Requests beyond this limit may be denied or require approval as extended unpaid leave</li>
-<li>Exceeding limits may affect scheduling priority or continued employment</li>
-<li>Additional time off may be approved at management discretion based on notice, reliability, and coverage</li>
-<li>No-call no-shows are treated as voluntary resignation</li>
-</ul>
+<p><strong>Strike 1</strong> -Warning<br/>
+<strong>Strike 2</strong> -Final Warning<br/>
+<strong>Strike 3</strong> -You're let go</p>
 
-<h3>Pay</h3>
-<ul>
-<li>Pay period is <strong>Sunday – Saturday</strong></li>
-<li>Check date is <strong>Tuesday</strong> (weekly)</li>
-<li>Bonuses are daily and based on completing all required time tracking, checklists, and job closeout steps</li>
-<li>Pay rate changes are at management's discretion based on performance and tenure</li>
-</ul>
+<p>Every standard marked ⚡ above earns a strike when violated. Simple.</p>
 
-<h3>Resignation & Termination</h3>
-<ul>
-<li>Employment is at-will and can be ended by either party at any time</li>
-<li><strong>2 weeks notice</strong> is expected if you choose to leave</li>
-<li>Leaving without notice may affect your rehire eligibility and final pay timeline</li>
-</ul>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Immediate Termination 🚫</h3>
+<p>These things will get you fired on the spot -no strikes, no warnings:</p>
+<p>Theft · Violence or threats · Falsifying time records · Showing up under the influence · Clocking in/out for someone else · Anything that puts someone's safety at serious risk</p>
 
-<h3>Injuries</h3>
-<ul>
-<li>Report all injuries immediately — no matter how small</li>
-<li>Do not try to work through an injury</li>
-<li>Notify management the same day</li>
-</ul>
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Bonus Removed 💰</h3>
+<p>You won't get a strike, but you won't get your bonus for the day either:</p>
+<p>Not clocking in/out correctly · Not clocking in/out of jobs · Not completing checklists · Not completing job forms, photos, or closeout steps</p>
+<p>Every day is a fresh chance to earn it.</p>
 
-<h3>Company Property</h3>
-<p>Company shirts, equipment, and tools must be returned if you leave. Lost or unreturned items may be deducted from your final pay.</p>`,
+<hr style="border:none;border-top:2px solid rgba(255,255,255,0.1);margin:28px 0;" />
+
+<h2 style="font-size:22px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Policies</h2>
+<p style="margin-bottom:16px;"><em>These aren't strike-related -they're how the job works.</em></p>
+
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-bottom:4px;">Time Off</h3>
+<p>Request time off at least <strong>2 weeks in advance</strong>. It's not approved until management confirms it. You get up to <strong>10 workdays off per year</strong> and a max of <strong>5 consecutive days</strong> unless otherwise approved. Additional time off is at management's discretion based on your reliability and coverage. A no-call no-show is treated as voluntary resignation.</p>
+
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Pay</h3>
+<p>Pay period runs <strong>Sunday through Saturday</strong>. Checks go out every <strong>Tuesday</strong>. Bonuses are daily -you earn them by completing all time tracking, checklists, and job closeout steps. Pay rate changes are at management's discretion based on how you perform.</p>
+
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Resignation & Termination</h3>
+<p>This is at-will employment -either side can end it at any time. If you choose to leave, we expect <strong>2 weeks notice</strong>. Leaving without notice may affect your rehire eligibility and when you get your final pay.</p>
+
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Injuries</h3>
+<p>Report every injury immediately, no matter how small. Don't try to tough it out. Notify management the same day. Your health comes first.</p>
+
+<h3 style="font-size:18px;font-weight:900;letter-spacing:0.03em;margin-top:20px;margin-bottom:4px;">Company Property</h3>
+<p>Shirts, equipment, and tools must be returned if you leave. Lost or unreturned items may be deducted from your final pay.</p>
+
+<hr style="border:none;border-top:2px solid rgba(255,255,255,0.1);margin:28px 0;" />
+
+<p><strong>By signing below, you confirm:</strong></p>
+<p>You've read and understand everything in this agreement. You agree to follow all standards, rules, and playbooks. You understand the 3-strike system and that repeated strikes lead to termination. You understand that missing time tracking or checklists removes your bonus for the day. You are physically able to perform the work. You understand this is at-will employment.</p>
+`,
   },
 ];
 
-export const FINAL_AGREEMENT_TEXT = `<p><strong>By signing, you confirm:</strong></p>
-<ul>
-<li>You've read and understand everything above</li>
-<li>You agree to follow all standards, rules, and playbooks</li>
-<li>You understand the 3-strike system and that repeated strikes lead to termination</li>
-<li>You understand that missing time tracking or checklists removes your bonus for the day</li>
-<li>You are physically able to perform the work</li>
-<li>You understand this is at-will employment</li>
-</ul>`;
+export const FINAL_AGREEMENT_TEXT = '';

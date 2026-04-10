@@ -425,35 +425,26 @@ function AppShell() {
         );
       })}
 
-      {/* Team Tools — always visible for everyone */}
-      <div className="h-px bg-border-subtle my-3 mx-2" />
-      {!collapsed && !ownerMode && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Team Tools</p>}
-      {ownerMode && !collapsed && (
-        <button onClick={() => setTeamToolsOpen((o) => !o)}
-          className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
-          <span>Team Tools</span>
-          <ChevronDown size={14} className={`transition-transform ${teamToolsOpen ? 'rotate-180' : ''}`} />
-        </button>
+      {/* Team Tools — for non-owners, show directly */}
+      {!ownerMode && (
+        <>
+          <div className="h-px bg-border-subtle my-3 mx-2" />
+          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Team Tools</p>}
+          {TEAM_TOOLS_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.path);
+            return (
+              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
+                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                }`}>
+                <Icon size={20} className="shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </button>
+            );
+          })}
+        </>
       )}
-      {(!ownerMode || teamToolsOpen || collapsed) && TEAM_TOOLS_ITEMS.map((item) => {
-        const Icon = item.icon;
-        const active = isActive(item.path);
-        return (
-          <button
-            key={item.id}
-            onClick={() => handleNav(item.path)}
-            title={collapsed ? item.label : undefined}
-            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : ownerMode ? 'px-3 pl-6' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-              active
-                ? 'bg-brand-light text-brand-text-strong'
-                : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-            }`}
-          >
-            <Icon size={ownerMode ? 18 : 20} className="shrink-0" />
-            {!collapsed && <span className="truncate">{item.label}</span>}
-          </button>
-        );
-      })}
 
       {ownerMode && (
         <>
@@ -474,6 +465,28 @@ function AppShell() {
                 }`}
               >
                 <Icon size={20} className="shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </button>
+            );
+          })}
+
+          <div className="h-px bg-border-subtle my-3 mx-2" />
+          {!collapsed && (
+            <button onClick={() => setTeamToolsOpen((o) => !o)}
+              className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
+              <span>Team Tools</span>
+              <ChevronDown size={14} className={`transition-transform ${teamToolsOpen ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+          {(teamToolsOpen || collapsed) && TEAM_TOOLS_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.path);
+            return (
+              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
+                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                }`}>
+                <Icon size={18} className="shrink-0" />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </button>
             );

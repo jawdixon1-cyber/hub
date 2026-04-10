@@ -39,11 +39,16 @@ function migrateSections(sections) {
   return out;
 }
 
-// Helper to get live agreement config (from store or defaults)
+// Helper to get live agreement config
+// Always use defaults from file — owner saves will override via setAgreementConfig
 function useAgreementConfig() {
   const config = useAppStore((s) => s.agreementConfig);
+  // Only use stored config if it's the new single-section format AND version is higher than defaults
   if (config && config.sections) {
-    return { ...config, sections: migrateSections(config.sections) };
+    const hasMainOnly = config.sections.length === 1 && config.sections[0].id === 'main';
+    const storedVer = parseFloat(config.version || '0');
+    const defaultVer = parseFloat(DEFAULT_AGREEMENT_VERSION || '0');
+    if (hasMainOnly && storedVer > defaultVer) return config;
   }
   return {
     version: DEFAULT_AGREEMENT_VERSION,
@@ -230,17 +235,15 @@ function AgreementEditor() {
   const setSignedAgreements = useAppStore((s) => s.setSignedAgreements);
   const permissions = useAppStore((s) => s.permissions) || {};
 
-  const [sections, setSections] = useState(config.sections);
-  const [finalText, setFinalText] = useState(config.finalText);
+  // Combine all sections + finalText into one body for editing
+  const fullBodyFromConfig = (config.sections || []).map(s => s.body).join('') + (config.finalText || '');
+  const [body, setBody] = useState(fullBodyFromConfig);
   const [version, setVersion] = useState(config.version);
   const [mode, setMode] = useState('status'); // 'status' | 'edit' | 'preview'
   const [hasChanges, setHasChanges] = useState(false);
-  const [editFinal, setEditFinal] = useState(false);
-  const [dragIndex, setDragIndex] = useState(null);
 
   const teamMembers = Object.entries(permissions);
 
-  // Group signed agreements by member
   const memberAgreements = {};
   for (const a of signedAgreements) {
     if (!memberAgreements[a.memberEmail]) memberAgreements[a.memberEmail] = [];
@@ -251,44 +254,6 @@ function AgreementEditor() {
     setSignedAgreements(signedAgreements.filter(a => a.memberEmail !== email));
   };
 
-  const handleSectionChange = (index, updated) => {
-    const next = [...sections];
-    next[index] = updated;
-    setSections(next);
-    setHasChanges(true);
-  };
-
-  const handleDelete = (index) => {
-    setSections(sections.filter((_, i) => i !== index));
-    setHasChanges(true);
-  };
-
-  const handleMove = (from, to) => {
-    const next = [...sections];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    setSections(next);
-    setHasChanges(true);
-  };
-
-  const handleAddSection = () => {
-    setSections([...sections, { id: `section-${Date.now()}`, title: '', body: '', requiresInitials: false }]);
-    setHasChanges(true);
-  };
-
-  const handleDragStart = (e, index) => { setDragIndex(index); e.dataTransfer.effectAllowed = 'move'; };
-  const handleDragOver = (e, index) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
-  const handleDrop = (e, toIndex) => {
-    e.preventDefault();
-    if (dragIndex === null || dragIndex === toIndex) { setDragIndex(null); return; }
-    const next = [...sections];
-    const [moved] = next.splice(dragIndex, 1);
-    next.splice(toIndex, 0, moved);
-    setSections(next);
-    setHasChanges(true);
-    setDragIndex(null);
-  };
-
   const bumpVersion = () => {
     const parts = version.split('.');
     const minor = parseInt(parts[1] || '0', 10) + 1;
@@ -297,7 +262,12 @@ function AgreementEditor() {
 
   const handleSave = () => {
     const newVersion = hasChanges ? bumpVersion() : version;
-    const newConfig = { version: newVersion, sections, finalText };
+    // Store as a single section so the system still works
+    const newConfig = {
+      version: newVersion,
+      sections: [{ id: 'main', title: 'Agreement', body }],
+      finalText: '',
+    };
     setAgreementConfig(newConfig);
     setVersion(newVersion);
     setHasChanges(false);
@@ -305,7 +275,7 @@ function AgreementEditor() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-3xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-black text-primary tracking-tight">TEAM AGREEMENT</h1>
@@ -315,7 +285,7 @@ function AgreementEditor() {
           {mode === 'edit' && hasChanges && (
             <button onClick={handleSave}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold hover:bg-brand-hover cursor-pointer">
-              <Save size={12} /> Save & Bump Version
+              <Save size={12} /> Save & Publish v{bumpVersion()}
             </button>
           )}
           {mode !== 'edit' ? (
@@ -324,7 +294,7 @@ function AgreementEditor() {
               <Edit3 size={12} /> Edit
             </button>
           ) : (
-            <button onClick={() => { setMode('status'); setSections(config.sections); setFinalText(config.finalText); setHasChanges(false); }}
+            <button onClick={() => { setMode('status'); setBody(fullBodyFromConfig); setHasChanges(false); }}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-bold hover:bg-brand-light cursor-pointer">
               <X size={12} /> Cancel
             </button>
@@ -343,87 +313,41 @@ function AgreementEditor() {
         </div>
       </div>
 
-      {/* ═══ EDIT MODE ═══ */}
+      {/* ═══ EDIT MODE — one rich text editor ═══ */}
       {mode === 'edit' && (
         <div className="space-y-3">
-          {sections.map((section, i) => (
-            <SectionEditor key={section.id} section={section} index={i} total={sections.length}
-              onChange={handleSectionChange} onDelete={handleDelete} onMove={handleMove}
-              onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop} dragging={dragIndex} />
-          ))}
-
-          <button onClick={handleAddSection}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-border-subtle hover:border-brand text-muted hover:text-brand transition-colors cursor-pointer">
-            <Plus size={16} /> Add Section
-          </button>
+          <div className="rounded-xl bg-card border border-border-subtle p-4">
+            <p className="text-[10px] text-muted mb-3">Edit the full agreement below. Use headings, bold, lists, and dividers to organize. Your team will see the exact changes highlighted when you publish.</p>
+            <Suspense fallback={<div className="text-muted text-xs py-2">Loading editor...</div>}>
+              <RichTextEditor content={body} onChange={(html) => { setBody(html); setHasChanges(true); }} />
+            </Suspense>
+          </div>
 
           {/* Roles editor */}
           <RolesEditor />
 
-          {/* Final text editor */}
-          <div className="rounded-xl border-2 border-brand/30 bg-card p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-black text-brand uppercase tracking-widest">Final Agreement Text</p>
-              <button onClick={() => setEditFinal(!editFinal)} className="text-[10px] text-muted hover:text-brand cursor-pointer">
-                {editFinal ? 'Done' : 'Edit'}
-              </button>
-            </div>
-            {editFinal ? (
-              <Suspense fallback={<div className="text-muted text-xs py-2">Loading editor...</div>}>
-                <RichTextEditor content={finalText} onChange={(html) => { setFinalText(html); setHasChanges(true); }} />
-              </Suspense>
-            ) : (
-              <div className="text-xs text-secondary leading-relaxed prose-sm" dangerouslySetInnerHTML={{ __html: finalText }} />
-            )}
-          </div>
-
           {hasChanges && (
             <button onClick={handleSave}
               className="w-full py-3 rounded-xl bg-brand text-on-brand font-bold text-sm hover:bg-brand-hover cursor-pointer">
-              Save Changes & Bump to v{bumpVersion()}
+              Save & Publish v{bumpVersion()}
             </button>
           )}
         </div>
       )}
 
-      {/* ═══ PREVIEW MODE ═══ */}
+      {/* ═══ PREVIEW MODE — what team sees ═══ */}
       {mode === 'preview' && (
-        <div className="space-y-3">
-          {sections.map((section, i) => (
-            <div key={section.id} className="rounded-xl border border-border-subtle bg-card p-4">
-              <p className="text-xs font-bold text-primary mb-2">{i + 1}. {section.title}</p>
-              <div className="text-xs text-secondary leading-relaxed prose-sm" dangerouslySetInnerHTML={{ __html: section.body }} />
-            </div>
-          ))}
-          <div className="rounded-xl border-2 border-brand/40 bg-card p-4">
-            <p className="text-[10px] font-black text-brand uppercase tracking-widest mb-2">Final Agreement</p>
-            <div className="text-xs text-secondary leading-relaxed prose-sm" dangerouslySetInnerHTML={{ __html: finalText }} />
-          </div>
+        <div className="rounded-xl bg-card border border-border-subtle p-6">
+          <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: body }} />
         </div>
       )}
 
       {/* ═══ STATUS MODE ═══ */}
       {mode === 'status' && (
         <div className="space-y-4">
-          {/* Summary */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
-              <p className="text-[9px] font-bold text-muted uppercase">Sections</p>
-              <p className="text-lg font-black text-primary">{sections.length}</p>
-            </div>
-            <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
-              <p className="text-[9px] font-bold text-muted uppercase">Team</p>
-              <p className="text-lg font-black text-primary">{teamMembers.length}</p>
-            </div>
-            <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
-              <p className="text-[9px] font-bold text-muted uppercase">Signed</p>
-              <p className="text-lg font-black text-emerald-500">
-                {teamMembers.filter(([email]) => {
-                  const agreements = memberAgreements[email] || [];
-                  return agreements.some((a) => a.version === version);
-                }).length}
-              </p>
-            </div>
+          {/* Agreement preview */}
+          <div className="rounded-xl bg-card border border-border-subtle p-5">
+            <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: body }} />
           </div>
 
           {/* Team Members */}
@@ -511,19 +435,76 @@ function MemberRow({ email, name, latest, isCurrent, onReset }) {
    Team Member: Signing View
    ══════════════════════════════════════════════ */
 
-function AgreementSection({ section, accent, changed }) {
+/* ─── Simple word-level diff ─── */
+function stripHtml(html) { return (html || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); }
+
+function computeWordDiff(oldText, newText) {
+  const oldWords = stripHtml(oldText).split(' ');
+  const newWords = stripHtml(newText).split(' ');
+  // LCS-based diff
+  const m = oldWords.length, n = newWords.length;
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = oldWords[i-1] === newWords[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+  // Backtrack
+  const result = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldWords[i-1] === newWords[j-1]) {
+      result.unshift({ type: 'same', word: oldWords[i-1] });
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+      result.unshift({ type: 'added', word: newWords[j-1] });
+      j--;
+    } else {
+      result.unshift({ type: 'removed', word: oldWords[i-1] });
+      i--;
+    }
+  }
+  return result;
+}
+
+function DiffView({ oldBody, newBody }) {
+  const diff = computeWordDiff(oldBody, newBody);
+  return (
+    <div className="text-sm leading-relaxed">
+      {diff.map((d, i) => {
+        if (d.type === 'same') return <span key={i} className="text-secondary">{d.word} </span>;
+        if (d.type === 'added') return <span key={i} className="bg-emerald-500/20 text-emerald-300 rounded px-0.5">{d.word} </span>;
+        if (d.type === 'removed') return <span key={i} className="bg-red-500/20 text-red-400 line-through rounded px-0.5">{d.word} </span>;
+        return null;
+      })}
+    </div>
+  );
+}
+
+function AgreementSection({ section, accent, changed, prevBody }) {
   const borderColor = changed ? 'border-amber-500/60 ring-1 ring-amber-500/20' : accent === 'brand' ? 'border-brand/40' : accent === 'red' ? 'border-red-500/30' : 'border-border-subtle';
+  const showDiff = changed === 'updated' && prevBody;
   return (
     <div className={`rounded-2xl border ${borderColor} bg-card p-5`}>
       <div className="flex items-center gap-2 mb-3">
         <p className="text-sm font-black text-primary uppercase tracking-wider">{section.title}</p>
         {changed && (
-          <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold uppercase">
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+            changed === 'new' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+          }`}>
             {changed === 'new' ? 'New' : 'Updated'}
           </span>
         )}
       </div>
-      <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: section.body }} />
+      {showDiff ? (
+        <div>
+          <div className="flex items-center gap-4 mb-3 text-[10px] font-bold">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500/20 border border-emerald-500/40" /> Added</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500/20 border border-red-500/40" /> Removed</span>
+          </div>
+          <DiffView oldBody={prevBody} newBody={section.body} />
+        </div>
+      ) : (
+        <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: section.body }} />
+      )}
     </div>
   );
 }
@@ -579,18 +560,23 @@ function TeamMemberAgreementView() {
   const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
   const setSignedAgreements = useAppStore((s) => s.setSignedAgreements);
 
-  // Look up this member's assigned role
   const permissions = useAppStore((s) => s.permissions) || {};
   const rolesData = useAppStore((s) => s.roles);
   const allRoles = (rolesData && rolesData.items) ? rolesData.items : DEFAULT_ROLES;
   const myRoleId = permissions[userEmail]?.roleId || null;
-  const myRole = allRoles.find((r) => r.id === myRoleId) || null;
 
   const myAgreements = signedAgreements.filter((a) => a.memberEmail === userEmail);
   const latestAgreement = myAgreements.length > 0 ? myAgreements[myAgreements.length - 1] : null;
   const needsNewVersion = !latestAgreement || latestAgreement.version !== config.version;
   const sections = config.sections || [];
   const finalText = config.finalText || '';
+
+  // Combine all sections into one full document body
+  const fullBody = sections.map(s => s.body).join('') + (finalText || '');
+  const prevFullBody = latestAgreement
+    ? (latestAgreement.sectionsSnapshot || []).map(s => s.body).join('') + (latestAgreement.finalTextSnapshot || '')
+    : '';
+  const hasChanges = needsNewVersion && prevFullBody && prevFullBody !== fullBody;
 
   const [printedName, setPrintedName] = useState('');
   const [signature, setSignature] = useState(null);
@@ -623,36 +609,21 @@ function TeamMemberAgreementView() {
     setSigned(true);
   };
 
-  const accents = ['brand', null, 'red', null];
   const isSigned = !needsNewVersion || signed;
   const display = signed ? signedAgreements[signedAgreements.length - 1] : latestAgreement;
 
-  // Diff: figure out which sections are new or changed vs their last signed version
-  const prevSnapshot = latestAgreement?.sectionsSnapshot || [];
-  const prevById = {};
-  for (const s of prevSnapshot) { prevById[s.id] = s; }
-  const sectionChanges = {};
-  if (latestAgreement && needsNewVersion) {
-    for (const s of sections) {
-      const prev = prevById[s.id];
-      if (!prev) { sectionChanges[s.id] = 'new'; }
-      else if (prev.body !== s.body || prev.title !== s.title) { sectionChanges[s.id] = 'updated'; }
-    }
-  }
-  const hasChanges = Object.keys(sectionChanges).length > 0;
-
   return (
-    <div className="space-y-5">
-      {/* Title */}
-      <div className="text-center">
-        <h1 className="text-xl font-black text-primary tracking-tight">TEAM AGREEMENT</h1>
-        <p className="text-[11px] text-muted mt-1">Hey Jude's Lawn Care</p>
+    <div className="max-w-2xl mx-auto">
+      {/* Header */}
+      <div className="text-center mb-6">
+        <h1 className="text-2xl font-black text-primary tracking-tight">TEAM AGREEMENT</h1>
+        <p className="text-xs text-muted mt-1">Hey Jude's Lawn Care · v{config.version}</p>
       </div>
 
-      {/* Status badge */}
+      {/* Status */}
       {isSigned ? (
-        <div className="flex items-center gap-3 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
-          <Check size={20} className="text-emerald-500 shrink-0" />
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 mb-6">
+          <Check size={18} className="text-emerald-500 shrink-0" />
           <div>
             <p className="text-sm text-emerald-400 font-bold">Signed</p>
             <p className="text-[11px] text-muted">{display ? new Date(display.signedAt).toLocaleDateString() : ''}</p>
@@ -662,90 +633,119 @@ function TeamMemberAgreementView() {
           )}
         </div>
       ) : (
-        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-1">
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 mb-6">
           <div className="flex items-center gap-2">
             <AlertTriangle size={16} className="text-amber-500 shrink-0" />
             <p className="text-sm text-amber-400 font-semibold">
-              {latestAgreement ? 'Agreement Updated' : 'Review and sign below'}
+              {latestAgreement ? 'Agreement Updated - review changes and sign below' : 'Review and sign below'}
             </p>
           </div>
-          {latestAgreement && hasChanges && (
-            <p className="text-xs text-amber-400/80 pl-6">Sections marked <span className="font-bold">New</span> or <span className="font-bold">Updated</span> are highlighted — the rest you've already agreed to.</p>
+          {hasChanges && (
+            <div className="flex items-center gap-4 mt-2 pl-6 text-[10px] font-bold">
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-500/25 border border-emerald-500/40" /> Added</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-500/25 border border-red-500/40" /> Removed</span>
+            </div>
           )}
         </div>
       )}
 
-      {/* Sections — render Roles section right after WHO WE ARE (id 'values') */}
-      {sections.map((section, i) => (
-        <div key={section.id || i}>
-          <AgreementSection section={section} accent={accents[i]} changed={sectionChanges[section.id]} />
-          {section.id === 'values' && allRoles.length > 0 && (
-            <div className="mt-5">
-              <RolesAgreementBlock allRoles={allRoles} myRoleId={myRoleId} />
-            </div>
-          )}
+      {/* One continuous agreement document */}
+      <div className="rounded-xl bg-card border border-border-subtle p-6 mb-6">
+        {hasChanges && !isSigned && (() => {
+          // Only show diff if less than 40% of words changed, otherwise it's a rewrite
+          const diff = computeWordDiff(prevFullBody, fullBody);
+          const changed = diff.filter(d => d.type !== 'same').length;
+          const total = diff.length;
+          if (total > 0 && changed / total < 0.4) {
+            return <DiffView oldBody={prevFullBody} newBody={fullBody} />;
+          }
+          return <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: fullBody }} />;
+        })()}
+        {(!hasChanges || isSigned) && (
+          <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: fullBody }} />
+        )}
+      </div>
+
+      {/* Roles */}
+      {allRoles.length > 0 && (
+        <div className="rounded-xl bg-card border border-border-subtle p-6 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield size={16} className="text-brand" />
+            <p className="text-sm font-black text-primary uppercase tracking-wider">Your Role & Responsibilities</p>
+          </div>
+          <div className="space-y-3">
+            {allRoles.map(role => {
+              const isMine = myRoleId === role.id;
+              return (
+                <div key={role.id} className={`rounded-lg p-4 border ${isMine ? 'border-brand bg-brand/5' : 'border-border-subtle bg-surface-alt/30'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-black text-primary uppercase">{role.name}</h3>
+                    {isMine && <span className="text-[10px] font-bold text-brand bg-brand/15 px-2 py-0.5 rounded-full">Your Role</span>}
+                  </div>
+                  <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: role.body }} />
+                </div>
+              );
+            })}
+          </div>
         </div>
-      ))}
+      )}
 
-
-      {/* Sign section — only if not signed */}
+      {/* Sign section */}
       {!isSigned && (
-        <div className="rounded-2xl border-2 border-brand bg-card p-5 space-y-4">
-          <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: finalText }} />
-
-          <div className="border-t border-border-subtle pt-4 space-y-4">
-            <div className="flex items-center justify-between px-1">
+        <div className="rounded-xl border-2 border-brand bg-card p-6 space-y-4">
+          <div className="border-b border-border-subtle pb-4 space-y-4">
+            <div className="flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-bold text-muted uppercase">Date</p>
-                <p className="text-sm font-bold text-primary mt-0.5">{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                <p className="text-sm font-bold text-primary">{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold text-muted uppercase">Version</p>
-                <p className="text-sm font-bold text-primary mt-0.5">v{config.version}</p>
+                <p className="text-sm font-bold text-primary">v{config.version}</p>
               </div>
             </div>
-
-            <div>
-              <label className="text-xs font-bold text-muted uppercase">Print Your Name</label>
-              <input type="text" value={printedName} onChange={(e) => setPrintedName(e.target.value)}
-                className="w-full rounded-xl border border-border-strong bg-surface px-4 py-3 text-sm text-primary focus:ring-2 focus:ring-ring-brand outline-none mt-1.5" />
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-muted uppercase">Sign Below</label>
-                <button onClick={() => {
-                  const c = document.getElementById('sig-pad');
-                  if (c) { const ctx = c.getContext('2d'); ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, 500, 200); ctx.strokeStyle = '#B0FF03'; ctx.lineWidth = 2; ctx.lineCap = 'round'; setSignature(null); }
-                }} className="text-[10px] text-muted hover:text-red-400 cursor-pointer">Clear</button>
-              </div>
-              <canvas id="sig-pad" width={500} height={200}
-                className="w-full rounded-xl border border-border-subtle cursor-crosshair" style={{ height: 130, touchAction: 'none' }}
-                ref={(canvas) => {
-                  if (canvas && !canvas._init) {
-                    canvas._init = true;
-                    const ctx = canvas.getContext('2d');
-                    ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, 500, 200);
-                    ctx.strokeStyle = '#B0FF03'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-                    let drawing = false;
-                    const getPos = (e) => { const r = canvas.getBoundingClientRect(); const t = e.touches?.[0] || e; return { x: (t.clientX - r.left) * (500 / r.width), y: (t.clientY - r.top) * (200 / r.height) }; };
-                    const start = (e) => { e.preventDefault(); drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
-                    const move = (e) => { if (!drawing) return; e.preventDefault(); const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
-                    const end = () => { drawing = false; setSignature(canvas); };
-                    canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move);
-                    canvas.addEventListener('mouseup', end); canvas.addEventListener('mouseleave', end);
-                    canvas.addEventListener('touchstart', start, { passive: false }); canvas.addEventListener('touchmove', move, { passive: false }); canvas.addEventListener('touchend', end);
-                  }
-                }}
-              />
-            </div>
-
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)}
-                className="mt-0.5 w-5 h-5 rounded border-border-strong accent-brand" />
-              <span className="text-sm text-secondary leading-snug">I have read, understand, and agree to everything in this agreement.</span>
-            </label>
           </div>
+
+          <div>
+            <label className="text-xs font-bold text-muted uppercase">Print Your Name</label>
+            <input type="text" value={printedName} onChange={(e) => setPrintedName(e.target.value)}
+              className="w-full rounded-lg border border-border-strong bg-surface px-4 py-3 text-sm text-primary focus:ring-2 focus:ring-ring-brand outline-none mt-1.5" />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-muted uppercase">Sign Below</label>
+              <button onClick={() => {
+                const c = document.getElementById('sig-pad');
+                if (c) { const ctx = c.getContext('2d'); ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, 500, 200); ctx.strokeStyle = '#B0FF03'; ctx.lineWidth = 2; ctx.lineCap = 'round'; setSignature(null); }
+              }} className="text-[10px] text-muted hover:text-red-400 cursor-pointer">Clear</button>
+            </div>
+            <canvas id="sig-pad" width={500} height={200}
+              className="w-full rounded-lg border border-border-subtle cursor-crosshair" style={{ height: 130, touchAction: 'none' }}
+              ref={(canvas) => {
+                if (canvas && !canvas._init) {
+                  canvas._init = true;
+                  const ctx = canvas.getContext('2d');
+                  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, 500, 200);
+                  ctx.strokeStyle = '#B0FF03'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+                  let drawing = false;
+                  const getPos = (e) => { const r = canvas.getBoundingClientRect(); const t = e.touches?.[0] || e; return { x: (t.clientX - r.left) * (500 / r.width), y: (t.clientY - r.top) * (200 / r.height) }; };
+                  const start = (e) => { e.preventDefault(); drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+                  const move = (e) => { if (!drawing) return; e.preventDefault(); const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+                  const end = () => { drawing = false; setSignature(canvas); };
+                  canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move);
+                  canvas.addEventListener('mouseup', end); canvas.addEventListener('mouseleave', end);
+                  canvas.addEventListener('touchstart', start, { passive: false }); canvas.addEventListener('touchmove', move, { passive: false }); canvas.addEventListener('touchend', end);
+                }
+              }}
+            />
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)}
+              className="mt-0.5 w-5 h-5 rounded border-border-strong accent-brand" />
+            <span className="text-sm text-secondary leading-snug">I have read, understand, and agree to everything in this agreement.</span>
+          </label>
 
           {error && (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
