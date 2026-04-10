@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense, useCallback } from 'react';
+import { useState, useEffect, lazy, Suspense, useCallback } from 'react';
 import { Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Save, Eye, Edit3, AlertTriangle, Check, FileText, X, Shield } from 'lucide-react';
 import { DEFAULT_ROLES, DEFAULT_ROLES_VERSION } from '../data/roleTemplates';
 
@@ -231,9 +231,19 @@ function RolesEditor() {
 function AgreementEditor() {
   const config = useAgreementConfig();
   const setAgreementConfig = useAppStore((s) => s.setAgreementConfig);
+  const storedConfig = useAppStore((s) => s.agreementConfig);
   const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
   const setSignedAgreements = useAppStore((s) => s.setSignedAgreements);
   const permissions = useAppStore((s) => s.permissions) || {};
+
+  // Auto-save defaults to store if they're newer than what's stored
+  useEffect(() => {
+    const storedVer = parseFloat(storedConfig?.version || '0');
+    const configVer = parseFloat(config.version || '0');
+    if (configVer > storedVer) {
+      setAgreementConfig({ version: config.version, sections: config.sections, finalText: config.finalText || '' });
+    }
+  }, []);
 
   // Combine all sections + finalText into one body for editing
   const fullBodyFromConfig = (config.sections || []).map(s => s.body).join('') + (config.finalText || '');
@@ -361,7 +371,7 @@ function AgreementEditor() {
                 const latest = agreements[agreements.length - 1];
                 const isCurrent = latest?.version === version;
                 return (
-                  <MemberRow key={email} email={email} name={info.name || email} latest={latest} isCurrent={isCurrent} onReset={handleResetMember} />
+                  <MemberRow key={email} email={email} name={info.name || email} latest={latest} isCurrent={isCurrent} onReset={handleResetMember} currentVersion={version} />
                 );
               })
             )}
@@ -372,7 +382,7 @@ function AgreementEditor() {
   );
 }
 
-function MemberRow({ email, name, latest, isCurrent, onReset }) {
+function MemberRow({ email, name, latest, isCurrent, onReset, currentVersion }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   return (
@@ -386,7 +396,7 @@ function MemberRow({ email, name, latest, isCurrent, onReset }) {
           {isCurrent ? (
             <span className="text-[10px] font-bold text-emerald-500 flex items-center gap-1"><Check size={10} /> Signed v{latest.version}</span>
           ) : latest ? (
-            <span className="text-[10px] font-bold text-amber-500 flex items-center gap-1"><AlertTriangle size={10} /> Outdated v{latest.version}</span>
+            <span className="text-[10px] font-bold text-amber-500 flex items-center gap-1"><AlertTriangle size={10} /> Needs v{currentVersion}</span>
           ) : (
             <span className="text-[10px] font-bold text-red-400">Not signed</span>
           )}

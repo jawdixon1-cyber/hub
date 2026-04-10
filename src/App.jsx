@@ -310,7 +310,10 @@ function AppShell() {
   // ── Agreement gate for team members ──
   const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
   const agreementConfig = useAppStore((s) => s.agreementConfig);
-  const currentAgreementVersion = agreementConfig?.version || '1.0';
+  // Use the higher of stored version or default version (2.0)
+  const storedVersion = agreementConfig?.version || '1.0';
+  const defaultVersion = '2.0';
+  const currentAgreementVersion = parseFloat(storedVersion) >= parseFloat(defaultVersion) ? storedVersion : defaultVersion;
 
   const hasSignedCurrent = ownerMode || signedAgreements.some(
     (a) => a.memberEmail === userEmail && a.version === currentAgreementVersion
