@@ -96,7 +96,7 @@ export const initialHiringContent = {
     preferred: [
       'Own a reliable truck that can haul a trailer (mileage paid)',
     ],
-    preferredNote: 'Not required, but preferred.',
+    preferredNote: '',
     callouts: [
       "Honesty is non-negotiable. Don't lie to us about anything. We do run background checks, so if you have a record, just be upfront about it. Being honest won't automatically disqualify you. Lying about it will.",
     ],
