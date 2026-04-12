@@ -58,9 +58,17 @@ export default async function handler(req, res) {
     const payload = { key: 'greenteam-applications', value: existing };
     if (orgId) payload.org_id = orgId;
 
-    const { error } = await db
-      .from('app_state')
-      .upsert(payload, { onConflict: orgId ? 'key,org_id' : 'key' });
+    // Try update first, then insert
+    let error;
+    if (row) {
+      let q = db.from('app_state').update({ value: existing }).eq('key', 'greenteam-applications');
+      if (orgId) q = q.eq('org_id', orgId);
+      const result = await q;
+      error = result.error;
+    } else {
+      const result = await db.from('app_state').insert(payload);
+      error = result.error;
+    }
 
     if (error) {
       console.error('[Application Webhook] Upsert failed:', error.message, error.details, error.hint);
