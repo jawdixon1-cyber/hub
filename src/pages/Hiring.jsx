@@ -193,8 +193,13 @@ function HiringPagePreview({ content, steps }) {
 
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: '#000', color: 'rgba(255,255,255,.92)', fontFamily: "'Montserrat', system-ui, sans-serif", lineHeight: 1.55, WebkitFontSmoothing: 'antialiased' }}>
-      {/* HERO — compact */}
-      <div className="relative text-center overflow-hidden" style={{ padding: '80px 20px 50px', backgroundImage: "url('https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6990a89bc086658638d69137.png')", backgroundSize: 'cover', backgroundPosition: 'center' }}>
+      {/* LOGO BANNER */}
+      <div className="flex items-center justify-center py-3 px-4" style={{ background: '#000', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
+        <img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/69a0cc399185ff63f8649cd6.png" alt="Hey Jude's Lawn Care" style={{ height: 44 }} />
+      </div>
+
+      {/* HERO */}
+      <div className="relative text-center overflow-hidden" style={{ padding: '80px 16px 50px', backgroundImage: "url('https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6990a89bc086658638d69137.png')", backgroundSize: 'cover', backgroundPosition: 'center' }}>
         <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,.82) 0%, rgba(0,0,0,.6) 50%, rgba(0,0,0,.85) 100%)' }} />
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 50% 50%, rgba(176,255,3,.12) 0%, transparent 60%)' }} />
         <div className="relative z-10 max-w-[700px] mx-auto">
@@ -202,7 +207,7 @@ function HiringPagePreview({ content, steps }) {
             <svg width="12" height="12" viewBox="0 0 24 24"><path fill="#B0FF03" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
             {c.hero.badge}
           </span>
-          <h1 className="text-[clamp(26px,5vw,42px)] leading-[1.08] font-black tracking-[-0.5px] mb-3 whitespace-pre-line">
+          <h1 className="text-[clamp(22px,4.5vw,42px)] leading-[1.1] font-black tracking-[-0.5px] mb-3 whitespace-pre-line">
             {c.hero.title.split('\n').map((line, i) => (
               <span key={i}>
                 {i > 0 && <br />}
@@ -235,10 +240,10 @@ function HiringPagePreview({ content, steps }) {
             {c.coreValues && (
               <div className={c.whatWeDo.items?.length > 0 ? 'mt-5' : 'mt-2'}>
                 <p className="text-[14px] font-black text-[rgba(255,255,255,.7)] mb-3">{c.coreValues.intro}</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                   {c.coreValues.values.map((v, i) => (
-                    <div key={i} className="rounded-xl border border-[rgba(176,255,3,.20)] bg-[rgba(176,255,3,.04)] px-3 py-2.5 text-center">
-                      <span className="text-[12px] font-black text-[rgba(255,255,255,.85)]">{v}</span>
+                    <div key={i} className="rounded-xl border border-[rgba(176,255,3,.20)] bg-[rgba(176,255,3,.04)] px-2 py-2.5 text-center flex items-center justify-center min-h-[44px]">
+                      <span className="text-[11px] sm:text-[12px] font-black text-[rgba(255,255,255,.85)] leading-tight">{v}</span>
                     </div>
                   ))}
                 </div>
@@ -454,13 +459,13 @@ function PreviewTab({ content, form }) {
 
     const html = `<style>
 .hj-page{background:#000;color:rgba(255,255,255,.92);font-family:'Montserrat',system-ui,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased;max-width:1020px;margin:0 auto;padding:0 16px}
-.hj-hero{padding:80px 0 50px;text-align:center;position:relative;overflow:hidden;background:url('https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6990a89bc086658638d69137.png') center/cover no-repeat}
+.hj-hero{padding:100px 16px 60px;text-align:center;position:relative;overflow:hidden;background:url('https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6990a89bc086658638d69137.png') center/cover no-repeat;width:100vw;margin-left:calc(-50vw + 50%)}
 .hj-hero::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.82) 0%,rgba(0,0,0,.6) 50%,rgba(0,0,0,.85) 100%)}
 .hj-hero::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:600px;height:400px;background:radial-gradient(circle,rgba(176,255,3,.12) 0%,transparent 60%);pointer-events:none}
 .hj-hero>*{position:relative;z-index:1}
 .star-badge{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:rgba(176,255,3,.06);border:1px solid rgba(176,255,3,.25);font-weight:900;font-size:11px;letter-spacing:.5px;text-transform:uppercase;margin-bottom:16px}
 .star-badge svg{width:12px;height:12px;color:#B0FF03}
-.hj-page h1{font-size:clamp(28px,5.5vw,46px);line-height:1.08;margin:0 0 16px;font-weight:900;letter-spacing:-.5px;max-width:700px;margin-left:auto;margin-right:auto}
+.hj-page h1{font-size:clamp(22px,4.5vw,46px);line-height:1.1;margin:0 0 16px;font-weight:900;letter-spacing:-.5px;max-width:700px;margin-left:auto;margin-right:auto}
 .hj-page h1 .green{color:#B0FF03;text-shadow:0 0 30px rgba(176,255,3,.35)}
 .hj-btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border-radius:16px;height:48px;padding:0 28px;font-weight:900;font-size:14px;border:1px solid rgba(0,0,0,.22);background:#B0FF03;color:#111;box-shadow:0 0 20px rgba(176,255,3,.25)}
 .hj-btn:hover{background:#c4ff33}
@@ -470,6 +475,7 @@ function PreviewTab({ content, form }) {
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
 .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:16px}
 .grid-values{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.value-chip{display:flex;align-items:center;justify-content:center;min-height:44px}
 .card{border-radius:22px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.03);padding:18px}
 .card.feature{border:1px solid rgba(176,255,3,.20);background:radial-gradient(110% 140% at 50% 0%,rgba(176,255,3,.12) 0%,rgba(176,255,3,0) 66%),rgba(255,255,255,.03)}
 .card h3{margin:0 0 10px;font-size:16px;font-weight:900;color:rgba(255,255,255,.92)}
@@ -492,13 +498,17 @@ select.hj-input{appearance:none;cursor:pointer;background-image:url("data:image/
 .hj-radio-label,.hj-check-label{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;border:1px solid #2e2e2e;background:#1a1a1a;cursor:pointer;font-size:13px;color:rgba(255,255,255,.7);font-weight:600;transition:border-color .2s}
 .hj-radio-label:hover,.hj-check-label:hover{border-color:#444}
 .hj-radio-label input,.hj-check-label input{accent-color:#B0FF03;width:16px;height:16px;flex-shrink:0}
-@media(max-width:720px){.grid-2,.grid-3{grid-template-columns:1fr}.grid-values{grid-template-columns:1fr 1fr}.hj-btn{width:100%;max-width:520px}}
+@media(max-width:720px){.grid-2,.grid-3{grid-template-columns:1fr}.grid-values{grid-template-columns:1fr 1fr 1fr}.hj-btn{width:100%;max-width:520px}}
 </style>
 
 <div class="hj-page">
+<div style="display:flex;align-items:center;justify-content:center;padding:12px 16px;background:#000;border-bottom:1px solid rgba(255,255,255,.08)">
+<img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/69a0cc399185ff63f8649cd6.png" alt="Hey Jude's Lawn Care" style="height:44px"/>
+</div>
 <div class="hj-hero">
 <div class="star-badge"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> ${c.hero.badge}</div>
 <h1>${titleLines[0]}${titleLines[1] ? '<br><span class="green">' + titleLines[1] + '</span>' : ''}</h1>
+${c.hero.subtitle ? '<p style="font-size:15px;font-weight:700;color:rgba(255,255,255,.65);max-width:480px;margin:0 auto 20px">' + c.hero.subtitle + '</p>' : ''}
 <a class="hj-btn" href="#apply">${c.hero.cta}</a>
 </div>
 

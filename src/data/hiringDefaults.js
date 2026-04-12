@@ -3,7 +3,7 @@ export const initialHiringContent = {
   hero: {
     badge: '5.0 Stars | 151 Reviews | Rock Hill, SC',
     title: "Start as a Landscaping Helper.\nGrow Into a Team Lead.",
-    subtitle: '',
+    subtitle: "Hey Jude's Lawn Care has tripled every year. We're looking for reliable people to join our team and grow with us.",
     cta: 'Apply Now',
     note: '',
   },
@@ -48,7 +48,7 @@ export const initialHiringContent = {
     ],
     howYoullLearn: [
       'Support the current lead and learn our processes for quality and efficiency',
-      'Follow checklists and walkthrough videos to ensure quality work on every job',
+      'Follow playbooks and walkthrough videos to ensure quality work on every job',
     ],
   },
   teamLead: {
@@ -63,7 +63,7 @@ export const initialHiringContent = {
     callout: 'We promote from within. Team leads start as team members who prove they can be counted on.',
   },
   howWeRun: {
-    intro: "We don't wing it. Every property has a system, every crew has a process, and every person knows what's expected before they show up.",
+    intro: '',
     cards: [
       { title: 'Playbooks', body: "Every service has a playbook. You'll know exactly how to do the job right before you start." },
       { title: 'Small Crews', body: "You'll work in a small, tight crew, not a rotating cast of strangers. Same people, same standards, same accountability." },
@@ -79,7 +79,7 @@ export const initialHiringContent = {
     ],
     scheduleCulture: [
       'Schedule: Full-time, 40 hours a week, overtime allowed',
-      "Work with the #1 Google-rated lawn care company in Rock Hill. We're continually reinvesting in our people and equipment so you can grow with us.",
+      'Work with the #1 Google-rated lawn care company in Rock Hill.',
       "Respectful leadership. People don't quit jobs, they quit bosses. Our priority is a fair, respectful work environment.",
       'Your voice matters. If you have ideas to make a job easier, faster, or better, we want to hear them.',
       "We're always reinvesting in our team. Better equipment, better processes, better systems so you can do your best work.",
@@ -98,7 +98,7 @@ export const initialHiringContent = {
     ],
     preferredNote: 'Not required, but preferred.',
     callouts: [
-      "Honesty is non-negotiable. Don't lie to us about anything. That's a huge thing for us. We do run background checks, so if you have a record, just be upfront about it. Being honest won't automatically disqualify you. Lying about it will.",
+      "Honesty is non-negotiable. Don't lie to us about anything. We do run background checks, so if you have a record, just be upfront about it. Being honest won't automatically disqualify you. Lying about it will.",
     ],
   },
   goodFit: [
