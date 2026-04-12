@@ -1,24 +1,25 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { ChevronDown, ChevronUp, Plus, X } from 'lucide-react';
+import { useAppStore } from '../store/AppStoreContext';
+import { ChevronDown, ChevronUp, Plus } from 'lucide-react';
 
 const LEAD_SOURCES = [
   'Google', 'Facebook', 'Instagram', 'Nextdoor', 'Referral', 'Yard Sign',
   'Door Hanger', 'Website', 'Thumbtack', 'Other',
 ];
 
-function Section({ title, defaultOpen = true, children }) {
+function Section({ title, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-border-subtle rounded-xl overflow-hidden">
+    <div>
       <button onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-5 py-3.5 bg-surface-alt/30 text-sm font-bold text-primary cursor-pointer hover:bg-surface-alt/50 transition-colors">
+        className="w-full flex items-center justify-between py-3 text-sm font-bold text-primary cursor-pointer hover:text-brand transition-colors">
         {title}
         {open ? <ChevronUp size={16} className="text-muted" /> : <ChevronDown size={16} className="text-muted" />}
       </button>
-      {open && <div className="p-5 space-y-4">{children}</div>}
+      {open && <div className="pb-4">{children}</div>}
     </div>
   );
 }
@@ -27,23 +28,66 @@ export default function NewClient() {
   const { orgId } = useAuth();
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
+  const [addrSuggestions, setAddrSuggestions] = useState([]);
+  const [showAddrSuggestions, setShowAddrSuggestions] = useState(false);
+  const addrDebounce = useRef(null);
+
+  // Business location for biasing results (default: Rock Hill, SC area)
+  const businessSettings = useAppStore((s) => s.businessSettings);
+  const bizLat = businessSettings?.lat || 34.9249;
+  const bizLon = businessSettings?.lon || -81.025;
+
+  const searchAddress = (q) => {
+    set('street1', q);
+    setShowAddrSuggestions(true);
+    if (addrDebounce.current) clearTimeout(addrDebounce.current);
+    if (!q || q.length < 2) { setAddrSuggestions([]); return; }
+    addrDebounce.current = setTimeout(async () => {
+      try {
+        const bizCity = businessSettings?.city || 'Rock Hill';
+        const bizState = businessSettings?.state || 'SC';
+        const localQ = `${q}, ${bizCity}, ${bizState}`;
+        const viewbox = `${bizLon - 0.3},${bizLat + 0.3},${bizLon + 0.3},${bizLat - 0.3}`;
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=us&limit=6&addressdetails=1&viewbox=${viewbox}&q=${encodeURIComponent(localQ)}`);
+        let data = await res.json();
+        if (data.length === 0) {
+          const res2 = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=us&limit=6&addressdetails=1&q=${encodeURIComponent(q)}`);
+          data = await res2.json();
+        }
+        setAddrSuggestions(data.map(d => {
+          const a = d.address || {};
+          const houseNum = a.house_number || '';
+          const road = a.road || '';
+          const street = houseNum ? `${houseNum} ${road}` : road;
+          return { display: d.display_name, street, city: a.city || a.town || a.village || a.hamlet || '', state: a.state || '', zip: a.postcode || '' };
+        }));
+      } catch { setAddrSuggestions([]); }
+    }, 400);
+  };
+
+  const selectAddrSuggestion = (s) => {
+    setForm(p => ({ ...p, street1: s.street, city: s.city, state: s.state, zip: s.zip }));
+    setShowAddrSuggestions(false);
+    setAddrSuggestions([]);
+  };
 
   const [form, setForm] = useState({
     title: '', first_name: '', last_name: '', company_name: '',
-    phone: '', email: '',
+    phone: '', phoneType: 'Main', receives_messages: true, email: '',
     lead_source: '',
-    is_lead: false, notes: '',
-    // Property
     street1: '', street2: '', city: '', state: '', zip: '',
     billing_same: true,
-    billing_street: '', billing_city: '', billing_state: '', billing_zip: '',
-    // Property details
-    lot_size: '', has_dog: false, lockout_gate: false, narrow_gate: false,
+    billing_street: '', billing_street2: '', billing_city: '', billing_state: '', billing_zip: '',
   });
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
-  const inputCls = "mt-1 w-full px-3 py-2.5 rounded-lg bg-surface-alt border border-border-subtle text-sm text-primary placeholder:text-muted focus:outline-none focus:border-brand/50";
-  const labelCls = "text-[11px] font-bold text-muted uppercase tracking-wider";
+
+  const formatPhone = (val) => {
+    const digits = val.replace(/\D/g, '').slice(0, 10);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  };
 
   const handleSave = async (createAnother = false) => {
     if (!orgId || !form.first_name) return;
@@ -54,15 +98,14 @@ export default function NewClient() {
       first_name: form.first_name || null,
       last_name: form.last_name || null,
       company_name: form.company_name || null,
-      phones: form.phone ? [{ number: form.phone, label: 'Main', primary: true }] : [],
+      phones: form.phone ? [{ number: form.phone, label: form.phoneType || 'Mobile', primary: true }] : [],
+      custom_fields: { receives_messages: form.receives_messages, title: form.title || null },
       emails: form.email ? [{ address: form.email, label: 'Main', primary: true }] : [],
       billing_street: form.billing_same ? (form.street1 || null) : (form.billing_street || null),
       billing_city: form.billing_same ? (form.city || null) : (form.billing_city || null),
       billing_state: form.billing_same ? (form.state || null) : (form.billing_state || null),
       billing_zip: form.billing_same ? (form.zip || null) : (form.billing_zip || null),
       lead_source: form.lead_source || null,
-      is_lead: form.is_lead,
-      notes: form.notes || null,
     }).select('id').single();
 
     if (error) {
@@ -71,22 +114,11 @@ export default function NewClient() {
       return;
     }
 
-    // Create property if address provided
     if (form.street1 || form.city) {
       await supabase.from('properties').insert({
-        org_id: orgId,
-        client_id: newClient.id,
-        label: 'Primary',
-        street: form.street1 || null,
-        city: form.city || null,
-        state: form.state || null,
-        zip: form.zip || null,
-        lot_size_sqft: form.lot_size ? parseInt(form.lot_size) : null,
-        notes: [
-          form.has_dog ? 'Dog on property' : '',
-          form.lockout_gate ? 'Lockout gate' : '',
-          form.narrow_gate ? 'Narrow gate' : '',
-        ].filter(Boolean).join(', ') || null,
+        org_id: orgId, client_id: newClient.id, label: 'Primary',
+        street: form.street1 || null, city: form.city || null,
+        state: form.state || null, zip: form.zip || null,
       });
     }
 
@@ -94,10 +126,9 @@ export default function NewClient() {
     if (createAnother) {
       setForm({
         title: '', first_name: '', last_name: '', company_name: '',
-        phone: '', email: '', lead_source: '', is_lead: false, notes: '',
+        phone: '', email: '', lead_source: '',
         street1: '', street2: '', city: '', state: '', zip: '',
-        billing_same: true, billing_street: '', billing_city: '', billing_state: '', billing_zip: '',
-        lot_size: '', has_dog: false, lockout_gate: false, narrow_gate: false,
+        billing_same: true, billing_street: '', billing_street2: '', billing_city: '', billing_state: '', billing_zip: '',
       });
     } else {
       navigate('/clients');
@@ -110,143 +141,129 @@ export default function NewClient() {
         <h1 className="text-2xl font-black text-primary mb-8">New Client</h1>
 
         <div className="space-y-6">
-          {/* ─── Primary Contact Details ─── */}
+          {/* Primary contact details */}
           <div>
             <h2 className="text-sm font-bold text-primary mb-1">Primary contact details</h2>
             <p className="text-xs text-muted mb-4">Provide the main point of contact to ensure smooth communication and reliable client records.</p>
-            <div className="space-y-3">
-              <div className="flex gap-3">
-                <div className="w-24">
-                  <label className={labelCls}>Title</label>
-                  <select value={form.title} onChange={e => set('title', e.target.value)} className={inputCls}>
-                    <option value="">No title</option>
-                    <option value="Mr.">Mr.</option>
-                    <option value="Mrs.">Mrs.</option>
-                    <option value="Ms.">Ms.</option>
-                    <option value="Dr.">Dr.</option>
-                  </select>
-                </div>
-                <div className="flex-1">
-                  <label className={labelCls}>First name</label>
-                  <input value={form.first_name} onChange={e => set('first_name', e.target.value)} className={inputCls} placeholder="First name" />
-                </div>
-                <div className="flex-1">
-                  <label className={labelCls}>Last name</label>
-                  <input value={form.last_name} onChange={e => set('last_name', e.target.value)} className={inputCls} placeholder="Last name" />
-                </div>
+            <div className="rounded-lg border border-border-subtle overflow-hidden">
+              <div className="grid grid-cols-[100px_1fr_1fr]">
+                <select value={form.title} onChange={e => set('title', e.target.value)}
+                  className="px-3 py-2.5 bg-surface-alt text-sm text-primary focus:outline-none border-r border-border-subtle">
+                  <option value="">No title</option>
+                  <option>Mr.</option><option>Ms.</option><option>Mrs.</option><option>Miss.</option><option>Dr.</option>
+                </select>
+                <input value={form.first_name} onChange={e => set('first_name', e.target.value)} placeholder="First name"
+                  className="px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-r border-border-subtle" />
+                <input value={form.last_name} onChange={e => set('last_name', e.target.value)} placeholder="Last name"
+                  className="px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none" />
               </div>
-              <div>
-                <label className={labelCls}>Company name</label>
-                <input value={form.company_name} onChange={e => set('company_name', e.target.value)} className={inputCls} placeholder="Company name" />
-              </div>
+              <input value={form.company_name} onChange={e => set('company_name', e.target.value)} placeholder="Company name"
+                className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-t border-border-subtle" />
             </div>
           </div>
 
-          {/* ─── Communication ─── */}
+          {/* Communication */}
           <div>
             <h2 className="text-sm font-bold text-primary mb-3">Communication</h2>
-            <div className="space-y-3">
-              <div>
-                <label className={labelCls}>Phone number</label>
-                <input value={form.phone} onChange={e => set('phone', e.target.value)} type="tel" className={inputCls} placeholder="Phone number" />
+            <div className="rounded-lg border border-border-subtle overflow-hidden">
+              <div className="flex">
+                <input value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} type="tel" placeholder="Phone number"
+                  className="flex-1 px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none" />
+                <select value={form.phoneType} onChange={e => set('phoneType', e.target.value)}
+                  className="px-3 py-2.5 bg-surface-alt text-sm text-primary focus:outline-none border-l border-border-subtle">
+                  <option>Mobile</option><option>Main</option><option>Work</option><option>Home</option><option>Fax</option><option>Other</option>
+                </select>
               </div>
-              <div>
-                <label className={labelCls}>Email</label>
-                <input value={form.email} onChange={e => set('email', e.target.value)} type="email" className={inputCls} placeholder="Email" />
-              </div>
-            </div>
-          </div>
-
-          {/* ─── Lead Information ─── */}
-          <div>
-            <h2 className="text-sm font-bold text-primary mb-3">Lead information</h2>
-            <div>
-              <label className={labelCls}>Lead source</label>
-              <select value={form.lead_source} onChange={e => set('lead_source', e.target.value)} className={inputCls}>
-                <option value="">Lead source</option>
-                {LEAD_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* ─── Additional Client Details (collapsible) ─── */}
-          <Section title="Additional client details" defaultOpen={false}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted">Create custom fields to track additional details</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <label className="text-xs font-semibold text-secondary">Dog?</label>
-              <button onClick={() => set('has_dog', !form.has_dog)}
-                className={`relative w-10 h-5 rounded-full transition-colors ${form.has_dog ? 'bg-brand' : 'bg-surface-alt border border-border-subtle'}`}>
-                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${form.has_dog ? 'translate-x-5' : 'translate-x-0.5'}`} />
-              </button>
-              <span className="text-xs text-muted">{form.has_dog ? 'Yes' : 'No'}</span>
-            </div>
-          </Section>
-
-          {/* ─── Additional Contacts (collapsible) ─── */}
-          <Section title="Additional contacts" defaultOpen={false}>
-            <p className="text-xs text-muted">For contacts with access to all properties, e.g. someone is billed for maintenance, or property or expense managers for commercial lots.</p>
-            <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-brand text-brand text-xs font-bold cursor-pointer hover:bg-brand/5">
-              <Plus size={14} /> Add Contact
-            </button>
-          </Section>
-
-          {/* ─── Property Address ─── */}
-          <div>
-            <h2 className="text-sm font-bold text-primary mb-1">Property address</h2>
-            <p className="text-xs text-muted mb-3">Enter the primary service address, editing or new additional locations where you will be providing services.</p>
-            <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold cursor-pointer hover:bg-brand-hover mb-4">
-              <Plus size={14} /> Add Another Address
-            </button>
-            <div className="space-y-3">
-              <div>
-                <label className={labelCls}>Street 1</label>
-                <input value={form.street1} onChange={e => set('street1', e.target.value)} className={inputCls} placeholder="Street 1" />
-              </div>
-              <div>
-                <label className={labelCls}>Street 2</label>
-                <input value={form.street2} onChange={e => set('street2', e.target.value)} className={inputCls} placeholder="Street 2" />
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className={labelCls}>City</label>
-                  <input value={form.city} onChange={e => set('city', e.target.value)} className={inputCls} placeholder="City" />
-                </div>
-                <div>
-                  <label className={labelCls}>State</label>
-                  <input value={form.state} onChange={e => set('state', e.target.value)} className={inputCls} placeholder="State" />
-                </div>
-                <div>
-                  <label className={labelCls}>ZIP code</label>
-                  <input value={form.zip} onChange={e => set('zip', e.target.value)} className={inputCls} placeholder="ZIP code" />
-                </div>
-              </div>
-              <label className="flex items-center gap-2 text-xs font-semibold text-secondary cursor-pointer pt-1">
-                <input type="checkbox" checked={form.billing_same} onChange={e => set('billing_same', e.target.checked)}
-                  className="w-4 h-4 rounded border-border-subtle accent-brand" />
-                Billing address is the same as property address
-              </label>
-              {!form.billing_same && (
-                <div className="space-y-3 pl-6 border-l-2 border-brand/30">
-                  <p className="text-xs font-bold text-muted">Billing Address</p>
-                  <div>
-                    <label className={labelCls}>Street</label>
-                    <input value={form.billing_street} onChange={e => set('billing_street', e.target.value)} className={inputCls} />
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div><label className={labelCls}>City</label><input value={form.billing_city} onChange={e => set('billing_city', e.target.value)} className={inputCls} /></div>
-                    <div><label className={labelCls}>State</label><input value={form.billing_state} onChange={e => set('billing_state', e.target.value)} className={inputCls} /></div>
-                    <div><label className={labelCls}>ZIP</label><input value={form.billing_zip} onChange={e => set('billing_zip', e.target.value)} className={inputCls} /></div>
-                  </div>
+              {form.phone && (
+                <div className="flex items-center justify-between px-3 py-2 border-t border-border-subtle bg-surface-alt">
+                  <span className="text-[11px] font-medium text-secondary">Receives messages</span>
+                  <button type="button" onClick={() => set('receives_messages', !form.receives_messages)}
+                    className={`relative w-10 h-[22px] rounded-full transition-colors shrink-0 ${form.receives_messages ? 'bg-brand' : 'bg-zinc-600'}`}>
+                    <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${form.receives_messages ? 'translate-x-[18px]' : 'translate-x-0'}`} />
+                  </button>
                 </div>
               )}
+              <input value={form.email} onChange={e => set('email', e.target.value)} type="email" placeholder="Email"
+                className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-t border-border-subtle" />
             </div>
           </div>
 
+          {/* Lead information */}
+          <div>
+            <h2 className="text-sm font-bold text-primary mb-3">Lead information</h2>
+            <select value={form.lead_source} onChange={e => set('lead_source', e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg bg-surface-alt border border-border-subtle text-sm text-primary focus:outline-none">
+              <option value="">Lead source</option>
+              {LEAD_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          {/* Property address */}
+          <div className="border-t border-border-subtle pt-6">
+            <h2 className="text-sm font-bold text-primary mb-1">Property address</h2>
+            <p className="text-xs text-muted mb-4">Enter the primary service address, editing or new additional locations where you will be providing services.</p>
+            <div className="rounded-lg border border-border-subtle overflow-hidden relative">
+              <input value={form.street1} onChange={e => searchAddress(e.target.value)} onBlur={() => setTimeout(() => setShowAddrSuggestions(false), 200)} placeholder="Street 1" autoComplete="none"
+                className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none" />
+              {showAddrSuggestions && addrSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-[42px] z-50 bg-card border border-border-subtle rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                  {addrSuggestions.map((s, i) => (
+                    <button key={i} onClick={() => selectAddrSuggestion(s)}
+                      className="w-full px-3 py-2.5 text-left text-xs text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer border-b border-border-subtle/30 last:border-0">
+                      {s.display}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <input value={form.street2} onChange={e => set('street2', e.target.value)} placeholder="Street 2"
+                className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-t border-border-subtle" />
+              <div className="grid grid-cols-2 border-t border-border-subtle">
+                <input value={form.city} onChange={e => set('city', e.target.value)} placeholder="City"
+                  className="px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-r border-border-subtle" />
+                <input value={form.state} onChange={e => set('state', e.target.value)} placeholder="State"
+                  className="px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none" />
+              </div>
+              <div className="grid grid-cols-2 border-t border-border-subtle">
+                <input value={form.zip} onChange={e => set('zip', e.target.value)} placeholder="ZIP code"
+                  className="px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-r border-border-subtle" />
+                <select className="px-3 py-2.5 bg-surface-alt text-sm text-primary focus:outline-none">
+                  <option>United States</option><option>Canada</option>
+                </select>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 mt-3 cursor-pointer">
+              <input type="checkbox" checked={form.billing_same} onChange={e => set('billing_same', e.target.checked)}
+                className="w-4 h-4 rounded border-border-subtle accent-brand" />
+              <span className="text-xs font-medium text-secondary">Billing address is the same as property address</span>
+            </label>
+            {!form.billing_same && (
+              <div className="mt-3">
+                <p className="text-[10px] font-bold text-muted uppercase mb-2">Billing address</p>
+                <div className="rounded-lg border border-border-subtle overflow-hidden">
+                  <input value={form.billing_street} onChange={e => set('billing_street', e.target.value)} placeholder="Street 1"
+                    className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none" />
+                  <input value={form.billing_street2} onChange={e => set('billing_street2', e.target.value)} placeholder="Street 2"
+                    className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-t border-border-subtle" />
+                  <div className="grid grid-cols-2 border-t border-border-subtle">
+                    <input value={form.billing_city} onChange={e => set('billing_city', e.target.value)} placeholder="City"
+                      className="px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-r border-border-subtle" />
+                    <input value={form.billing_state} onChange={e => set('billing_state', e.target.value)} placeholder="State"
+                      className="px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none" />
+                  </div>
+                  <div className="grid grid-cols-2 border-t border-border-subtle">
+                    <input value={form.billing_zip} onChange={e => set('billing_zip', e.target.value)} placeholder="ZIP code"
+                      className="px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-r border-border-subtle" />
+                    <select className="px-3 py-2.5 bg-surface-alt text-sm text-primary focus:outline-none">
+                      <option>United States</option><option>Canada</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* ─── Bottom Bar ─── */}
+        {/* Bottom bar */}
         <div className="flex items-center justify-between mt-8 pt-5 border-t border-border-subtle">
           <button onClick={() => navigate('/clients')}
             className="px-4 py-2.5 rounded-lg text-sm font-semibold text-muted hover:text-primary cursor-pointer border border-border-subtle hover:border-border-strong">

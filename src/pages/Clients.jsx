@@ -8,6 +8,7 @@ import {
   Tag, MoreHorizontal, Archive, Trash2, ExternalLink, MessageSquare, Pencil,
 } from 'lucide-react';
 import { getTimezone, getTodayInTimezone } from '../utils/timezone';
+import { useAppStore } from '../store/AppStoreContext';
 
 function formatPhone(p) { return p?.number || p || ''; }
 function formatEmail(e) { return e?.address || e || ''; }
@@ -200,6 +201,7 @@ function TagEditor({ client, onClose, onSave }) {
 
 /* ─── Property Editor Modal ─── */
 function PropertyEditor({ property, clientId, orgId, onClose, onSave }) {
+  const bizSettings = useAppStore((s) => s.businessSettings) || {};
   const isNew = !property;
   const [form, setForm] = useState({
     label: property?.label || '',
@@ -223,20 +225,20 @@ function PropertyEditor({ property, clientId, orgId, onClose, onSave }) {
   const searchAddress = (q) => {
     setShowSuggestions(true);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!q || q.length < 3) { setSuggestions([]); return; }
+    if (!q || q.length < 2) { setSuggestions([]); return; }
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=us&limit=5&addressdetails=1&q=${encodeURIComponent(q)}`);
-        const data = await res.json();
+        const bLat = bizSettings.lat || 34.9249; const bLon = bizSettings.lon || -81.025;
+        const bizCity = bizSettings.city || 'Rock Hill'; const bizState = bizSettings.state || 'SC';
+        const localQ = `${q}, ${bizCity}, ${bizState}`;
+        const vb = `${bLon - 0.3},${bLat + 0.3},${bLon + 0.3},${bLat - 0.3}`;
+        let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=us&limit=6&addressdetails=1&viewbox=${vb}&q=${encodeURIComponent(localQ)}`);
+        let data = await res.json();
+        if (data.length === 0) { res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=us&limit=6&addressdetails=1&q=${encodeURIComponent(q)}`); data = await res.json(); }
         setSuggestions(data.map(d => {
           const a = d.address || {};
-          const houseNum = a.house_number || '';
-          const road = a.road || '';
-          const street = houseNum ? `${houseNum} ${road}` : road;
-          const city = a.city || a.town || a.village || a.hamlet || '';
-          const state = a.state || '';
-          const zip = a.postcode || '';
-          return { display: d.display_name, street, city, state, zip };
+          const street = a.house_number ? `${a.house_number} ${a.road || ''}` : a.road || '';
+          return { display: d.display_name, street, city: a.city || a.town || a.village || a.hamlet || '', state: a.state || '', zip: a.postcode || '' };
         }));
       } catch { setSuggestions([]); }
     }, 400);
@@ -281,7 +283,7 @@ function PropertyEditor({ property, clientId, orgId, onClose, onSave }) {
           <div className="rounded-lg border border-border-subtle overflow-hidden relative">
             <input value={form.label} onChange={e => set('label', e.target.value)} placeholder="Property name"
               className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none" />
-            <input value={form.street} onChange={e => { set('street', e.target.value); searchAddress(e.target.value); }} placeholder="Street 1"
+            <input value={form.street} onChange={e => { set('street', e.target.value); searchAddress(e.target.value); }} placeholder="Street 1" autoComplete="none"
               className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-t border-border-subtle" />
             {showSuggestions && suggestions.length > 0 && (
               <div className="absolute left-0 right-0 top-[42px] z-50 bg-card border border-border-subtle rounded-lg shadow-xl max-h-48 overflow-y-auto">
@@ -431,6 +433,7 @@ const ALL_TAGS = ['vip', 'commercial', 'residential', 'referral', 'pct wt', 'syn
 
 /* ─── Edit Client Modal ─── */
 function EditClientModal({ client, properties = [], onClose, onSave, onPropertiesChange, orgId }) {
+  const bizSettings = useAppStore((s) => s.businessSettings) || {};
   const primaryProp = properties[0];
   const billingMatches = primaryProp && client.billing_street === primaryProp.street && client.billing_city === primaryProp.city;
   const [form, setForm] = useState({
@@ -468,16 +471,19 @@ function EditClientModal({ client, properties = [], onClose, onSave, onPropertie
     set('prop_street', q);
     setShowPropSuggestions(true);
     if (propDebounce.current) clearTimeout(propDebounce.current);
-    if (!q || q.length < 3) { setPropSuggestions([]); return; }
+    if (!q || q.length < 2) { setPropSuggestions([]); return; }
     propDebounce.current = setTimeout(async () => {
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=us&limit=5&addressdetails=1&q=${encodeURIComponent(q)}`);
-        const data = await res.json();
+        const bLat = bizSettings.lat || 34.9249; const bLon = bizSettings.lon || -81.025;
+        const bizCity = bizSettings.city || 'Rock Hill'; const bizState = bizSettings.state || 'SC';
+        const localQ = `${q}, ${bizCity}, ${bizState}`;
+        const vb = `${bLon - 0.3},${bLat + 0.3},${bLon + 0.3},${bLat - 0.3}`;
+        let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=us&limit=6&addressdetails=1&viewbox=${vb}&q=${encodeURIComponent(localQ)}`);
+        let data = await res.json();
+        if (data.length === 0) { res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=us&limit=6&addressdetails=1&q=${encodeURIComponent(q)}`); data = await res.json(); }
         setPropSuggestions(data.map(d => {
           const a = d.address || {};
-          const houseNum = a.house_number || '';
-          const road = a.road || '';
-          const street = houseNum ? `${houseNum} ${road}` : road;
+          const street = a.house_number ? `${a.house_number} ${a.road || ''}` : a.road || '';
           return { display: d.display_name, street, city: a.city || a.town || a.village || a.hamlet || '', state: a.state || '', zip: a.postcode || '' };
         }));
       } catch { setPropSuggestions([]); }
@@ -602,7 +608,7 @@ function EditClientModal({ client, properties = [], onClose, onSave, onPropertie
             <div className="rounded-lg border border-border-subtle overflow-hidden relative">
               <input value={form.prop_name} onChange={e => set('prop_name', e.target.value)} placeholder="Property name"
                 className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none" />
-              <input value={form.prop_street} onChange={e => searchPropAddress(e.target.value)} placeholder="Street 1"
+              <input value={form.prop_street} onChange={e => searchPropAddress(e.target.value)} placeholder="Street 1" autoComplete="none"
                 className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-t border-border-subtle" />
               {showPropSuggestions && propSuggestions.length > 0 && (
                 <div className="absolute left-0 right-0 top-[84px] z-50 bg-card border border-border-subtle rounded-lg shadow-xl max-h-48 overflow-y-auto">

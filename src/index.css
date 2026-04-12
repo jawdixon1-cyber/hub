@@ -106,6 +106,18 @@
 .leaflet-container .leaflet-control-attribution { background: rgba(10,10,10,0.7) !important; color: #666 !important; font-size: 9px !important; }
 .leaflet-container .leaflet-control-attribution a { color: #888 !important; }
 
+/* ─── Override browser autofill bright backgrounds ─── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--color-surface-alt) inset !important;
+  -webkit-text-fill-color: var(--color-primary) !important;
+  caret-color: var(--color-primary) !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
 /* ─── Agreement content ─── */
 .agreement-content h3 { font-size: 0.8125rem; font-weight: 800; color: var(--color-primary); margin-top: 1.25rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.03em; }
 .agreement-content h3:first-child { margin-top: 0; }

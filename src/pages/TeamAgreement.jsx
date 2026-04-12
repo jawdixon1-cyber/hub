@@ -40,15 +40,12 @@ function migrateSections(sections) {
 }
 
 // Helper to get live agreement config
-// Always use defaults from file — owner saves will override via setAgreementConfig
 function useAgreementConfig() {
   const config = useAppStore((s) => s.agreementConfig);
-  // Only use stored config if it's the new single-section format AND version is higher than defaults
   if (config && config.sections) {
-    const hasMainOnly = config.sections.length === 1 && config.sections[0].id === 'main';
     const storedVer = parseFloat(config.version || '0');
     const defaultVer = parseFloat(DEFAULT_AGREEMENT_VERSION || '0');
-    if (hasMainOnly && storedVer > defaultVer) return config;
+    if (storedVer >= defaultVer) return config;
   }
   return {
     version: DEFAULT_AGREEMENT_VERSION,
@@ -245,12 +242,12 @@ function AgreementEditor() {
     }
   }, []);
 
-  // Combine all sections + finalText into one body for editing
-  const fullBodyFromConfig = (config.sections || []).map(s => s.body).join('') + (config.finalText || '');
-  const [body, setBody] = useState(fullBodyFromConfig);
+  const [sections, setSections] = useState(config.sections || []);
   const [version, setVersion] = useState(config.version);
-  const [mode, setMode] = useState('status'); // 'status' | 'edit' | 'preview'
+  const [mode, setMode] = useState('status');
   const [hasChanges, setHasChanges] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const fullBody = sections.map(s => s.body).join('');
 
   const teamMembers = Object.entries(permissions);
 
@@ -272,16 +269,17 @@ function AgreementEditor() {
 
   const handleSave = () => {
     const newVersion = hasChanges ? bumpVersion() : version;
-    // Store as a single section so the system still works
-    const newConfig = {
-      version: newVersion,
-      sections: [{ id: 'main', title: 'Agreement', body }],
-      finalText: '',
-    };
+    const newConfig = { version: newVersion, sections, finalText: '' };
     setAgreementConfig(newConfig);
     setVersion(newVersion);
     setHasChanges(false);
+    setEditingId(null);
     setMode('status');
+  };
+
+  const updateSection = (id, newBody) => {
+    setSections(prev => prev.map(s => s.id === id ? { ...s, body: newBody } : s));
+    setHasChanges(true);
   };
 
   return (
@@ -304,7 +302,7 @@ function AgreementEditor() {
               <Edit3 size={12} /> Edit
             </button>
           ) : (
-            <button onClick={() => { setMode('status'); setBody(fullBodyFromConfig); setHasChanges(false); }}
+            <button onClick={() => { setMode('status'); setSections(config.sections || []); setHasChanges(false); setEditingId(null); }}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-bold hover:bg-brand-light cursor-pointer">
               <X size={12} /> Cancel
             </button>
@@ -323,17 +321,30 @@ function AgreementEditor() {
         </div>
       </div>
 
-      {/* ═══ EDIT MODE — one rich text editor ═══ */}
+      {/* ═══ EDIT MODE — click a section to edit it ═══ */}
       {mode === 'edit' && (
         <div className="space-y-3">
-          <div className="rounded-xl bg-card border border-border-subtle p-4">
-            <p className="text-[10px] text-muted mb-3">Edit the full agreement below. Use headings, bold, lists, and dividers to organize. Your team will see the exact changes highlighted when you publish.</p>
-            <Suspense fallback={<div className="text-muted text-xs py-2">Loading editor...</div>}>
-              <RichTextEditor content={body} onChange={(html) => { setBody(html); setHasChanges(true); }} />
-            </Suspense>
+          <p className="text-[10px] text-muted">Click any section to edit it. Only changed sections will be highlighted for your team.</p>
+          <div className="rounded-xl bg-card border border-border-subtle overflow-hidden">
+            {sections.map((s) => (
+              <div key={s.id} className={`px-6 py-4 border-b border-border-subtle/50 last:border-0 ${editingId === s.id ? 'bg-brand/[0.03]' : 'hover:bg-surface-alt/30 cursor-pointer'}`}
+                onClick={() => { if (editingId !== s.id) setEditingId(s.id); }}>
+                {s.title && <h3 className="text-[13px] font-black text-primary mb-2">{s.title}</h3>}
+                {editingId === s.id ? (
+                  <div>
+                    <Suspense fallback={<div className="text-muted text-xs py-2">Loading...</div>}>
+                      <RichTextEditor content={s.body} onChange={(html) => updateSection(s.id, html)} />
+                    </Suspense>
+                    <button onClick={(e) => { e.stopPropagation(); setEditingId(null); }}
+                      className="mt-2 text-[10px] text-muted hover:text-primary cursor-pointer">Done editing</button>
+                  </div>
+                ) : (
+                  <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: s.body }} />
+                )}
+              </div>
+            ))}
           </div>
 
-          {/* Roles editor */}
           <RolesEditor />
 
           {hasChanges && (
@@ -345,10 +356,15 @@ function AgreementEditor() {
         </div>
       )}
 
-      {/* ═══ PREVIEW MODE — what team sees ═══ */}
+      {/* ═══ PREVIEW MODE ═══ */}
       {mode === 'preview' && (
-        <div className="rounded-xl bg-card border border-border-subtle p-6">
-          <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: body }} />
+        <div className="rounded-xl bg-card border border-border-subtle overflow-hidden">
+          {sections.map((s) => (
+            <div key={s.id} className="px-6 py-4">
+              {s.title && <h3 className="text-[15px] font-black text-primary mb-2">{s.title}</h3>}
+              <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: s.body }} />
+            </div>
+          ))}
         </div>
       )}
 
@@ -356,8 +372,13 @@ function AgreementEditor() {
       {mode === 'status' && (
         <div className="space-y-4">
           {/* Agreement preview */}
-          <div className="rounded-xl bg-card border border-border-subtle p-5">
-            <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: body }} />
+          <div className="rounded-xl bg-card border border-border-subtle overflow-hidden">
+            {sections.map((s) => (
+              <div key={s.id} className="px-6 py-4">
+                {s.title && <h3 className="text-[15px] font-black text-primary mb-2">{s.title}</h3>}
+                <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: s.body }} />
+              </div>
+            ))}
           </div>
 
           {/* Team Members */}
@@ -581,12 +602,19 @@ function TeamMemberAgreementView() {
   const sections = config.sections || [];
   const finalText = config.finalText || '';
 
-  // Combine all sections into one full document body
-  const fullBody = sections.map(s => s.body).join('') + (finalText || '');
-  const prevFullBody = latestAgreement
-    ? (latestAgreement.sectionsSnapshot || []).map(s => s.body).join('') + (latestAgreement.finalTextSnapshot || '')
-    : '';
-  const hasChanges = needsNewVersion && prevFullBody && prevFullBody !== fullBody;
+  // Per-section change detection
+  const prevSnapshot = latestAgreement?.sectionsSnapshot || [];
+  const prevById = {};
+  for (const s of prevSnapshot) { prevById[s.id] = s; }
+  const sectionChanges = {};
+  if (latestAgreement && needsNewVersion) {
+    for (const s of sections) {
+      const prev = prevById[s.id];
+      if (!prev) { sectionChanges[s.id] = 'new'; }
+      else if (prev.body !== s.body) { sectionChanges[s.id] = 'updated'; }
+    }
+  }
+  const hasChanges = Object.keys(sectionChanges).length > 0;
 
   const [printedName, setPrintedName] = useState('');
   const [signature, setSignature] = useState(null);
@@ -660,20 +688,31 @@ function TeamMemberAgreementView() {
       )}
 
       {/* One continuous agreement document */}
-      <div className="rounded-xl bg-card border border-border-subtle p-6 mb-6">
-        {hasChanges && !isSigned && (() => {
-          // Only show diff if less than 40% of words changed, otherwise it's a rewrite
-          const diff = computeWordDiff(prevFullBody, fullBody);
-          const changed = diff.filter(d => d.type !== 'same').length;
-          const total = diff.length;
-          if (total > 0 && changed / total < 0.4) {
-            return <DiffView oldBody={prevFullBody} newBody={fullBody} />;
-          }
-          return <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: fullBody }} />;
-        })()}
-        {(!hasChanges || isSigned) && (
-          <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: fullBody }} />
-        )}
+      <div className="rounded-xl bg-card border border-border-subtle overflow-hidden mb-6">
+        {sections.map((s, i) => {
+          const changed = sectionChanges[s.id];
+          const isChanged = changed && !isSigned;
+          const prevBody = prevById[s.id]?.body;
+          const showDiff = isChanged && changed === 'updated' && prevBody;
+          // Determine if this is a "header" section (values, accountability) vs a standard
+          const isFirst = i === 0;
+          return (
+            <div key={s.id} className={`px-6 ${isFirst ? 'pt-6' : 'pt-0'} pb-4 ${isChanged ? 'bg-amber-500/[0.04] border-l-2 border-amber-500/40' : ''}`}>
+              {s.title && (
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-[15px] font-black text-primary">{s.title}</h3>
+                  {changed === 'new' && !isSigned && <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase">New</span>}
+                  {changed === 'updated' && !isSigned && <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[9px] font-bold uppercase">Updated</span>}
+                </div>
+              )}
+              {showDiff ? (
+                <DiffView oldBody={prevBody} newBody={s.body} />
+              ) : (
+                <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: s.body }} />
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Roles */}

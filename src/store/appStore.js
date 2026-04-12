@@ -28,6 +28,7 @@ import {
   initialMowingSettings,
   initialMowingNotifications,
 } from '../data';
+import { initialHiringContent, initialApplicationForm, initialJobPost } from '../data/hiringDefaults';
 import { DEFAULT_ROLES, DEFAULT_ROLES_VERSION } from '../data/roleTemplates';
 
 const DATA_CACHE_KEY = 'greenteam-data-cache';
@@ -61,6 +62,7 @@ const STATE_KEYS = [
   { key: 'signedAgreements',    supaKey: 'greenteam-signedAgreements',    initial: [] },
   { key: 'agreementConfig',    supaKey: 'greenteam-agreementConfig',    initial: null },
   { key: 'presence',             supaKey: 'greenteam-presence',             initial: {} },
+  { key: 'businessSettings',    supaKey: 'greenteam-businessSettings',    initial: { name: "Hey Jude's Lawn Care", city: 'Rock Hill', state: 'SC', lat: 34.9249, lon: -81.025 } },
   { key: 'quotes',              supaKey: 'greenteam-quotes',              initial: initialQuotes },
   { key: 'quotingSettings',     supaKey: 'greenteam-quotingSettings',     initial: initialQuotingSettings },
   { key: 'receiptLog',          supaKey: 'greenteam-receiptLog',          initial: initialReceiptLog },
@@ -74,6 +76,10 @@ const STATE_KEYS = [
   { key: 'strikes',             supaKey: 'greenteam-strikes',             initial: [] },
   { key: 'clients',             supaKey: 'greenteam-clients',             initial: [] },
   { key: 'roles',               supaKey: 'greenteam-roles',               initial: { version: DEFAULT_ROLES_VERSION, items: DEFAULT_ROLES } },
+  { key: 'hiringContent',       supaKey: 'greenteam-hiringContent',       initial: initialHiringContent },
+  { key: 'applicationForm',     supaKey: 'greenteam-applicationForm',     initial: initialApplicationForm },
+  { key: 'applications',        supaKey: 'greenteam-applications',        initial: [] },
+  { key: 'jobPost',             supaKey: 'greenteam-jobPost',             initial: initialJobPost },
 ];
 
 function resolveInitial(cloudValue, initial) {
@@ -100,6 +106,13 @@ export function createAppStore(cloudData, orgId) {
     // Seed any new default guides into existing cloud data
     if (key === 'guides' && Array.isArray(value)) {
       value = seedMissingGuides(value, allInitialGuides);
+    }
+    // Force latest 6-step GHL survey form if stored version is outdated
+    if (key === 'applicationForm' && value) {
+      const totalFields = (value.steps || []).reduce((n, s) => n + (s.fields?.length || 0), 0);
+      if (!value.steps || totalFields < 20) {
+        value = initial;
+      }
     }
     initialState[key] = value;
   }
@@ -202,6 +215,18 @@ export function createAppStore(cloudData, orgId) {
         // Seed any new default guides into cloud data
         if (key === 'guides' && Array.isArray(cloudValue)) {
           cloudValue = seedMissingGuides(cloudValue, allInitialGuides);
+        }
+        // Force latest application form (6 steps, 28+ fields)
+        if (key === 'applicationForm') {
+          try {
+            const totalFields = (cloudValue?.steps || []).reduce((n, s) => n + (s?.fields?.length || 0), 0);
+            if (totalFields < 20) {
+              cloudValue = initial;
+              const payload = { key: supaKey, value: initial };
+              if (orgId) payload.org_id = orgId;
+              supabase.from('app_state').upsert(payload, { onConflict: 'key' }).catch(() => {});
+            }
+          } catch {}
         }
         const currentJSON = JSON.stringify(state[key]);
         const cloudJSON = JSON.stringify(cloudValue);

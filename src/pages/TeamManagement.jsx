@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import {
   ArrowLeft, ChevronRight, ChevronUp, Plus,
   Users, Shield, CheckSquare,
   ClipboardCheck, UserCheck, FileCheck,
-  Check, Clock, Eye, EyeOff, Trash2, AlertCircle, KeyRound, X,
+  Check, Clock, Eye, EyeOff, Trash2, AlertCircle, KeyRound, X, FileText,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { ONBOARDING_STEPS } from '../utils/onboarding';
+
+const TeamAgreement = lazy(() => import('./TeamAgreement'));
 
 const PLAYBOOK_OPTIONS = [
   { key: 'service', label: 'Team Member', color: 'bg-emerald-100 text-emerald-700' },
@@ -342,36 +344,45 @@ export default function TeamManagement() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  const [teamTab, setTeamTab] = useState('members');
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <button
-          onClick={() => navigate('/profile')}
-          className="inline-flex items-center gap-1.5 text-sm text-tertiary hover:text-secondary transition-colors cursor-pointer mb-4"
-        >
-          <ArrowLeft size={16} />
-          Back to Profile
-        </button>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-brand-light flex items-center justify-center">
-              <Users size={24} className="text-brand-text-strong" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-primary">Team Management</h1>
-              <p className="text-sm text-tertiary">{totalMembers} team member{totalMembers !== 1 ? 's' : ''}</p>
-            </div>
-          </div>
-          <button
-            onClick={() => { setShowForm(!showForm); if (showForm) resetForm(); }}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand font-medium text-sm hover:bg-brand-hover transition-colors cursor-pointer"
-          >
-            {showForm ? <ChevronUp size={18} /> : <Plus size={18} />}
-            {showForm ? 'Close' : 'Add Member'}
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-bold text-primary">Team</h1>
+          {teamTab === 'members' && (
+            <button
+              onClick={() => { setShowForm(!showForm); if (showForm) resetForm(); }}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand font-medium text-sm hover:bg-brand-hover transition-colors cursor-pointer"
+            >
+              {showForm ? <ChevronUp size={18} /> : <Plus size={18} />}
+              {showForm ? 'Close' : 'Add Member'}
+            </button>
+          )}
+        </div>
+        {/* Tabs */}
+        <div className="flex items-center gap-1 bg-surface-alt rounded-lg p-1">
+          <button onClick={() => setTeamTab('members')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold cursor-pointer ${teamTab === 'members' ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'}`}>
+            <Users size={14} /> Members
+          </button>
+          <button onClick={() => setTeamTab('agreement')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold cursor-pointer ${teamTab === 'agreement' ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'}`}>
+            <FileText size={14} /> Agreement
           </button>
         </div>
       </div>
+
+      {teamTab === 'agreement' && (
+        <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="w-6 h-6 border-2 border-brand-light border-t-brand rounded-full animate-spin" /></div>}>
+          <TeamAgreement />
+        </Suspense>
+      )}
+
+      {teamTab === 'members' && (<>
+      <div>
 
       {/* Add Member Form */}
       {showForm && (
@@ -659,6 +670,8 @@ export default function TeamManagement() {
           </div>
         </div>
       )}
+    </div>
+    </>)}
     </div>
   );
 }

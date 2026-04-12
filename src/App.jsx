@@ -33,6 +33,7 @@ import {
   ClipboardList,
   FileSignature,
   Hammer,
+  UserPlus2,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -77,6 +78,8 @@ const Schedule = lazy(() => import('./pages/Schedule'));
 const Jobs = lazy(() => import('./pages/Jobs'));
 const Invoices = lazy(() => import('./pages/Invoices'));
 const Payments = lazy(() => import('./pages/Payments'));
+const Hiring = lazy(() => import('./pages/Hiring'));
+const ApplyForm = lazy(() => import('./pages/ApplyForm'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -105,6 +108,7 @@ const OPERATIONS_ITEMS = [
 
 const OWNER_ITEMS = [
   { id: 'marketing', path: '/marketing', label: 'Leads', icon: MapPinned },
+  { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
   { id: 'labor', path: '/labor', label: 'Profitability', icon: TrendingUp },
   { id: 'finance', path: '/finance', label: 'Finance', icon: DollarSign },
 ];
@@ -155,6 +159,16 @@ function App() {
       try { localStorage.removeItem(DATA_CACHE_KEY); } catch {}
     }
   }, [session, loadData]);
+
+  // Public routes (no auth required)
+  const loc = useLocation();
+  if (loc.pathname === '/apply') {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center"><div className="w-8 h-8 border-4 border-gray-700 border-t-green-400 rounded-full animate-spin" /></div>}>
+        <ApplyForm />
+      </Suspense>
+    );
+  }
 
   if (authLoading) {
     return (
@@ -312,7 +326,7 @@ function AppShell() {
   const agreementConfig = useAppStore((s) => s.agreementConfig);
   // Use the higher of stored version or default version (2.0)
   const storedVersion = agreementConfig?.version || '1.0';
-  const defaultVersion = '2.0';
+  const defaultVersion = '2.1';
   const currentAgreementVersion = parseFloat(storedVersion) >= parseFloat(defaultVersion) ? storedVersion : defaultVersion;
 
   const hasSignedCurrent = ownerMode || signedAgreements.some(
@@ -693,6 +707,7 @@ function AppShell() {
                 <Route path="/invoices" element={<Invoices />} />
                 <Route path="/payments" element={<Payments />} />
                 <Route path="/marketing" element={<Marketing />} />
+                <Route path="/hiring" element={<Hiring />} />
                 <Route path="/finance" element={<Finance />} />
                 <Route path="/labor" element={<LaborEfficiency />} />
                 {/* Redirects for old routes */}

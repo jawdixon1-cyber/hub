@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { ClipboardCheck, Wrench, X, ChevronRight, Users, Link2, Check, Plug, Shield, Plus, Trash2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -13,10 +13,12 @@ import { useAuth } from '../contexts/AuthContext';
 
 /* ─── Settings Nav ─── */
 
+import { Building2, MapPin } from 'lucide-react';
+
 const SETTINGS_NAV = [
+  { id: 'business', label: 'Business Profile', icon: Building2 },
   { id: 'connections', label: 'Connections', icon: Plug },
   { id: 'checklists', label: 'Checklists', icon: ClipboardCheck },
-  { id: 'agreement', label: 'Team Agreement', icon: ClipboardCheck },
   { id: 'team', label: 'Team', icon: Users },
 ];
 
@@ -297,6 +299,141 @@ function QBConnectionPanel() {
   );
 }
 
+function BusinessProfileSection() {
+  const businessSettings = useAppStore((s) => s.businessSettings) || {};
+  const setBusinessSettings = useAppStore((s) => s.setBusinessSettings);
+  const [form, setForm] = useState({
+    name: businessSettings.name || '',
+    website: businessSettings.website || '',
+    phone: businessSettings.phone || '',
+    email: businessSettings.email || '',
+    street: businessSettings.street || '',
+    city: businessSettings.city || '',
+    state: businessSettings.state || '',
+    zip: businessSettings.zip || '',
+    lat: businessSettings.lat || '',
+    lon: businessSettings.lon || '',
+  });
+  const [addrResults, setAddrResults] = useState([]);
+  const [showAddrResults, setShowAddrResults] = useState(false);
+  const addrTimer = useRef(null);
+
+  const searchBizAddr = (q) => {
+    set('street', q);
+    setShowAddrResults(true);
+    if (addrTimer.current) clearTimeout(addrTimer.current);
+    if (!q || q.length < 3) { setAddrResults([]); return; }
+    addrTimer.current = setTimeout(async () => {
+      try {
+        const localQ = `${q}, ${form.city || 'Rock Hill'}, ${form.state || 'SC'}`;
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=us&limit=6&addressdetails=1&q=${encodeURIComponent(localQ)}`);
+        const data = await res.json();
+        setAddrResults(data.map(d => {
+          const a = d.address || {};
+          const street = a.house_number ? `${a.house_number} ${a.road || ''}` : a.road || '';
+          return { display: d.display_name, street, city: a.city || a.town || a.village || '', state: a.state || '', zip: a.postcode || '', lat: d.lat, lon: d.lon };
+        }));
+      } catch { setAddrResults([]); }
+    }, 400);
+  };
+
+  const selectBizAddr = (s) => {
+    setForm(p => ({ ...p, street: s.street, city: s.city, state: s.state, zip: s.zip, lat: parseFloat(s.lat), lon: parseFloat(s.lon) }));
+    setShowAddrResults(false);
+    setAddrResults([]);
+    setSaved(false);
+  };
+  const [saved, setSaved] = useState(false);
+  const set = (k, v) => { setForm(p => ({ ...p, [k]: v })); setSaved(false); };
+
+  const handleSave = async () => {
+    // Try to geocode the address for lat/lon
+    let lat = form.lat, lon = form.lon;
+    if (form.city && form.state && (!lat || !lon)) {
+      try {
+        const q = [form.street, form.city, form.state, form.zip].filter(Boolean).join(', ');
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (data[0]) { lat = parseFloat(data[0].lat); lon = parseFloat(data[0].lon); }
+      } catch {}
+    }
+    setBusinessSettings({ ...form, lat, lon });
+    setForm(p => ({ ...p, lat, lon }));
+    setSaved(true);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-primary mb-1">Business Profile</h2>
+        <p className="text-xs text-muted">Your company info. Address is used to show nearby results when searching for client addresses.</p>
+      </div>
+
+      {/* Company info */}
+      <div className="rounded-lg border border-border-subtle overflow-hidden">
+        <div className="px-3 pt-1.5 pb-2 bg-surface-alt">
+          <span className="text-[9px] font-semibold text-muted uppercase">Company name</span>
+          <input value={form.name} onChange={e => set('name', e.target.value)} className="w-full text-sm text-primary bg-transparent focus:outline-none" />
+        </div>
+        <div className="px-3 pt-1.5 pb-2 bg-surface-alt border-t border-border-subtle">
+          <span className="text-[9px] font-semibold text-muted uppercase">Website URL</span>
+          <input value={form.website} onChange={e => set('website', e.target.value)} className="w-full text-sm text-primary bg-transparent focus:outline-none" />
+        </div>
+        <div className="grid grid-cols-2 border-t border-border-subtle">
+          <div className="px-3 pt-1.5 pb-2 bg-surface-alt border-r border-border-subtle">
+            <span className="text-[9px] font-semibold text-muted uppercase">Phone number</span>
+            <input value={form.phone} onChange={e => set('phone', e.target.value)} className="w-full text-sm text-primary bg-transparent focus:outline-none" />
+          </div>
+          <div className="px-3 pt-1.5 pb-2 bg-surface-alt">
+            <span className="text-[9px] font-semibold text-muted uppercase">Email address</span>
+            <input value={form.email} onChange={e => set('email', e.target.value)} className="w-full text-sm text-primary bg-transparent focus:outline-none" />
+          </div>
+        </div>
+      </div>
+
+      {/* Address */}
+      <div className="mt-4">
+        <div className="rounded-lg border border-border-subtle overflow-visible">
+        <div className="relative px-3 pt-1.5 pb-2 bg-surface-alt rounded-t-lg">
+          <span className="text-[9px] font-semibold text-muted uppercase">Street address</span>
+          <input value={form.street} onChange={e => searchBizAddr(e.target.value)} onBlur={() => setTimeout(() => setShowAddrResults(false), 200)} autoComplete="none"
+            className="w-full text-sm text-primary bg-transparent focus:outline-none" />
+          {showAddrResults && addrResults.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 z-[100] bg-card border border-border-subtle rounded-lg shadow-2xl max-h-48 overflow-y-auto">
+              {addrResults.map((s, i) => (
+                <button key={i} onClick={() => selectBizAddr(s)}
+                  className="w-full px-3 py-2.5 text-left text-xs text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer border-b border-border-subtle/30 last:border-0">
+                  {s.display}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 border-t border-border-subtle">
+          <div className="px-3 pt-1.5 pb-2 bg-surface-alt border-r border-border-subtle">
+            <span className="text-[9px] font-semibold text-muted uppercase">City</span>
+            <input value={form.city} onChange={e => set('city', e.target.value)} className="w-full text-sm text-primary bg-transparent focus:outline-none" />
+          </div>
+          <div className="px-3 pt-1.5 pb-2 bg-surface-alt">
+            <span className="text-[9px] font-semibold text-muted uppercase">State</span>
+            <input value={form.state} onChange={e => set('state', e.target.value)} className="w-full text-sm text-primary bg-transparent focus:outline-none" />
+          </div>
+        </div>
+        <div className="px-3 pt-1.5 pb-2 bg-surface-alt border-t border-border-subtle">
+          <span className="text-[9px] font-semibold text-muted uppercase">ZIP code</span>
+          <input value={form.zip} onChange={e => set('zip', e.target.value)} className="w-full text-sm text-primary bg-transparent focus:outline-none" />
+        </div>
+        </div>
+      </div>
+
+      <button onClick={handleSave}
+        className="px-5 py-2.5 rounded-lg bg-brand text-on-brand text-sm font-bold hover:bg-brand-hover cursor-pointer">
+        {saved ? 'Saved!' : 'Save'}
+      </button>
+    </div>
+  );
+}
+
 function ConnectionsSection() {
   return (
     <div className="space-y-4">
@@ -460,7 +597,7 @@ export default function Settings() {
   const [activeSection, setActiveSection] = useState(() => {
     // Auto-open connections if redirected from Jobber OAuth
     if (searchParams.get('jobber')) return 'connections';
-    return 'connections';
+    return 'business';
   });
 
   if (!ownerMode) { navigate('/'); return null; }
@@ -502,14 +639,9 @@ export default function Settings() {
 
         {/* Content */}
         <div className="flex-1 min-w-0">
+        {activeSection === 'business' && <BusinessProfileSection />}
         {activeSection === 'connections' && <ConnectionsSection />}
         {activeSection === 'checklists' && <ChecklistsSection />}
-
-        {activeSection === 'agreement' && (
-          <Suspense fallback={<div className="text-center py-8 text-muted text-sm">Loading...</div>}>
-            <TeamAgreement />
-          </Suspense>
-        )}
 
         {activeSection === 'team' && (
           <Suspense fallback={<div className="text-center py-8 text-muted text-sm">Loading...</div>}>
