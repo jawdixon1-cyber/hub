@@ -34,12 +34,18 @@ export default async function handler(req, res) {
   const db = getSupabaseAdmin();
 
   try {
-    // Read existing applications
-    const { data: row, error: readErr } = await db
+    // Find the org_id from an existing app_state row
+    const { data: sample } = await db
       .from('app_state')
-      .select('value')
-      .eq('key', 'greenteam-applications')
+      .select('org_id')
+      .limit(1)
       .maybeSingle();
+    const orgId = sample?.org_id || null;
+
+    // Read existing applications
+    let query = db.from('app_state').select('value').eq('key', 'greenteam-applications');
+    if (orgId) query = query.eq('org_id', orgId);
+    const { data: row, error: readErr } = await query.maybeSingle();
 
     if (readErr) {
       console.error('[Application Webhook] Read failed:', readErr.message);
@@ -49,20 +55,16 @@ export default async function handler(req, res) {
     existing.push(application);
 
     // Upsert back
+    const payload = { key: 'greenteam-applications', value: existing };
+    if (orgId) payload.org_id = orgId;
+
     const { error } = await db
       .from('app_state')
-      .upsert({ key: 'greenteam-applications', value: existing }, { onConflict: 'key' });
+      .upsert(payload, { onConflict: orgId ? 'key,org_id' : 'key' });
 
     if (error) {
       console.error('[Application Webhook] Upsert failed:', error.message, error.details, error.hint);
-      // Try insert if upsert fails
-      const { error: insertErr } = await db
-        .from('app_state')
-        .insert({ key: 'greenteam-applications', value: [application] });
-      if (insertErr) {
-        console.error('[Application Webhook] Insert also failed:', insertErr.message);
-        return res.status(500).json({ error: 'Failed to save application', detail: error.message });
-      }
+      return res.status(500).json({ error: 'Failed to save application', detail: error.message });
     }
 
     console.log(`[Application Webhook] New application from: ${body.name || 'Unknown'}`);
