@@ -35,11 +35,15 @@ export default async function handler(req, res) {
 
   try {
     // Read existing applications
-    const { data: row } = await db
+    const { data: row, error: readErr } = await db
       .from('app_state')
       .select('value')
       .eq('key', 'greenteam-applications')
       .maybeSingle();
+
+    if (readErr) {
+      console.error('[Application Webhook] Read failed:', readErr.message);
+    }
 
     const existing = row?.value || [];
     existing.push(application);
@@ -50,8 +54,15 @@ export default async function handler(req, res) {
       .upsert({ key: 'greenteam-applications', value: existing }, { onConflict: 'key' });
 
     if (error) {
-      console.error('[Application Webhook] Upsert failed:', error.message);
-      return res.status(500).json({ error: 'Failed to save application' });
+      console.error('[Application Webhook] Upsert failed:', error.message, error.details, error.hint);
+      // Try insert if upsert fails
+      const { error: insertErr } = await db
+        .from('app_state')
+        .insert({ key: 'greenteam-applications', value: [application] });
+      if (insertErr) {
+        console.error('[Application Webhook] Insert also failed:', insertErr.message);
+        return res.status(500).json({ error: 'Failed to save application', detail: error.message });
+      }
     }
 
     console.log(`[Application Webhook] New application from: ${body.name || 'Unknown'}`);
