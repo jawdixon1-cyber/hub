@@ -640,7 +640,7 @@ else if(el.type==='checkbox'){if(!data[el.name])data[el.name]=[];if(el.checked)d
 else{data[el.name]=el.value}
 });
 var app={id:crypto.randomUUID(),submittedAt:new Date().toISOString(),status:'new',data:data};
-fetch('https://lawn-care-hub.vercel.app/api/webhooks/application',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+fetch('https://hub.heyjudeslawncare.com/api/webhooks/application',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
 .then(function(){
 document.getElementById('hj-form-wrap').style.display='none';
 document.getElementById('hj-success').style.display='block';
