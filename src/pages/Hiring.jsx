@@ -1172,7 +1172,7 @@ function ApplicationsTab() {
   const setApplications = useAppStore((s) => s.setApplications);
   const form = useAppStore((s) => s.applicationForm);
   const [selected, setSelected] = useState(null);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('new');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('score');
 
