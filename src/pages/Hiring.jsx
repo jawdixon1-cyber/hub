@@ -1176,9 +1176,32 @@ function ApplicationsTab() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('score');
 
-  const markStatus = (id, status) => {
+  const [sending, setSending] = useState(null);
+
+  const SMS_TEMPLATES = {
+    contacted: (name) => `Hey ${name?.split(' ')[0] || 'there'}, thanks for applying to Hey Jude's Lawn Care! We'd like to set up a time to talk. When works for you?`,
+    hired: (name) => `Hey ${name?.split(' ')[0] || 'there'}, great news! We'd like to bring you on board at Hey Jude's Lawn Care. Let's set up your start date. When can you come in?`,
+    rejected: (name) => `Hey ${name?.split(' ')[0] || 'there'}, thanks for your interest in Hey Jude's Lawn Care. After reviewing your application, we've decided to move forward with other candidates. We appreciate your time and wish you the best.`,
+  };
+
+  const markStatus = async (id, status) => {
     setApplications(applications.map((a) => a.id === id ? { ...a, status } : a));
     if (selected?.id === id) setSelected((s) => ({ ...s, status }));
+
+    // Send SMS
+    const app = applications.find((a) => a.id === id);
+    const phone = app?.data?.phone;
+    if (phone && SMS_TEMPLATES[status]) {
+      setSending(status);
+      try {
+        await fetch('/api/sms/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: phone, message: SMS_TEMPLATES[status](app.data?.name) }),
+        });
+      } catch {}
+      setSending(null);
+    }
   };
 
   const deleteApp = (id) => {
@@ -1262,7 +1285,10 @@ function ApplicationsTab() {
                 <div className="bg-card rounded-xl border border-border-subtle p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <h3 className="text-lg font-bold text-primary">{selected.data?.name || 'Applicant'}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-primary">{selected.data?.name || 'Applicant'}</h3>
+                        {selected.data?.dob && (() => { const bd = new Date(selected.data.dob); const age = Math.floor((Date.now() - bd.getTime()) / 31557600000); return age > 0 && age < 100 ? <span className="text-sm font-bold text-muted">Age {age}</span> : null; })()}
+                      </div>
                       <div className="flex items-center gap-3 mt-0.5 text-xs text-muted">
                         {selected.data?.phone && <span>{selected.data.phone}</span>}
                         {selected.data?.email && <span>{selected.data.email}</span>}
@@ -1288,14 +1314,14 @@ function ApplicationsTab() {
 
                 {/* Quick actions */}
                 <div className="flex items-center gap-2">
-                  <button onClick={() => markStatus(selected.id, 'contacted')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${selected.status === 'contacted' ? 'bg-amber-400 text-black' : 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25'}`}>
-                    Talk To
+                  <button onClick={() => markStatus(selected.id, 'contacted')} disabled={!!sending} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'contacted' ? 'bg-amber-400 text-black' : 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25'}`}>
+                    {sending === 'contacted' ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Talk To
                   </button>
-                  <button onClick={() => markStatus(selected.id, 'hired')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${selected.status === 'hired' ? 'bg-green-400 text-black' : 'bg-green-500/15 text-green-400 hover:bg-green-500/25'}`}>
-                    Hire
+                  <button onClick={() => markStatus(selected.id, 'hired')} disabled={!!sending} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'hired' ? 'bg-green-400 text-black' : 'bg-green-500/15 text-green-400 hover:bg-green-500/25'}`}>
+                    {sending === 'hired' ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Hire
                   </button>
-                  <button onClick={() => markStatus(selected.id, 'rejected')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${selected.status === 'rejected' ? 'bg-red-400 text-black' : 'bg-red-500/15 text-red-400 hover:bg-red-500/25'}`}>
-                    Reject
+                  <button onClick={() => markStatus(selected.id, 'rejected')} disabled={!!sending} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'rejected' ? 'bg-red-400 text-black' : 'bg-red-500/15 text-red-400 hover:bg-red-500/25'}`}>
+                    {sending === 'rejected' ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Reject
                   </button>
                   <button onClick={() => deleteApp(selected.id)} className="px-3 py-2.5 rounded-xl text-xs font-bold text-muted hover:text-red-400 hover:bg-red-500/10 cursor-pointer">
                     <Trash2 size={14} />
@@ -1353,9 +1379,10 @@ function ApplicationsTab() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-semibold text-primary truncate">{app.data?.name || 'Applicant'}</p>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(app.status || 'new')}`}>{app.status || 'new'}</span>
+                  {app.data?.dob && (() => { const bd = new Date(app.data.dob); const age = Math.floor((Date.now() - bd.getTime()) / 31557600000); return age > 0 && age < 100 ? <span className="text-xs font-black text-secondary">{age}</span> : null; })()}
+                  {(app.status || 'new') !== 'new' && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(app.status)}`}>{app.status}</span>}
                 </div>
-                <p className="text-xs text-muted truncate">{app.data?.phone || ''} {app.data?.city_zip ? `| ${app.data.city_zip}` : ''}</p>
+                <p className="text-xs text-muted truncate">{app.data?.city_zip || ''}</p>
                 {/* Quick flags */}
                 <div className="flex items-center gap-1 mt-1 flex-wrap">
                   {app.greens.slice(0, 3).map((g, i) => <span key={i} className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-green-500/10 text-green-400">{g}</span>)}
