@@ -1373,17 +1373,17 @@ function ApplicationsTab() {
           {sorted.map((app) => {
             const d = app.data || {};
             const age = d.dob ? (() => { const bd = new Date(d.dob); const a = Math.floor((Date.now() - bd.getTime()) / 31557600000); return a > 0 && a < 100 ? a : null; })() : null;
-            const keyAnswers = [
-              { label: 'Experience', value: d.years_landscaping, bad: d.years_landscaping === 'None' },
-              { label: '1yr+ at company', value: d.worked_landscaping_year, bad: d.worked_landscaping_year === 'No' },
-              { label: 'License', value: d.drivers_license, bad: d.drivers_license === 'No' },
-              { label: 'Transport', value: d.reliable_transport, bad: d.reliable_transport === 'No' },
-              { label: 'Physical', value: d.physical_ability, bad: d.physical_ability === 'No' },
+            const row1 = [
               { label: 'Nicotine', value: d.tobacco_use, bad: d.tobacco_use === 'Yes' },
               { label: 'Background', value: d.background_check === 'Yes' ? 'Issue' : 'Clear', bad: d.background_check === 'Yes' },
+              { label: 'License', value: d.drivers_license, bad: d.drivers_license === 'No' },
+              { label: '1yr+ Company', value: d.worked_landscaping_year, bad: d.worked_landscaping_year === 'No' },
+            ].filter(a => a.value);
+            const row2 = [
+              { label: 'Experience', value: d.years_landscaping, bad: d.years_landscaping === 'None' },
+              { label: 'Company', value: d.recent_company },
               { label: 'Leadership', value: d.leadership_exp, good: d.leadership_exp && d.leadership_exp !== 'None' },
               { label: 'Commitment', value: d.how_long, bad: d.how_long === 'Just trying it out', good: d.how_long === '1+ years' || d.how_long === 'Long-term / as long as it works' },
-              { label: 'Start', value: d.start_date },
             ].filter(a => a.value);
 
             return (
@@ -1404,9 +1404,18 @@ function ApplicationsTab() {
                   <p className="text-[10px] text-muted shrink-0">{new Date(app.submittedAt).toLocaleDateString()}</p>
                 </div>
 
-                {/* Key answers grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
-                  {keyAnswers.map((a, i) => (
+                {/* Key answers - row 1 */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {row1.map((a, i) => (
+                    <div key={i} className={`rounded-lg px-2 py-1.5 ${a.bad ? 'bg-red-500/10 border border-red-500/20' : a.good ? 'bg-green-500/10 border border-green-500/20' : 'bg-surface-alt'}`}>
+                      <p className="text-[9px] font-bold text-muted uppercase">{a.label}</p>
+                      <p className={`text-[11px] font-bold truncate ${a.bad ? 'text-red-400' : a.good ? 'text-green-400' : 'text-primary'}`}>{a.value}</p>
+                    </div>
+                  ))}
+                </div>
+                {/* Key answers - row 2 */}
+                <div className="grid grid-cols-4 gap-1.5 mt-1.5">
+                  {row2.map((a, i) => (
                     <div key={i} className={`rounded-lg px-2 py-1.5 ${a.bad ? 'bg-red-500/10 border border-red-500/20' : a.good ? 'bg-green-500/10 border border-green-500/20' : 'bg-surface-alt'}`}>
                       <p className="text-[9px] font-bold text-muted uppercase">{a.label}</p>
                       <p className={`text-[11px] font-bold truncate ${a.bad ? 'text-red-400' : a.good ? 'text-green-400' : 'text-primary'}`}>{a.value}</p>
