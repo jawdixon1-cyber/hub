@@ -402,7 +402,7 @@ export default function Messages() {
 
     // Send via Twilio
     try {
-      const resp = await fetch('/api/sms/send', {
+      const resp = await fetch('/api/messaging?action=send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ to: activeConvo.phone, message: body }),

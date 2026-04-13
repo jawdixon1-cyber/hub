@@ -93,7 +93,7 @@ export default function ApplyForm() {
     setError(null);
     const application = { id: crypto.randomUUID(), submittedAt: new Date().toISOString(), status: 'new', data: values };
     try {
-      const resp = await fetch('/api/webhooks/application', {
+      const resp = await fetch('/api/messaging?action=application', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),
