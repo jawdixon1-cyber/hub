@@ -1379,10 +1379,12 @@ function ApplicationsTab() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-semibold text-primary truncate">{app.data?.name || 'Applicant'}</p>
-                  {app.data?.dob && (() => { const bd = new Date(app.data.dob); const age = Math.floor((Date.now() - bd.getTime()) / 31557600000); return age > 0 && age < 100 ? <span className="text-xs font-black text-secondary">{age}</span> : null; })()}
                   {(app.status || 'new') !== 'new' && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(app.status)}`}>{app.status}</span>}
                 </div>
-                <p className="text-xs text-muted truncate">{app.data?.city_zip || ''}</p>
+                <p className="text-xs text-muted truncate">
+                  {app.data?.dob && (() => { const bd = new Date(app.data.dob); const age = Math.floor((Date.now() - bd.getTime()) / 31557600000); return age > 0 && age < 100 ? `Age ${age}` : ''; })()}
+                  {app.data?.dob && app.data?.city_zip ? ' | ' : ''}{app.data?.city_zip || ''}
+                </p>
                 {/* Quick flags */}
                 <div className="flex items-center gap-1 mt-1 flex-wrap">
                   {app.greens.slice(0, 3).map((g, i) => <span key={i} className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-green-500/10 text-green-400">{g}</span>)}
