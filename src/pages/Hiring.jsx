@@ -411,7 +411,7 @@ function PageDetail({ onBack }) {
   const content = useAppStore((s) => s.hiringContent);
   const form = useAppStore((s) => s.applicationForm);
   const applications = useAppStore((s) => s.applications) || [];
-  const [tab, setTab] = useState('jobpost');
+  const [tab, setTab] = useState('applications');
   const newApps = applications.filter((a) => a.status === 'new').length;
 
   return (
