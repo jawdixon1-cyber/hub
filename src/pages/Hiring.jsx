@@ -1121,15 +1121,49 @@ We run background checks. If you have a record, just be upfront about it. Honest
 }
 
 /* ═══════════════════════════════════════════
-   APPLICATIONS TAB
+   APPLICATIONS TAB — Screening Pipeline
    ═══════════════════════════════════════════ */
-const STATUS_FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'new', label: 'New', color: 'bg-blue-500/15 text-blue-400' },
-  { id: 'contacted', label: 'Contacted', color: 'bg-amber-500/15 text-amber-400' },
-  { id: 'hired', label: 'Hired', color: 'bg-green-500/15 text-green-400' },
-  { id: 'rejected', label: 'Rejected', color: 'bg-red-500/15 text-red-400' },
+const PIPELINE = [
+  { id: 'new', label: 'Screening', color: 'text-blue-400', bg: 'bg-blue-500/15', dot: 'bg-blue-400' },
+  { id: 'contacted', label: 'Talk To', color: 'text-amber-400', bg: 'bg-amber-500/15', dot: 'bg-amber-400' },
+  { id: 'hired', label: 'Hired', color: 'text-green-400', bg: 'bg-green-500/15', dot: 'bg-green-400' },
+  { id: 'rejected', label: 'Rejected', color: 'text-red-400', bg: 'bg-red-500/15', dot: 'bg-red-400' },
 ];
+
+// Auto-score an application based on deal-breakers and preferences
+function scoreApplication(data) {
+  let score = 0;
+  let flags = [];
+  let greens = [];
+
+  // Deal-breakers (red flags)
+  if (data.fulltime_understand === 'No') flags.push('Doesn\'t want full-time');
+  if (data.reliable_transport === 'No') flags.push('No reliable transport');
+  if (data.drivers_license === 'No') flags.push('No driver\'s license');
+  if (data.physical_ability === 'No') flags.push('Can\'t do physical work');
+  if (data.background_check === 'Yes') flags.push('Background check issue');
+
+  // Green flags
+  if (data.years_landscaping === '3-5 years' || data.years_landscaping === '5+ years') { greens.push('Experienced'); score += 3; }
+  else if (data.years_landscaping === '1-2 years') { greens.push('Some experience'); score += 2; }
+  else if (data.years_landscaping === 'Less than 1 year') { score += 1; }
+
+  if (data.worked_landscaping_year === 'Yes') { greens.push('1+ yr at a company'); score += 2; }
+  if (data.leadership_exp && data.leadership_exp !== 'None') { greens.push('Leadership exp'); score += 1; }
+  if (data.how_long === '1+ years' || data.how_long === 'Long-term / as long as it works') { greens.push('Long-term'); score += 2; }
+  if (data.how_long === 'Just trying it out') flags.push('Just trying it out');
+
+  const skills = data.skills || [];
+  if (Array.isArray(skills) && skills.length > 3 && !skills.includes('NO EXPERIENCE')) { greens.push(skills.length + ' skills'); score += 1; }
+  if (Array.isArray(skills) && skills.includes('NO EXPERIENCE')) flags.push('No experience');
+
+  if (data.tobacco_use === 'Yes' && data.tobacco_policy !== 'Yes') flags.push('Tobacco - won\'t follow policy');
+
+  // Score adjustments for flags
+  score -= flags.length * 2;
+
+  return { score: Math.max(0, Math.min(10, score)), flags, greens };
+}
 
 const statusColor = (s) => s === 'new' ? 'bg-blue-500/15 text-blue-400' : s === 'contacted' ? 'bg-amber-500/15 text-amber-400' : s === 'hired' ? 'bg-green-500/15 text-green-400' : s === 'rejected' ? 'bg-red-500/15 text-red-400' : 'bg-surface-alt text-muted';
 
@@ -1140,32 +1174,11 @@ function ApplicationsTab() {
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [sortDir, setSortDir] = useState('newest');
-  const [ghlLoading, setGhlLoading] = useState(null);
+  const [sortBy, setSortBy] = useState('score');
 
-  const markStatus = async (id, status) => {
-    // Update locally
+  const markStatus = (id, status) => {
     setApplications(applications.map((a) => a.id === id ? { ...a, status } : a));
     if (selected?.id === id) setSelected((s) => ({ ...s, status }));
-
-    // Tag in GHL
-    const app = applications.find((a) => a.id === id);
-    if (app?.data?.phone || app?.data?.name) {
-      setGhlLoading(status);
-      try {
-        await fetch('/api/ghl/tag-applicant', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: app.data.phone || '',
-            name: app.data.name || '',
-            email: app.data.email || '',
-            status,
-          }),
-        });
-      } catch {}
-      setGhlLoading(null);
-    }
   };
 
   const deleteApp = (id) => {
@@ -1173,21 +1186,23 @@ function ApplicationsTab() {
     if (selected?.id === id) setSelected(null);
   };
 
-  // Filter + search + sort
+  // Enrich apps with scores
+  const enriched = applications.map((app) => ({ ...app, ...scoreApplication(app.data || {}) }));
+
+  // Filter + search
   const searchLower = search.toLowerCase();
-  const filtered = applications.filter((app) => {
+  const filtered = enriched.filter((app) => {
     if (filter !== 'all' && (app.status || 'new') !== filter) return false;
     if (search) {
       const d = app.data || {};
-      const haystack = [d.name, d.phone, d.email, d.city_zip].filter(Boolean).join(' ').toLowerCase();
-      if (!haystack.includes(searchLower)) return false;
+      if (![d.name, d.phone, d.email, d.city_zip].filter(Boolean).join(' ').toLowerCase().includes(searchLower)) return false;
     }
     return true;
   });
 
   const sorted = [...filtered].sort((a, b) => {
-    const da = new Date(a.submittedAt), db = new Date(b.submittedAt);
-    return sortDir === 'newest' ? db - da : da - db;
+    if (sortBy === 'score') return b.score - a.score;
+    return new Date(b.submittedAt) - new Date(a.submittedAt);
   });
 
   // Counts
@@ -1204,25 +1219,21 @@ function ApplicationsTab() {
     );
   }
 
+  // Score bar color
+  const scoreBarColor = (s) => s >= 7 ? 'bg-green-400' : s >= 4 ? 'bg-amber-400' : 'bg-red-400';
+  const scoreLabel = (s) => s >= 7 ? 'Strong' : s >= 4 ? 'Maybe' : 'Weak';
+
   return (
     <div className="space-y-3">
-      {/* Stats */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-1.5 text-xs text-muted"><span className="text-lg font-black text-primary">{counts.all}</span> total</div>
-        {counts.new > 0 && <div className="flex items-center gap-1.5 text-xs"><span className="w-2 h-2 rounded-full bg-blue-400" /><span className="font-semibold text-blue-400">{counts.new}</span> new</div>}
-        {counts.contacted > 0 && <div className="flex items-center gap-1.5 text-xs"><span className="w-2 h-2 rounded-full bg-amber-400" /><span className="font-semibold text-amber-400">{counts.contacted}</span> contacted</div>}
-        {counts.hired > 0 && <div className="flex items-center gap-1.5 text-xs"><span className="w-2 h-2 rounded-full bg-green-400" /><span className="font-semibold text-green-400">{counts.hired}</span> hired</div>}
-        {counts.rejected > 0 && <div className="flex items-center gap-1.5 text-xs"><span className="w-2 h-2 rounded-full bg-red-400" /><span className="font-semibold text-red-400">{counts.rejected}</span> rejected</div>}
-      </div>
-
-      {/* Filter pills */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-        {STATUS_FILTERS.map((f) => (
-          <button key={f.id} onClick={() => setFilter(f.id)}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
-              filter === f.id ? 'bg-brand text-on-brand' : 'bg-card border border-border-subtle text-secondary hover:bg-surface-alt'
+      {/* Pipeline counts */}
+      <div className="grid grid-cols-4 gap-2">
+        {PIPELINE.map((p) => (
+          <button key={p.id} onClick={() => setFilter(filter === p.id ? 'all' : p.id)}
+            className={`rounded-xl p-3 text-center cursor-pointer transition-all border ${
+              filter === p.id ? 'border-brand bg-brand-light' : 'border-border-subtle bg-card hover:bg-surface-alt'
             }`}>
-            {f.label} {counts[f.id] ? `(${counts[f.id]})` : ''}
+            <p className={`text-xl font-black ${p.color}`}>{counts[p.id] || 0}</p>
+            <p className="text-[10px] font-bold text-muted uppercase tracking-wider">{p.label}</p>
           </button>
         ))}
       </div>
@@ -1231,100 +1242,129 @@ function ApplicationsTab() {
       <div className="flex items-center gap-2">
         <div className="flex-1 relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, phone, email..."
-            className="w-full bg-surface-alt border border-border-default rounded-lg pl-9 pr-3 py-2 text-sm text-primary placeholder:text-placeholder-muted focus:outline-none focus:ring-2 focus:ring-brand/40"
-          />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, phone, email..."
+            className="w-full bg-surface-alt border border-border-default rounded-lg pl-9 pr-3 py-2 text-sm text-primary placeholder:text-placeholder-muted focus:outline-none focus:ring-2 focus:ring-brand/40" />
         </div>
-        <button onClick={() => setSortDir(sortDir === 'newest' ? 'oldest' : 'newest')} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border-default text-xs font-semibold text-secondary hover:bg-surface-alt cursor-pointer whitespace-nowrap">
-          <ArrowUpDown size={13} /> {sortDir === 'newest' ? 'Newest' : 'Oldest'}
+        <button onClick={() => setSortBy(sortBy === 'score' ? 'date' : 'score')} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border-default text-xs font-semibold text-secondary hover:bg-surface-alt cursor-pointer whitespace-nowrap">
+          <ArrowUpDown size={13} /> {sortBy === 'score' ? 'Best fit' : 'Newest'}
         </button>
       </div>
 
-      {/* Selected detail view */}
+      {/* Detail view */}
       {selected ? (
         <div>
-          <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-xs font-semibold text-brand-text hover:text-brand-text-strong mb-3 cursor-pointer"><ChevronLeft size={14} /> Back to list</button>
-          <div className="bg-card rounded-xl border border-border-subtle p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-primary">{selected.data?.name || 'Applicant'}</h3>
-                <div className="flex items-center gap-3 mt-1 text-xs text-muted">
-                  {selected.data?.phone && <span>{selected.data.phone}</span>}
-                  {selected.data?.email && <span>{selected.data.email}</span>}
-                </div>
-              </div>
-              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor(selected.status || 'new')}`}>{selected.status || 'new'}</span>
-            </div>
-            <p className="text-xs text-muted">Submitted {new Date(selected.submittedAt).toLocaleString()}</p>
-
-            {/* Status actions with GHL */}
-            <div className="flex items-center gap-2 py-2 border-y border-border-subtle">
-              {['contacted', 'hired', 'rejected'].map((s) => {
-                const colors = { contacted: 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25', hired: 'bg-green-500/15 text-green-400 hover:bg-green-500/25', rejected: 'bg-red-500/15 text-red-400 hover:bg-red-500/25' };
-                const isActive = selected.status === s;
-                return (
-                  <button key={s} onClick={() => markStatus(selected.id, s)} disabled={ghlLoading === s}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${isActive ? colors[s] + ' ring-1 ring-current' : colors[s]}`}>
-                    {ghlLoading === s ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />}
-                    {s.charAt(0).toUpperCase() + s.slice(1)}
-                  </button>
-                );
-              })}
-              <div className="flex-1" />
-              <button onClick={() => deleteApp(selected.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-red-400 hover:bg-red-500/15 cursor-pointer">Delete</button>
-            </div>
-
-            {/* Application data grouped by step */}
-            <div className="space-y-4">
-              {(form?.steps || []).map((step) => {
-                const stepFields = (step.fields || []).filter((f) => {
-                  const val = selected.data?.[f.id];
-                  return val !== undefined && val !== null && val !== '';
-                });
-                if (stepFields.length === 0) return null;
-                return (
-                  <div key={step.id}>
-                    <p className="text-[10px] font-bold text-muted uppercase tracking-wider mb-2 pb-1 border-b border-border-subtle">{step.title}</p>
-                    <div className="space-y-2.5">
-                      {stepFields.map((f) => {
-                        const val = selected.data[f.id];
-                        return (
-                          <div key={f.id}>
-                            <span className="text-xs font-semibold text-tertiary">{f.label.includes('\n') ? f.label.split('\n')[0].slice(0, 60) + '...' : f.label}</span>
-                            {f.type === 'signature' && val?.startsWith('data:') ? (
-                              <img src={val} alt="Signature" className="mt-1 h-16 bg-surface-alt rounded-lg border border-border-subtle p-2" />
-                            ) : (
-                              <p className="text-sm text-primary mt-0.5">{Array.isArray(val) ? val.join(', ') : val}</p>
-                            )}
-                          </div>
-                        );
-                      })}
+          <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-xs font-semibold text-brand-text hover:text-brand-text-strong mb-3 cursor-pointer"><ChevronLeft size={14} /> Back</button>
+          {(() => {
+            const { score, flags, greens } = scoreApplication(selected.data || {});
+            return (
+              <div className="space-y-3">
+                {/* Header card */}
+                <div className="bg-card rounded-xl border border-border-subtle p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="text-lg font-bold text-primary">{selected.data?.name || 'Applicant'}</h3>
+                      <div className="flex items-center gap-3 mt-0.5 text-xs text-muted">
+                        {selected.data?.phone && <span>{selected.data.phone}</span>}
+                        {selected.data?.email && <span>{selected.data.email}</span>}
+                        {selected.data?.city_zip && <span>{selected.data.city_zip}</span>}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className={`text-2xl font-black ${score >= 7 ? 'text-green-400' : score >= 4 ? 'text-amber-400' : 'text-red-400'}`}>{score}</div>
+                      <div className={`text-[9px] font-bold uppercase ${score >= 7 ? 'text-green-400' : score >= 4 ? 'text-amber-400' : 'text-red-400'}`}>{scoreLabel(score)}</div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
+
+                  {/* Flags */}
+                  {(greens.length > 0 || flags.length > 0) && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {greens.map((g, i) => <span key={i} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/15 text-green-400">{g}</span>)}
+                      {flags.map((f, i) => <span key={i} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400">{f}</span>)}
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-muted">Submitted {new Date(selected.submittedAt).toLocaleString()}</p>
+                </div>
+
+                {/* Quick actions */}
+                <div className="flex items-center gap-2">
+                  <button onClick={() => markStatus(selected.id, 'contacted')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${selected.status === 'contacted' ? 'bg-amber-400 text-black' : 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25'}`}>
+                    Talk To
+                  </button>
+                  <button onClick={() => markStatus(selected.id, 'hired')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${selected.status === 'hired' ? 'bg-green-400 text-black' : 'bg-green-500/15 text-green-400 hover:bg-green-500/25'}`}>
+                    Hire
+                  </button>
+                  <button onClick={() => markStatus(selected.id, 'rejected')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${selected.status === 'rejected' ? 'bg-red-400 text-black' : 'bg-red-500/15 text-red-400 hover:bg-red-500/25'}`}>
+                    Reject
+                  </button>
+                  <button onClick={() => deleteApp(selected.id)} className="px-3 py-2.5 rounded-xl text-xs font-bold text-muted hover:text-red-400 hover:bg-red-500/10 cursor-pointer">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+
+                {/* Full application data */}
+                <div className="bg-card rounded-xl border border-border-subtle p-4 space-y-4">
+                  {(form?.steps || []).map((step) => {
+                    const stepFields = (step.fields || []).filter((f) => {
+                      const val = selected.data?.[f.id];
+                      return val !== undefined && val !== null && val !== '';
+                    });
+                    if (stepFields.length === 0) return null;
+                    return (
+                      <div key={step.id}>
+                        <p className="text-[10px] font-bold text-muted uppercase tracking-wider mb-2 pb-1 border-b border-border-subtle">{step.title}</p>
+                        <div className="space-y-2">
+                          {stepFields.map((f) => {
+                            const val = selected.data[f.id];
+                            // Highlight red flag answers
+                            const isRedFlag = (f.id === 'physical_ability' && val === 'No') || (f.id === 'reliable_transport' && val === 'No') || (f.id === 'drivers_license' && val === 'No') || (f.id === 'fulltime_understand' && val === 'No') || (f.id === 'background_check' && val === 'Yes');
+                            const isGreen = (f.id === 'years_landscaping' && (val === '3-5 years' || val === '5+ years')) || (f.id === 'worked_landscaping_year' && val === 'Yes') || (f.id === 'how_long' && (val === '1+ years' || val === 'Long-term / as long as it works'));
+                            return (
+                              <div key={f.id} className={`rounded-lg px-3 py-2 ${isRedFlag ? 'bg-red-500/8 border border-red-500/20' : isGreen ? 'bg-green-500/8 border border-green-500/20' : ''}`}>
+                                <span className="text-[11px] font-semibold text-tertiary">{f.label.includes('\n') ? f.label.split('\n')[0].slice(0, 60) + '...' : f.label}</span>
+                                {f.type === 'signature' && val?.startsWith('data:') ? (
+                                  <img src={val} alt="Signature" className="mt-1 h-16 bg-surface-alt rounded-lg border border-border-subtle p-2" />
+                                ) : (
+                                  <p className={`text-sm font-semibold mt-0.5 ${isRedFlag ? 'text-red-400' : isGreen ? 'text-green-400' : 'text-primary'}`}>{Array.isArray(val) ? val.join(', ') : val}</p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       ) : (
-        /* Application list */
+        /* Application cards with scores */
         <div className="space-y-1.5">
-          {sorted.length === 0 && (
-            <p className="text-sm text-muted text-center py-8">No applications match your filters.</p>
-          )}
+          {sorted.length === 0 && <p className="text-sm text-muted text-center py-8">No applications match your filters.</p>}
           {sorted.map((app) => (
             <button key={app.id} onClick={() => setSelected(app)} className="w-full flex items-center gap-3 bg-card rounded-xl border border-border-subtle p-3 hover:bg-surface-alt transition-colors cursor-pointer text-left">
-              <div className="w-10 h-10 rounded-full bg-brand-light flex items-center justify-center text-sm font-bold text-brand-text-strong shrink-0">{(app.data?.name || '?')[0]?.toUpperCase()}</div>
+              {/* Score circle */}
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-black shrink-0 ${
+                app.score >= 7 ? 'bg-green-500/15 text-green-400' : app.score >= 4 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'
+              }`}>{app.score}</div>
+
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-primary truncate">{app.data?.name || 'Applicant'}</p>
-                <p className="text-xs text-muted truncate">{app.data?.phone || app.data?.email || ''} {app.data?.city_zip ? `| ${app.data.city_zip}` : ''}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-primary truncate">{app.data?.name || 'Applicant'}</p>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(app.status || 'new')}`}>{app.status || 'new'}</span>
+                </div>
+                <p className="text-xs text-muted truncate">{app.data?.phone || ''} {app.data?.city_zip ? `| ${app.data.city_zip}` : ''}</p>
+                {/* Quick flags */}
+                <div className="flex items-center gap-1 mt-1 flex-wrap">
+                  {app.greens.slice(0, 3).map((g, i) => <span key={i} className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-green-500/10 text-green-400">{g}</span>)}
+                  {app.flags.slice(0, 2).map((f, i) => <span key={i} className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-red-500/10 text-red-400">{f}</span>)}
+                </div>
               </div>
+
               <div className="text-right shrink-0">
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusColor(app.status || 'new')}`}>{app.status || 'new'}</span>
-                <p className="text-[10px] text-muted mt-0.5">{new Date(app.submittedAt).toLocaleDateString()}</p>
+                <p className="text-[10px] text-muted">{new Date(app.submittedAt).toLocaleDateString()}</p>
               </div>
             </button>
           ))}
