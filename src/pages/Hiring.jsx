@@ -1157,7 +1157,8 @@ function scoreApplication(data) {
   if (Array.isArray(skills) && skills.length > 3 && !skills.includes('NO EXPERIENCE')) { greens.push(skills.length + ' skills'); score += 1; }
   if (Array.isArray(skills) && skills.includes('NO EXPERIENCE')) flags.push('No experience');
 
-  if (data.tobacco_use === 'Yes' && data.tobacco_policy !== 'Yes') flags.push('Tobacco - won\'t follow policy');
+  if (data.tobacco_use === 'Yes') { flags.push('Uses nicotine'); score -= 2; }
+  if (data.tobacco_use === 'Yes' && data.tobacco_policy !== 'Yes') flags.push('Won\'t follow substance policy');
 
   // Score adjustments for flags
   score -= flags.length * 2;
@@ -1343,7 +1344,7 @@ function ApplicationsTab() {
                           {stepFields.map((f) => {
                             const val = selected.data[f.id];
                             // Highlight red flag answers
-                            const isRedFlag = (f.id === 'physical_ability' && val === 'No') || (f.id === 'reliable_transport' && val === 'No') || (f.id === 'drivers_license' && val === 'No') || (f.id === 'fulltime_understand' && val === 'No') || (f.id === 'background_check' && val === 'Yes');
+                            const isRedFlag = (f.id === 'physical_ability' && val === 'No') || (f.id === 'reliable_transport' && val === 'No') || (f.id === 'drivers_license' && val === 'No') || (f.id === 'fulltime_understand' && val === 'No') || (f.id === 'background_check' && val === 'Yes') || (f.id === 'tobacco_use' && val === 'Yes') || (f.id === 'tobacco_policy' && val === 'No');
                             const isGreen = (f.id === 'years_landscaping' && (val === '3-5 years' || val === '5+ years')) || (f.id === 'worked_landscaping_year' && val === 'Yes') || (f.id === 'how_long' && (val === '1+ years' || val === 'Long-term / as long as it works'));
                             return (
                               <div key={f.id} className={`rounded-lg px-3 py-2 ${isRedFlag ? 'bg-red-500/8 border border-red-500/20' : isGreen ? 'bg-green-500/8 border border-green-500/20' : ''}`}>
