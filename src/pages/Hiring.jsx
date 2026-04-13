@@ -1381,7 +1381,7 @@ function ApplicationsTab() {
             ].filter(a => a.value);
             const row2 = [
               { label: 'Experience', value: d.years_landscaping, bad: d.years_landscaping === 'None', good: d.years_landscaping === '1-2 years' || d.years_landscaping === '3-5 years' || d.years_landscaping === '5+ years' },
-              { label: 'Company', value: d.recent_company },
+              { label: 'Company', value: d.recent_company || 'None', good: !!d.recent_company, bad: !d.recent_company },
               { label: 'Leadership', value: d.leadership_exp, good: d.leadership_exp && d.leadership_exp !== 'None', bad: !d.leadership_exp || d.leadership_exp === 'None' },
               { label: 'Commitment', value: d.how_long, bad: d.how_long === 'Just trying it out', good: d.how_long === '1+ years' || d.how_long === 'Long-term / as long as it works' },
             ].filter(a => a.value);
