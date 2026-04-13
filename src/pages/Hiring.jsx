@@ -1374,15 +1374,15 @@ function ApplicationsTab() {
             const d = app.data || {};
             const age = d.dob ? (() => { const bd = new Date(d.dob); const a = Math.floor((Date.now() - bd.getTime()) / 31557600000); return a > 0 && a < 100 ? a : null; })() : null;
             const row1 = [
-              { label: 'Nicotine', value: d.tobacco_use, bad: d.tobacco_use === 'Yes' },
-              { label: 'Background', value: d.background_check === 'Yes' ? 'Issue' : 'Clear', bad: d.background_check === 'Yes' },
-              { label: 'License', value: d.drivers_license, bad: d.drivers_license === 'No' },
-              { label: '1yr+ Company', value: d.worked_landscaping_year, bad: d.worked_landscaping_year === 'No' },
+              { label: 'Nicotine', value: d.tobacco_use, bad: d.tobacco_use === 'Yes', good: d.tobacco_use === 'No' },
+              { label: 'Background', value: d.background_check === 'Yes' ? 'Issue' : 'Clear', bad: d.background_check === 'Yes', good: d.background_check === 'No' },
+              { label: 'License', value: d.drivers_license, bad: d.drivers_license === 'No', good: d.drivers_license === 'Yes' },
+              { label: '1yr+ Company', value: d.worked_landscaping_year, bad: d.worked_landscaping_year === 'No', good: d.worked_landscaping_year === 'Yes' },
             ].filter(a => a.value);
             const row2 = [
-              { label: 'Experience', value: d.years_landscaping, bad: d.years_landscaping === 'None' },
+              { label: 'Experience', value: d.years_landscaping, bad: d.years_landscaping === 'None', good: d.years_landscaping === '1-2 years' || d.years_landscaping === '3-5 years' || d.years_landscaping === '5+ years' },
               { label: 'Company', value: d.recent_company },
-              { label: 'Leadership', value: d.leadership_exp, good: d.leadership_exp && d.leadership_exp !== 'None' },
+              { label: 'Leadership', value: d.leadership_exp, good: d.leadership_exp && d.leadership_exp !== 'None', bad: !d.leadership_exp || d.leadership_exp === 'None' },
               { label: 'Commitment', value: d.how_long, bad: d.how_long === 'Just trying it out', good: d.how_long === '1+ years' || d.how_long === 'Long-term / as long as it works' },
             ].filter(a => a.value);
 
