@@ -391,7 +391,7 @@ function AppShell() {
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [teamToolsOpen, setTeamToolsOpen] = useState(false);
-  const [ownerToolsOpen, setOwnerToolsOpen] = useState(false);
+  const [ownerToolsOpen, setOwnerToolsOpen] = useState(true);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((v) => {
