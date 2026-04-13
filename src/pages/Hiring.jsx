@@ -1367,37 +1367,64 @@ function ApplicationsTab() {
           })()}
         </div>
       ) : (
-        /* Application cards with scores */
-        <div className="space-y-1.5">
+        /* Application cards with key answers visible */
+        <div className="space-y-3">
           {sorted.length === 0 && <p className="text-sm text-muted text-center py-8">No applications match your filters.</p>}
-          {sorted.map((app) => (
-            <button key={app.id} onClick={() => setSelected(app)} className="w-full flex items-center gap-3 bg-card rounded-xl border border-border-subtle p-3 hover:bg-surface-alt transition-colors cursor-pointer text-left">
-              {/* Score circle */}
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-black shrink-0 ${
-                app.score >= 7 ? 'bg-green-500/15 text-green-400' : app.score >= 4 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'
-              }`}>{app.score}</div>
+          {sorted.map((app) => {
+            const d = app.data || {};
+            const age = d.dob ? (() => { const bd = new Date(d.dob); const a = Math.floor((Date.now() - bd.getTime()) / 31557600000); return a > 0 && a < 100 ? a : null; })() : null;
+            const keyAnswers = [
+              { label: 'Experience', value: d.years_landscaping, bad: d.years_landscaping === 'None' },
+              { label: '1yr+ at company', value: d.worked_landscaping_year, bad: d.worked_landscaping_year === 'No' },
+              { label: 'License', value: d.drivers_license, bad: d.drivers_license === 'No' },
+              { label: 'Transport', value: d.reliable_transport, bad: d.reliable_transport === 'No' },
+              { label: 'Physical', value: d.physical_ability, bad: d.physical_ability === 'No' },
+              { label: 'Nicotine', value: d.tobacco_use, bad: d.tobacco_use === 'Yes' },
+              { label: 'Background', value: d.background_check === 'Yes' ? 'Issue' : 'Clear', bad: d.background_check === 'Yes' },
+              { label: 'Leadership', value: d.leadership_exp, good: d.leadership_exp && d.leadership_exp !== 'None' },
+              { label: 'Commitment', value: d.how_long, bad: d.how_long === 'Just trying it out', good: d.how_long === '1+ years' || d.how_long === 'Long-term / as long as it works' },
+              { label: 'Start', value: d.start_date },
+            ].filter(a => a.value);
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-primary truncate">{app.data?.name || 'Applicant'}</p>
-                  {(app.status || 'new') !== 'new' && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(app.status)}`}>{app.status}</span>}
+            return (
+              <div key={app.id} onClick={() => setSelected(app)} className="bg-card rounded-xl border border-border-subtle p-4 hover:bg-surface-alt transition-colors cursor-pointer">
+                {/* Header row */}
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-black shrink-0 ${
+                    app.score >= 7 ? 'bg-green-500/15 text-green-400' : app.score >= 4 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'
+                  }`}>{app.score}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-primary truncate">{d.name || 'Applicant'}</p>
+                      {age && <span className="text-xs font-bold text-muted">{age}</span>}
+                      {(app.status || 'new') !== 'new' && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(app.status)}`}>{app.status}</span>}
+                    </div>
+                    <p className="text-xs text-muted">{d.city_zip || ''} {d.phone ? `| ${d.phone}` : ''}</p>
+                  </div>
+                  <p className="text-[10px] text-muted shrink-0">{new Date(app.submittedAt).toLocaleDateString()}</p>
                 </div>
-                <p className="text-xs text-muted truncate">
-                  {app.data?.dob && (() => { const bd = new Date(app.data.dob); const age = Math.floor((Date.now() - bd.getTime()) / 31557600000); return age > 0 && age < 100 ? `Age ${age}` : ''; })()}
-                  {app.data?.dob && app.data?.city_zip ? ' | ' : ''}{app.data?.city_zip || ''}
-                </p>
-                {/* Quick flags */}
-                <div className="flex items-center gap-1 mt-1 flex-wrap">
-                  {app.greens.slice(0, 3).map((g, i) => <span key={i} className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-green-500/10 text-green-400">{g}</span>)}
-                  {app.flags.slice(0, 2).map((f, i) => <span key={i} className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-red-500/10 text-red-400">{f}</span>)}
-                </div>
-              </div>
 
-              <div className="text-right shrink-0">
-                <p className="text-[10px] text-muted">{new Date(app.submittedAt).toLocaleDateString()}</p>
+                {/* Key answers grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                  {keyAnswers.map((a, i) => (
+                    <div key={i} className={`rounded-lg px-2 py-1.5 ${a.bad ? 'bg-red-500/10 border border-red-500/20' : a.good ? 'bg-green-500/10 border border-green-500/20' : 'bg-surface-alt'}`}>
+                      <p className="text-[9px] font-bold text-muted uppercase">{a.label}</p>
+                      <p className={`text-[11px] font-bold truncate ${a.bad ? 'text-red-400' : a.good ? 'text-green-400' : 'text-primary'}`}>{a.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Skills if present */}
+                {Array.isArray(d.skills) && d.skills.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {d.skills.map((s, i) => (
+                      <span key={i} className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${s === 'NO EXPERIENCE' ? 'bg-red-500/10 text-red-400' : 'bg-surface-alt text-muted'}`}>{s}</span>
+                    ))}
+                  </div>
+                )}
               </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
