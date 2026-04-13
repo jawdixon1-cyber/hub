@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Search, Plus, Send, ArrowLeft, Phone, User, MoreVertical,
   MessageSquare, Clock, Check, CheckCheck, Trash2, Edit3,
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 const STORAGE_KEY = 'hub-messages';
 
@@ -240,6 +241,8 @@ function ChatView({ convo, messages, onSend, onBack }) {
                   {isMe && (
                     item.status === 'delivered' ? <CheckCheck size={12} /> :
                     item.status === 'sent' ? <Check size={12} /> :
+                    item.status === 'failed' ? <span className="text-red-400 text-[10px] font-semibold">Failed</span> :
+                    item.status === 'sending' ? <Clock size={10} className="animate-pulse" /> :
                     <Clock size={10} />
                   )}
                 </div>
@@ -280,7 +283,7 @@ function ChatView({ convo, messages, onSend, onBack }) {
           </button>
         </div>
         <p className="text-[10px] text-muted mt-1.5 text-center">
-          Connect Twilio to send real SMS. Messages are local-only for now.
+          SMS via Twilio &middot; Press Enter to send
         </p>
       </div>
     </div>
@@ -297,8 +300,61 @@ export default function Messages() {
 
   useEffect(() => { saveData(data); }, [data]);
 
+  // Poll for incoming SMS every 10 seconds
+  useEffect(() => {
+    let lastChecked = Date.now();
+    const poll = async () => {
+      try {
+        const { data: row } = await supabase
+          .from('app_state')
+          .select('value')
+          .eq('key', 'greenteam-incoming-sms')
+          .maybeSingle();
+        const incoming = row?.value || [];
+        // Find new messages since last check
+        const newMsgs = incoming.filter((m) => new Date(m.createdAt).getTime() > lastChecked - 15000);
+        if (newMsgs.length > 0) {
+          lastChecked = Date.now();
+          setData((prev) => {
+            const updated = { ...prev, conversations: [...prev.conversations] };
+            for (const msg of newMsgs) {
+              const phone = msg.phone;
+              let convo = updated.conversations.find((c) => c.phone === phone || c.phone === msg.from?.replace(/^\+1/, ''));
+              if (!convo) {
+                // Create new conversation for unknown sender
+                convo = { id: genId(), name: null, phone, messages: [], lastMessage: null, lastMessageAt: null, unread: 0 };
+                updated.conversations.push(convo);
+              }
+              // Check if message already exists
+              if (!convo.messages.some((m) => m.id === msg.id)) {
+                convo.messages.push({ id: msg.id, body: msg.body, direction: 'inbound', status: 'delivered', createdAt: msg.createdAt });
+                convo.lastMessage = msg.body;
+                convo.lastMessageAt = msg.createdAt;
+                convo.unread = (convo.unread || 0) + 1;
+              }
+            }
+            return updated;
+          });
+        }
+      } catch {}
+    };
+    poll();
+    const interval = setInterval(poll, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const activeConvo = data.conversations.find((c) => c.id === activeId) || null;
   const activeMessages = activeConvo?.messages || [];
+
+  // Clear unread when viewing a conversation
+  useEffect(() => {
+    if (activeId && activeConvo?.unread > 0) {
+      setData((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) => c.id === activeId ? { ...c, unread: 0 } : c),
+      }));
+    }
+  }, [activeId]);
 
   const filteredConvos = data.conversations.filter((c) => {
     if (!search) return true;
@@ -326,14 +382,15 @@ export default function Messages() {
     setActiveId(convo.id);
   };
 
-  const sendMessage = (body) => {
+  const sendMessage = async (body) => {
     const msg = {
       id: genId(),
       body,
       direction: 'outbound',
-      status: 'sent',
+      status: 'sending',
       createdAt: new Date().toISOString(),
     };
+    // Optimistic update
     setData((prev) => ({
       ...prev,
       conversations: prev.conversations.map((c) =>
@@ -342,6 +399,34 @@ export default function Messages() {
           : c
       ),
     }));
+
+    // Send via Twilio
+    try {
+      const resp = await fetch('/api/sms/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: activeConvo.phone, message: body }),
+      });
+      const result = await resp.json();
+      // Update status
+      setData((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) =>
+          c.id === activeId
+            ? { ...c, messages: c.messages.map((m) => m.id === msg.id ? { ...m, status: result.success ? 'sent' : 'failed' } : m) }
+            : c
+        ),
+      }));
+    } catch {
+      setData((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) =>
+          c.id === activeId
+            ? { ...c, messages: c.messages.map((m) => m.id === msg.id ? { ...m, status: 'failed' } : m) }
+            : c
+        ),
+      }));
+    }
   };
 
   const deleteConvo = (id) => {
