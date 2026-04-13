@@ -31,6 +31,10 @@ import {
   Video,
   FileText,
   Briefcase,
+  Search,
+  ArrowUpDown,
+  MessageSquare,
+  Loader2,
 } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
 
@@ -1119,17 +1123,49 @@ We run background checks. If you have a record, just be upfront about it. Honest
 /* ═══════════════════════════════════════════
    APPLICATIONS TAB
    ═══════════════════════════════════════════ */
+const STATUS_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'new', label: 'New', color: 'bg-blue-500/15 text-blue-400' },
+  { id: 'contacted', label: 'Contacted', color: 'bg-amber-500/15 text-amber-400' },
+  { id: 'hired', label: 'Hired', color: 'bg-green-500/15 text-green-400' },
+  { id: 'rejected', label: 'Rejected', color: 'bg-red-500/15 text-red-400' },
+];
+
+const statusColor = (s) => s === 'new' ? 'bg-blue-500/15 text-blue-400' : s === 'contacted' ? 'bg-amber-500/15 text-amber-400' : s === 'hired' ? 'bg-green-500/15 text-green-400' : s === 'rejected' ? 'bg-red-500/15 text-red-400' : 'bg-surface-alt text-muted';
+
 function ApplicationsTab() {
   const applications = useAppStore((s) => s.applications) || [];
   const setApplications = useAppStore((s) => s.setApplications);
   const form = useAppStore((s) => s.applicationForm);
   const [selected, setSelected] = useState(null);
+  const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [sortDir, setSortDir] = useState('newest');
+  const [ghlLoading, setGhlLoading] = useState(null);
 
-  const allFields = (form?.steps || []).flatMap((s) => s.fields || []);
-
-  const markStatus = (id, status) => {
+  const markStatus = async (id, status) => {
+    // Update locally
     setApplications(applications.map((a) => a.id === id ? { ...a, status } : a));
-    if (selected?.id === id) setSelected({ ...selected, status });
+    if (selected?.id === id) setSelected((s) => ({ ...s, status }));
+
+    // Tag in GHL
+    const app = applications.find((a) => a.id === id);
+    if (app?.data?.phone || app?.data?.name) {
+      setGhlLoading(status);
+      try {
+        await fetch('/api/ghl/tag-applicant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: app.data.phone || '',
+            name: app.data.name || '',
+            email: app.data.email || '',
+            status,
+          }),
+        });
+      } catch {}
+      setGhlLoading(null);
+    }
   };
 
   const deleteApp = (id) => {
@@ -1137,9 +1173,28 @@ function ApplicationsTab() {
     if (selected?.id === id) setSelected(null);
   };
 
-  const sorted = [...applications].sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+  // Filter + search + sort
+  const searchLower = search.toLowerCase();
+  const filtered = applications.filter((app) => {
+    if (filter !== 'all' && (app.status || 'new') !== filter) return false;
+    if (search) {
+      const d = app.data || {};
+      const haystack = [d.name, d.phone, d.email, d.city_zip].filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(searchLower)) return false;
+    }
+    return true;
+  });
 
-  if (sorted.length === 0) {
+  const sorted = [...filtered].sort((a, b) => {
+    const da = new Date(a.submittedAt), db = new Date(b.submittedAt);
+    return sortDir === 'newest' ? db - da : da - db;
+  });
+
+  // Counts
+  const counts = { all: applications.length };
+  for (const app of applications) counts[app.status || 'new'] = (counts[app.status || 'new'] || 0) + 1;
+
+  if (applications.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <Inbox size={40} className="text-muted mb-3" />
@@ -1150,18 +1205,79 @@ function ApplicationsTab() {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      {/* Stats */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 text-xs text-muted"><span className="text-lg font-black text-primary">{counts.all}</span> total</div>
+        {counts.new > 0 && <div className="flex items-center gap-1.5 text-xs"><span className="w-2 h-2 rounded-full bg-blue-400" /><span className="font-semibold text-blue-400">{counts.new}</span> new</div>}
+        {counts.contacted > 0 && <div className="flex items-center gap-1.5 text-xs"><span className="w-2 h-2 rounded-full bg-amber-400" /><span className="font-semibold text-amber-400">{counts.contacted}</span> contacted</div>}
+        {counts.hired > 0 && <div className="flex items-center gap-1.5 text-xs"><span className="w-2 h-2 rounded-full bg-green-400" /><span className="font-semibold text-green-400">{counts.hired}</span> hired</div>}
+        {counts.rejected > 0 && <div className="flex items-center gap-1.5 text-xs"><span className="w-2 h-2 rounded-full bg-red-400" /><span className="font-semibold text-red-400">{counts.rejected}</span> rejected</div>}
+      </div>
+
+      {/* Filter pills */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+        {STATUS_FILTERS.map((f) => (
+          <button key={f.id} onClick={() => setFilter(f.id)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
+              filter === f.id ? 'bg-brand text-on-brand' : 'bg-card border border-border-subtle text-secondary hover:bg-surface-alt'
+            }`}>
+            {f.label} {counts[f.id] ? `(${counts[f.id]})` : ''}
+          </button>
+        ))}
+      </div>
+
+      {/* Search + sort */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, phone, email..."
+            className="w-full bg-surface-alt border border-border-default rounded-lg pl-9 pr-3 py-2 text-sm text-primary placeholder:text-placeholder-muted focus:outline-none focus:ring-2 focus:ring-brand/40"
+          />
+        </div>
+        <button onClick={() => setSortDir(sortDir === 'newest' ? 'oldest' : 'newest')} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border-default text-xs font-semibold text-secondary hover:bg-surface-alt cursor-pointer whitespace-nowrap">
+          <ArrowUpDown size={13} /> {sortDir === 'newest' ? 'Newest' : 'Oldest'}
+        </button>
+      </div>
+
+      {/* Selected detail view */}
       {selected ? (
         <div>
           <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-xs font-semibold text-brand-text hover:text-brand-text-strong mb-3 cursor-pointer"><ChevronLeft size={14} /> Back to list</button>
           <div className="bg-card rounded-xl border border-border-subtle p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-primary">{selected.data?.name || 'Applicant'}</h3>
-              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                selected.status === 'new' ? 'bg-blue-500/15 text-blue-400' : selected.status === 'contacted' ? 'bg-amber-500/15 text-amber-400' : selected.status === 'hired' ? 'bg-green-500/15 text-green-400' : selected.status === 'rejected' ? 'bg-red-500/15 text-red-400' : 'bg-surface-alt text-muted'
-              }`}>{selected.status || 'new'}</span>
+              <div>
+                <h3 className="text-lg font-bold text-primary">{selected.data?.name || 'Applicant'}</h3>
+                <div className="flex items-center gap-3 mt-1 text-xs text-muted">
+                  {selected.data?.phone && <span>{selected.data.phone}</span>}
+                  {selected.data?.email && <span>{selected.data.email}</span>}
+                </div>
+              </div>
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor(selected.status || 'new')}`}>{selected.status || 'new'}</span>
             </div>
             <p className="text-xs text-muted">Submitted {new Date(selected.submittedAt).toLocaleString()}</p>
+
+            {/* Status actions with GHL */}
+            <div className="flex items-center gap-2 py-2 border-y border-border-subtle">
+              {['contacted', 'hired', 'rejected'].map((s) => {
+                const colors = { contacted: 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25', hired: 'bg-green-500/15 text-green-400 hover:bg-green-500/25', rejected: 'bg-red-500/15 text-red-400 hover:bg-red-500/25' };
+                const isActive = selected.status === s;
+                return (
+                  <button key={s} onClick={() => markStatus(selected.id, s)} disabled={ghlLoading === s}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${isActive ? colors[s] + ' ring-1 ring-current' : colors[s]}`}>
+                    {ghlLoading === s ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />}
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </button>
+                );
+              })}
+              <div className="flex-1" />
+              <button onClick={() => deleteApp(selected.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-red-400 hover:bg-red-500/15 cursor-pointer">Delete</button>
+            </div>
+
+            {/* Application data grouped by step */}
             <div className="space-y-4">
               {(form?.steps || []).map((step) => {
                 const stepFields = (step.fields || []).filter((f) => {
@@ -1191,29 +1307,28 @@ function ApplicationsTab() {
                 );
               })}
             </div>
-            <div className="flex items-center gap-2 pt-2 border-t border-border-subtle">
-              <button onClick={() => markStatus(selected.id, 'contacted')} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 cursor-pointer">Contacted</button>
-              <button onClick={() => markStatus(selected.id, 'hired')} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-500/15 text-green-400 hover:bg-green-500/25 cursor-pointer">Hired</button>
-              <button onClick={() => markStatus(selected.id, 'rejected')} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-500/15 text-red-400 hover:bg-red-500/25 cursor-pointer">Rejected</button>
-              <div className="flex-1" />
-              <button onClick={() => deleteApp(selected.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-red-400 hover:bg-red-500/15 cursor-pointer">Delete</button>
-            </div>
           </div>
         </div>
       ) : (
-        sorted.map((app) => (
-          <button key={app.id} onClick={() => setSelected(app)} className="w-full flex items-center gap-3 bg-card rounded-xl border border-border-subtle p-3 hover:bg-surface-alt transition-colors cursor-pointer text-left">
-            <div className="w-10 h-10 rounded-full bg-brand-light flex items-center justify-center text-sm font-bold text-brand-text-strong shrink-0">{(app.data?.name || '?')[0]?.toUpperCase()}</div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-primary truncate">{app.data?.name || 'Applicant'}</p>
-              <p className="text-xs text-muted truncate">{app.data?.phone || app.data?.email || ''} {app.data?.city_zip ? `| ${app.data.city_zip}` : ''}</p>
-            </div>
-            <div className="text-right shrink-0">
-              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${app.status === 'new' ? 'bg-blue-500/15 text-blue-400' : app.status === 'contacted' ? 'bg-amber-500/15 text-amber-400' : app.status === 'hired' ? 'bg-green-500/15 text-green-400' : app.status === 'rejected' ? 'bg-red-500/15 text-red-400' : 'bg-surface-alt text-muted'}`}>{app.status || 'new'}</span>
-              <p className="text-[10px] text-muted mt-0.5">{new Date(app.submittedAt).toLocaleDateString()}</p>
-            </div>
-          </button>
-        ))
+        /* Application list */
+        <div className="space-y-1.5">
+          {sorted.length === 0 && (
+            <p className="text-sm text-muted text-center py-8">No applications match your filters.</p>
+          )}
+          {sorted.map((app) => (
+            <button key={app.id} onClick={() => setSelected(app)} className="w-full flex items-center gap-3 bg-card rounded-xl border border-border-subtle p-3 hover:bg-surface-alt transition-colors cursor-pointer text-left">
+              <div className="w-10 h-10 rounded-full bg-brand-light flex items-center justify-center text-sm font-bold text-brand-text-strong shrink-0">{(app.data?.name || '?')[0]?.toUpperCase()}</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-primary truncate">{app.data?.name || 'Applicant'}</p>
+                <p className="text-xs text-muted truncate">{app.data?.phone || app.data?.email || ''} {app.data?.city_zip ? `| ${app.data.city_zip}` : ''}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusColor(app.status || 'new')}`}>{app.status || 'new'}</span>
+                <p className="text-[10px] text-muted mt-0.5">{new Date(app.submittedAt).toLocaleDateString()}</p>
+              </div>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
