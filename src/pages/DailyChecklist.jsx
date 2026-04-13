@@ -799,7 +799,8 @@ function OwnerDashboard() {
     }).finally(() => setDashLoading(false));
   }, []);
 
-  // Don't auto-load — user taps Refresh to load stats (prevents Jobber throttling)
+  // Auto-load on mount
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
   const clients = data?.clients || 0;
   const clientPct = Math.min(100, Math.round((clients / CLIENT_GOAL) * 100));
