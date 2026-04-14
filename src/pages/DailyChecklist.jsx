@@ -830,16 +830,6 @@ function OwnerDashboard() {
             <p className="text-xl font-black text-primary mt-1">{data ? data.jobCount : '--'}</p>
           </div>
         </div>
-        {/* Progress bar */}
-        <div className="mt-2 bg-card rounded-xl border border-border-subtle p-3">
-          <div className="flex items-center justify-between text-[10px] mb-1">
-            <span className="text-muted font-bold">Growth Goal</span>
-            <span className="font-black text-primary">{clientPct}%</span>
-          </div>
-          <div className="w-full h-2 rounded-full bg-surface-alt overflow-hidden">
-            <div className="h-full rounded-full bg-brand transition-all duration-500" style={{ width: `${clientPct}%` }} />
-          </div>
-        </div>
       </div>
 
       {/* ── Sales ── */}
@@ -1139,36 +1129,11 @@ export default function DailyChecklist() {
         </Suspense>
       )}
 
-      {/* Two-column layout: main + sidebar */}
+      {/* Two-column layout: main + checklists */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
         {/* Left column — main content */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Quick checklist triggers */}
-          <div className="flex gap-2">
-            {[
-              { key: 'morning', label: 'Start Day', done: morningDone, total: morningItems.length, allDone: morningAllDone },
-              { key: 'evening', label: 'End Day', done: eveningDone, total: eveningItems.length, allDone: eveningAllDone },
-            ].map((c) => {
-              const partial = c.done > 0 && !c.allDone;
-              const cls = c.allDone
-                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-2 border-emerald-500/40'
-                : partial
-                  ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-2 border-amber-500/40'
-                  : 'bg-card border border-border-subtle text-primary hover:bg-surface-alt';
-              return (
-                <button key={c.key} onClick={() => setActiveFlow(c.key)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold cursor-pointer transition-colors ${cls}`}>
-                  {c.allDone && <CircleCheck size={18} className="text-emerald-500" />}
-                  <span>
-                    {c.label}
-                    {c.total > 0 && <span className="ml-2 font-semibold opacity-80">{c.done}/{c.total}</span>}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
           {/* Dashboard stats */}
           <OwnerDashboard />
 
@@ -1214,9 +1179,37 @@ export default function DailyChecklist() {
           </div>
         </div>
 
-        {/* Right column — team activity */}
-        <div className="space-y-4">
-          <TeamActivity />
+        {/* Right column — checklists */}
+        <div className="space-y-3">
+          {[
+            { key: 'morning', label: 'Start Day', done: morningDone, total: morningItems.length, allDone: morningAllDone },
+            { key: 'evening', label: 'End Day', done: eveningDone, total: eveningItems.length, allDone: eveningAllDone },
+          ].map((c) => (
+            <button key={c.key} onClick={() => setActiveFlow(c.key)}
+              className={`w-full flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-colors ${
+                c.allDone
+                  ? 'bg-emerald-500/15 border-2 border-emerald-500/40'
+                  : c.done > 0
+                    ? 'bg-amber-500/15 border-2 border-amber-500/40'
+                    : 'bg-card border border-border-subtle hover:bg-surface-alt'
+              }`}>
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                c.allDone ? 'bg-emerald-500/20' : c.done > 0 ? 'bg-amber-500/20' : 'bg-surface-alt'
+              }`}>
+                {c.allDone
+                  ? <CircleCheck size={28} className="text-emerald-500" />
+                  : <Check size={28} className={c.done > 0 ? 'text-amber-500' : 'text-muted'} />
+                }
+              </div>
+              <div className="flex-1 text-left">
+                <p className={`text-sm font-bold ${c.allDone ? 'text-emerald-500' : 'text-primary'}`}>{c.label}</p>
+                <p className="text-xs text-muted mt-0.5">
+                  {c.allDone ? 'Complete' : c.done > 0 ? `${c.done} of ${c.total} done` : `${c.total} items`}
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-muted shrink-0" />
+            </button>
+          ))}
         </div>
       </div>
     </div>
