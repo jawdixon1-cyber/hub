@@ -1126,41 +1126,6 @@ export default function DailyChecklist() {
             {widgets.map(renderWidget)}
           </div>
 
-          {/* Customize button */}
-          <div className="flex items-center justify-center gap-3">
-            {editMode ? (
-              <>
-                <div className="relative">
-                  <button onClick={() => setShowAddMenu(!showAddMenu)}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover cursor-pointer">
-                    <Plus size={14} /> Add
-                  </button>
-                  {showAddMenu && (
-                    <div className="absolute bottom-full mb-2 left-0 bg-card border border-border-subtle rounded-xl shadow-lg overflow-hidden z-10">
-                      <button onClick={() => addWidget('note')} className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-primary hover:bg-surface-alt cursor-pointer">
-                        <StickyNote size={14} /> Note
-                      </button>
-                      <button onClick={() => addWidget('link')} className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-primary hover:bg-surface-alt cursor-pointer border-t border-border-subtle/50">
-                        <Link2 size={14} /> Link
-                      </button>
-                      <button onClick={() => addWidget('heading')} className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-primary hover:bg-surface-alt cursor-pointer border-t border-border-subtle/50">
-                        <Type size={14} /> Section Title
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <button onClick={() => { setEditMode(false); setShowAddMenu(false); }}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer">
-                  Done
-                </button>
-              </>
-            ) : (
-              <button onClick={() => setEditMode(true)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer">
-                <Pencil size={12} className="inline mr-1" /> Customize
-              </button>
-            )}
-          </div>
         </div>
 
         {/* Right column — checklists */}
