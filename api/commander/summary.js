@@ -106,8 +106,8 @@ async function fetchRecurringJobs() {
             id
             firstName
             lastName
-            phones { nodes { number } }
-            emails { nodes { address } }
+            phones { number }
+            emails { address }
           }
         }
         pageInfo { hasNextPage endCursor }
@@ -341,8 +341,8 @@ export default async function handler(req, res) {
       const name = `${job.client.firstName || ''} ${job.client.lastName || ''}`.trim() || 'Unknown';
       const calRule = job.visitSchedule?.recurrenceSchedule?.calendarRule;
       const { label: freqLabel } = parseFrequency(calRule);
-      const phone = job.client?.phones?.nodes?.[0]?.number || '';
-      const email = job.client?.emails?.nodes?.[0]?.address || '';
+      const phone = job.client?.phones?.[0]?.number || '';
+      const email = job.client?.emails?.[0]?.address || '';
       if (!clientRoster[cid]) {
         clientRoster[cid] = { name, phone, email, jobs: [], totalPerVisit: 0, totalMonthly: 0 };
       }
