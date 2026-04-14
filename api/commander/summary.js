@@ -101,10 +101,13 @@ async function fetchRecurringJobs() {
             endDate
             recurrenceSchedule { calendarRule }
           }
+          billingType
           client {
             id
             firstName
             lastName
+            phones(first:2) { nodes { number } }
+            emails(first:1) { nodes { address } }
           }
         }
         pageInfo { hasNextPage endCursor }
@@ -119,7 +122,7 @@ async function fetchRecurringJobs() {
   }
   // Also check recent ONE_OFF jobs for recurring schedules (Jobber quirk — some recurring jobs are typed as ONE_OFF)
   try {
-    const d2 = await jobberQuery(`{ jobs(first: 25, filter: { jobType: ONE_OFF }) { nodes { id jobNumber jobStatus total startAt completedAt createdAt endAt visitSchedule { startDate endDate recurrenceSchedule { calendarRule } } client { id firstName lastName } } } }`);
+    const d2 = await jobberQuery(`{ jobs(first: 25, filter: { jobType: ONE_OFF }) { nodes { id jobNumber jobStatus total startAt completedAt createdAt endAt billingType visitSchedule { startDate endDate recurrenceSchedule { calendarRule } } client { id firstName lastName phones(first:2) { nodes { number } } emails(first:1) { nodes { address } } } } }`);
     const recurringOneOffs = (d2.jobs?.nodes || []).filter(j => j.visitSchedule?.recurrenceSchedule?.calendarRule);
     if (recurringOneOffs.length > 0) {
       console.log(`[Commander] Found ${recurringOneOffs.length} ONE_OFF jobs with recurring schedules`);
@@ -338,8 +341,10 @@ export default async function handler(req, res) {
       const name = `${job.client.firstName || ''} ${job.client.lastName || ''}`.trim() || 'Unknown';
       const calRule = job.visitSchedule?.recurrenceSchedule?.calendarRule;
       const { label: freqLabel } = parseFrequency(calRule);
+      const phone = job.client?.phones?.nodes?.[0]?.number || '';
+      const email = job.client?.emails?.nodes?.[0]?.address || '';
       if (!clientRoster[cid]) {
-        clientRoster[cid] = { name, jobs: [], totalPerVisit: 0, totalMonthly: 0 };
+        clientRoster[cid] = { name, phone, email, jobs: [], totalPerVisit: 0, totalMonthly: 0 };
       }
       // Use only recurring line items (qty > 0) for per-visit, excluding one-time add-ons
       const items = job.lineItems?.nodes || [];
@@ -347,7 +352,7 @@ export default async function handler(req, res) {
       const perVisit = recurringTotal > 0 ? recurringTotal : (job.total || 0);
       const { visitsPerMonth } = parseFrequency(calRule);
       const monthly = Math.round(perVisit * visitsPerMonth * 100) / 100;
-      clientRoster[cid].jobs.push({ jobId: job.id, jobNumber: job.jobNumber, frequency: freqLabel, perVisit, monthly });
+      clientRoster[cid].jobs.push({ jobId: job.id, jobNumber: job.jobNumber, frequency: freqLabel, perVisit, monthly, billingType: job.billingType || 'unknown' });
       clientRoster[cid].totalPerVisit += perVisit;
       clientRoster[cid].totalMonthly += monthly;
     }
