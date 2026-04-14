@@ -812,12 +812,6 @@ function OwnerDashboard() {
     <div className="space-y-4">
       {/* ── Big stats ── */}
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Overview</p>
-          <button onClick={loadDashboard} disabled={dashLoading} className="px-3 py-1 rounded-lg text-[10px] font-bold text-muted hover:text-secondary hover:bg-surface-alt cursor-pointer disabled:opacity-50 transition-colors">
-            {dashLoading ? 'Loading...' : data ? 'Refresh' : 'Load Stats'}
-          </button>
-        </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-card rounded-2xl border border-border-subtle p-5 text-center">
             <p className="text-[10px] text-muted font-bold uppercase tracking-wider">YTD Revenue</p>
@@ -1113,52 +1107,60 @@ export default function DailyChecklist() {
         </Suspense>
       )}
 
-      {/* Two-column layout: main + checklists */}
+      {/* Two-column layout: overview + checklists */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
-        {/* Left column — main content */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* Dashboard stats */}
-          <OwnerDashboard />
-
-          {/* Custom widgets */}
-          <div className="space-y-3">
-            {widgets.map(renderWidget)}
+        {/* Left column — overview */}
+        <div className="lg:col-span-2">
+          <div className="bg-card rounded-2xl border border-border-subtle p-5">
+            <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-4">Overview</p>
+            <OwnerDashboard />
           </div>
 
+          {/* Custom widgets */}
+          {widgets.length > 0 && (
+            <div className="space-y-3 mt-4">
+              {widgets.map(renderWidget)}
+            </div>
+          )}
         </div>
 
         {/* Right column — checklists */}
-        <div className="space-y-3">
-          {[
-            { key: 'morning', label: 'Start Day', done: morningDone, total: morningItems.length, allDone: morningAllDone },
-            { key: 'evening', label: 'End Day', done: eveningDone, total: eveningItems.length, allDone: eveningAllDone },
-          ].map((c) => (
-            <button key={c.key} onClick={() => setActiveFlow(c.key)}
-              className={`w-full flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-colors ${
-                c.allDone
-                  ? 'bg-emerald-500/15 border-2 border-emerald-500/40'
-                  : c.done > 0
-                    ? 'bg-amber-500/15 border-2 border-amber-500/40'
-                    : 'bg-card border border-border-subtle hover:bg-surface-alt'
-              }`}>
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                c.allDone ? 'bg-emerald-500/20' : c.done > 0 ? 'bg-amber-500/20' : 'bg-surface-alt'
-              }`}>
-                {c.allDone
-                  ? <CircleCheck size={28} className="text-emerald-500" />
-                  : <Check size={28} className={c.done > 0 ? 'text-amber-500' : 'text-muted'} />
-                }
-              </div>
-              <div className="flex-1 text-left">
-                <p className={`text-sm font-bold ${c.allDone ? 'text-emerald-500' : 'text-primary'}`}>{c.label}</p>
-                <p className="text-xs text-muted mt-0.5">
-                  {c.allDone ? 'Complete' : c.done > 0 ? `${c.done} of ${c.total} done` : `${c.total} items`}
-                </p>
-              </div>
-              <ChevronRight size={16} className="text-muted shrink-0" />
-            </button>
-          ))}
+        <div>
+          <div className="bg-card rounded-2xl border border-border-subtle p-5">
+            <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-4">Daily Checklists</p>
+            <div className="space-y-3">
+              {[
+                { key: 'morning', label: 'Start Day', done: morningDone, total: morningItems.length, allDone: morningAllDone },
+                { key: 'evening', label: 'End Day', done: eveningDone, total: eveningItems.length, allDone: eveningAllDone },
+              ].map((c) => (
+                <button key={c.key} onClick={() => setActiveFlow(c.key)}
+                  className={`w-full flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-colors ${
+                    c.allDone
+                      ? 'bg-emerald-500/15 border-2 border-emerald-500/40'
+                      : c.done > 0
+                        ? 'bg-amber-500/15 border-2 border-amber-500/40'
+                        : 'bg-surface-alt border border-border-subtle hover:bg-surface-strong'
+                  }`}>
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                    c.allDone ? 'bg-emerald-500/20' : c.done > 0 ? 'bg-amber-500/20' : 'bg-card'
+                  }`}>
+                    {c.allDone
+                      ? <CircleCheck size={28} className="text-emerald-500" />
+                      : <Check size={28} className={c.done > 0 ? 'text-amber-500' : 'text-muted'} />
+                    }
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className={`text-sm font-bold ${c.allDone ? 'text-emerald-500' : 'text-primary'}`}>{c.label}</p>
+                    <p className="text-xs text-muted mt-0.5">
+                      {c.allDone ? 'Complete' : c.done > 0 ? `${c.done} of ${c.total} done` : `${c.total} items`}
+                    </p>
+                  </div>
+                  <ChevronRight size={16} className="text-muted shrink-0" />
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
