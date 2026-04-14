@@ -771,6 +771,7 @@ function OwnerDashboard() {
         monthlyRevAdd: thirtyData?.kpis?.startsMonthlyRevenue || 0,
         ytdRevenue: ytd?.ytdRevenue || 0,
         jobCount: ytd?.jobCount || 0,
+        monthlyRecurringRevenue: yearData?.monthlyRecurringRevenue || 0,
       });
 
       // Compute labor stats from the week
@@ -805,9 +806,11 @@ function OwnerDashboard() {
   const clients = data?.clients || 0;
   const clientPct = Math.min(100, Math.round((clients / CLIENT_GOAL) * 100));
 
+  const monthlyRev = data?.monthlyRecurringRevenue || 0;
+
   return (
     <div className="space-y-4">
-      {/* ── Overall ── */}
+      {/* ── Big stats ── */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Overview</p>
@@ -815,19 +818,15 @@ function OwnerDashboard() {
             {dashLoading ? 'Loading...' : data ? 'Refresh' : 'Load Stats'}
           </button>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
-            <p className="text-[9px] text-muted font-bold uppercase">YTD Revenue</p>
-            <p className="text-xl font-black text-primary mt-1">{data ? fmt$(data.ytdRevenue) : '--'}</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-card rounded-2xl border border-border-subtle p-5 text-center">
+            <p className="text-[10px] text-muted font-bold uppercase tracking-wider">YTD Revenue</p>
+            <p className="text-3xl font-black text-primary mt-2">{data ? fmt$(data.ytdRevenue) : '--'}</p>
           </div>
-          <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
-            <p className="text-[9px] text-muted font-bold uppercase">Recurring</p>
-            <p className="text-xl font-black text-brand-text mt-1">{data ? clients : '--'}</p>
-            <p className="text-[9px] text-muted">/ {CLIENT_GOAL} goal</p>
-          </div>
-          <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
-            <p className="text-[9px] text-muted font-bold uppercase">Jobs YTD</p>
-            <p className="text-xl font-black text-primary mt-1">{data ? data.jobCount : '--'}</p>
+          <div className="bg-card rounded-2xl border border-border-subtle p-5 text-center">
+            <p className="text-[10px] text-muted font-bold uppercase tracking-wider">Recurring Clients</p>
+            <p className="text-3xl font-black text-brand-text mt-2">{data ? clients : '--'} <span className="text-lg text-muted font-bold">/ {CLIENT_GOAL}</span></p>
+            {data && monthlyRev > 0 && <p className="text-xs text-brand-text/70 font-bold mt-1">{fmt$(monthlyRev)}/mo</p>}
           </div>
         </div>
       </div>
@@ -835,33 +834,18 @@ function OwnerDashboard() {
       {/* ── Sales ── */}
       <div>
         <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">Sales (Last 30 Days)</p>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="bg-card rounded-xl border border-border-subtle p-3">
-            <div className="flex justify-between items-center">
-              <p className="text-[9px] text-muted font-bold uppercase">New Leads</p>
-              <p className="text-lg font-black text-primary">{data?.newLeads ?? '--'}</p>
-            </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
+            <p className="text-[9px] text-muted font-bold uppercase">New Leads</p>
+            <p className="text-xl font-black text-primary mt-1">{data?.newLeads ?? '--'}</p>
           </div>
-          <div className="bg-card rounded-xl border border-border-subtle p-3">
-            <div className="flex justify-between items-center">
-              <p className="text-[9px] text-muted font-bold uppercase">Quotes Sent</p>
-              <p className="text-lg font-black text-primary">{data?.quotesSent ?? '--'}</p>
-            </div>
+          <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
+            <p className="text-[9px] text-muted font-bold uppercase">Quotes Sent</p>
+            <p className="text-xl font-black text-primary mt-1">{data?.quotesSent ?? '--'}</p>
           </div>
-          <div className="bg-card rounded-xl border border-border-subtle p-3">
-            <div className="flex justify-between items-center">
-              <p className="text-[9px] text-muted font-bold uppercase">Close Rate</p>
-              <p className={`text-lg font-black ${(data?.closeRate || 0) >= 50 ? 'text-emerald-500' : (data?.closeRate || 0) >= 30 ? 'text-amber-500' : (data?.closeRate || 0) > 0 ? 'text-red-500' : 'text-muted'}`}>{data?.closeRate != null ? `${data.closeRate}%` : '--'}</p>
-            </div>
-          </div>
-          <div className="bg-card rounded-xl border border-border-subtle p-3">
-            <div className="flex justify-between items-center">
-              <p className="text-[9px] text-muted font-bold uppercase">New Recurring</p>
-              <div className="text-right">
-                <p className="text-lg font-black text-emerald-500">{data?.recurringStarts ?? '--'}</p>
-                {data?.monthlyRevAdd > 0 && <p className="text-[9px] text-emerald-500/70">+{fmt$(data.monthlyRevAdd)}/mo</p>}
-              </div>
-            </div>
+          <div className="bg-card rounded-xl border border-border-subtle p-3 text-center">
+            <p className="text-[9px] text-muted font-bold uppercase">Close Rate</p>
+            <p className={`text-xl font-black mt-1 ${(data?.closeRate || 0) >= 50 ? 'text-emerald-500' : (data?.closeRate || 0) >= 30 ? 'text-amber-500' : (data?.closeRate || 0) > 0 ? 'text-red-500' : 'text-muted'}`}>{data?.closeRate != null ? `${data.closeRate}%` : '--'}</p>
           </div>
         </div>
       </div>

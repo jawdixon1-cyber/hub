@@ -435,6 +435,7 @@ export default async function handler(req, res) {
       },
       pipeline,
       activeRecurringCount,
+      monthlyRecurringRevenue: Math.round(recurringClientList.reduce((s, c) => s + c.monthly, 0) * 100) / 100,
       recurringClientList,
       leadNames: leadsInRange.map(r => `${r.client?.firstName || ''} ${r.client?.lastName || ''}`.trim() || 'Unknown').filter(Boolean),
       quotesSentNames: quotesSentInRange.map(q => `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim()).filter(Boolean),
