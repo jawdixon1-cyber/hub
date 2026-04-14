@@ -106,8 +106,8 @@ async function fetchRecurringJobs() {
             id
             firstName
             lastName
-            phones(first:2) { nodes { number } }
-            emails(first:1) { nodes { address } }
+            phones { nodes { number } }
+            emails { nodes { address } }
           }
         }
         pageInfo { hasNextPage endCursor }
