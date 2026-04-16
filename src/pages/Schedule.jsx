@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAppStore } from '../store/AppStoreContext';
 import { getTimezone } from '../utils/timezone';
 import {
   ChevronLeft, ChevronRight, Plus, X, Loader2, Clock,
-  User, ChevronDown, Check,
+  User, ChevronDown, Check, GripVertical, MapPin, Pencil, ExternalLink,
 } from 'lucide-react';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -119,12 +121,15 @@ function FilterPill({ label, options, selected, onChange }) {
   );
 }
 
-/* ─── Compact Event Card (Jobber style) ─── */
+/* ─── Compact Event Card (Jobber style, draggable) ─── */
 function EventCard({ item, onClick }) {
   const tc = TYPE_COLORS[item.type] || TYPE_COLORS.task;
   return (
-    <button onClick={onClick}
-      className={`w-full text-left px-1.5 py-1 rounded text-[9px] font-bold truncate cursor-pointer transition-all hover:brightness-125 ${tc.bg} text-white`}>
+    <button
+      draggable
+      onDragStart={e => { e.dataTransfer.setData('text/plain', item.id); e.dataTransfer.effectAllowed = 'move'; }}
+      onClick={onClick}
+      className={`w-full text-left px-1.5 py-1 rounded text-[9px] font-bold truncate cursor-grab active:cursor-grabbing transition-all hover:brightness-125 ${tc.bg} text-white`}>
       {!item.all_day && !item.anytime && <span className="opacity-80 mr-0.5">{formatTime(item.start_at)}</span>}
       {item.title}
     </button>
@@ -298,34 +303,145 @@ function NewEventModal({ onClose, onSave, defaultDate, orgId }) {
 }
 
 /* ─── Event Detail ─── */
-function EventDetail({ item, onClose, onStatusChange }) {
+function EventDetail({ item, onClose, onStatusChange, onUpdateAssigned, onEdit }) {
+  const navigate = useNavigate();
   const tc = TYPE_COLORS[item.type] || TYPE_COLORS.task;
+  const permissions = useAppStore((s) => s.permissions) || {};
+  const { currentUser, user } = useAuth();
+  const isAssessment = item.type === 'assessment';
+
+  // Build team list for assign dropdown
+  const teamMembers = (() => {
+    const list = Object.entries(permissions).map(([email, info]) => ({ email, name: info.name || email }));
+    const ownerEmail = user?.email?.toLowerCase();
+    if (ownerEmail && !permissions[ownerEmail]) {
+      list.unshift({ email: ownerEmail, name: currentUser || user?.user_metadata?.full_name || 'Owner' });
+    }
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  })();
+
+  const [showAssignMenu, setShowAssignMenu] = useState(false);
+  const assignRef = useRef(null);
+  useEffect(() => {
+    if (!showAssignMenu) return;
+    const close = (e) => { if (assignRef.current && !assignRef.current.contains(e.target)) setShowAssignMenu(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showAssignMenu]);
+
+  const assigned = item.assigned_to || [];
+  const removeAssign = (name) => onUpdateAssigned(item.id, assigned.filter(n => n !== name));
+  const addAssign = (name) => { if (!assigned.includes(name)) onUpdateAssigned(item.id, [...assigned, name]); setShowAssignMenu(false); };
+
+  // Parse request info from title for assessments
+  const requestName = isAssessment ? item.title.replace(/^Assessment:\s*/, '') : item.title;
+  const startDate = new Date(item.start_at);
+  const dateLabel = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: getTimezone() });
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 px-4">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="relative bg-card border border-border-subtle rounded-2xl shadow-2xl w-full max-w-sm">
         <div className={`h-1 ${tc.bg} rounded-t-2xl`} />
-        <div className="p-5 space-y-3">
+        <div className="p-5 space-y-4">
+          {/* Header */}
           <div className="flex items-start justify-between">
-            <div>
-              <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase border mb-1.5 ${tc.light}`}>{item.type}</span>
-              <h2 className="text-base font-black text-primary">{item.title}</h2>
+            <div className="flex items-start gap-2">
+              <GripVertical size={16} className="text-muted mt-1 shrink-0" />
+              <div>
+                <h2 className="text-base font-black text-primary">{requestName}</h2>
+                <p className={`text-xs font-semibold capitalize ${tc.text}`}>{item.type}</p>
+              </div>
             </div>
             <button onClick={onClose} className="p-1 text-muted hover:text-primary cursor-pointer"><X size={16} /></button>
           </div>
-          <p className="flex items-center gap-2 text-xs text-secondary">
-            <Clock size={12} />
-            {item.all_day ? 'All day' : item.anytime ? 'Anytime' : `${formatTime(item.start_at)}${item.end_at ? ` – ${formatTime(item.end_at)}` : ''}`}
-          </p>
-          {item.assigned_to?.length > 0 && <p className="flex items-center gap-2 text-xs text-secondary"><User size={12} /> {item.assigned_to.join(', ')}</p>}
-          {item.notes && <p className="text-xs text-muted">{item.notes}</p>}
-          <div className="flex gap-1.5 pt-2 border-t border-border-subtle">
-            {['scheduled', 'in_progress', 'complete', 'cancelled'].map(s => (
-              <button key={s} onClick={() => onStatusChange(item.id, s)}
-                className={`px-2.5 py-1.5 rounded text-[10px] font-bold capitalize cursor-pointer ${
-                  item.status === s ? 'bg-white/10 text-primary ring-1 ring-white/20' : 'bg-surface-alt text-muted hover:text-primary'
-                }`}>{s.replace('_', ' ')}</button>
-            ))}
+
+          {/* Completed checkbox */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <div onClick={() => onStatusChange(item.id, item.status === 'complete' ? 'scheduled' : 'complete')}
+              className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                item.status === 'complete' ? 'bg-brand border-brand' : 'border-border-subtle hover:border-muted'
+              }`}>
+              {item.status === 'complete' && <Check size={13} className="text-on-brand" />}
+            </div>
+            <span className="text-sm text-secondary">Completed</span>
+          </label>
+
+          {/* Details with links */}
+          {isAssessment && (
+            <div>
+              <p className="text-sm font-black text-primary mb-1">Details</p>
+              <p className="text-sm">
+                <button onClick={() => { onClose(); navigate('/clients'); }} className="text-brand-text hover:underline cursor-pointer">{requestName.replace('Request for ', '')}</button>
+                <span className="text-muted"> – </span>
+                <button onClick={() => { onClose(); navigate(`/requests`); }} className="text-brand-text hover:underline cursor-pointer">Request {dateLabel}</button>
+              </p>
+            </div>
+          )}
+
+          {/* Team */}
+          <div>
+            <p className="text-sm font-black text-primary mb-2">Team</p>
+            <div className="flex flex-wrap items-center gap-1.5" ref={assignRef}>
+              <div className="relative">
+                <button onClick={() => setShowAssignMenu(!showAssignMenu)}
+                  className="w-8 h-8 rounded-full border-2 border-dashed border-border-subtle hover:border-muted flex items-center justify-center cursor-pointer transition-colors">
+                  <Plus size={14} className="text-muted" />
+                </button>
+                {showAssignMenu && (
+                  <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border-subtle rounded-xl shadow-2xl py-1 min-w-[180px] max-h-[200px] overflow-y-auto">
+                    {teamMembers.filter(m => !assigned.includes(m.name)).map(m => (
+                      <button key={m.email} onClick={() => addAssign(m.name)}
+                        className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-surface-alt cursor-pointer text-secondary">
+                        <span className="w-6 h-6 rounded-full bg-surface-alt text-[9px] font-bold flex items-center justify-center">
+                          {m.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                        </span>
+                        {m.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {assigned.map(name => (
+                <span key={name} className="inline-flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-full bg-surface-alt text-sm font-semibold text-primary">
+                  <span className="w-7 h-7 rounded-full bg-brand/20 text-brand text-[10px] font-bold flex items-center justify-center">
+                    {name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                  </span>
+                  {name.split(' ')[0]}
+                  <button onClick={() => removeAssign(name)} className="ml-0.5 text-muted hover:text-primary cursor-pointer"><X size={12} /></button>
+                </span>
+              ))}
+              {assigned.length === 0 && <span className="text-sm text-red-400/70 italic">Unassigned</span>}
+            </div>
+          </div>
+
+          {/* Location (if notes contain address-like info) */}
+          {item.notes && (
+            <div>
+              <p className="text-sm font-black text-primary mb-1">Location</p>
+              <p className="text-sm text-secondary flex items-center gap-1.5"><MapPin size={14} className="text-muted shrink-0" /> {item.notes}</p>
+            </div>
+          )}
+
+          {/* Start */}
+          <div>
+            <p className="text-sm font-black text-primary mb-1">Start</p>
+            <p className="text-sm text-secondary">{dateLabel}</p>
+            <p className="text-sm text-secondary">
+              {item.anytime ? 'Anytime' : formatTime(item.start_at)}
+            </p>
+          </div>
+
+          {/* Footer buttons */}
+          <div className="flex gap-2 pt-2 border-t border-border-subtle">
+            <button onClick={() => { onClose(); if (item.request_id) navigate(`/requests`); else onEdit?.(item); }}
+              className="flex-1 px-4 py-2.5 rounded-lg border border-border-subtle text-sm font-bold text-primary hover:bg-surface-alt cursor-pointer text-center">
+              Edit
+            </button>
+            <button onClick={() => { onClose(); navigate('/requests'); }}
+              className="flex-1 px-4 py-2.5 rounded-lg bg-brand text-on-brand text-sm font-bold hover:bg-brand-hover cursor-pointer text-center">
+              View Details
+            </button>
           </div>
         </div>
       </div>
@@ -414,6 +530,32 @@ export default function Schedule() {
     setSelectedItem(prev => prev?.id === id ? { ...prev, status } : prev);
   };
 
+  const updateAssigned = async (id, assigned_to) => {
+    await supabase.from('schedule_items').update({ assigned_to, updated_at: new Date().toISOString() }).eq('id', id);
+    setItems(prev => prev.map(it => it.id === id ? { ...it, assigned_to } : it));
+    setSelectedItem(prev => prev?.id === id ? { ...prev, assigned_to } : prev);
+  };
+
+  const moveItemToDate = async (itemId, newDateStr) => {
+    const item = items.find(it => it.id === itemId);
+    if (!item || item._ds === newDateStr) return;
+    // Keep same time, change the date
+    const oldDate = new Date(item.start_at);
+    const [y, m, d] = newDateStr.split('-').map(Number);
+    const newStart = new Date(oldDate);
+    newStart.setFullYear(y, m - 1, d);
+    const newIso = newStart.toISOString();
+    await supabase.from('schedule_items').update({ start_at: newIso, updated_at: new Date().toISOString() }).eq('id', itemId);
+    setItems(prev => prev.map(it => it.id === itemId ? { ...it, start_at: newIso, _ds: newDateStr } : it));
+  };
+
+  const handleDrop = (e, dateStr) => {
+    e.preventDefault();
+    const itemId = e.dataTransfer.getData('text/plain');
+    if (itemId) moveItemToDate(itemId, dateStr);
+  };
+  const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+
   const today = ds(new Date());
   const weeks = useMemo(() => getMonthGrid(year, month), [year, month]);
   const byDate = useMemo(() => { const m = {}; for (const it of items) { if (!m[it._ds]) m[it._ds] = []; m[it._ds].push(it); } return m; }, [items]);
@@ -431,7 +573,7 @@ export default function Schedule() {
   return (
     <div className="space-y-3">
       {showNewEvent && <NewEventModal onClose={() => setShowNewEvent(null)} onSave={createEvent} defaultDate={showNewEvent} orgId={orgId} />}
-      {selectedItem && <EventDetail item={selectedItem} onClose={() => setSelectedItem(null)} onStatusChange={updateStatus} />}
+      {selectedItem && <EventDetail item={selectedItem} onClose={() => setSelectedItem(null)} onStatusChange={updateStatus} onUpdateAssigned={updateAssigned} />}
 
       {/* Header — Jobber style */}
       <div className="flex items-center justify-between">
@@ -497,7 +639,9 @@ export default function Schedule() {
                 const di = byDate[day.str] || [];
                 const visitCount = di.filter(x => x.type === 'visit' || x.type === 'assessment').length;
                 return (
-                  <div key={day.str} onClick={() => { if (day.inMonth) { setCurrentDate(day.date); setView('day'); } }}
+                  <div key={day.str}
+                    onClick={() => { if (day.inMonth) { setCurrentDate(day.date); setView('day'); } }}
+                    onDrop={e => handleDrop(e, day.str)} onDragOver={handleDragOver}
                     className={`border-r border-b border-border-subtle/40 aspect-square sm:aspect-auto sm:min-h-[130px] cursor-pointer hover:bg-white/[0.02] transition-colors ${
                       !day.inMonth ? 'bg-black/20' : isToday ? 'bg-brand/[0.07]' : ''
                     }`}>
@@ -543,7 +687,8 @@ export default function Schedule() {
               const isToday = d.str === today;
               const di = byDate[d.str] || [];
               return (
-                <div key={d.str} className={`border-r border-border-subtle/40 min-h-[400px] ${isToday ? 'bg-brand/[0.07]' : ''}`}>
+                <div key={d.str} onDrop={e => handleDrop(e, d.str)} onDragOver={handleDragOver}
+                  className={`border-r border-border-subtle/40 min-h-[400px] ${isToday ? 'bg-brand/[0.07]' : ''}`}>
                   <div className="p-1 space-y-0.5">
                     {di.map(it => <EventCard key={it.id} item={it} onClick={() => setSelectedItem(it)} />)}
                   </div>

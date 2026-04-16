@@ -746,57 +746,43 @@ function OwnerDashboard() {
   const [labor, setLabor] = useState(null);
   const [dashLoading, setDashLoading] = useState(false);
 
+  // Load cached dashboard data on init
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('greenteam-dashboard-cache');
+      if (cached) setData(JSON.parse(cached));
+    } catch {}
+  }, []);
+
   const loadDashboard = useCallback(() => {
     setDashLoading(true);
     const today = getTodayInTimezone();
     const yearStart = today.slice(0, 4) + '-01-01';
-    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const thirtyStr = thirtyDaysAgo.toISOString().split('T')[0];
 
     // Single commander call (cached server-side for 5 min), then ytd revenue
     (async () => {
       const yearData = await fetch(`/api/commander/summary?start=${yearStart}&end=${today}`).then(r => r.ok ? r.json() : null).catch(() => null);
       const ytd = await fetch('/api/jobber-data?action=ytd-revenue').then(r => r.ok ? r.json() : null).catch(() => null);
-      return [yearData, yearData, ytd, null];
-    })().then(([yearData, thirtyData, ytd, laborData]) => {
-      const sent = thirtyData?.kpis?.quotesSent || 0;
-      const approved = thirtyData?.kpis?.quotesApproved || 0;
-      setData({
+      return [yearData, ytd];
+    })().then(([yearData, ytd]) => {
+      // Only update if we got real data (don't overwrite cache with zeros)
+      if (!yearData && !ytd) return;
+      const sent = yearData?.kpis?.quotesSent || 0;
+      const approved = yearData?.kpis?.quotesApproved || 0;
+      const newData = {
         clients: yearData?.activeRecurringCount || 0,
-        newLeads: thirtyData?.kpis?.newLeads || 0,
+        newLeads: yearData?.kpis?.newLeads || 0,
         quotesSent: sent,
         quotesApproved: approved,
         closeRate: sent > 0 ? Math.round((approved / sent) * 100) : 0,
-        recurringStarts: thirtyData?.kpis?.recurringStarts || 0,
-        monthlyRevAdd: thirtyData?.kpis?.startsMonthlyRevenue || 0,
+        recurringStarts: yearData?.kpis?.recurringStarts || 0,
+        monthlyRevAdd: yearData?.kpis?.startsMonthlyRevenue || 0,
         ytdRevenue: ytd?.ytdRevenue || 0,
         jobCount: ytd?.jobCount || 0,
         monthlyRecurringRevenue: yearData?.monthlyRecurringRevenue || 0,
-      });
-
-      // Compute labor stats from the week
-      if (laborData) {
-        let totalHrs = 0, jobHrs = 0, generalHrs = 0, totalCost = 0, revenue = 0;
-        for (const [, day] of Object.entries(laborData)) {
-          if (day?.labor) {
-            totalHrs += day.labor.totalHours || 0;
-            totalCost += day.labor.totalCost || 0;
-            jobHrs += day.labor.jobHours || 0;
-            generalHrs += day.labor.generalHours || 0;
-          }
-          if (day?.revenue) revenue += day.revenue;
-        }
-        setLabor({
-          totalHrs: Math.round(totalHrs * 10) / 10,
-          jobHrs: Math.round(jobHrs * 10) / 10,
-          generalHrs: Math.round(generalHrs * 10) / 10,
-          generalPct: totalHrs > 0 ? Math.round((generalHrs / totalHrs) * 100) : 0,
-          laborCost: Math.round(totalCost),
-          revenue: Math.round(revenue),
-          revPerHour: totalHrs > 0 ? Math.round(revenue / totalHrs) : 0,
-          laborPct: revenue > 0 ? Math.round((totalCost / revenue) * 100) : 0,
-        });
-      }
+      };
+      setData(newData);
+      try { localStorage.setItem('greenteam-dashboard-cache', JSON.stringify(newData)); } catch {}
     }).finally(() => setDashLoading(false));
   }, []);
 
@@ -820,7 +806,7 @@ function OwnerDashboard() {
           <div className="bg-card rounded-2xl border border-border-subtle p-5 text-center">
             <p className="text-[10px] text-muted font-bold uppercase tracking-wider">Recurring Clients</p>
             <p className="text-3xl font-black text-brand-text mt-2">{data ? clients : '--'} <span className="text-lg text-muted font-bold">/ {CLIENT_GOAL}</span></p>
-            {data && monthlyRev > 0 && <p className="text-xs text-brand-text/70 font-bold mt-1">{fmt$(monthlyRev)}/mo</p>}
+            {data && <p className="text-xs text-brand-text/70 font-bold mt-1">{monthlyRev > 0 ? `${fmt$(monthlyRev)}/mo` : 'Loading...'}</p>}
           </div>
         </div>
       </div>

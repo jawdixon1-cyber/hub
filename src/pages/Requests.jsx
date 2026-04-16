@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useAppStore } from '../store/AppStoreContext';
 import {
   Inbox, RefreshCw, Phone, Mail, MapPin, Loader2,
   ArrowLeft, MessageSquare, Search, TrendingUp,
-  Plus, X, CalendarDays, ChevronDown, Check, CheckCircle2,
+  Plus, X, CalendarDays, ChevronDown, Check, CheckCircle2, ClipboardList,
+  MoreHorizontal, FileText, Briefcase, Archive, Trash2, Pencil, Users,
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
@@ -82,6 +85,7 @@ function NewRequestModal({ onClose, onSave, salesperson }) {
   const [showClientResults, setShowClientResults] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [notes, setNotes] = useState('');
+  const [wantAssessment, setWantAssessment] = useState(false);
   const [assessmentDate, setAssessmentDate] = useState('');
   const [assessmentTime, setAssessmentTime] = useState('');
   const [saving, setSaving] = useState(false);
@@ -123,7 +127,8 @@ function NewRequestModal({ onClose, onSave, salesperson }) {
       state: selectedClient?.state || '', zip: selectedClient?.zip || '',
       notes, services: [],
       salesperson,
-      assessment_date: assessmentDate, assessment_time: assessmentTime,
+      assessment_date: wantAssessment ? assessmentDate : null,
+      assessment_time: wantAssessment ? assessmentTime : null,
     });
     setSaving(false);
   };
@@ -205,19 +210,30 @@ function NewRequestModal({ onClose, onSave, salesperson }) {
 
           <div className="border-t border-border-subtle" />
 
-          {/* On-site assessment */}
+          {/* On-site assessment toggle */}
           <div>
-            <h3 className="text-base font-black text-primary mb-3">On-site assessment</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-muted uppercase tracking-wider">Date</label>
-                <input type="date" value={assessmentDate} onChange={e => setAssessmentDate(e.target.value)} className={inputCls} />
+            <button type="button" onClick={() => setWantAssessment(!wantAssessment)}
+              className="flex items-center gap-3 w-full text-left cursor-pointer group">
+              <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${wantAssessment ? 'bg-brand border-brand' : 'border-border-subtle group-hover:border-muted'}`}>
+                {wantAssessment && <Check size={14} className="text-on-brand" />}
               </div>
               <div>
-                <label className="text-xs font-bold text-muted uppercase tracking-wider">Time</label>
-                <input type="time" value={assessmentTime} onChange={e => setAssessmentTime(e.target.value)} className={inputCls} />
+                <p className="text-sm font-bold text-primary">Create on-site assessment</p>
+                <p className="text-[11px] text-muted">Schedule a visit to assess the property before quoting</p>
               </div>
-            </div>
+            </button>
+            {wantAssessment && (
+              <div className="grid grid-cols-2 gap-3 mt-3 ml-8">
+                <div>
+                  <label className="text-xs font-bold text-muted uppercase tracking-wider">Date</label>
+                  <input type="date" value={assessmentDate} onChange={e => setAssessmentDate(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-muted uppercase tracking-wider">Time</label>
+                  <input type="time" value={assessmentTime} onChange={e => setAssessmentTime(e.target.value)} className={inputCls} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -233,76 +249,386 @@ function NewRequestModal({ onClose, onSave, salesperson }) {
   );
 }
 
+/* ─── Team Assign Dropdown ─── */
+function TeamAssignDropdown({ members, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  const selected = members.find(m => m.name === value);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(!open)}
+        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-border-subtle text-sm text-primary hover:bg-surface-alt cursor-pointer transition-colors">
+        {value ? (
+          <>
+            <span className="w-6 h-6 rounded-full bg-brand/20 text-brand text-[10px] font-bold flex items-center justify-center">
+              {value.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+            </span>
+            {value}
+          </>
+        ) : (
+          <><Users size={14} className="text-muted" /> Assign <Plus size={14} className="text-muted" /></>
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border-subtle rounded-xl shadow-2xl py-1 min-w-[200px] max-h-[240px] overflow-y-auto">
+          {value && (
+            <button onClick={() => { onChange(''); setOpen(false); }}
+              className="w-full px-4 py-2.5 text-left text-xs font-medium text-red-400 hover:bg-surface-alt cursor-pointer flex items-center gap-2">
+              <X size={14} /> Unassign
+            </button>
+          )}
+          {members.length === 0 && (
+            <p className="px-4 py-3 text-xs text-muted">No team members found</p>
+          )}
+          {members.map(m => (
+            <button key={m.email} onClick={() => { onChange(m.name); setOpen(false); }}
+              className={`w-full px-4 py-2.5 text-left text-sm font-medium flex items-center gap-2.5 hover:bg-surface-alt cursor-pointer transition-colors ${value === m.name ? 'text-brand' : 'text-secondary'}`}>
+              <span className="w-7 h-7 rounded-full bg-surface-alt text-[10px] font-bold flex items-center justify-center shrink-0">
+                {m.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+              </span>
+              {m.name}
+              {value === m.name && <Check size={14} className="ml-auto text-brand" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Detail View ─── */
-function RequestDetail({ request, onBack, onStatusChange }) {
+function RequestDetail({ request, onBack, onStatusChange, onUpdate, onDelete }) {
   const r = request;
+  const { currentUser, user } = useAuth();
+  const permissions = useAppStore((s) => s.permissions) || {};
+  const teamMembers = (() => {
+    const list = Object.entries(permissions).map(([email, info]) => ({ email, name: info.name || email }));
+    // Include the owner if not already in permissions
+    const ownerEmail = user?.email?.toLowerCase();
+    if (ownerEmail && !permissions[ownerEmail]) {
+      list.unshift({ email: ownerEmail, name: currentUser || user?.user_metadata?.full_name || 'Owner' });
+    }
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  })();
   const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Unknown';
   const address = [r.street, r.city, r.state, r.zip].filter(Boolean).join(', ');
+  const [showMore, setShowMore] = useState(false);
+  const hasAssessment = !!(r.assessment_date || r.raw_payload?.assessment?.instructions);
+  const [assessOpen, setAssessOpen] = useState(false);
+  const [assessComplete, setAssessComplete] = useState(r.raw_payload?.assessment?.completed || false);
+  const assess = r.raw_payload?.assessment || {};
+  const [instructions, setInstructions] = useState(assess.instructions || '');
+  const [startDate, setStartDate] = useState(r.assessment_date || '');
+  const [startTime, setStartTime] = useState(r.assessment_time || '');
+  const [endTime, setEndTime] = useState(assess.end_time || '');
+  const [scheduleLater, setScheduleLater] = useState(!r.assessment_date);
+  const [anytime, setAnytime] = useState(!r.assessment_time);
+  const [assignee, setAssignee] = useState(assess.assignee || '');
+  const [saving, setSaving] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(r.title || '');
+  const moreRef = useRef(null);
+  const assessRef = useRef(null);
+  const titleRef = useRef(null);
+  const displayTitle = r.title || `Request for ${name}`;
+
+  useEffect(() => {
+    if (!showMore) return;
+    const close = (e) => { if (moreRef.current && !moreRef.current.contains(e.target)) setShowMore(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showMore]);
+
+  const saveAssessment = async () => {
+    setSaving(true);
+    const assessData = {
+      instructions: instructions || null,
+      end_time: anytime ? null : endTime || null,
+      assignee: assignee || null,
+      completed: assessComplete,
+    };
+    await onUpdate(r.id, {
+      assessment_date: scheduleLater ? null : startDate || null,
+      assessment_time: anytime ? null : startTime || null,
+      raw_payload: { ...(r.raw_payload || {}), assessment: assessData },
+    });
+
+    // Also create/update a schedule_items entry so it shows on the calendar
+    if (!scheduleLater && startDate) {
+      const org = r.org_id;
+      if (org) {
+        const startAt = anytime
+          ? new Date(`${startDate}T00:00:00`).toISOString()
+          : new Date(`${startDate}T${startTime || '09:00'}:00`).toISOString();
+        const scheduleId = r.raw_payload?.assessment?.schedule_item_id;
+        if (scheduleId) {
+          await supabase.from('schedule_items').update({
+            start_at: startAt, anytime, notes: instructions || null,
+            assigned_to: assignee ? [assignee] : [], updated_at: new Date().toISOString(),
+          }).eq('id', scheduleId);
+        } else {
+          const { data: inserted } = await supabase.from('schedule_items').insert({
+            org_id: org, type: 'assessment',
+            title: `Assessment: ${displayTitle}`,
+            start_at: startAt, end_at: null, all_day: false, anytime,
+            notes: instructions || null, status: 'scheduled',
+            assigned_to: assignee ? [assignee] : [],
+            request_id: r.id,
+          }).select('id').single();
+          if (inserted?.id) {
+            await onUpdate(r.id, {
+              raw_payload: { ...(r.raw_payload || {}), assessment: { ...assessData, schedule_item_id: inserted.id } },
+            });
+          }
+        }
+      }
+    }
+
+    setSaving(false);
+    setAssessOpen(false);
+  };
+
+  const toggleComplete = async (val) => {
+    setAssessComplete(val);
+    await onUpdate(r.id, {
+      raw_payload: {
+        ...(r.raw_payload || {}),
+        assessment: { ...assess, completed: val },
+      },
+    });
+  };
+
+  const handleScheduleClick = () => {
+    setAssessOpen(true);
+    setTimeout(() => assessRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  };
 
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted hover:text-primary cursor-pointer">
         <ArrowLeft size={16} /> Back to requests
       </button>
-      <div className="rounded-xl bg-card border border-border-subtle p-5">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-black text-primary">{name}</h2>
-            <p className="text-xs text-muted mt-1">Requested {formatDate(r.created_at)}</p>
-          </div>
-          <StatusDot status={r.status} />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-          <div className="space-y-2">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Contact</p>
-            {r.phone && <a href={`tel:${r.phone}`} className="flex items-center gap-2 text-sm text-brand-text hover:underline"><Phone size={14} /> {r.phone}</a>}
-            {r.email && <a href={`mailto:${r.email}`} className="flex items-center gap-2 text-sm text-brand-text hover:underline"><Mail size={14} /> {r.email}</a>}
-            {r.sms_consent && <p className="text-[10px] text-emerald-500 font-semibold flex items-center gap-1"><MessageSquare size={12} /> SMS consent</p>}
-          </div>
-          {address && (
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-2">Property</p>
-              <p className="flex items-center gap-2 text-sm text-secondary"><MapPin size={14} className="shrink-0" /> {address}</p>
-            </div>
-          )}
-        </div>
-        {r.services?.length > 0 && (
-          <div className="mt-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1.5">Services</p>
-            <div className="flex flex-wrap gap-1.5">
-              {r.services.map(s => <span key={s} className="px-2.5 py-1 rounded-lg bg-brand-light text-brand-text text-xs font-semibold capitalize">{s.replace('-', ' ')}</span>)}
-            </div>
-          </div>
-        )}
-        {r.source && (
-          <div className="mt-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1">Source</p>
-            <p className="text-sm text-primary font-semibold capitalize">{r.source}{r.source_other ? ` — ${r.source_other}` : ''}</p>
-          </div>
-        )}
-        {r.notes && (
-          <div className="mt-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1">Notes</p>
-            <p className="text-sm text-secondary">{r.notes}</p>
-          </div>
-        )}
-      </div>
-      <div className="rounded-xl bg-card border border-border-subtle p-4">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-3">Update Status</p>
-        <div className="flex flex-wrap gap-2">
+
+      {/* ── Status bar + actions ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
           {STATUS_ORDER.map(s => {
             const cfg = STATUS_CONFIG[s];
             const active = r.status === s;
+            if (!active) return null;
             return (
-              <button key={s} onClick={() => onStatusChange(r.id, s)} disabled={active}
-                className={`px-4 py-2.5 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-2 ${
-                  active ? 'bg-white/10 text-primary ring-1 ring-white/20' : 'bg-surface-alt text-muted hover:text-primary hover:bg-white/5'
-                } disabled:cursor-default`}>
+              <span key={s} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${cfg.dot === 'bg-blue-500' ? 'bg-blue-500/20 text-blue-400' : cfg.dot === 'bg-amber-500' ? 'bg-amber-500/20 text-amber-400' : cfg.dot === 'bg-green-600' ? 'bg-green-600/20 text-green-400' : 'bg-white/10 text-primary'}`}>
                 <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />{cfg.label}
-              </button>
+              </span>
             );
           })}
         </div>
+        <div className="flex items-center gap-2">
+          <div className="relative" ref={moreRef}>
+            <button onClick={() => setShowMore(!showMore)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border-subtle text-sm font-bold text-primary hover:bg-surface-alt cursor-pointer transition-colors">
+              <MoreHorizontal size={16} /> More
+            </button>
+            {showMore && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border-subtle rounded-xl shadow-2xl py-1 min-w-[200px]">
+                <button onClick={() => { onStatusChange(r.id, 'quoted'); setShowMore(false); }}
+                  className="w-full px-4 py-3 text-left text-sm font-medium flex items-center gap-3 hover:bg-surface-alt cursor-pointer text-secondary">
+                  <FileText size={16} /> Convert to Quote
+                </button>
+                <button onClick={() => { onStatusChange(r.id, 'won'); setShowMore(false); }}
+                  className="w-full px-4 py-3 text-left text-sm font-medium flex items-center gap-3 hover:bg-surface-alt cursor-pointer text-secondary">
+                  <Briefcase size={16} /> Convert to Job
+                </button>
+                <div className="border-t border-border-subtle my-1" />
+                <button onClick={() => { onStatusChange(r.id, 'lost'); setShowMore(false); }}
+                  className="w-full px-4 py-3 text-left text-sm font-medium flex items-center gap-3 hover:bg-surface-alt cursor-pointer text-secondary">
+                  <Archive size={16} /> Archive
+                </button>
+                <button onClick={() => { if (confirm('Delete this request?')) { onDelete(r.id); } setShowMore(false); }}
+                  className="w-full px-4 py-3 text-left text-sm font-medium flex items-center gap-3 hover:bg-surface-alt cursor-pointer text-red-400">
+                  <Trash2 size={16} /> Delete
+                </button>
+              </div>
+            )}
+          </div>
+          <button onClick={handleScheduleClick}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand text-sm font-bold hover:bg-brand-hover cursor-pointer transition-colors">
+            <CalendarDays size={16} /> Schedule Assessment
+          </button>
+        </div>
+      </div>
+
+      {/* ── Title ── */}
+      <div className="rounded-xl bg-card border border-border-subtle p-5">
+        <div className="flex items-start justify-between">
+          {editingTitle ? (
+            <div className="flex-1 flex items-center gap-2">
+              <input ref={titleRef} value={titleDraft} onChange={e => setTitleDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { onUpdate(r.id, { title: titleDraft || null }); setEditingTitle(false); }
+                  if (e.key === 'Escape') { setTitleDraft(r.title || ''); setEditingTitle(false); }
+                }}
+                onBlur={() => { onUpdate(r.id, { title: titleDraft || null }); setEditingTitle(false); }}
+                className="text-2xl font-black text-primary bg-transparent border-b-2 border-brand focus:outline-none flex-1" />
+            </div>
+          ) : (
+            <h2 className="text-2xl font-black text-primary">{displayTitle}</h2>
+          )}
+          {!editingTitle && (
+            <button onClick={() => { setEditingTitle(true); setTimeout(() => titleRef.current?.focus(), 50); }}
+              className="p-1.5 text-muted hover:text-primary cursor-pointer shrink-0 ml-2">
+              <Pencil size={16} />
+            </button>
+          )}
+        </div>
+
+        {/* Client info row */}
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-start gap-4">
+          <div className="flex-1 space-y-1.5">
+            <p className="text-sm font-bold text-primary flex items-center gap-1.5">{name}</p>
+            {address && <p className="flex items-center gap-2 text-sm text-secondary"><MapPin size={14} className="shrink-0 text-muted" /> {address}</p>}
+            {r.phone && <a href={`tel:${r.phone}`} className="flex items-center gap-2 text-sm text-brand-text hover:underline"><Phone size={14} /> {r.phone}</a>}
+            {r.email && <a href={`mailto:${r.email}`} className="flex items-center gap-2 text-sm text-brand-text hover:underline"><Mail size={14} /> {r.email}</a>}
+          </div>
+          <div className="flex gap-8">
+            <div>
+              <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Request Source</p>
+              <p className="text-sm text-primary font-semibold mt-1 capitalize">{r.source || '—'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Requested</p>
+              <p className="text-sm text-primary font-semibold mt-1">{new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── On-site assessment ── */}
+      <div ref={assessRef} className="rounded-xl bg-card border border-border-subtle p-5">
+        <h3 className="text-lg font-black text-primary mb-4">On-site assessment</h3>
+
+        {assessOpen ? (
+          /* ── Editing form ── */
+          <>
+            <textarea value={instructions} onChange={e => setInstructions(e.target.value)}
+              placeholder="Instructions" rows={3}
+              className="w-full px-3 py-2.5 rounded-lg bg-surface-alt border border-border-subtle text-sm text-primary placeholder:text-muted focus:outline-none focus:border-brand/50 resize-none" />
+
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-6 mt-4">
+              <div>
+                <p className="text-sm font-black text-primary mb-2">Schedule</p>
+                <div className="flex flex-wrap gap-2">
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} disabled={scheduleLater}
+                    className="px-3 py-2 rounded-lg bg-surface-alt border border-border-subtle text-sm text-primary focus:outline-none disabled:opacity-40 w-[160px]" />
+                  <div className="flex rounded-lg overflow-hidden border border-border-subtle">
+                    <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} disabled={anytime}
+                      className="px-3 py-2 bg-surface-alt text-sm text-primary focus:outline-none disabled:opacity-40 w-[110px]" />
+                    <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} disabled={anytime}
+                      className="px-3 py-2 bg-surface-alt text-sm text-primary focus:outline-none border-l border-border-subtle disabled:opacity-40 w-[110px]" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 mt-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <div onClick={() => setScheduleLater(!scheduleLater)}
+                      className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-colors ${scheduleLater ? 'bg-brand border-brand' : 'border-border-subtle'}`}>
+                      {scheduleLater && <Check size={12} className="text-on-brand" />}
+                    </div>
+                    <span className="text-xs text-secondary">Schedule later</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <div onClick={() => setAnytime(!anytime)}
+                      className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-colors ${anytime ? 'bg-brand border-brand' : 'border-border-subtle'}`}>
+                      {anytime && <Check size={12} className="text-on-brand" />}
+                    </div>
+                    <span className="text-xs text-secondary">Anytime</span>
+                  </label>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-black text-primary mb-2">Team</p>
+                <TeamAssignDropdown members={teamMembers} value={assignee} onChange={setAssignee} />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 mt-4 pt-4 border-t border-border-subtle">
+              <button onClick={() => setAssessOpen(false)}
+                className="px-4 py-2 rounded-lg border border-border-subtle text-sm font-bold text-primary hover:bg-surface-alt cursor-pointer">Cancel</button>
+              <button onClick={saveAssessment} disabled={saving}
+                className="px-5 py-2 rounded-lg bg-brand text-on-brand text-sm font-bold hover:bg-brand-hover cursor-pointer disabled:opacity-50">
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </>
+        ) : hasAssessment ? (
+          /* ── Saved summary ── */
+          <div className="relative">
+            <button onClick={() => setAssessOpen(true)}
+              className="absolute top-0 right-0 p-1.5 text-muted hover:text-primary cursor-pointer">
+              <Pencil size={16} />
+            </button>
+            {assess.instructions && (
+              <div className="mb-3">
+                <p className="text-xs font-bold text-muted mb-1">Instructions</p>
+                <p className="text-sm text-secondary">{assess.instructions}</p>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-8">
+              <div>
+                <p className="text-xs font-bold text-muted mb-1">Schedule</p>
+                <p className="text-sm text-primary font-semibold">
+                  {r.assessment_date
+                    ? new Date(r.assessment_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : 'Not scheduled'}
+                  {r.assessment_time ? ` @ ${new Date('2000-01-01T' + r.assessment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}
+                  {assess.end_time ? ` – ${new Date('2000-01-01T' + assess.end_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-muted mb-1">Team</p>
+                {assess.assignee ? (
+                  <p className="text-sm text-primary font-semibold flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-full bg-brand/20 text-brand text-[9px] font-bold flex items-center justify-center">
+                      {assess.assignee.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                    </span>
+                    {assess.assignee}
+                  </p>
+                ) : (
+                  <p className="text-sm text-red-400/70 font-semibold italic flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-full bg-red-500/10 text-red-400 text-[9px] flex items-center justify-center">✕</span>
+                    Unassigned
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 mt-3 cursor-pointer">
+              <div onClick={() => toggleComplete(!assessComplete)}
+                className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${assessComplete ? 'bg-brand border-brand' : 'border-border-subtle hover:border-muted'}`}>
+                {assessComplete && <Check size={13} className="text-on-brand" />}
+              </div>
+              <span className="text-sm text-secondary">Complete assessment</span>
+            </label>
+          </div>
+        ) : (
+          /* ── Empty placeholder ── */
+          <button onClick={() => setAssessOpen(true)}
+            className="w-full rounded-xl border-2 border-dashed border-border-subtle hover:border-muted py-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-colors group">
+            <div className="w-12 h-12 rounded-full bg-surface-alt flex items-center justify-center group-hover:bg-white/10 transition-colors">
+              <ClipboardList size={22} className="text-muted" />
+            </div>
+            <p className="text-sm text-muted">Visit the property to assess the job before you do the work</p>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -311,6 +637,7 @@ function RequestDetail({ request, onBack, onStatusChange }) {
 /* ─── Main Page ─── */
 export default function Requests() {
   const { orgId, currentUser } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [allRequests, setAllRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -322,6 +649,14 @@ export default function Requests() {
   const [showDateDropdown, setShowDateDropdown] = useState(false);
   const [showNewRequest, setShowNewRequest] = useState(false);
   const [statusSearch, setStatusSearch] = useState('');
+
+  // Auto-open new request modal from Create menu (?new=1)
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setShowNewRequest(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const fetchRequests = useCallback(async () => {
     if (!orgId) return;
@@ -368,10 +703,26 @@ export default function Requests() {
     setStatusMenu(null);
   };
 
+  const updateRequest = async (id, fields) => {
+    const { error } = await supabase.from('requests')
+      .update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) { console.error('[Requests] update error:', error.message); return; }
+    setAllRequests(prev => prev.map(r => r.id === id ? { ...r, ...fields } : r));
+    if (selected?.id === id) setSelected(prev => ({ ...prev, ...fields }));
+  };
+
+  const deleteRequest = async (id) => {
+    const { error } = await supabase.from('requests').delete().eq('id', id);
+    if (error) { console.error('[Requests] delete error:', error.message); return; }
+    setAllRequests(prev => prev.filter(r => r.id !== id));
+    setSelected(null);
+  };
+
   const createRequest = async (form) => {
     if (!orgId) return;
     const { error } = await supabase.from('requests').insert({
       org_id: orgId,
+      title: form.title || null,
       first_name: form.first_name || null,
       last_name: form.last_name || null,
       email: form.email || null,
@@ -383,6 +734,9 @@ export default function Requests() {
       services: form.services,
       source: form.source || null,
       notes: form.notes || null,
+      salesperson: form.salesperson || null,
+      assessment_date: form.assessment_date || null,
+      assessment_time: form.assessment_time || null,
       status: 'new',
     });
     if (error) { console.error('[Requests] create error:', error.message); return; }
@@ -407,7 +761,7 @@ export default function Requests() {
   const activeDateLabel = DATE_RANGES.find(d => d.id === dateFilter)?.label || 'All';
 
   if (selected) {
-    return <div className="max-w-2xl mx-auto"><RequestDetail request={selected} onBack={() => setSelected(null)} onStatusChange={updateStatus} /></div>;
+    return <div className="max-w-2xl mx-auto"><RequestDetail request={selected} onBack={() => setSelected(null)} onStatusChange={updateStatus} onUpdate={updateRequest} onDelete={deleteRequest} /></div>;
   }
 
   return (
@@ -551,9 +905,8 @@ export default function Requests() {
               <tbody>
                 {requests.map((r, i) => {
                   const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Unknown';
-                  const title = r.services?.length > 0
-                    ? r.services.map(s => s.replace('-', ' ')).join(', ')
-                    : `Request for ${r.first_name || 'client'}`;
+                  const title = r.title
+                    || (r.services?.length > 0 ? r.services.map(s => s.replace('-', ' ')).join(', ') : `Request for ${name}`);
                   const addr = r.street
                     ? `${r.street}, ${r.city || ''}${r.state ? `, ${r.state}` : ''} ${r.zip || ''}`.trim()
                     : [r.city, r.state, r.zip].filter(Boolean).join(', ') || '';
@@ -561,7 +914,10 @@ export default function Requests() {
                     <tr key={r.id} onClick={() => setSelected(r)}
                       className={`cursor-pointer transition-colors hover:bg-white/[0.02] ${i > 0 ? 'border-t border-border-subtle/50' : ''}`}>
                       <td className="px-4 py-3"><p className="font-bold text-primary">{name}</p></td>
-                      <td className="px-4 py-3 hidden sm:table-cell"><p className="text-secondary capitalize truncate max-w-[200px]">{title}</p></td>
+                      <td className="px-4 py-3 hidden sm:table-cell">
+                        <p className="text-secondary capitalize truncate max-w-[200px]">{title || '—'}</p>
+                        {r.assessment_date && <p className="text-[10px] text-amber-400 mt-0.5 flex items-center gap-1"><ClipboardList size={10} /> Assessment scheduled</p>}
+                      </td>
                       <td className="px-4 py-3 hidden md:table-cell"><p className="text-secondary truncate max-w-[250px]">{addr || '—'}</p></td>
                       <td className="px-4 py-3 hidden lg:table-cell">
                         <div className="space-y-0.5">
