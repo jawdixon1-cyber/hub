@@ -80,6 +80,19 @@ const STATE_KEYS = [
   { key: 'applicationForm',     supaKey: 'greenteam-applicationForm',     initial: initialApplicationForm },
   { key: 'applications',        supaKey: 'greenteam-applications',        initial: [] },
   { key: 'jobPost',             supaKey: 'greenteam-jobPost',             initial: initialJobPost },
+  { key: 'phoneScreenQuestions', supaKey: 'greenteam-phoneScreenQuestions', initial: [
+    { id: 'opener', label: "Hey [name], this is Jude from Hey Jude's Lawn Care — how's it going?" },
+    { id: 'frame', label: "Quick thing before we dive in — this call goes both ways. I wanna see if you're the right fit for us, and I want you to see if we're the right spot for you. I care more about who you are than your resume. So just be real with me — no right or wrong answers.", type: 'info' },
+    { id: 'whats_important', label: "What matters most to you these days? Family, faith, goals — what are you really focused on?" },
+    { id: 'proud_of', label: "What's something you're proud of? Doesn't have to be work — anything." },
+    { id: 'free_time', label: "Outside of work, what do you pour your time into?" },
+    { id: 'why_looking', label: "You've been looking for work for [duration] — what's going on with that?" },
+    { id: 'previous_dislikes', label: "I wanna be the best boss I can be — is there anything you didn't like about your previous employers?" },
+    { id: 'five_years', label: "If things go right, what does life look like in 5 years?" },
+    { id: 'record_smoke', label: "Real talk — any record, or anything you smoke regularly?" },
+    { id: 'why_us', label: "What made you apply here specifically?" },
+    { id: 'their_questions', label: "What questions do you have for me?" },
+  ] },
 ];
 
 function resolveInitial(cloudValue, initial) {
@@ -110,7 +123,14 @@ export function createAppStore(cloudData, orgId) {
     // Force latest 6-step GHL survey form if stored version is outdated
     if (key === 'applicationForm' && value) {
       const totalFields = (value.steps || []).reduce((n, s) => n + (s.fields?.length || 0), 0);
-      if (!value.steps || totalFields < 20) {
+      if (!value.steps || totalFields < 20 || (value.version || 0) < (initial.version || 0)) {
+        value = initial;
+      }
+    }
+    // Replace phone-screen questions if they predate the current condensed set
+    if (key === 'phoneScreenQuestions' && Array.isArray(value)) {
+      const ids = new Set(value.map((q) => q?.id));
+      if (!ids.has('whats_important') || !ids.has('proud_of') || !ids.has('previous_dislikes') || ids.has('life_now') || ids.has('dealbreakers')) {
         value = initial;
       }
     }
@@ -220,7 +240,7 @@ export function createAppStore(cloudData, orgId) {
         if (key === 'applicationForm') {
           try {
             const totalFields = (cloudValue?.steps || []).reduce((n, s) => n + (s?.fields?.length || 0), 0);
-            if (totalFields < 20) {
+            if (totalFields < 20 || (cloudValue?.version || 0) < (initial.version || 0)) {
               cloudValue = initial;
               const payload = { key: supaKey, value: initial };
               if (orgId) payload.org_id = orgId;

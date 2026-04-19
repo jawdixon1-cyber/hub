@@ -7,13 +7,13 @@ import { getTimezone } from './utils/timezone'
 import App from './App.jsx'
 
 // One-time migration: clear bad applicationForm from cache so defaults load
-if (!localStorage.getItem('greenteam-form-migrated-v2')) {
+if (!localStorage.getItem('greenteam-form-migrated-v15')) {
   try {
     const cache = JSON.parse(localStorage.getItem('greenteam-data-cache') || '{}');
     delete cache['greenteam-applicationForm'];
     localStorage.setItem('greenteam-data-cache', JSON.stringify(cache));
   } catch {}
-  localStorage.setItem('greenteam-form-migrated-v2', '1');
+  localStorage.setItem('greenteam-form-migrated-v15', '1');
 }
 
 // Set default timezone to EST on first visit

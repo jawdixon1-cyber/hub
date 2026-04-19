@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   Plus,
   Trash2,
@@ -30,7 +31,7 @@ import {
   PenTool,
   Video,
   FileText,
-  Briefcase,
+  Upload,
   Search,
   ArrowUpDown,
   MessageSquare,
@@ -51,6 +52,7 @@ const FIELD_TYPES = [
   { type: 'multi',    label: 'Multi Select',  icon: ListChecks, color: 'text-pink-400',   bg: 'bg-pink-500/10 border-pink-500/20' },
   { type: 'signature',label: 'Signature',     icon: PenTool,    color: 'text-indigo-400', bg: 'bg-indigo-500/10 border-indigo-500/20' },
   { type: 'video',    label: 'Video',         icon: Video,      color: 'text-red-400',    bg: 'bg-red-500/10 border-red-500/20' },
+  { type: 'file',     label: 'File Upload',   icon: Upload,     color: 'text-teal-400',   bg: 'bg-teal-500/10 border-teal-500/20' },
   { type: 'info',     label: 'Info Text',     icon: FileText,   color: 'text-gray-400',   bg: 'bg-gray-500/10 border-gray-500/20' },
 ];
 
@@ -73,73 +75,99 @@ function Input({ value, onChange, placeholder, className = '', ...rest }) {
 /* ═══════════════════════════════════════════
    HIRING PAGE PREVIEW
    ═══════════════════════════════════════════ */
-function HiringPagePreview({ content, steps }) {
+const PreviewCheckIcon = () => (
+  <span className="w-[20px] h-[20px] rounded-md bg-[#B0FF03] inline-flex items-center justify-center shrink-0 mt-0.5">
+    <svg width="13" height="13" viewBox="0 0 24 24"><path fill="#111" d="M9.2 16.6 4.9 12.3l1.6-1.6 2.7 2.7 8-8 1.6 1.6z"/></svg>
+  </span>
+);
+const PreviewXIcon = () => (
+  <span className="w-[18px] h-[18px] rounded-md bg-[rgba(255,80,80,.08)] border border-[rgba(255,80,80,.20)] inline-flex items-center justify-center shrink-0 mt-0.5">
+    <svg width="12" height="12" viewBox="0 0 24 24"><path fill="rgba(255,100,100,.70)" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+  </span>
+);
+const PreviewChecklist = ({ items, neg }) => (
+  <ul className="space-y-0">
+    {items.map((item, i) => (
+      <li key={i} className="flex gap-2.5 items-start py-2.5 border-t border-[rgba(255,255,255,.07)] first:border-0 text-[rgba(255,255,255,.78)] font-[760] text-[14.5px] leading-[1.35]">
+        {neg ? <PreviewXIcon /> : <PreviewCheckIcon />}
+        <span>{item}</span>
+      </li>
+    ))}
+  </ul>
+);
+const PreviewCard = ({ children }) => (
+  <div className="rounded-[22px] p-[18px] overflow-hidden border-2 border-[#B0FF03] bg-[rgba(176,255,3,.06)]">
+    {children}
+  </div>
+);
+const PreviewCardTitle = ({ children }) => (
+  <h3 className="text-[16px] font-black tracking-[.2px] text-[rgba(255,255,255,.92)] mb-2.5">{children}</h3>
+);
+const PreviewCallout = ({ children, feature }) => (
+  <div className={`mt-3.5 px-3.5 py-3 rounded-2xl font-[850] text-[14.5px] ${
+    feature
+      ? 'border border-[rgba(176,255,3,.20)] bg-[rgba(176,255,3,.06)] text-[rgba(255,255,255,.92)]'
+      : 'border border-[rgba(255,255,255,.10)] bg-[rgba(255,255,255,.02)] text-[rgba(255,255,255,.86)]'
+  }`}>
+    {children}
+  </div>
+);
+const PreviewSH = ({ children }) => (
+  <h2 className="text-[clamp(24px,4.6vw,32px)] leading-[1.1] font-black tracking-[-0.3px] text-white mb-2.5">{children}</h2>
+);
+const PreviewSP = ({ children }) => (
+  <p className="text-[rgba(255,255,255,.74)] font-[720] mb-3 max-w-[78ch]">{children}</p>
+);
+const PreviewSec = ({ children }) => (
+  <div className="py-12 border-t border-[rgba(255,255,255,.08)]">{children}</div>
+);
+
+export function HiringPagePreview({ content, steps, hideApplySection = false }) {
+  const [previewValues, setPreviewValues] = useState({});
+  const setPreviewValue = (id, v) => setPreviewValues((p) => ({ ...p, [id]: v }));
+  const togglePreviewMulti = (id, opt) => setPreviewValues((p) => {
+    const cur = p[id] || [];
+    return { ...p, [id]: cur.includes(opt) ? cur.filter((o) => o !== opt) : [...cur, opt] };
+  });
+  const isPreviewVisible = (field) => {
+    if (!field.showIf) return true;
+    return previewValues[field.showIf.field] === field.showIf.equals;
+  };
   const c = content;
 
-  const CheckIcon = () => (
-    <span className="w-[18px] h-[18px] rounded-md bg-[rgba(176,255,3,.10)] border border-[rgba(176,255,3,.18)] inline-flex items-center justify-center shrink-0 mt-0.5">
-      <svg width="12" height="12" viewBox="0 0 24 24"><path fill="#B0FF03" d="M9.2 16.6 4.9 12.3l1.6-1.6 2.7 2.7 8-8 1.6 1.6z"/></svg>
-    </span>
-  );
-  const XIcon = () => (
-    <span className="w-[18px] h-[18px] rounded-md bg-[rgba(255,80,80,.08)] border border-[rgba(255,80,80,.20)] inline-flex items-center justify-center shrink-0 mt-0.5">
-      <svg width="12" height="12" viewBox="0 0 24 24"><path fill="rgba(255,100,100,.70)" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-    </span>
-  );
-
-  const Checklist = ({ items, neg }) => (
-    <ul className="space-y-0">
-      {items.map((item, i) => (
-        <li key={i} className="flex gap-2.5 items-start py-2.5 border-t border-[rgba(255,255,255,.07)] first:border-0 text-[rgba(255,255,255,.78)] font-[760] text-[14.5px] leading-[1.35]">
-          {neg ? <XIcon /> : <CheckIcon />}
-          <span>{item}</span>
-        </li>
-      ))}
-    </ul>
-  );
-
-  const Card = ({ children, feature }) => (
-    <div className={`rounded-[22px] p-[18px] overflow-hidden ${
-      feature
-        ? 'border border-[rgba(176,255,3,.20)] bg-[radial-gradient(110%_140%_at_50%_0%,rgba(176,255,3,.12)_0%,rgba(176,255,3,0)_66%),rgba(255,255,255,.03)]'
-        : 'border border-[rgba(255,255,255,.10)] bg-[rgba(255,255,255,.03)]'
-    }`}>
-      {children}
-    </div>
-  );
-
-  const CardTitle = ({ children }) => (
-    <h3 className="text-[16px] font-black tracking-[.2px] text-[rgba(255,255,255,.92)] mb-2.5">{children}</h3>
-  );
-
-  const Callout = ({ children, feature }) => (
-    <div className={`mt-3.5 px-3.5 py-3 rounded-2xl font-[850] text-[14.5px] ${
-      feature
-        ? 'border border-[rgba(176,255,3,.20)] bg-[rgba(176,255,3,.06)] text-[rgba(255,255,255,.92)]'
-        : 'border border-[rgba(255,255,255,.10)] bg-[rgba(255,255,255,.02)] text-[rgba(255,255,255,.86)]'
-    }`}>
-      {children}
-    </div>
-  );
-
-  const SH = ({ children }) => (
-    <h2 className="text-[clamp(24px,4.6vw,32px)] leading-[1.1] font-black tracking-[-0.3px] text-white mb-2.5">{children}</h2>
-  );
-
-  const SP = ({ children }) => (
-    <p className="text-[rgba(255,255,255,.74)] font-[720] mb-3 max-w-[78ch]">{children}</p>
-  );
-
-  const Sec = ({ children }) => (
-    <div className="py-12 border-t border-[rgba(255,255,255,.08)]">{children}</div>
-  );
+  const Checklist = PreviewChecklist;
+  const Card = PreviewCard;
+  const CardTitle = PreviewCardTitle;
+  const Callout = PreviewCallout;
+  const SH = PreviewSH;
+  const SP = PreviewSP;
+  const Sec = PreviewSec;
 
   const allSteps = steps || [];
 
-  // Render a single field in the preview style
-  const FormField = ({ field }) => (
-    <div>
-      {field.label.includes('\n') ? (
+  const groupHalfWidth = (fields = []) => {
+    const rows = [];
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      const next = fields[i + 1];
+      if (f.halfWidth && next?.halfWidth) {
+        rows.push([f, next]);
+        i++;
+      } else {
+        rows.push([f]);
+      }
+    }
+    return rows;
+  };
+
+  // Render a single field in the preview style (interactive)
+  const renderField = (field) => {
+    const val = previewValues[field.id];
+    return (
+    <div key={field.id}>
+      {field.type === 'info' && !field.label.includes('\n') ? (
+        <h3 className="text-[15px] font-black text-white mt-2 mb-1">{field.label}</h3>
+      ) : field.label.includes('\n') ? (
         <div className="text-[13px] text-[rgba(255,255,255,.7)] mb-2 whitespace-pre-line leading-relaxed font-semibold">{field.label}</div>
       ) : (
         <label className="block text-[13px] font-semibold text-[rgba(255,255,255,.8)] mb-1.5">
@@ -147,38 +175,78 @@ function HiringPagePreview({ content, steps }) {
         </label>
       )}
       {field.description && <p className="text-[11px] text-[rgba(255,255,255,.4)] mb-1.5 font-semibold">{field.description}</p>}
-
-      {field.type === 'info' && null}
       {(field.type === 'short' || field.type === 'text' || field.type === 'email' || field.type === 'phone') && (
-        <div className="w-full bg-[#1a1a1a] border border-[#2e2e2e] rounded-xl px-3.5 py-2.5 text-sm text-[#444]">{field.placeholder || '\u00A0'}</div>
+        <input
+          type="text"
+          value={val || ''}
+          onChange={(e) => setPreviewValue(field.id, e.target.value)}
+          placeholder={field.placeholder}
+          className="w-full bg-[#1a1a1a] border border-[#2e2e2e] rounded-xl px-3.5 py-2.5 text-sm text-white placeholder:text-[#444] focus:outline-none focus:border-[#B0FF03]"
+        />
       )}
       {(field.type === 'long') && (
-        <div className="w-full bg-[#1a1a1a] border border-[#2e2e2e] rounded-xl px-3.5 py-2.5 text-sm text-[#444] min-h-[72px]">{field.placeholder || '\u00A0'}</div>
+        <textarea
+          value={val || ''}
+          onChange={(e) => setPreviewValue(field.id, e.target.value)}
+          placeholder={field.placeholder}
+          rows={3}
+          className="w-full bg-[#1a1a1a] border border-[#2e2e2e] rounded-xl px-3.5 py-2.5 text-sm text-white placeholder:text-[#444] focus:outline-none focus:border-[#B0FF03]"
+        />
       )}
       {field.type === 'dropdown' && (
-        <div className="w-full bg-[#1a1a1a] border border-[#2e2e2e] rounded-xl px-3.5 py-2.5 text-sm text-[#444] flex items-center justify-between">
-          <span>Select...</span>
-          <ChevronDown size={14} className="text-[#444]" />
-        </div>
+        <select
+          value={val || ''}
+          onChange={(e) => setPreviewValue(field.id, e.target.value)}
+          className="w-full bg-[#1a1a1a] border border-[#2e2e2e] rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-[#B0FF03]"
+        >
+          <option value="">Select...</option>
+          {(field.options || []).map((o, i) => <option key={i} value={o}>{o}</option>)}
+        </select>
       )}
       {field.type === 'radio' && (
-        <div className="space-y-1.5">
-          {(field.options || []).map((opt, i) => (
-            <div key={i} className="flex items-center gap-3 px-3.5 py-2 rounded-xl border border-[#2e2e2e] bg-[#1a1a1a]">
-              <div className="w-4 h-4 rounded-full border-2 border-[#444] shrink-0" />
-              <span className="text-[13px] text-[rgba(255,255,255,.7)] font-semibold">{opt}</span>
-            </div>
-          ))}
+        <div className={(field.options || []).length === 2 ? 'grid grid-cols-2 gap-2' : 'space-y-1.5'}>
+          {(field.options || []).map((opt, i) => {
+            const selected = val === opt;
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setPreviewValue(field.id, opt)}
+                className={`w-full flex items-center gap-3 px-3.5 py-2 rounded-xl border text-left transition-colors ${selected ? 'border-[#B0FF03] bg-[rgba(176,255,3,.06)]' : 'border-[#2e2e2e] bg-[#1a1a1a] hover:border-[#444]'}`}
+              >
+                <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${selected ? 'border-[#B0FF03]' : 'border-[#444]'}`}>
+                  {selected && <div className="w-2 h-2 rounded-full bg-[#B0FF03]" />}
+                </div>
+                <span className={`text-[13px] font-semibold ${selected ? 'text-white' : 'text-[rgba(255,255,255,.7)]'}`}>{opt}</span>
+              </button>
+            );
+          })}
         </div>
       )}
       {(field.type === 'multi' || field.type === 'checkbox') && (
         <div className="space-y-1.5">
-          {(field.options || []).map((opt, i) => (
-            <div key={i} className="flex items-center gap-3 px-3.5 py-2 rounded-xl border border-[#2e2e2e] bg-[#1a1a1a]">
-              <div className="w-4 h-4 rounded-md border-2 border-[#444] shrink-0" />
-              <span className="text-[13px] text-[rgba(255,255,255,.7)] font-semibold">{opt}</span>
-            </div>
-          ))}
+          {(field.options || []).map((opt, i) => {
+            const checked = Array.isArray(val) && val.includes(opt);
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => togglePreviewMulti(field.id, opt)}
+                className={`w-full flex items-center gap-3 px-3.5 py-2 rounded-xl border text-left transition-colors ${checked ? 'border-[#B0FF03] bg-[rgba(176,255,3,.06)]' : 'border-[#2e2e2e] bg-[#1a1a1a] hover:border-[#444]'}`}
+              >
+                <div className={`w-4 h-4 rounded-md border-2 shrink-0 flex items-center justify-center ${checked ? 'border-[#B0FF03] bg-[#B0FF03]' : 'border-[#444]'}`}>
+                  {checked && <svg width="10" height="10" viewBox="0 0 24 24"><path fill="#111" d="M9.2 16.6 4.9 12.3l1.6-1.6 2.7 2.7 8-8 1.6 1.6z"/></svg>}
+                </div>
+                <span className={`text-[13px] font-semibold ${checked ? 'text-white' : 'text-[rgba(255,255,255,.7)]'}`}>{opt}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {field.type === 'file' && (
+        <div className="w-full bg-[#1a1a1a] border-2 border-dashed border-[#2e2e2e] rounded-xl py-5 flex flex-col items-center justify-center">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span className="text-[11px] text-[#555] font-semibold mt-1.5">Tap to upload a file</span>
         </div>
       )}
       {field.type === 'signature' && (
@@ -193,7 +261,8 @@ function HiringPagePreview({ content, steps }) {
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: '#000', color: 'rgba(255,255,255,.92)', fontFamily: "'Montserrat', system-ui, sans-serif", lineHeight: 1.55, WebkitFontSmoothing: 'antialiased' }}>
@@ -203,25 +272,34 @@ function HiringPagePreview({ content, steps }) {
       </div>
 
       {/* HERO */}
-      <div className="relative text-center overflow-hidden" style={{ padding: '80px 16px 50px', backgroundImage: "url('https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6990a89bc086658638d69137.png')", backgroundSize: 'cover', backgroundPosition: 'center' }}>
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,.82) 0%, rgba(0,0,0,.6) 50%, rgba(0,0,0,.85) 100%)' }} />
-        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 50% 50%, rgba(176,255,3,.12) 0%, transparent 60%)' }} />
-        <div className="relative z-10 max-w-[700px] mx-auto">
-          <span className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-[rgba(176,255,3,.06)] border border-[rgba(176,255,3,.25)] text-[11px] font-black uppercase tracking-[.5px] mb-4">
-            <svg width="12" height="12" viewBox="0 0 24 24"><path fill="#B0FF03" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-            {c.hero.badge}
-          </span>
-          <h1 className="text-[clamp(22px,4.5vw,42px)] leading-[1.1] font-black tracking-[-0.5px] mb-3 whitespace-pre-line">
-            {c.hero.title.split('\n').map((line, i) => (
-              <span key={i}>
-                {i > 0 && <br />}
-                {i > 0 ? <span className="text-[#B0FF03]" style={{ textShadow: '0 0 30px rgba(176,255,3,.35)' }}>{line}</span> : line}
-              </span>
-            ))}
+      <div className="relative text-center overflow-hidden" style={{ padding: '60px 16px 70px', backgroundImage: "url('https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/69a769bab869781ecca8ec56.png')", backgroundSize: 'cover', backgroundPosition: 'center' }}>
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,.78) 0%, rgba(0,0,0,.45) 45%, rgba(0,0,0,.92) 100%)' }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse 70% 60% at 50% 45%, rgba(176,255,3,.20) 0%, transparent 65%)' }} />
+        <div className="relative z-10 max-w-[720px] mx-auto">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/[0.12] backdrop-blur mb-5">
+            <svg width="14" height="14" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            <div className="flex items-center gap-0.5">
+              {[1,2,3,4,5].map(s => <svg key={s} width="10" height="10" viewBox="0 0 24 24"><path fill="#FBBC05" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>)}
+            </div>
+            <span className="text-[11px] font-black text-white">5.0</span>
+            <span className="text-[10px] font-bold text-[rgba(255,255,255,.55)]">· 150+ reviews · Rock Hill</span>
+          </div>
+          <h1 className="leading-[0.95] font-black tracking-[-0.035em] mb-4">
+            {(() => {
+              const parts = c.hero.title.split('\n');
+              return <>
+                <span className="block text-[clamp(18px,4.8vw,42px)] text-white mb-1.5">{parts[0]}</span>
+                {parts[1] && (
+                  <span className="block text-[clamp(26px,7.5vw,64px)] uppercase text-[#B0FF03]" style={{ textShadow: '0 0 40px rgba(176,255,3,.55), 0 0 80px rgba(176,255,3,.25)' }}>{parts[1]}</span>
+                )}
+              </>;
+            })()}
           </h1>
-          {c.hero.subtitle && <p className="text-[15px] font-bold text-[rgba(255,255,255,.65)] max-w-[480px] mx-auto mb-5">{c.hero.subtitle}</p>}
-          <span className="inline-flex items-center justify-center h-12 px-7 rounded-2xl bg-[#B0FF03] text-[#111] font-black text-[14px] border border-[rgba(0,0,0,.22)] shadow-[0_0_20px_rgba(176,255,3,.25)]">{c.hero.cta}</span>
-          {c.hero.note && <p className="mt-2 text-[11px] font-[750] text-[rgba(255,255,255,.45)]">{c.hero.note}</p>}
+          {c.hero.subtitle && (
+            <p className="text-[clamp(18px,5.2vw,26px)] font-black italic text-white mb-6" style={{ textShadow: '0 2px 20px rgba(0,0,0,.6)' }}>{c.hero.subtitle.split('\n').map((line, i) => <span key={i}>{i > 0 && <br />}{line}</span>)}</p>
+          )}
+          <a href="#apply" className="inline-flex items-center justify-center h-14 px-10 rounded-2xl bg-[#B0FF03] text-[#111] font-black text-[16px] border border-[rgba(0,0,0,.22)] shadow-[0_0_40px_rgba(176,255,3,.55),0_10px_30px_rgba(0,0,0,.4)] tracking-wide no-underline">{c.hero.cta} →</a>
+          {c.hero.note && <p className="mt-3 text-[11px] font-[750] text-[rgba(255,255,255,.45)]">{c.hero.note}</p>}
         </div>
       </div>
 
@@ -230,57 +308,84 @@ function HiringPagePreview({ content, steps }) {
         {c.whatYouGet && (
           <Sec>
             <SH>What You Get</SH>
-            <Card feature><Checklist items={c.whatYouGet.items} /></Card>
-            <Callout feature>{c.whatYouGet.callout}</Callout>
+            <Checklist items={c.whatYouGet.items} />
+            {c.whatYouGet.callout && <p className="text-[15px] font-black mt-4" style={{ color: '#B0FF03' }}>{c.whatYouGet.callout}</p>}
           </Sec>
         )}
 
         {/* 2. WHO WE ARE — company + values */}
         {c.whatWeDo && (
           <Sec>
-            <SH>Who We Are</SH>
-            <SP>{c.whatWeDo.intro}</SP>
+            <SH>Culture</SH>
+            <SP>{c.whatWeDo.intro.split('\n').map((line, i) => <span key={i}>{i > 0 && <br />}{line}</span>)}</SP>
             {c.whatWeDo.items?.length > 0 && <Card feature><Checklist items={c.whatWeDo.items} /></Card>}
             {c.coreValues && (
               <div className={c.whatWeDo.items?.length > 0 ? 'mt-5' : 'mt-2'}>
                 <p className="text-[14px] font-black text-[rgba(255,255,255,.7)] mb-3">{c.coreValues.intro}</p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                   {c.coreValues.values.map((v, i) => (
-                    <div key={i} className="rounded-xl border border-[rgba(176,255,3,.20)] bg-[rgba(176,255,3,.04)] px-2 py-2.5 text-center flex items-center justify-center min-h-[44px]">
+                    <div key={i} className="rounded-xl border border-[#B0FF03] bg-[rgba(176,255,3,.10)] px-2 py-2.5 text-center flex items-center justify-center min-h-[44px]">
                       <span className="text-[11px] sm:text-[12px] font-black text-[rgba(255,255,255,.85)] leading-tight">{v}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-            {c.whatWeDo.callout && <Callout feature>{c.whatWeDo.callout}</Callout>}
+            {c.whatWeDo.detail && <p className="text-[14px] font-bold text-[rgba(255,255,255,.65)] leading-[1.65] mt-4">{c.whatWeDo.detail}</p>}
+            {c.whatWeDo.callout && <p className="text-[clamp(16px,3.5vw,18px)] font-black italic mt-5" style={{ color: '#B0FF03', textShadow: '0 0 20px rgba(176,255,3,.25)' }}>{c.whatWeDo.callout}</p>}
           </Sec>
         )}
 
-        {/* 3. PAY & BENEFITS */}
-        <Sec>
-          <SH>Pay & Benefits</SH>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mt-4">
-            <Card feature><CardTitle>Compensation</CardTitle><Checklist items={c.payBenefits.compensation} /></Card>
-            <Card><CardTitle>Culture</CardTitle><Checklist items={c.payBenefits.scheduleCulture} /></Card>
-          </div>
-        </Sec>
+        {/* 3. PAY */}
+        {c.payProgression && (
+          <Sec>
+            <SH>Pay</SH>
+            <div className="flex flex-col sm:flex-row items-stretch gap-0 mt-4">
+              {/* Starting Pay */}
+              <div className="flex-1 rounded-xl bg-[rgba(255,255,255,.04)] border border-[rgba(255,255,255,.08)] p-5 text-center">
+                <p className="text-[10px] font-bold text-[rgba(255,255,255,.4)] uppercase tracking-wider">{c.payProgression.start.label}</p>
+                <p className="text-3xl font-black text-[rgba(255,255,255,.7)] mt-2">{c.payProgression.start.amount}</p>
+                <p className="text-[11px] text-[rgba(255,255,255,.35)] mt-1">{c.payProgression.start.note}</p>
+              </div>
+              {/* Arrow */}
+              <div className="flex items-center justify-center px-2 py-2 sm:py-0">
+                <span className="text-2xl text-[rgba(255,255,255,.2)] rotate-90 sm:rotate-0">→</span>
+              </div>
+              {/* Raises */}
+              <div className="flex-[1.15] rounded-xl bg-[rgba(176,255,3,.04)] border border-[rgba(176,255,3,.15)] p-5 text-center">
+                <p className="text-[11px] font-bold text-[rgba(176,255,3,.6)] uppercase tracking-wider">{c.payProgression.raises.label}</p>
+                <p className="text-[14px] font-bold text-[rgba(255,255,255,.8)] mt-3 leading-relaxed">{c.payProgression.raises.note}</p>
+              </div>
+              {/* Arrow */}
+              <div className="flex items-center justify-center px-2 py-2 sm:py-0">
+                <span className="text-2xl text-[rgba(176,255,3,.3)] rotate-90 sm:rotate-0">→</span>
+              </div>
+              {/* Team Lead */}
+              <div className="flex-[1.2] rounded-xl bg-[rgba(176,255,3,.08)] border border-[rgba(176,255,3,.3)] p-6 text-center shadow-[0_0_30px_rgba(176,255,3,.08)]">
+                <p className="text-[12px] font-black text-[#B0FF03] uppercase tracking-wider">{c.payProgression.lead.label}</p>
+                {c.payProgression.lead.amount && <p className="text-3xl font-black text-white mt-2">{c.payProgression.lead.amount}</p>}
+                <p className="text-[13px] font-bold text-[rgba(255,255,255,.8)] mt-2 leading-relaxed">{c.payProgression.lead.note}</p>
+              </div>
+            </div>
+          </Sec>
+        )}
 
-        {/* 3. WHAT YOU'LL DO + GROWTH — show the path */}
+        {/* 3. WHAT YOU'LL DO — Team Member → Team Lead */}
         <Sec>
           <SH>What You'll Do</SH>
           <SP>{c.whatYoullDo.intro}</SP>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mt-4">
-            <Card feature><CardTitle>Daily Work</CardTitle><Checklist items={c.whatYoullDo.dailyWork} /></Card>
-            <Card><CardTitle>How You'll Learn</CardTitle><Checklist items={c.whatYoullDo.howYoullLearn} /></Card>
+            <Card feature>
+              <CardTitle>Team Member</CardTitle>
+              <Checklist items={[...c.whatYoullDo.dailyWork, ...c.whatYoullDo.howYoullLearn]} />
+            </Card>
+            <Card>
+              <CardTitle>Team Lead</CardTitle>
+              <p className="text-[12px] font-bold text-[rgba(255,255,255,.45)] mb-2 italic">Everything a team member does, plus:</p>
+              <Checklist items={c.teamLead.items} />
+            </Card>
           </div>
-        </Sec>
-
-        <Sec>
-          <SH>When You Become a Team Lead</SH>
-          <SP>{c.teamLead.intro}</SP>
-          <Card feature><Checklist items={c.teamLead.items} /></Card>
-          <Callout feature>{c.teamLead.callout}</Callout>
+          {c.teamLead.callout && <p className="text-[15px] font-black mt-4" style={{ color: '#B0FF03' }}>{c.teamLead.callout}</p>}
         </Sec>
 
         <Sec>
@@ -293,35 +398,29 @@ function HiringPagePreview({ content, steps }) {
           </div>
         </Sec>
 
+        {/* 6. FIT CHECK */}
+        {c.goodFit?.length > 0 && (
+          <Sec>
+            <SH>Good Fit?</SH>
+            <Card feature><Checklist items={c.goodFit} /></Card>
+          </Sec>
+        )}
+
         {/* REQUIREMENTS — filter */}
         <Sec>
           <SH>Requirements</SH>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mt-4">
-            <Card><CardTitle>Must have</CardTitle><Checklist items={c.requirements.mustHave} /></Card>
-            <Card feature><CardTitle>Preferred (Not Required)</CardTitle>{c.requirements.preferredNote && <p className="text-[13px] text-[rgba(255,255,255,.55)] font-semibold mb-2">{c.requirements.preferredNote}</p>}<Checklist items={c.requirements.preferred} /></Card>
-          </div>
+          <Card><Checklist items={c.requirements.mustHave} /></Card>
           {c.requirements.callouts.map((text, i) => <Callout key={i} feature={i === 0}>{text}</Callout>)}
         </Sec>
 
-        {/* 6. FIT CHECK */}
-        <Sec>
-          <SH>Good Fit?</SH>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mt-4">
-            {c.goodFit.map((card, i) => (
-              <Card key={i} feature><CardTitle>{card.title}</CardTitle><p className="text-[rgba(255,255,255,.72)] font-[720] text-[14.5px] leading-[1.45]">{card.body}</p></Card>
-            ))}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mt-3.5">
-            {c.notAFit.map((item, i) => <Card key={i}><Checklist items={[item]} neg /></Card>)}
-          </div>
-          <Callout>{c.notAFitCallout}</Callout>
-        </Sec>
-
         {/* FULL APPLICATION FORM */}
-        <Sec>
-          <SH>{c.bottomCta.title}</SH>
-          <p className="text-[15px] font-bold text-[rgba(255,255,255,.55)] mb-6">{c.bottomCta.subtitle}</p>
-          <div className="max-w-lg mx-auto">
+        {!hideApplySection && <div data-apply-section>
+        <div className="py-14 border-t border-[rgba(255,255,255,.08)] text-center relative">
+          <div className="absolute inset-x-0 top-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(176,255,3,.5), transparent)' }} />
+          <p className="text-[11px] font-black text-[#B0FF03] uppercase tracking-[0.3em] mb-3">The next step</p>
+          <h2 className="text-[clamp(32px,8vw,52px)] leading-[0.95] font-black tracking-[-0.03em] text-white mb-3" style={{ textShadow: '0 2px 30px rgba(0,0,0,.5)' }}>{c.bottomCta.title}</h2>
+          <p className="text-[clamp(14px,3.8vw,16px)] font-bold text-[rgba(255,255,255,.6)] mb-10 max-w-[420px] mx-auto px-4">{c.bottomCta.subtitle}</p>
+          <div className="max-w-lg mx-auto text-left px-4">
             {allSteps.map((step, si) => (
               <div key={step.id} className={si > 0 ? 'mt-10' : ''}>
                 <div className="flex items-center gap-3 mb-5">
@@ -329,19 +428,26 @@ function HiringPagePreview({ content, steps }) {
                   <h3 className="text-[18px] font-black text-white">{step.title}</h3>
                 </div>
                 <div className="space-y-4">
-                  {(step.fields || []).map((field) => (
-                    <FormField key={field.id} field={field} />
+                  {groupHalfWidth((step.fields || []).filter(isPreviewVisible)).map((row, ri) => (
+                    row.length === 2 ? (
+                      <div key={ri} className="grid grid-cols-2 gap-3">
+                        {row.map((field) => renderField(field))}
+                      </div>
+                    ) : (
+                      renderField(row[0])
+                    )
                   ))}
                 </div>
               </div>
             ))}
             <div className="mt-8">
-              <span className="inline-flex items-center justify-center w-full h-12 rounded-xl bg-[#B0FF03] text-[#111] font-black text-sm border border-[rgba(0,0,0,.22)]">
-                Submit Application
+              <span className="inline-flex items-center justify-center w-full h-14 rounded-2xl bg-[#B0FF03] text-[#111] font-black text-[15px] border border-[rgba(0,0,0,.22)] shadow-[0_0_40px_rgba(176,255,3,.45),0_10px_30px_rgba(0,0,0,.3)] tracking-wide">
+                Submit Application →
               </span>
             </div>
           </div>
-        </Sec>
+        </div>
+        </div>}
       </div>
     </div>
   );
@@ -401,59 +507,15 @@ function PagesIndex({ onSelect }) {
 /* ═══════════════════════════════════════════
    PAGE DETAIL VIEW
    ═══════════════════════════════════════════ */
-const DETAIL_TABS = [
-  { id: 'jobpost', label: 'Job Post', icon: Briefcase },
-  { id: 'preview', label: 'Preview', icon: Eye },
-  { id: 'applications', label: 'Applications', icon: Inbox },
-];
-
-function PageDetail({ onBack }) {
-  const content = useAppStore((s) => s.hiringContent);
-  const form = useAppStore((s) => s.applicationForm);
-  const applications = useAppStore((s) => s.applications) || [];
-  const [tab, setTab] = useState('applications');
-  const newApps = applications.filter((a) => a.status === 'new').length;
-
-  return (
-    <div>
-      <div className="flex items-center gap-3 mb-4">
-        <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-surface-alt text-muted hover:text-primary transition-colors cursor-pointer"><ChevronLeft size={20} /></button>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-black text-primary truncate">Landscaping Team Member</h1>
-          <p className="text-xs text-muted flex items-center gap-1.5 mt-0.5"><Globe size={12} /> heyjudeslawncare.com/grow</p>
-        </div>
-        <a href="https://heyjudeslawncare.com/grow" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border-default text-xs font-semibold text-secondary hover:bg-surface-alt cursor-pointer">
-          <ExternalLink size={13} /> Visit Live
-        </a>
-      </div>
-
-      <div className="flex gap-1 bg-surface-alt rounded-xl p-1 mb-5 overflow-x-auto">
-        {DETAIL_TABS.map((t) => {
-          const Icon = t.icon;
-          return (
-            <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer relative whitespace-nowrap flex-1 min-w-0 ${tab === t.id ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'}`}>
-              <Icon size={14} className="shrink-0" />
-              <span className="truncate">{t.label}</span>
-              {t.id === 'applications' && newApps > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center">{newApps}</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {tab === 'preview' && <PreviewTab content={content} form={form} />}
-      {tab === 'jobpost' && <JobPostTab />}
-      {tab === 'applications' && <ApplicationsTab />}
-    </div>
-  );
+function PageDetail() {
+  return <ApplicationsTab />;
 }
 
 /* ─── Preview Tab ─── */
 function PreviewTab({ content, form }) {
   const [codeCopied, setCodeCopied] = useState(false);
 
-  const copyPageCode = () => {
+  const getHiringHtml = () => {
     const c = content;
     const ck = '<svg viewBox="0 0 24 24"><path fill="#B0FF03" d="M9.2 16.6 4.9 12.3l1.6-1.6 2.7 2.7 8-8 1.6 1.6z"/></svg>';
     const xk = '<svg viewBox="0 0 24 24"><path fill="rgba(255,100,100,.70)" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
@@ -464,13 +526,13 @@ function PreviewTab({ content, form }) {
     const html = `<style>
 .hj-page{background:#000;color:rgba(255,255,255,.92);font-family:'Montserrat',system-ui,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased;max-width:1020px;margin:0 auto;padding:0 16px}
 .hj-page *{box-sizing:border-box}
-.hj-hero{padding:100px 16px 60px;text-align:center;position:relative;overflow:hidden;background:url('https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6990a89bc086658638d69137.png') center/cover no-repeat;width:100vw;margin-left:calc(-50vw + 50%)}
+.hj-hero{padding:100px 16px 60px;text-align:center;position:relative;overflow:hidden;background:url('https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/69a769bab869781ecca8ec56.png') center/cover no-repeat;width:100vw;margin-left:calc(-50vw + 50%)}
 .hj-hero::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.82) 0%,rgba(0,0,0,.6) 50%,rgba(0,0,0,.85) 100%)}
 .hj-hero::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:600px;height:400px;background:radial-gradient(circle,rgba(176,255,3,.12) 0%,transparent 60%);pointer-events:none}
 .hj-hero>*{position:relative;z-index:1}
 .star-badge{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:rgba(176,255,3,.06);border:1px solid rgba(176,255,3,.25);font-weight:900;font-size:11px;letter-spacing:.5px;text-transform:uppercase;margin-bottom:16px}
 .star-badge svg{width:12px;height:12px;color:#B0FF03}
-.hj-page h1{font-size:clamp(22px,4.5vw,46px);line-height:1.1;margin:0 0 16px;font-weight:900;letter-spacing:-.5px;max-width:700px;margin-left:auto;margin-right:auto}
+.hj-page h1{font-size:clamp(19px,4.5vw,46px);line-height:1.1;margin:0 0 16px;font-weight:900;letter-spacing:-.5px;max-width:700px;margin-left:auto;margin-right:auto}
 .hj-page h1 .green{color:#B0FF03;text-shadow:0 0 30px rgba(176,255,3,.35)}
 .hj-btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border-radius:16px;height:48px;padding:0 28px;font-weight:900;font-size:14px;border:1px solid rgba(0,0,0,.22);background:#B0FF03;color:#111;box-shadow:0 0 20px rgba(176,255,3,.25)}
 .hj-btn:hover{background:#c4ff33}
@@ -500,6 +562,26 @@ function PreviewTab({ content, form }) {
 textarea.hj-input{min-height:80px;resize:vertical}
 select.hj-input{appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
 .hj-radio-group,.hj-check-group{display:flex;flex-direction:column;gap:6px}
+.hj-radio-group-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pay-progression{display:flex;flex-direction:row;align-items:stretch;gap:0;margin-top:16px;flex-wrap:nowrap}
+.pay-card{flex:1;border-radius:12px;padding:20px;text-align:center;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04)}
+.pay-card-raises{flex:1.15;border:1px solid rgba(176,255,3,.15);background:rgba(176,255,3,.04)}
+.pay-card-lead{flex:1.2;border:1px solid rgba(176,255,3,.3);background:rgba(176,255,3,.08);box-shadow:0 0 30px rgba(176,255,3,.08);padding:24px 20px}
+.pay-label{font-size:10px;font-weight:900;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.1em;margin:0}
+.pay-label-accent{font-size:11px;color:rgba(176,255,3,.6)}
+.pay-label-lead{font-size:12px;color:#B0FF03}
+.pay-amount{font-size:30px;font-weight:900;color:rgba(255,255,255,.7);margin:8px 0 4px;line-height:1}
+.pay-amount-lead{color:#fff}
+.pay-note{font-size:11px;color:rgba(255,255,255,.35);margin:0}
+.pay-note-body{font-size:13px;font-weight:700;color:rgba(255,255,255,.8);margin:10px 0 0;line-height:1.5}
+.pay-arrow{display:flex;align-items:center;justify-content:center;padding:0 8px;font-size:22px;color:rgba(255,255,255,.2)}
+.pay-arrow-accent{color:rgba(176,255,3,.3)}
+@media(max-width:720px){.pay-progression{flex-direction:column}.pay-arrow{padding:8px 0;transform:rotate(90deg)}}
+.hj-apply-sec{padding:56px 16px;text-align:center;position:relative}
+.hj-apply-divider{position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(176,255,3,.5),transparent)}
+.hj-apply-kicker{font-size:11px;font-weight:900;color:#B0FF03;text-transform:uppercase;letter-spacing:0.3em;margin:0 0 12px}
+.hj-apply-title{font-size:clamp(32px,8vw,52px);line-height:0.95;font-weight:900;letter-spacing:-0.03em;color:#fff;margin:0 0 12px;text-shadow:0 2px 30px rgba(0,0,0,.5)}
+.hj-apply-subtitle{font-size:clamp(14px,3.8vw,16px);font-weight:700;color:rgba(255,255,255,.6);margin:0 auto 40px;max-width:420px;padding:0 16px}
 .hj-radio-label,.hj-check-label{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;border:1px solid #2e2e2e;background:#1a1a1a;cursor:pointer;font-size:13px;color:rgba(255,255,255,.7);font-weight:600;transition:border-color .2s}
 .hj-radio-label:hover,.hj-check-label:hover{border-color:#444}
 .hj-radio-label input,.hj-check-label input{accent-color:#B0FF03;width:16px;height:16px;flex-shrink:0}
@@ -511,10 +593,19 @@ select.hj-input{appearance:none;cursor:pointer;background-image:url("data:image/
 <img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/69a0cc399185ff63f8649cd6.png" alt="Hey Jude's Lawn Care" style="height:44px"/>
 </div>
 <div class="hj-hero">
-<div class="star-badge"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> ${c.hero.badge}</div>
+${c.hero.badge ? '<div class="star-badge"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> ' + c.hero.badge + '</div>' : ''}
 <h1>${titleLines[0]}${titleLines[1] ? '<br><span class="green">' + titleLines[1] + '</span>' : ''}</h1>
-${c.hero.subtitle ? '<p style="font-size:15px;font-weight:700;color:rgba(255,255,255,.65);max-width:480px;margin:0 auto 20px">' + c.hero.subtitle + '</p>' : ''}
+${(() => {
+  if (!c.hero.subtitle) return '';
+  const lines = c.hero.subtitle.split('\n');
+  const textLines = lines.filter(l => !l.includes('stars across'));
+  const googleLine = lines.find(l => l.includes('stars across'));
+  const text = textLines.length ? '<p style="font-size:15px;font-weight:700;color:rgba(255,255,255,.65);max-width:480px;margin:0 auto 16px">' + textLines.map(l => l).join('<br>') + '</p>' : '';
+  const pill = googleLine ? '<div style="display:inline-flex;align-items:center;gap:10px;padding:10px 16px;border-radius:999px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);margin-bottom:20px;backdrop-filter:blur(8px)"><svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg><div style="display:flex;gap:2px">' + [1,2,3,4,5].map(() => '<svg width="14" height="14" viewBox="0 0 24 24"><path fill="#FBBC05" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>').join('') + '</div><span style="font-size:12px;font-weight:900;color:#fff">5.0</span><span style="font-size:11px;font-weight:700;color:rgba(255,255,255,.5)">150+ reviews · #1 in Rock Hill</span></div><br>' : '';
+  return text + pill;
+})()}
 <a class="hj-btn" href="#apply">${c.hero.cta}</a>
+${c.hero.note ? '<p style="margin-top:8px;font-size:11px;font-weight:750;color:rgba(255,255,255,.45)">' + c.hero.note + '</p>' : ''}
 </div>
 
 <div class="hj-sec"><h2>What You Get</h2>
@@ -522,30 +613,41 @@ ${crd('<ul class="checklist">' + chk(c.whatYouGet?.items || []) + '</ul>', true)
 <div class="callout feature">${c.whatYouGet?.callout || ''}</div>
 </div>
 
-<div class="hj-sec"><h2>Who We Are</h2>
-<p class="intro">${c.whatWeDo?.intro || ''}</p>
+<div class="hj-sec"><h2>Culture</h2>
+<p class="intro">${c.whatWeDo?.intro?.replace(/\n/g, '<br>') || ''}</p>
 <p style="font-size:14px;font-weight:900;color:rgba(255,255,255,.7);margin:20px 0 12px">${c.coreValues?.intro || 'Our Core Values'}</p>
 <div class="grid-values">${(c.coreValues?.values || []).map(v => '<div class="value-chip">' + v + '</div>').join('')}</div>
+${c.whatWeDo?.detail ? '<p style="font-size:14px;font-weight:700;color:rgba(255,255,255,.65);line-height:1.65;margin-top:16px">' + c.whatWeDo.detail + '</p>' : ''}
 ${c.whatWeDo?.callout ? '<div class="callout feature" style="margin-top:14px">' + c.whatWeDo.callout + '</div>' : ''}
 </div>
 
-<div class="hj-sec"><h2>Pay &amp; Benefits</h2>
-<div class="grid-2">
-${crd('<h3>Compensation</h3><ul class="checklist">' + chk(c.payBenefits?.compensation || []) + '</ul>', true)}
-${crd('<h3>Culture</h3><ul class="checklist">' + chk(c.payBenefits?.scheduleCulture || []) + '</ul>')}
-</div></div>
+${c.payProgression ? `<div class="hj-sec"><h2>Pay</h2>
+<div class="pay-progression">
+  <div class="pay-card pay-card-start">
+    <p class="pay-label">${c.payProgression.start?.label || 'Starting Pay'}</p>
+    <p class="pay-amount">${c.payProgression.start?.amount || ''}</p>
+    ${c.payProgression.start?.note ? '<p class="pay-note">' + c.payProgression.start.note + '</p>' : ''}
+  </div>
+  <div class="pay-arrow">→</div>
+  <div class="pay-card pay-card-raises">
+    <p class="pay-label pay-label-accent">${c.payProgression.raises?.label || 'Raises'}</p>
+    ${c.payProgression.raises?.note ? '<p class="pay-note-body">' + c.payProgression.raises.note + '</p>' : ''}
+  </div>
+  <div class="pay-arrow pay-arrow-accent">→</div>
+  <div class="pay-card pay-card-lead">
+    <p class="pay-label pay-label-lead">${c.payProgression.lead?.label || 'Team Lead'}</p>
+    ${c.payProgression.lead?.amount ? '<p class="pay-amount pay-amount-lead">' + c.payProgression.lead.amount + '</p>' : ''}
+    ${c.payProgression.lead?.note ? '<p class="pay-note-body">' + c.payProgression.lead.note + '</p>' : ''}
+  </div>
+</div></div>` : ''}
 
 <div class="hj-sec"><h2>What You'll Do</h2>
 <p class="intro">${c.whatYoullDo?.intro || ''}</p>
 <div class="grid-2">
-${crd('<h3>Daily Work</h3><ul class="checklist">' + chk(c.whatYoullDo?.dailyWork || []) + '</ul>', true)}
-${crd("<h3>How You'll Learn</h3><ul class=\"checklist\">" + chk(c.whatYoullDo?.howYoullLearn || []) + '</ul>')}
-</div></div>
-
-<div class="hj-sec"><h2>When You Become a Team Lead</h2>
-<p class="intro">${c.teamLead?.intro || ''}</p>
-${crd('<ul class="checklist">' + chk(c.teamLead?.items || []) + '</ul>', true)}
-<div class="callout feature" style="margin-top:14px">${c.teamLead?.callout || ''}</div>
+${crd('<h3>Team Member</h3><ul class="checklist">' + chk([...(c.whatYoullDo?.dailyWork || []), ...(c.whatYoullDo?.howYoullLearn || [])]) + '</ul>', true)}
+${crd('<h3>Team Lead</h3><p style="font-size:12px;font-weight:700;color:rgba(255,255,255,.45);margin-bottom:8px;font-style:italic">Everything a team member does, plus:</p><ul class="checklist">' + chk(c.teamLead?.items || []) + '</ul>')}
+</div>
+${c.teamLead?.callout ? '<p style="font-size:15px;font-weight:900;color:#B0FF03;margin-top:14px">' + c.teamLead.callout + '</p>' : ''}
 </div>
 
 <div class="hj-sec"><h2>How We Run Jobs</h2>
@@ -553,67 +655,88 @@ ${crd('<ul class="checklist">' + chk(c.teamLead?.items || []) + '</ul>', true)}
 <div class="grid-3">${(c.howWeRun?.cards || []).map(cd => crd('<h3>' + cd.title + '</h3><p>' + cd.body + '</p>')).join('')}</div>
 </div>
 
-<div class="hj-sec"><h2>Requirements</h2>
-<div class="grid-2">
-${crd('<h3>Must have</h3><ul class="checklist">' + chk(c.requirements?.mustHave || []) + '</ul>')}
-${crd('<h3>Preferred (Not Required)</h3><p style="font-size:13px;color:rgba(255,255,255,.55);font-weight:700;margin-bottom:8px">' + (c.requirements?.preferredNote || '') + '</p><ul class="checklist">' + chk(c.requirements?.preferred || []) + '</ul>', true)}
+<div class="hj-sec"><h2>Good Fit?</h2>
+${crd('<ul class="checklist">' + chk(c.goodFit || []) + '</ul>', true)}
 </div>
+
+<div class="hj-sec"><h2>Requirements</h2>
+${crd('<ul class="checklist">' + chk(c.requirements?.mustHave || []) + '</ul>')}
 ${(c.requirements?.callouts || []).map((t, i) => '<div class="callout' + (i === 0 ? ' feature' : '') + '" style="margin-top:14px">' + t + '</div>').join('')}
 </div>
 
-<div class="hj-sec"><h2>Good Fit?</h2>
-<div class="grid-2">${(c.goodFit || []).map(g => crd('<h3>' + g.title + '</h3><p>' + g.body + '</p>', true)).join('')}</div>
-<div class="grid-2" style="margin-top:14px">${(c.notAFit || []).map(t => crd('<ul class="checklist">' + chk([t], true) + '</ul>')).join('')}</div>
-<div class="callout" style="margin-top:14px">${c.notAFitCallout || ''}</div>
-</div>
-
-<div class="hj-sec" id="apply">
-<h2>${c.bottomCta?.title || 'Ready to apply?'}</h2>
-<p class="intro">${c.bottomCta?.subtitle || ''}</p>
-<div id="hj-form-wrap" style="max-width:560px;margin:0 auto">
-<form id="hj-apply-form" onsubmit="return hjSubmit(event)">
+<div class="hj-sec hj-apply-sec" id="apply">
+<div class="hj-apply-divider"></div>
+<p class="hj-apply-kicker">The next step</p>
+<h2 class="hj-apply-title">${c.bottomCta?.title || 'Ready to apply?'}</h2>
+<p class="hj-apply-subtitle">${c.bottomCta?.subtitle || ''}</p>
+<div id="hj-form-wrap" style="max-width:520px;margin:0 auto;text-align:left">
+<form id="hj-apply-form" novalidate onsubmit="return hjSubmit(event)">
 ${(form?.steps || []).map((step, si) => `
 <div style="${si > 0 ? 'margin-top:40px' : ''}">
 <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
 <div style="width:28px;height:28px;border-radius:50%;background:#B0FF03;color:#111;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;flex-shrink:0">${si + 1}</div>
 <h3 style="margin:0;font-size:18px;font-weight:900;color:#fff">${step.title}</h3>
 </div>
-${(step.fields || []).map(f => {
-  const lbl = f.label.includes('\n')
-    ? '<div style="font-size:13px;color:rgba(255,255,255,.7);white-space:pre-line;margin-bottom:8px;font-weight:600;line-height:1.5">' + f.label + '</div>'
-    : '<label style="display:block;font-size:13px;font-weight:700;color:rgba(255,255,255,.8);margin-bottom:6px">' + f.label + (f.required ? ' <span style="color:#f87171">*</span>' : '') + '</label>';
-  const desc = f.description ? '<p style="font-size:11px;color:rgba(255,255,255,.4);margin:0 0 6px;font-weight:600">' + f.description + '</p>' : '';
-  let input = '';
-  const nm = f.id;
-  const req = f.required ? ' required' : '';
-  const ph = (f.placeholder || '').replace(/'/g, '&#39;');
-  if (f.type === 'email') {
-    input = "<input type='email' name='" + nm + "' class='hj-input' placeholder='" + ph + "'" + req + "/>";
-  } else if (f.type === 'phone') {
-    input = "<input type='tel' name='" + nm + "' class='hj-input' placeholder='" + ph + "'" + req + "/>";
-  } else if (f.type === 'short' || f.type === 'text') {
-    const isDate = f.label.toLowerCase().includes('date') || f.label.toLowerCase().includes('birth');
-    input = isDate
-      ? "<input type='date' name='" + nm + "' class='hj-input'" + req + "/>"
-      : "<input type='text' name='" + nm + "' class='hj-input' placeholder='" + ph + "'" + req + "/>";
-  } else if (f.type === 'long') {
-    input = "<textarea name='" + nm + "' class='hj-input' placeholder='" + ph + "' rows='3'" + req + "></textarea>";
-  } else if (f.type === 'dropdown') {
-    input = "<select name='" + nm + "' class='hj-input'" + req + "><option value=''>Select...</option>" + (f.options || []).map(o => "<option value='" + o.replace(/'/g, '&#39;') + "'>" + o + "</option>").join('') + "</select>";
-  } else if (f.type === 'radio') {
-    input = "<div class='hj-radio-group'>" + (f.options || []).map(o => "<label class='hj-radio-label'><input type='radio' name='" + nm + "' value='" + o.replace(/'/g, '&#39;') + "'" + req + "/>" + o + "</label>").join('') + "</div>";
-  } else if (f.type === 'multi' || f.type === 'checkbox') {
-    input = "<div class='hj-check-group'>" + (f.options || []).map(o => "<label class='hj-check-label'><input type='checkbox' name='" + nm + "' value='" + o.replace(/'/g, '&#39;') + "'/>" + o + "</label>").join('') + "</div>";
-  } else if (f.type === 'signature') {
-    input = "<div style='position:relative'><canvas id='sig-canvas' width='500' height='120' style='width:100%;height:120px;background:#1a1a1a;border:1px solid #2e2e2e;border-radius:12px;cursor:crosshair;touch-action:none'></canvas><button type='button' onclick='clearSig()' style='position:absolute;bottom:8px;right:12px;font-size:11px;color:#555;background:none;border:none;cursor:pointer;font-weight:700'>Clear</button><input type='hidden' name='" + nm + "' id='sig-data'/></div>";
-  } else if (f.type === 'info') {
-    input = '';
+${(() => {
+  const renderField = (f) => {
+    const lbl = (f.type === 'info' && !f.label.includes('\n'))
+      ? '<h3 style="font-size:15px;font-weight:900;color:#fff;margin:8px 0 4px">' + f.label + '</h3>'
+      : f.label.includes('\n')
+        ? '<div style="font-size:13px;color:rgba(255,255,255,.7);white-space:pre-line;margin-bottom:8px;font-weight:600;line-height:1.5">' + f.label + '</div>'
+        : '<label style="display:block;font-size:13px;font-weight:700;color:rgba(255,255,255,.8);margin-bottom:6px">' + f.label + (f.required ? ' <span style="color:#f87171">*</span>' : '') + '</label>';
+    const desc = f.description ? '<p style="font-size:11px;color:rgba(255,255,255,.4);margin:0 0 6px;font-weight:600">' + f.description + '</p>' : '';
+    let input = '';
+    const nm = f.id;
+    const req = f.required ? ' required' : '';
+    const ph = (f.placeholder || '').replace(/'/g, '&#39;');
+    if (f.type === 'email') {
+      input = "<input type='email' name='" + nm + "' class='hj-input' placeholder='" + ph + "'" + req + "/>";
+    } else if (f.type === 'phone') {
+      input = "<input type='tel' name='" + nm + "' class='hj-input' placeholder='" + ph + "'" + req + "/>";
+    } else if (f.type === 'short' || f.type === 'text') {
+      const isDate = f.label.toLowerCase().includes('date') || f.label.toLowerCase().includes('birth');
+      input = isDate
+        ? "<input type='date' name='" + nm + "' class='hj-input'" + req + "/>"
+        : "<input type='text' name='" + nm + "' class='hj-input' placeholder='" + ph + "'" + req + "/>";
+    } else if (f.type === 'long') {
+      input = "<textarea name='" + nm + "' class='hj-input' placeholder='" + ph + "' rows='3'" + req + "></textarea>";
+    } else if (f.type === 'dropdown') {
+      input = "<select name='" + nm + "' class='hj-input'" + req + "><option value=''>Select...</option>" + (f.options || []).map(o => "<option value='" + o.replace(/'/g, '&#39;') + "'>" + o + "</option>").join('') + "</select>";
+    } else if (f.type === 'radio') {
+      const cls = (f.options || []).length === 2 ? 'hj-radio-group hj-radio-group-2' : 'hj-radio-group';
+      input = "<div class='" + cls + "'>" + (f.options || []).map(o => "<label class='hj-radio-label'><input type='radio' name='" + nm + "' value='" + o.replace(/'/g, '&#39;') + "'" + req + "/>" + o + "</label>").join('') + "</div>";
+    } else if (f.type === 'multi' || f.type === 'checkbox') {
+      input = "<div class='hj-check-group'>" + (f.options || []).map(o => "<label class='hj-check-label'><input type='checkbox' name='" + nm + "' value='" + o.replace(/'/g, '&#39;') + "'/>" + o + "</label>").join('') + "</div>";
+    } else if (f.type === 'signature') {
+      input = "<div style='position:relative'><canvas id='sig-canvas' width='500' height='120' style='width:100%;height:120px;background:#1a1a1a;border:1px solid #2e2e2e;border-radius:12px;cursor:crosshair;touch-action:none'></canvas><button type='button' onclick='clearSig()' style='position:absolute;bottom:8px;right:12px;font-size:11px;color:#555;background:none;border:none;cursor:pointer;font-weight:700'>Clear</button><input type='hidden' name='" + nm + "' id='sig-data'/></div>";
+    } else if (f.type === 'file') {
+      const accept = (f.accept || '.pdf,.doc,.docx,.jpg,.jpeg,.png').replace(/'/g, '&#39;');
+      input = "<label class='hj-file-label' data-field='" + nm + "' style='display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px;border:2px dashed #2e2e2e;border-radius:12px;background:#1a1a1a;cursor:pointer'><svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='#555' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='17 8 12 3 7 8'/><line x1='12' y1='3' x2='12' y2='15'/></svg><span id='hj-file-label-" + nm + "' style='font-size:12px;color:#888;font-weight:700;margin-top:8px'>Tap to upload a file</span><input type='file' name='" + nm + "' accept='" + accept + "' class='hj-file-input' data-field='" + nm + "' style='position:absolute;width:1px;height:1px;opacity:0'" + req + "/></label><input type='hidden' name='" + nm + "_url' class='hj-file-url'/>";
+    } else if (f.type === 'info') {
+      input = '';
+    }
+    return lbl + desc + input;
+  };
+  const fields = step.fields || [];
+  const condAttrs = (f) => f.showIf
+    ? ' data-show-if="' + f.showIf.field + '" data-show-if-equals="' + (f.showIf.equals + '').replace(/"/g, '&quot;') + '" style="display:none;margin-bottom:16px"'
+    : ' style="margin-bottom:16px"';
+  const out = [];
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    const next = fields[i + 1];
+    if (f.halfWidth && next?.halfWidth) {
+      out.push('<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px"><div' + (f.showIf ? ' data-show-if="' + f.showIf.field + '" data-show-if-equals="' + (f.showIf.equals + '').replace(/"/g, '&quot;') + '" style="display:none"' : '') + '>' + renderField(f) + '</div><div' + (next.showIf ? ' data-show-if="' + next.showIf.field + '" data-show-if-equals="' + (next.showIf.equals + '').replace(/"/g, '&quot;') + '" style="display:none"' : '') + '>' + renderField(next) + '</div></div>');
+      i++;
+    } else {
+      out.push('<div' + condAttrs(f) + '>' + renderField(f) + '</div>');
+    }
   }
-  return '<div style="margin-bottom:16px">' + lbl + desc + input + '</div>';
-}).join('')}
+  return out.join('');
+})()}
 </div>`).join('')}
 <div style="margin-top:32px">
-<button type="submit" class="hj-btn" id="hj-submit-btn" style="width:100%;justify-content:center;cursor:pointer">Submit Application</button>
+<button type="submit" class="hj-btn" id="hj-submit-btn" style="width:100%;height:56px;border-radius:16px;justify-content:center;cursor:pointer;font-size:15px;letter-spacing:0.03em;box-shadow:0 0 40px rgba(176,255,3,.45),0 10px 30px rgba(0,0,0,.3)">Submit Application →</button>
 </div>
 </form>
 </div>
@@ -641,15 +764,127 @@ sigCanvas.addEventListener('touchend',function(){sigDrawing=false;document.getEl
 }
 function clearSig(){if(sigCtx){sigCtx.clearRect(0,0,sigCanvas.width,sigCanvas.height);document.getElementById('sig-data').value=''}}
 
+// File upload → Supabase Storage
+var HJ_SB_URL=${JSON.stringify(import.meta.env.VITE_SUPABASE_URL || '')};
+var HJ_SB_KEY=${JSON.stringify(import.meta.env.VITE_SUPABASE_ANON_KEY || '')};
+fetch('https://hub.heyjudeslawncare.com/api/messaging?action=ensure-bucket&name=resumes').catch(function(){});
+var hjFilePromises={};
+(function(){
+  var loaded=false;
+  function ensureSdk(cb){
+    if(loaded){cb();return;}
+    var s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+    s.onload=function(){loaded=true;cb();};
+    document.head.appendChild(s);
+  }
+  var inputs=document.querySelectorAll('.hj-file-input');
+  inputs.forEach(function(inp){
+    inp.addEventListener('change',function(e){
+      var f=e.target.files&&e.target.files[0];if(!f)return;
+      var fid=inp.getAttribute('data-field');
+      var lab=document.getElementById('hj-file-label-'+fid);
+      var urlField=inp.parentNode.parentNode.querySelector('input[name="'+fid+'_url"]');
+      if(f.size>10*1024*1024){if(lab)lab.textContent='File too large (max 10 MB)';return;}
+      if(lab)lab.textContent='Uploading '+f.name+'…';
+      hjFilePromises[fid]=new Promise(function(resolve,reject){
+        ensureSdk(function(){
+          fetch('https://hub.heyjudeslawncare.com/api/messaging?action=get-upload-url&bucket=resumes&filename='+encodeURIComponent(f.name))
+            .then(function(r){return r.json();})
+            .then(function(info){
+              if(!info||!info.token||!info.path){throw new Error('bad signed url');}
+              var client=window.supabase.createClient(HJ_SB_URL,HJ_SB_KEY);
+              client.storage.from('resumes').uploadToSignedUrl(info.path,info.token,f).then(function(r){
+                if(r.error){if(lab)lab.textContent='Upload failed. Try again.';reject(r.error);return;}
+                if(urlField)urlField.value=info.publicUrl;
+                if(lab)lab.textContent=f.name+' ✓';
+                resolve(info.publicUrl);
+              }).catch(function(err){if(lab)lab.textContent='Upload failed. Try again.';reject(err);});
+            })
+            .catch(function(err){if(lab)lab.textContent='Upload failed. Try again.';reject(err);});
+        });
+      });
+    });
+  });
+})();
+
+// Conditional visibility
+(function(){
+  var form=document.getElementById('hj-apply-form');
+  if(!form)return;
+  var conds=form.querySelectorAll('[data-show-if]');
+  function isWrapVisible(el){return el.style.display!=='none'}
+  function currentValue(name){
+    var els=form.querySelectorAll('[name="'+name+'"]');
+    for(var i=0;i<els.length;i++){
+      var el=els[i];
+      if(el.type==='radio'){if(el.checked)return el.value}
+      else if(el.type==='checkbox'){}
+      else{return el.value}
+    }
+    return '';
+  }
+  function findWrapFor(el){
+    var n=el;
+    while(n&&n!==form){if(n.hasAttribute&&n.hasAttribute('data-show-if'))return n;n=n.parentNode;}
+    return null;
+  }
+  function reevaluate(){
+    // Iterate multiple passes for chained conditions
+    for(var pass=0;pass<4;pass++){
+      conds.forEach(function(wrap){
+        var dep=wrap.getAttribute('data-show-if');
+        var want=wrap.getAttribute('data-show-if-equals');
+        var depEls=form.querySelectorAll('[name="'+dep+'"]');
+        // if dep field is itself hidden, hide this one too
+        var depHidden=false;
+        for(var i=0;i<depEls.length;i++){
+          var w=findWrapFor(depEls[i]);
+          if(w&&w.style.display==='none'){depHidden=true;break;}
+        }
+        var show=!depHidden&&currentValue(dep)===want;
+        wrap.style.display=show?'':'none';
+        if(!show){
+          // clear values in hidden fields
+          wrap.querySelectorAll('input,textarea,select').forEach(function(el){
+            if(el.type==='radio'||el.type==='checkbox')el.checked=false;
+            else el.value='';
+          });
+        }
+      });
+    }
+  }
+  form.addEventListener('change',reevaluate);
+  form.addEventListener('input',reevaluate);
+  reevaluate();
+})();
+
 // Form submission
 function hjSubmit(e){
 e.preventDefault();
 var btn=document.getElementById('hj-submit-btn');
 btn.textContent='Submitting...';btn.disabled=true;
 var form=document.getElementById('hj-apply-form');
+// skip hidden conditional fields for data and required check
+var hiddenWraps=form.querySelectorAll('[data-show-if]');
+hiddenWraps.forEach(function(w){
+  if(w.style.display==='none'){
+    w.querySelectorAll('[required]').forEach(function(el){el.removeAttribute('required');el.setAttribute('data-was-required','1')});
+  }
+});
+if(!form.checkValidity()){form.reportValidity();btn.textContent='Submit Application';btn.disabled=false;return false;}
+Promise.all(Object.values(hjFilePromises||{})).then(function(){
 var data={};
 var inputs=form.querySelectorAll('input,textarea,select');
 inputs.forEach(function(el){
+var wrap=el.closest('[data-show-if]');
+if(wrap&&wrap.style.display==='none')return;
+if(el.type==='file')return;
+if(el.classList&&el.classList.contains('hj-file-url')){
+  var fid=el.name.replace(/_url$/,'');
+  if(el.value)data[fid]=el.value;
+  return;
+}
 if(el.type==='radio'){if(el.checked)data[el.name]=el.value}
 else if(el.type==='checkbox'){if(!data[el.name])data[el.name]=[];if(el.checked)data[el.name].push(el.value)}
 else{data[el.name]=el.value}
@@ -664,9 +899,55 @@ document.getElementById('hj-success').style.display='block';
 btn.textContent='Submit Application';btn.disabled=false;
 alert('Something went wrong. Please try again.');
 });
+}).catch(function(){
+btn.textContent='Submit Application';btn.disabled=false;
+alert('File upload failed. Please try again.');
+});
 return false;
 }
 </script>`;
+
+    return html;
+  };
+
+  const copyPageCode = () => {
+    const previewMarkup = renderToStaticMarkup(
+      <HiringPagePreview content={content} steps={form?.steps} />
+    );
+
+    const staticHtml = getHiringHtml();
+    const styleMatch = staticHtml.match(/<style>[\s\S]*?<\/style>/);
+    const styleBlock = styleMatch ? styleMatch[0] : '';
+    const applyStart = staticHtml.indexOf('id="apply"');
+    const adjustedStart = applyStart >= 0 ? staticHtml.lastIndexOf('<div', applyStart) : -1;
+    const applyPlusScript = adjustedStart >= 0 ? staticHtml.slice(adjustedStart) : '';
+
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = previewMarkup;
+    const applyNode = wrapper.querySelector('[data-apply-section]');
+    if (applyNode) applyNode.remove();
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hey Jude's Lawn Care — Hiring</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+${styleBlock}
+<style>
+html,body{margin:0;padding:0;background:#000;color:rgba(255,255,255,.92);font-family:'Montserrat',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+</style>
+</head>
+<body>
+<div style="background:#000;min-height:100vh">
+${wrapper.innerHTML}
+</div>
+${applyPlusScript}
+</body>
+</html>`;
 
     navigator.clipboard.writeText(html);
     setCodeCopied(true);
@@ -957,6 +1238,12 @@ function FormBuilderTab() {
                       </button>
                       <span className="text-xs font-semibold text-secondary">Required</span>
                     </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <button type="button" onClick={() => updateField(fi, { ...field, halfWidth: !field.halfWidth })} className="cursor-pointer">
+                        {field.halfWidth ? <ToggleRight size={22} className="text-brand" /> : <ToggleLeft size={22} className="text-muted" />}
+                      </button>
+                      <span className="text-xs font-semibold text-secondary">Half width (pairs with next half-width field)</span>
+                    </label>
                   </div>
 
                   {!HAS_OPTIONS.has(field.type) && field.type !== 'signature' && field.type !== 'video' && field.type !== 'info' && (
@@ -1172,12 +1459,22 @@ function ApplicationsTab() {
   const applications = useAppStore((s) => s.applications) || [];
   const setApplications = useAppStore((s) => s.setApplications);
   const form = useAppStore((s) => s.applicationForm);
+  const phoneScreenQuestions = useAppStore((s) => s.phoneScreenQuestions) || [];
+  const setPhoneScreenQuestions = useAppStore((s) => s.setPhoneScreenQuestions);
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState('new');
   const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState('score');
+  const [sortBy, setSortBy] = useState('date');
+  const [editingQuestions, setEditingQuestions] = useState(false);
 
   const [sending, setSending] = useState(null);
+
+  const saveAnswer = (qid, value) => {
+    setApplications(applications.map((a) => a.id === selected.id
+      ? { ...a, phoneScreen: { ...(a.phoneScreen || {}), [qid]: value } }
+      : a));
+    setSelected((s) => ({ ...s, phoneScreen: { ...(s.phoneScreen || {}), [qid]: value } }));
+  };
 
   const SMS_TEMPLATES = {
     contacted: (name) => `Hey ${name?.split(' ')[0] || 'there'}, thanks for applying to Hey Jude's Lawn Care! We'd like to set up a time to talk. When works for you?`,
@@ -1243,199 +1540,477 @@ function ApplicationsTab() {
     );
   }
 
-  // Score bar color
-  const scoreBarColor = (s) => s >= 7 ? 'bg-green-400' : s >= 4 ? 'bg-amber-400' : 'bg-red-400';
-  const scoreLabel = (s) => s >= 7 ? 'Strong' : s >= 4 ? 'Maybe' : 'Weak';
+  const scoreColor = (s) => s >= 7 ? '#22c55e' : s >= 4 ? '#f59e0b' : '#ef4444';
+  const scoreTone = (s) => s >= 7 ? 'text-green-400' : s >= 4 ? 'text-amber-400' : 'text-red-400';
+  const fullName = (d) => d?.name || [d?.first_name, d?.last_name].filter(Boolean).join(' ') || 'Applicant';
+  const location = (d) => d?.city_zip || [d?.city, d?.zip].filter(Boolean).join(', ') || '';
+  const fmtPhone = (v) => {
+    if (!v) return '';
+    const digits = String(v).replace(/\D/g, '');
+    if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+    if (digits.length === 11 && digits.startsWith('1')) return `${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
+    return v;
+  };
+  const isImageUrl = (v) => typeof v === 'string' && /\.(png|jpe?g|gif|webp|svg)(\?|$)/i.test(v);
+  const isPdfUrl = (v) => typeof v === 'string' && /\.pdf(\?|$)/i.test(v);
+  const isHttpUrl = (v) => typeof v === 'string' && /^https?:\/\//.test(v);
+
+  const parseEndDate = (raw) => {
+    if (!raw) return null;
+    const str = String(raw).trim();
+    if (!str) return null;
+    if (/\b(present|currently|current|now|ongoing|till\s*now|til\s*now|still\s*work(ing)?|still\s*there|still\s*employed)\b/i.test(str)) return 'present';
+    const MONTHS = { jan:0,january:0,feb:1,february:1,mar:2,march:2,apr:3,april:3,may:4,jun:5,june:5,jul:6,july:6,aug:7,august:7,sep:8,sept:8,september:8,oct:9,october:9,nov:10,november:10,dec:11,december:11 };
+    const now = Date.now();
+    const currentYear = new Date().getFullYear();
+    const candidates = [];
+    let m;
+    // "Month [day,] year" — e.g. "March 2024", "Mar 15, 2024", "March 15 2024"
+    const mYearRe = /(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(?:(\d{1,2})(?:st|nd|rd|th)?,?\s+)?(\d{4}|\d{2})\b/gi;
+    while ((m = mYearRe.exec(str)) !== null) {
+      const mon = MONTHS[m[1].toLowerCase()];
+      const day = m[2] ? parseInt(m[2]) : 15;
+      let yr = parseInt(m[3]);
+      if (yr < 100) yr += 2000;
+      if (yr < 1990 || yr > currentYear + 1) continue;
+      const d = new Date(yr, mon, day);
+      if (d.getTime() <= now) candidates.push(d);
+    }
+    // "MM/DD/YYYY" or "M/D/YY"
+    const dmySlashRe = /\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/g;
+    const used = new Set();
+    while ((m = dmySlashRe.exec(str)) !== null) {
+      used.add(m.index);
+      const mon = parseInt(m[1]) - 1;
+      const day = parseInt(m[2]);
+      let yr = parseInt(m[3]);
+      if (yr < 100) yr += 2000;
+      if (mon < 0 || mon > 11 || yr < 1990 || yr > currentYear + 1) continue;
+      const d = new Date(yr, mon, day);
+      if (d.getTime() <= now) candidates.push(d);
+    }
+    // "MM/YYYY" or "M/YY" (month-year only, not part of M/D/Y)
+    const mySlashRe = /\b(\d{1,2})\/(\d{2,4})\b/g;
+    while ((m = mySlashRe.exec(str)) !== null) {
+      if (used.has(m.index)) continue;
+      const mon = parseInt(m[1]) - 1;
+      let yr = parseInt(m[2]);
+      if (yr < 100) yr += 2000;
+      if (mon < 0 || mon > 11 || yr < 1990 || yr > currentYear + 1) continue;
+      const d = new Date(yr, mon, 15);
+      if (d.getTime() <= now) candidates.push(d);
+    }
+    // ISO-like "YYYY-MM-DD" or "YYYY/MM"
+    const isoRe = /\b(\d{4})[-/](\d{1,2})(?:[-/](\d{1,2}))?\b/g;
+    while ((m = isoRe.exec(str)) !== null) {
+      const yr = parseInt(m[1]);
+      const mon = parseInt(m[2]) - 1;
+      const day = m[3] ? parseInt(m[3]) : 15;
+      if (mon < 0 || mon > 11 || yr < 1990 || yr > currentYear + 1) continue;
+      const d = new Date(yr, mon, day);
+      if (d.getTime() <= now) candidates.push(d);
+    }
+    // Bare 4-digit year
+    const yearRe = /\b(19[9]\d|20\d{2})\b/g;
+    while ((m = yearRe.exec(str)) !== null) {
+      const yr = parseInt(m[1]);
+      if (yr > currentYear + 1) continue;
+      const d = new Date(yr, 11, 15);
+      if (d.getTime() <= now) candidates.push(d);
+    }
+    if (candidates.length === 0) return null;
+    return new Date(Math.max(...candidates.map((d) => d.getTime())));
+  };
+
+  const formatLookingDuration = (endDate) => {
+    if (!endDate) return null;
+    if (endDate === 'present') return 'still working there';
+    const now = new Date();
+    const days = Math.floor((now - endDate) / 86400000);
+    if (days < 0) return null;
+    if (days < 14) return `${days} day${days === 1 ? '' : 's'}`;
+    if (days < 60) { const w = Math.floor(days / 7); return `${w} week${w === 1 ? '' : 's'}`; }
+    if (days < 365) { const mo = Math.floor(days / 30); return `${mo} month${mo === 1 ? '' : 's'}`; }
+    const yrs = Math.floor(days / 365);
+    const rem = Math.floor((days - yrs * 365) / 30);
+    return rem === 0 ? `${yrs} year${yrs === 1 ? '' : 's'}` : `${yrs} year${yrs === 1 ? '' : 's'}, ${rem} month${rem === 1 ? '' : 's'}`;
+  };
 
   return (
-    <div className="space-y-3">
-      {/* Pipeline counts */}
-      <div className="grid grid-cols-4 gap-2">
+    <div className="space-y-4">
+      {/* Pipeline segmented tabs */}
+      <div className="flex items-center gap-1 p-1 rounded-xl bg-surface-alt">
         {PIPELINE.map((p) => (
-          <button key={p.id} onClick={() => setFilter(filter === p.id ? 'all' : p.id)}
-            className={`rounded-xl p-3 text-center cursor-pointer transition-all border ${
-              filter === p.id ? 'border-brand bg-brand-light' : 'border-border-subtle bg-card hover:bg-surface-alt'
-            }`}>
-            <p className={`text-xl font-black ${p.color}`}>{counts[p.id] || 0}</p>
-            <p className="text-[10px] font-bold text-muted uppercase tracking-wider">{p.label}</p>
+          <button
+            key={p.id}
+            onClick={() => setFilter(p.id)}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              filter === p.id ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'
+            }`}
+          >
+            <span>{p.label}</span>
+            <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black ${filter === p.id ? p.bg + ' ' + p.color : 'bg-surface-strong text-muted'}`}>{counts[p.id] || 0}</span>
           </button>
         ))}
       </div>
 
-      {/* Search + sort */}
-      <div className="flex items-center gap-2">
-        <div className="flex-1 relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, phone, email..."
-            className="w-full bg-surface-alt border border-border-default rounded-lg pl-9 pr-3 py-2 text-sm text-primary placeholder:text-placeholder-muted focus:outline-none focus:ring-2 focus:ring-brand/40" />
+      {!selected && (
+        <div className="flex items-center gap-2">
+          <div className="flex-1 relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search..."
+              className="w-full bg-surface-alt rounded-xl pl-9 pr-3 py-2.5 text-sm text-primary placeholder:text-placeholder-muted focus:outline-none focus:bg-card focus:ring-1 focus:ring-border-default"
+            />
+          </div>
+          <div className="relative">
+            <ArrowUpDown size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="appearance-none pl-8 pr-8 py-2.5 rounded-xl bg-surface-alt text-xs font-semibold text-secondary hover:bg-surface-strong cursor-pointer focus:outline-none"
+            >
+              <option value="date">Newest</option>
+              <option value="score">Best fit</option>
+            </select>
+          </div>
+          <a
+            href="https://employers.indeed.com/messages?threadType=highQualityMarketplace"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-surface-alt text-xs font-semibold text-secondary hover:bg-surface-strong cursor-pointer whitespace-nowrap"
+          >
+            <ExternalLink size={13} />
+            Indeed Messages
+          </a>
         </div>
-        <button onClick={() => setSortBy(sortBy === 'score' ? 'date' : 'score')} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border-default text-xs font-semibold text-secondary hover:bg-surface-alt cursor-pointer whitespace-nowrap">
-          <ArrowUpDown size={13} /> {sortBy === 'score' ? 'Best fit' : 'Newest'}
-        </button>
-      </div>
+      )}
 
-      {/* Detail view */}
       {selected ? (
         <div>
-          <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-xs font-semibold text-brand-text hover:text-brand-text-strong mb-3 cursor-pointer"><ChevronLeft size={14} /> Back</button>
+          <button onClick={() => setSelected(null)} className="flex items-center gap-1 text-sm font-semibold text-muted hover:text-primary mb-4 cursor-pointer">
+            <ChevronLeft size={16} /> Applicants
+          </button>
           {(() => {
             const { score, flags, greens } = scoreApplication(selected.data || {});
+            const d = selected.data || {};
+            const age = d.dob ? (() => { const bd = new Date(d.dob); const a = Math.floor((Date.now() - bd.getTime()) / 31557600000); return a > 0 && a < 100 ? a : null; })() : null;
+
             return (
-              <div className="space-y-3">
-                {/* Header card */}
-                <div className="bg-card rounded-xl border border-border-subtle p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-bold text-primary">{selected.data?.name || 'Applicant'}</h3>
-                        {selected.data?.dob && (() => { const bd = new Date(selected.data.dob); const age = Math.floor((Date.now() - bd.getTime()) / 31557600000); return age > 0 && age < 100 ? <span className="text-sm font-bold text-muted">Age {age}</span> : null; })()}
-                      </div>
-                      <div className="flex items-center gap-3 mt-0.5 text-xs text-muted">
-                        {selected.data?.phone && <span>{selected.data.phone}</span>}
-                        {selected.data?.email && <span>{selected.data.email}</span>}
-                        {selected.data?.city_zip && <span>{selected.data.city_zip}</span>}
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className={`text-2xl font-black ${score >= 7 ? 'text-green-400' : score >= 4 ? 'text-amber-400' : 'text-red-400'}`}>{score}</div>
-                      <div className={`text-[9px] font-bold uppercase ${score >= 7 ? 'text-green-400' : score >= 4 ? 'text-amber-400' : 'text-red-400'}`}>{scoreLabel(score)}</div>
+              <div className="space-y-5">
+                {/* Hero header */}
+                <div className="flex items-center gap-5">
+                  <div
+                    className="relative w-20 h-20 rounded-full flex items-center justify-center shrink-0"
+                    style={{ background: `conic-gradient(${scoreColor(score)} ${score * 36}deg, var(--color-surface-alt) 0)` }}
+                  >
+                    <div className="absolute inset-1.5 rounded-full bg-card flex flex-col items-center justify-center">
+                      <span className={`text-2xl font-black leading-none ${scoreTone(score)}`}>{score}</span>
+                      <span className="text-[8px] font-bold text-muted uppercase tracking-wider mt-0.5">/10</span>
                     </div>
                   </div>
-
-                  {/* Flags */}
-                  {(greens.length > 0 || flags.length > 0) && (
-                    <div className="flex flex-wrap gap-1.5 mb-3">
-                      {greens.map((g, i) => <span key={i} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/15 text-green-400">{g}</span>)}
-                      {flags.map((f, i) => <span key={i} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400">{f}</span>)}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-xl font-black text-primary leading-tight">{fullName(d)}</h2>
+                      {age && <span className="text-sm font-semibold text-muted">{age}</span>}
+                      {(selected.status || 'new') !== 'new' && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColor(selected.status)}`}>{PIPELINE.find(p => p.id === selected.status)?.label || selected.status}</span>}
                     </div>
-                  )}
-
-                  <p className="text-[10px] text-muted">Submitted {new Date(selected.submittedAt).toLocaleString()}</p>
+                    <p className="text-xs text-muted mt-1">{new Date(selected.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                  </div>
                 </div>
 
-                {/* Quick actions */}
-                <div className="flex items-center gap-2">
-                  <button onClick={() => markStatus(selected.id, 'contacted')} disabled={!!sending} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'contacted' ? 'bg-amber-400 text-black' : 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25'}`}>
-                    {sending === 'contacted' ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Talk To
+                {/* Contact quick-row */}
+                {(d.phone || d.email || location(d)) && (
+                  <div className="flex flex-wrap gap-2">
+                    {d.phone && <a href={`tel:${d.phone}`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-alt text-xs font-semibold text-primary hover:bg-surface-strong"><Phone size={11} />{fmtPhone(d.phone)}</a>}
+                    {d.email && <a href={`mailto:${d.email}`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-alt text-xs font-semibold text-primary hover:bg-surface-strong"><Mail size={11} />{d.email}</a>}
+                    {location(d) && <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-alt text-xs font-semibold text-muted">{location(d)}</span>}
+                    <a href="https://publicindex.sccourts.org/york/publicindex/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-400 hover:bg-amber-500/15">
+                      <ExternalLink size={11} /> Check record (York County)
+                    </a>
+                  </div>
+                )}
+
+                {/* Flags row */}
+                {(greens.length > 0 || flags.length > 0) && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {greens.map((g, i) => <span key={'g' + i} className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-green-500/10 text-green-400">{g}</span>)}
+                    {flags.map((f, i) => <span key={'f' + i} className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-red-500/10 text-red-400">{f}</span>)}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={() => markStatus(selected.id, 'contacted')} disabled={!!sending} className={`py-3 rounded-xl text-[13px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'contacted' ? 'bg-amber-400 text-black' : 'bg-amber-500/12 text-amber-400 hover:bg-amber-500/20'}`}>
+                    {sending === 'contacted' ? <Loader2 size={13} className="animate-spin" /> : <MessageSquare size={13} />} Talk To
                   </button>
-                  <button onClick={() => markStatus(selected.id, 'hired')} disabled={!!sending} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'hired' ? 'bg-green-400 text-black' : 'bg-green-500/15 text-green-400 hover:bg-green-500/25'}`}>
-                    {sending === 'hired' ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Hire
+                  <button onClick={() => markStatus(selected.id, 'hired')} disabled={!!sending} className={`py-3 rounded-xl text-[13px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'hired' ? 'bg-green-400 text-black' : 'bg-green-500/12 text-green-400 hover:bg-green-500/20'}`}>
+                    {sending === 'hired' ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Hire
                   </button>
-                  <button onClick={() => markStatus(selected.id, 'rejected')} disabled={!!sending} className={`flex-1 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'rejected' ? 'bg-red-400 text-black' : 'bg-red-500/15 text-red-400 hover:bg-red-500/25'}`}>
-                    {sending === 'rejected' ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Reject
-                  </button>
-                  <button onClick={() => deleteApp(selected.id)} className="px-3 py-2.5 rounded-xl text-xs font-bold text-muted hover:text-red-400 hover:bg-red-500/10 cursor-pointer">
-                    <Trash2 size={14} />
+                  <button onClick={() => markStatus(selected.id, 'rejected')} disabled={!!sending} className={`py-3 rounded-xl text-[13px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'rejected' ? 'bg-red-400 text-black' : 'bg-red-500/12 text-red-400 hover:bg-red-500/20'}`}>
+                    {sending === 'rejected' ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />} Reject
                   </button>
                 </div>
 
-                {/* Full application data */}
-                <div className="bg-card rounded-xl border border-border-subtle p-4 space-y-4">
-                  {(form?.steps || []).map((step) => {
-                    const stepFields = (step.fields || []).filter((f) => {
-                      const val = selected.data?.[f.id];
-                      return val !== undefined && val !== null && val !== '';
-                    });
-                    if (stepFields.length === 0) return null;
+                {/* Answers — all questions in form order with N/A for unanswered */}
+                {(() => {
+                  const humanize = (k) => k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+                  const knownIds = new Set();
+                  (form?.steps || []).forEach((s) => (s.fields || []).forEach((f) => knownIds.add(f.id)));
+                  const extraKeys = Object.keys(selected.data || {}).filter((k) => !knownIds.has(k));
+                  let qNum = 0;
+                  const renderAnswer = (f, k, val, labelOverride) => {
+                    const label = labelOverride || (f ? (f.label.includes('\n') ? f.label.split('\n')[0].slice(0, 80) : f.label) : humanize(k));
+                    const hasVal = val !== undefined && val !== null && val !== '' && !(Array.isArray(val) && val.length === 0);
+                    const isRedFlag = hasVal && ((k === 'physical_ability' && val === 'No') || (k === 'drivers_license' && val === 'No') || (k === 'fulltime_understand' && val === 'No') || (k === 'background_check' && val === 'Yes') || (k === 'tobacco_use' && val === 'Yes') || (k === 'tobacco_policy' && val === 'No') || (k === 'injuries' && val === 'Yes'));
+                    const isGreen = hasVal && ((k === 'years_landscaping' && (val === '3-5 years' || val === '5+ years')) || (k === 'landscaping_experience' && val === 'Yes') || (k === 'leadership_exp' && val === 'Yes') || (k === 'how_long' && (val === '1+ years' || val === 'Long-term / as long as it works')));
+                    let displayVal = Array.isArray(val) ? val.join(', ') : (val == null ? '' : String(val));
+                    if (f?.type === 'phone' || /phone/i.test(k)) {
+                      const digits = displayVal.replace(/\D/g, '');
+                      if (digits.length === 10) displayVal = `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+                      else if (digits.length === 11 && digits.startsWith('1')) displayVal = `${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
+                    }
+                    qNum += 1;
                     return (
-                      <div key={step.id}>
-                        <p className="text-[10px] font-bold text-muted uppercase tracking-wider mb-2 pb-1 border-b border-border-subtle">{step.title}</p>
-                        <div className="space-y-2">
-                          {stepFields.map((f) => {
-                            const val = selected.data[f.id];
-                            // Highlight red flag answers
-                            const isRedFlag = (f.id === 'physical_ability' && val === 'No') || (f.id === 'reliable_transport' && val === 'No') || (f.id === 'drivers_license' && val === 'No') || (f.id === 'fulltime_understand' && val === 'No') || (f.id === 'background_check' && val === 'Yes') || (f.id === 'tobacco_use' && val === 'Yes') || (f.id === 'tobacco_policy' && val === 'No');
-                            const isGreen = (f.id === 'years_landscaping' && (val === '3-5 years' || val === '5+ years')) || (f.id === 'worked_landscaping_year' && val === 'Yes') || (f.id === 'how_long' && (val === '1+ years' || val === 'Long-term / as long as it works'));
-                            return (
-                              <div key={f.id} className={`rounded-lg px-3 py-2 ${isRedFlag ? 'bg-red-500/8 border border-red-500/20' : isGreen ? 'bg-green-500/8 border border-green-500/20' : ''}`}>
-                                <span className="text-[11px] font-semibold text-tertiary">{f.label.includes('\n') ? f.label.split('\n')[0].slice(0, 60) + '...' : f.label}</span>
-                                {f.type === 'signature' && val?.startsWith('data:') ? (
-                                  <img src={val} alt="Signature" className="mt-1 h-16 bg-surface-alt rounded-lg border border-border-subtle p-2" />
-                                ) : (
-                                  <p className={`text-sm font-semibold mt-0.5 ${isRedFlag ? 'text-red-400' : isGreen ? 'text-green-400' : 'text-primary'}`}>{Array.isArray(val) ? val.join(', ') : val}</p>
-                                )}
-                              </div>
-                            );
-                          })}
+                      <div key={k} className="py-3 flex items-start gap-3">
+                        <span className="text-[10px] font-black text-muted shrink-0 w-5 pt-1 tabular-nums">{qNum}.</span>
+                        <span className="text-xs text-muted shrink-0 w-[36%] pt-0.5">{label}</span>
+                        <div className="flex-1 min-w-0">
+                          {!hasVal ? (
+                            <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded-full bg-surface-alt text-muted italic">N/A</span>
+                          ) : f?.type === 'signature' && typeof val === 'string' && val.startsWith('data:') ? (
+                            <img src={val} alt="Signature" className="h-16 bg-surface-alt rounded-lg p-2" />
+                          ) : f?.type === 'file' || isImageUrl(val) || (isHttpUrl(val) && /resume|id|upload/i.test(k)) ? (
+                            <div className="space-y-2">
+                              {isImageUrl(val) ? (
+                                <a href={val} target="_blank" rel="noopener noreferrer">
+                                  <img src={val} alt={label} className="max-h-80 w-auto rounded-lg border border-border-subtle" />
+                                </a>
+                              ) : isPdfUrl(val) ? (
+                                <iframe src={val} title={label} className="w-full h-80 rounded-lg border border-border-subtle bg-white" />
+                              ) : (
+                                <iframe src={`https://docs.google.com/viewer?url=${encodeURIComponent(val)}&embedded=true`} title={label} className="w-full h-80 rounded-lg border border-border-subtle bg-white" />
+                              )}
+                              <a href={val} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted hover:text-primary">
+                                <ExternalLink size={11} /> Open in new tab
+                              </a>
+                            </div>
+                          ) : isHttpUrl(val) ? (
+                            <a href={val} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-alt text-xs font-semibold text-primary hover:bg-surface-strong">
+                              <FileText size={12} /> Open link <ExternalLink size={10} />
+                            </a>
+                          ) : (
+                            <p className={`text-sm font-semibold break-words whitespace-pre-wrap ${isRedFlag ? 'text-red-400' : isGreen ? 'text-green-400' : 'text-primary'}`}>{displayVal}</p>
+                          )}
                         </div>
                       </div>
                     );
-                  })}
+                  };
+                  return (
+                    <div className="space-y-5">
+                      {(form?.steps || []).map((step) => {
+                        const fields = (step.fields || []).filter((f) => f.type !== 'info');
+                        if (fields.length === 0) return null;
+                        return (
+                          <div key={step.id}>
+                            <p className="text-[10px] font-black text-muted uppercase tracking-[0.15em] mb-2">{step.title}</p>
+                            <div className="divide-y divide-border-subtle">
+                              {fields.map((f) => renderAnswer(f, f.id, selected.data?.[f.id]))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {extraKeys.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-black text-muted uppercase tracking-[0.15em] mb-2">Other Answers</p>
+                          <div className="divide-y divide-border-subtle">
+                            {extraKeys.map((k) => renderAnswer(null, k, selected.data[k]))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Phone Screen questionnaire */}
+                <div className="rounded-xl border border-border-subtle bg-surface-alt/50 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Phone size={14} className="text-blue-400" />
+                      <p className="text-sm font-black text-primary">Phone Screen</p>
+                    </div>
+                    <button onClick={() => setEditingQuestions(true)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted hover:text-primary cursor-pointer">
+                      <Pencil size={11} /> Edit questions
+                    </button>
+                  </div>
+                  {phoneScreenQuestions.length === 0 ? (
+                    <p className="text-xs text-muted">No questions yet. Click "Edit questions" to add some.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {phoneScreenQuestions.map((q) => {
+                        const firstName = (selected.data?.first_name || (selected.data?.name || '').split(' ')[0] || '').trim();
+                        const rawDates = selected.data?.recent_dates;
+                        const duration = formatLookingDuration(parseEndDate(rawDates));
+                        let label = q.label || '';
+                        let hint = null;
+                        if (firstName) label = label.replace(/\[name\]/gi, firstName);
+                        if (q.id === 'why_looking') {
+                          if (duration === 'still working there') {
+                            label = "Sounds like you're still at your last spot — what's got you looking to move?";
+                          } else if (duration) {
+                            label = `You've been looking for work for about ${duration} — what's been going on with that?`;
+                          } else {
+                            label = "How long have you been looking for work, and what's going on with that?";
+                            if (rawDates) hint = `They wrote: "${rawDates}"`;
+                          }
+                        }
+                        return q.type === 'info' ? (
+                          <div key={q.id} className="rounded-lg bg-brand/10 border border-brand/20 px-3 py-2">
+                            <p className="text-xs text-secondary italic leading-relaxed">{label}</p>
+                          </div>
+                        ) : (
+                          <div key={q.id}>
+                            <label className="block text-xs font-semibold text-secondary mb-1.5">{label}</label>
+                            {hint && <p className="text-[10px] text-muted mb-1.5 italic">{hint}</p>}
+                            <textarea
+                              value={selected.phoneScreen?.[q.id] || ''}
+                              onChange={(e) => saveAnswer(q.id, e.target.value)}
+                              rows={2}
+                              placeholder="Their answer..."
+                              className="w-full bg-card rounded-lg px-3 py-2 text-sm text-primary placeholder:text-placeholder-muted focus:outline-none focus:ring-1 focus:ring-border-default resize-none"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end pt-4 border-t border-border-subtle">
+                  <button onClick={() => deleteApp(selected.id)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-muted hover:text-red-400 hover:bg-red-500/10 cursor-pointer">
+                    <Trash2 size={12} /> Delete application
+                  </button>
                 </div>
               </div>
             );
           })()}
         </div>
       ) : (
-        /* Application cards with key answers visible */
-        <div className="space-y-3">
-          {sorted.length === 0 && <p className="text-sm text-muted text-center py-8">No applications match your filters.</p>}
+        <div className="space-y-2">
+          {sorted.length === 0 && <p className="text-sm text-muted text-center py-16">No applicants match.</p>}
           {sorted.map((app) => {
             const d = app.data || {};
+            const name = fullName(d);
             const age = d.dob ? (() => { const bd = new Date(d.dob); const a = Math.floor((Date.now() - bd.getTime()) / 31557600000); return a > 0 && a < 100 ? a : null; })() : null;
-            const row1 = [
-              { label: 'Nicotine', value: d.tobacco_use, bad: d.tobacco_use === 'Yes', good: d.tobacco_use === 'No' },
-              { label: 'Background', value: d.background_check === 'Yes' ? 'Issue' : 'Clear', bad: d.background_check === 'Yes', good: d.background_check === 'No' },
-              { label: 'License', value: d.drivers_license, bad: d.drivers_license === 'No', good: d.drivers_license === 'Yes' },
-              { label: '1yr+ Company', value: d.worked_landscaping_year, bad: d.worked_landscaping_year === 'No', good: d.worked_landscaping_year === 'Yes' },
-            ].filter(a => a.value);
-            const row2 = [
-              { label: 'Experience', value: d.years_landscaping, bad: d.years_landscaping === 'None', good: d.years_landscaping === '1-2 years' || d.years_landscaping === '3-5 years' || d.years_landscaping === '5+ years' },
-              { label: 'Company', value: d.recent_company || 'None', good: !!d.recent_company, bad: !d.recent_company },
-              { label: 'Leadership', value: d.leadership_exp, good: d.leadership_exp && d.leadership_exp !== 'None', bad: !d.leadership_exp || d.leadership_exp === 'None' },
-              { label: 'Commitment', value: d.how_long, bad: d.how_long === 'Just trying it out', good: d.how_long === '1+ years' || d.how_long === 'Long-term / as long as it works' },
-            ].filter(a => a.value);
+
+            // Top 3 pill tags (prioritize red flags first)
+            const tags = [];
+            if (d.background_check === 'Yes') tags.push({ label: 'Background', bad: true });
+            if (d.tobacco_use === 'Yes') tags.push({ label: 'Nicotine', bad: true });
+            if (d.injuries === 'Yes') tags.push({ label: 'Injury', bad: true });
+            if (d.drivers_license === 'No') tags.push({ label: 'No license', bad: true });
+            if (d.physical_ability === 'No') tags.push({ label: "Can't do physical", bad: true });
+            if (d.years_landscaping === '5+ years') tags.push({ label: '5+ yrs exp', good: true });
+            else if (d.years_landscaping === '3-5 years') tags.push({ label: '3-5 yrs exp', good: true });
+            else if (d.years_landscaping === '1-2 years') tags.push({ label: '1-2 yrs exp', good: true });
+            if (d.leadership_exp === 'Yes') tags.push({ label: 'Lead exp', good: true });
+            if (d.how_long === '1+ years' || d.how_long === 'Long-term / as long as it works') tags.push({ label: 'Long-term', good: true });
 
             return (
-              <div key={app.id} onClick={() => setSelected(app)} className="bg-card rounded-xl border border-border-subtle p-4 hover:bg-surface-alt transition-colors cursor-pointer">
-                {/* Header row */}
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-black shrink-0 ${
-                    app.score >= 7 ? 'bg-green-500/15 text-green-400' : app.score >= 4 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'
-                  }`}>{app.score}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-primary truncate">{d.name || 'Applicant'}</p>
-                      {age && <span className="text-xs font-bold text-muted">{age}</span>}
-                      {(app.status || 'new') !== 'new' && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(app.status)}`}>{app.status}</span>}
-                    </div>
-                    <p className="text-xs text-muted">{d.city_zip || ''} {d.phone ? `| ${d.phone}` : ''}</p>
+              <button
+                key={app.id}
+                onClick={() => setSelected(app)}
+                className="w-full bg-card rounded-2xl p-4 flex items-center gap-4 hover:bg-surface-alt transition-colors cursor-pointer text-left"
+              >
+                {/* Score ring */}
+                <div
+                  className="relative w-12 h-12 rounded-full flex items-center justify-center shrink-0"
+                  style={{ background: `conic-gradient(${scoreColor(app.score)} ${app.score * 36}deg, var(--color-surface-alt) 0)` }}
+                >
+                  <div className="absolute inset-1 rounded-full bg-card flex items-center justify-center">
+                    <span className={`text-sm font-black ${scoreTone(app.score)}`}>{app.score}</span>
                   </div>
-                  <p className="text-[10px] text-muted shrink-0">{new Date(app.submittedAt).toLocaleDateString()}</p>
                 </div>
 
-                {/* Key answers - row 1 */}
-                <div className="grid grid-cols-4 gap-1.5">
-                  {row1.map((a, i) => (
-                    <div key={i} className={`rounded-lg px-2 py-1.5 ${a.bad ? 'bg-red-500/10 border border-red-500/20' : a.good ? 'bg-green-500/10 border border-green-500/20' : 'bg-surface-alt'}`}>
-                      <p className="text-[9px] font-bold text-muted uppercase">{a.label}</p>
-                      <p className={`text-[11px] font-bold truncate ${a.bad ? 'text-red-400' : a.good ? 'text-green-400' : 'text-primary'}`}>{a.value}</p>
+                {/* Middle */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-[15px] font-bold text-primary truncate">{name}</p>
+                    {age && <span className="text-xs font-semibold text-muted">{age}</span>}
+                    {(app.status || 'new') !== 'new' && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(app.status)}`}>{PIPELINE.find(p => p.id === app.status)?.label || app.status}</span>}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-muted truncate">
+                    {location(d) && <span className="truncate">{location(d)}</span>}
+                    {location(d) && d.phone && <span>·</span>}
+                    {d.phone && <span className="truncate">{fmtPhone(d.phone)}</span>}
+                  </div>
+                  {tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {tags.slice(0, 4).map((t, i) => (
+                        <span key={i} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${t.bad ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}>{t.label}</span>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                {/* Key answers - row 2 */}
-                <div className="grid grid-cols-4 gap-1.5 mt-1.5">
-                  {row2.map((a, i) => (
-                    <div key={i} className={`rounded-lg px-2 py-1.5 ${a.bad ? 'bg-red-500/10 border border-red-500/20' : a.good ? 'bg-green-500/10 border border-green-500/20' : 'bg-surface-alt'}`}>
-                      <p className="text-[9px] font-bold text-muted uppercase">{a.label}</p>
-                      <p className={`text-[11px] font-bold truncate ${a.bad ? 'text-red-400' : a.good ? 'text-green-400' : 'text-primary'}`}>{a.value}</p>
-                    </div>
-                  ))}
+                  )}
                 </div>
 
-                {/* Skills if present */}
-                {Array.isArray(d.skills) && d.skills.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {d.skills.map((s, i) => (
-                      <span key={i} className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${s === 'NO EXPERIENCE' ? 'bg-red-500/10 text-red-400' : 'bg-surface-alt text-muted'}`}>{s}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
+                {/* Date + chevron */}
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="text-[11px] text-muted">{new Date(app.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                  <ChevronRight size={16} className="text-muted" />
+                </div>
+              </button>
             );
           })}
         </div>
       )}
+
+      {editingQuestions && (
+        <PhoneScreenEditor
+          questions={phoneScreenQuestions}
+          onSave={(next) => { setPhoneScreenQuestions(next); setEditingQuestions(false); }}
+          onClose={() => setEditingQuestions(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function PhoneScreenEditor({ questions, onSave, onClose }) {
+  const [items, setItems] = useState(questions);
+  const update = (i, label) => setItems(items.map((q, idx) => idx === i ? { ...q, label } : q));
+  const remove = (i) => setItems(items.filter((_, idx) => idx !== i));
+  const add = () => setItems([...items, { id: crypto.randomUUID().slice(0, 8), label: '' }]);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-card rounded-2xl border border-border-subtle w-full max-w-lg max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
+          <p className="text-sm font-black text-primary">Phone Screen Questions</p>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-surface-alt text-muted cursor-pointer"><X size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {items.map((q, i) => (
+            <div key={q.id} className="flex items-start gap-2">
+              <textarea
+                value={q.label}
+                onChange={(e) => update(i, e.target.value)}
+                rows={2}
+                placeholder="Question..."
+                className="flex-1 bg-surface-alt rounded-lg px-3 py-2 text-sm text-primary placeholder:text-placeholder-muted focus:outline-none focus:ring-1 focus:ring-border-default resize-none"
+              />
+              <button onClick={() => remove(i)} className="p-2 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10 cursor-pointer"><Trash2 size={14} /></button>
+            </div>
+          ))}
+          <button onClick={add} className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-border-subtle text-xs font-semibold text-muted hover:text-primary hover:border-border-default cursor-pointer">
+            <Plus size={13} /> Add question
+          </button>
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-border-subtle">
+          <button onClick={onClose} className="px-3 py-2 rounded-lg text-xs font-semibold text-muted hover:bg-surface-alt cursor-pointer">Cancel</button>
+          <button onClick={() => onSave(items.filter((q) => q.label.trim()))} className="px-3 py-2 rounded-lg text-xs font-bold bg-brand text-on-brand hover:bg-brand-hover cursor-pointer">Save</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1444,7 +2019,5 @@ function ApplicationsTab() {
    MAIN
    ═══════════════════════════════════════════ */
 export default function Hiring() {
-  const [selectedPage, setSelectedPage] = useState(null);
-  if (selectedPage) return <PageDetail onBack={() => setSelectedPage(null)} />;
-  return <PagesIndex onSelect={setSelectedPage} />;
+  return <PageDetail />;
 }

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { HiringPagePreview } from './Hiring';
+import { initialHiringContent } from '../data/hiringDefaults';
 
 /**
  * Public-facing multi-step job application form, embeddable via iframe.
@@ -7,6 +9,7 @@ import { supabase } from '../lib/supabase';
  */
 export default function ApplyForm() {
   const [form, setForm] = useState(null);
+  const [hiringContent, setHiringContent] = useState(initialHiringContent);
   const [businessName, setBusinessName] = useState('');
   const [values, setValues] = useState({});
   const [step, setStep] = useState(0);
@@ -20,17 +23,19 @@ export default function ApplyForm() {
         const { data } = await supabase
           .from('app_state')
           .select('key, value')
-          .in('key', ['greenteam-applicationForm', 'greenteam-businessSettings']);
+          .in('key', ['greenteam-applicationForm', 'greenteam-businessSettings', 'greenteam-hiringContent']);
         if (data) {
           for (const row of data) {
             if (row.key === 'greenteam-applicationForm') setForm(row.value);
             if (row.key === 'greenteam-businessSettings') setBusinessName(row.value?.name || '');
+            if (row.key === 'greenteam-hiringContent' && row.value) setHiringContent(row.value);
           }
         }
       } catch {
         setError('Failed to load form');
       }
     })();
+    fetch('/api/messaging?action=ensure-bucket&name=resumes').catch(() => {});
   }, []);
 
   if (error && !form) return <div className="p-6 text-center text-red-400 text-sm">{error}</div>;
@@ -69,9 +74,15 @@ export default function ApplyForm() {
     });
   };
 
+  const isVisible = (field) => {
+    if (!field.showIf) return true;
+    return values[field.showIf.field] === field.showIf.equals;
+  };
+
   const validateStep = () => {
     if (!currentStep) return true;
     for (const field of currentStep.fields) {
+      if (!isVisible(field)) continue;
       if (field.required) {
         const val = values[field.id];
         if (!val || (Array.isArray(val) && val.length === 0)) return false;
@@ -124,8 +135,24 @@ export default function ApplyForm() {
 
   const inputCls = "w-full bg-[#1a1a1a] border border-[#2e2e2e] rounded-xl px-3.5 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-[#B0FF03] focus:ring-1 focus:ring-[#B0FF03]/30";
 
+  const groupFields = (fields) => {
+    const rows = [];
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      const next = fields[i + 1];
+      if (f.halfWidth && next?.halfWidth) {
+        rows.push([f, next]);
+        i++;
+      } else {
+        rows.push([f]);
+      }
+    }
+    return rows;
+  };
+
   return (
     <div style={{ background: '#0a0a0a', color: '#e5e5e5', fontFamily: "'Montserrat', system-ui, sans-serif", minHeight: '100%' }}>
+      <HiringPagePreview content={hiringContent} steps={form?.steps} hideApplySection />
       <form onSubmit={handleNext} className="max-w-lg mx-auto p-5">
         {businessName && <p className="text-center text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">{businessName} - Job Application</p>}
 
@@ -145,10 +172,14 @@ export default function ApplyForm() {
         {currentStep && <h2 className="text-lg font-black text-white mb-4">{currentStep.title}</h2>}
 
         <div className="space-y-5">
-          {(currentStep?.fields || []).map((field) => (
+          {groupFields((currentStep?.fields || []).filter(isVisible)).map((row, ri) => (
+            <div key={ri} className={row.length === 2 ? 'grid grid-cols-2 gap-3' : ''}>
+              {row.map((field) => (
             <div key={field.id}>
               {/* Labels with newlines render as paragraphs (for certification text blocks) */}
-              {field.label.includes('\n') ? (
+              {field.type === 'info' && !field.label.includes('\n') ? (
+                <h3 className="text-base font-black text-white mt-2 mb-1">{field.label}</h3>
+              ) : field.label.includes('\n') ? (
                 <div className="text-sm text-gray-300 mb-3 whitespace-pre-line leading-relaxed font-semibold">{field.label}</div>
               ) : (
                 <label className="block text-sm font-semibold text-gray-200 mb-1.5">
@@ -182,7 +213,7 @@ export default function ApplyForm() {
 
               {/* Radio / Single Select */}
               {field.type === 'radio' && (
-                <div className="space-y-2">
+                <div className={(field.options || []).length === 2 ? 'grid grid-cols-2 gap-2' : 'space-y-2'}>
                   {(field.options || []).map((opt, i) => (
                     <label key={i} className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl border border-[#2e2e2e] bg-[#1a1a1a] cursor-pointer hover:border-[#444] transition-colors" style={values[field.id] === opt ? { borderColor: 'rgba(176,255,3,.4)', background: 'rgba(176,255,3,.04)' } : {}}>
                       <div className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center shrink-0 ${values[field.id] === opt ? 'border-[#B0FF03]' : 'border-[#444]'}`}>
@@ -240,6 +271,17 @@ export default function ApplyForm() {
                   </label>
                 </div>
               )}
+
+              {/* File upload */}
+              {field.type === 'file' && (
+                <FileUploadField
+                  value={values[field.id]}
+                  onChange={(v) => handleChange(field.id, v)}
+                  accept={field.accept || '.pdf,.doc,.docx,.jpg,.jpeg,.png'}
+                />
+              )}
+            </div>
+              ))}
             </div>
           ))}
         </div>
@@ -258,6 +300,48 @@ export default function ApplyForm() {
         </div>
         {steps.length > 1 && <p className="text-center text-[11px] text-gray-600 font-semibold mt-3">Step {step + 1} of {steps.length}</p>}
       </form>
+    </div>
+  );
+}
+
+/* ─── File Upload (uploads to Supabase Storage 'resumes' bucket) ─── */
+function FileUploadField({ value, onChange, accept }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const [fileName, setFileName] = useState('');
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { setError('File is too large (max 10 MB).'); return; }
+    setUploading(true);
+    setError('');
+    setFileName(file.name);
+    try {
+      const urlRes = await fetch('/api/messaging?action=get-upload-url&bucket=resumes&filename=' + encodeURIComponent(file.name));
+      if (!urlRes.ok) throw new Error('Could not prepare upload');
+      const { path, token, publicUrl } = await urlRes.json();
+      const { error: upErr } = await supabase.storage.from('resumes').uploadToSignedUrl(path, token, file);
+      if (upErr) throw upErr;
+      onChange(publicUrl);
+    } catch (e) {
+      console.error('[FileUpload]', e);
+      setError("Upload failed. Please try again or email us your resume.");
+      onChange('');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div>
+      <label className="flex flex-col items-center justify-center py-6 rounded-xl border-2 border-dashed border-[#2e2e2e] bg-[#1a1a1a] cursor-pointer hover:border-[#B0FF03]/40 transition-colors">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={value ? '#B0FF03' : '#555'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span className={`text-xs font-semibold mt-2 ${value ? 'text-[#B0FF03]' : 'text-gray-500'}`}>
+          {uploading ? 'Uploading…' : value ? (fileName || 'File uploaded') : 'Tap to upload a file'}
+        </span>
+        <input type="file" accept={accept} className="sr-only" onChange={(e) => handleFile(e.target.files?.[0])} />
+      </label>
+      {error && <p className="text-xs text-red-400 mt-2 font-semibold">{error}</p>}
     </div>
   );
 }

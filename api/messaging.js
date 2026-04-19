@@ -7,19 +7,66 @@ import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
 export default async function handler(req, res) {
   // CORS for incoming webhook
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const action = req.query?.action || req.body?.action;
+
+  if (action === 'ensure-bucket') return handleEnsureBucket(req, res);
+  if (action === 'get-upload-url') return handleGetUploadUrl(req, res);
+
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   if (action === 'send') return handleSend(req, res);
   if (action === 'incoming') return handleIncoming(req, res);
   if (action === 'tag') return handleTag(req, res);
   if (action === 'application') return handleApplication(req, res);
 
-  return res.status(400).json({ error: 'action param required: send|incoming|tag|application' });
+  return res.status(400).json({ error: 'action param required: send|incoming|tag|application|ensure-bucket|get-upload-url' });
+}
+
+/* ─── Create signed upload URL so anonymous clients can upload without RLS policies ─── */
+async function handleGetUploadUrl(req, res) {
+  const bucket = req.query?.bucket || req.body?.bucket || 'resumes';
+  const filename = req.query?.filename || req.body?.filename || 'file';
+  try {
+    const db = getSupabaseAdmin();
+    // Ensure bucket exists first
+    const { data: existing } = await db.storage.getBucket(bucket);
+    if (!existing) {
+      await db.storage.createBucket(bucket, { public: true, fileSizeLimit: 10 * 1024 * 1024 });
+    }
+    const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`;
+    const { data, error } = await db.storage.from(bucket).createSignedUploadUrl(path);
+    if (error) return res.status(500).json({ error: error.message });
+    const { data: pub } = db.storage.from(bucket).getPublicUrl(path);
+    return res.status(200).json({ path, token: data.token, signedUrl: data.signedUrl, publicUrl: pub.publicUrl });
+  } catch (err) {
+    console.error('[getUploadUrl]', err);
+    return res.status(500).json({ error: err.message || 'Failed to get upload URL' });
+  }
+}
+
+/* ─── Ensure Supabase Storage bucket exists (for resumes) ─── */
+async function handleEnsureBucket(req, res) {
+  const name = req.query?.name || req.body?.name || 'resumes';
+  try {
+    const db = getSupabaseAdmin();
+    const { data: existing, error: getErr } = await db.storage.getBucket(name);
+    if (existing && !getErr) return res.status(200).json({ ok: true, created: false, name });
+    const { error: createErr } = await db.storage.createBucket(name, {
+      public: true,
+      fileSizeLimit: 10 * 1024 * 1024,
+      allowedMimeTypes: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'],
+    });
+    if (createErr) return res.status(500).json({ ok: false, error: createErr.message });
+    return res.status(200).json({ ok: true, created: true, name });
+  } catch (err) {
+    console.error('[ensureBucket]', err);
+    return res.status(500).json({ ok: false, error: err.message || 'Failed to ensure bucket' });
+  }
 }
 
 /* ─── Send SMS via Twilio ─── */
