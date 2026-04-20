@@ -742,6 +742,7 @@ function fmt$(n) { return n >= 1000 ? `$${(n/1000).toFixed(1)}k` : `$${Math.roun
 
 function OwnerDashboard() {
   const CLIENT_GOAL = 200;
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [labor, setLabor] = useState(null);
   const [dashLoading, setDashLoading] = useState(false);
@@ -780,6 +781,7 @@ function OwnerDashboard() {
         ytdRevenue: ytd?.ytdRevenue || 0,
         jobCount: ytd?.jobCount || 0,
         monthlyRecurringRevenue: yearData?.monthlyRecurringRevenue || 0,
+        recurringClientList: yearData?.recurringClientList || [],
       };
       setData(newData);
       try { localStorage.setItem('greenteam-dashboard-cache', JSON.stringify(newData)); } catch {}
@@ -803,11 +805,14 @@ function OwnerDashboard() {
             <p className="text-[10px] text-muted font-bold uppercase tracking-wider">YTD Revenue</p>
             <p className="text-3xl font-black text-primary mt-2">{data ? fmt$(data.ytdRevenue) : '--'}</p>
           </div>
-          <div className="bg-card rounded-2xl border border-border-subtle p-5 text-center">
+          <button
+            onClick={() => navigate('/insights/clients')}
+            className="bg-card rounded-2xl border border-border-subtle p-5 text-center transition-colors hover:border-brand cursor-pointer"
+          >
             <p className="text-[10px] text-muted font-bold uppercase tracking-wider">Recurring Clients</p>
             <p className="text-3xl font-black text-brand-text mt-2">{data ? clients : '--'} <span className="text-lg text-muted font-bold">/ {CLIENT_GOAL}</span></p>
             {data && <p className="text-xs text-brand-text/70 font-bold mt-1">{monthlyRev > 0 ? `${fmt$(monthlyRev)}/mo` : 'Loading...'}</p>}
-          </div>
+          </button>
         </div>
       </div>
 

@@ -42,8 +42,8 @@ app.get('/api/qb-auth', qbAuth);
 app.get('/api/qb-callback', qbCallback);
 app.all('/api/qb-data', qbData);
 
-// Jobber data (clients search + labor data)
-app.get('/api/jobber-data', jobberDataHandler);
+// Jobber data (clients search + labor data + refresh)
+app.all('/api/jobber-data', jobberDataHandler);
 
 // Team auth management
 app.post('/api/team-auth', teamAuthHandler);

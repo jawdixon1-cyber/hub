@@ -1,4 +1,4 @@
-import { jobberQuery, jobberStatus, JobberDisconnectedError } from '../lib/jobberClient.js';
+import { jobberQuery, jobberStatus, forceRefresh, JobberDisconnectedError } from '../lib/jobberClient.js';
 
 // ── Pay Rate Overrides (actual pay, not Jobber billing rate) ──
 const PAY_RATE_OVERRIDES = {
@@ -610,6 +610,10 @@ export default async function handler(req, res) {
     if (action === 'status') {
       const status = await jobberStatus();
       return res.json(status);
+    }
+    if (action === 'refresh') {
+      const result = await forceRefresh();
+      return res.status(result.ok ? 200 : 400).json(result);
     }
     if (action === 'crew-status') return handleCrewStatus(req, res);
     if (action === 'clients') return handleClientSearch(req, res);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { ClipboardCheck, Wrench, X, ChevronRight, Users, Link2, Check, Plug, Shield, Plus, Trash2 } from 'lucide-react';
+import { ClipboardCheck, Wrench, X, ChevronRight, Users, Link2, Check, Plug, Shield, Plus, Trash2, LogOut } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
@@ -16,10 +16,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { Building2, MapPin } from 'lucide-react';
 
 const SETTINGS_NAV = [
-  { id: 'business', label: 'Business Profile', icon: Building2 },
-  { id: 'connections', label: 'Connections', icon: Plug },
-  { id: 'checklists', label: 'Checklists', icon: ClipboardCheck },
-  { id: 'team', label: 'Team', icon: Users },
+  { id: 'business', label: 'Business Profile', icon: Building2, ownerOnly: true },
+  { id: 'connections', label: 'Connections', icon: Plug, ownerOnly: true },
+  { id: 'checklists', label: 'Checklists', icon: ClipboardCheck, ownerOnly: true },
+  { id: 'team', label: 'Team', icon: Users, ownerOnly: true },
+  { id: 'account', label: 'Account', icon: LogOut },
 ];
 
 /* ─── Equipment Section ─── */
@@ -164,7 +165,16 @@ function JobberConnectionPanel() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
+
+  const loadStatus = () => {
+    return fetch('/api/jobber-data?action=status')
+      .then((r) => r.json())
+      .then(setStatus)
+      .catch(() => setStatus({ connected: false }));
+  };
 
   useEffect(() => {
     const jobberParam = searchParams.get('jobber');
@@ -178,12 +188,43 @@ function JobberConnectionPanel() {
       setSearchParams(searchParams, { replace: true });
     }
 
-    fetch('/api/jobber-data?action=status')
-      .then((r) => r.json())
-      .then(setStatus)
-      .catch(() => setStatus({ connected: false }))
-      .finally(() => setLoading(false));
+    loadStatus().finally(() => setLoading(false));
   }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setRefreshMsg(null);
+    try {
+      const res = await fetch('/api/jobber-data?action=refresh', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setRefreshMsg({ type: 'ok', text: 'Token refreshed successfully.' });
+      } else {
+        setRefreshMsg({ type: 'err', text: data.error || 'Refresh failed.' });
+      }
+      await loadStatus();
+    } catch (err) {
+      setRefreshMsg({ type: 'err', text: 'Network error: ' + err.message });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const fmtTime = (v) => {
+    if (!v) return '—';
+    const d = typeof v === 'number' ? new Date(v) : new Date(v);
+    if (isNaN(d.getTime())) return String(v);
+    return d.toLocaleString();
+  };
+  const timeUntilExpiry = () => {
+    if (!status?.expires_at) return null;
+    const ms = status.expires_at - Date.now();
+    if (ms < 0) return 'expired';
+    const mins = Math.floor(ms / 60000);
+    if (mins < 60) return `${mins} min`;
+    const hrs = Math.floor(mins / 60);
+    return `${hrs}h ${mins % 60}m`;
+  };
 
   return (
     <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
@@ -208,9 +249,13 @@ function JobberConnectionPanel() {
         {!loading && (
           status?.connected ? (
             <div className="flex items-center gap-2">
-              <span className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-xs font-semibold">
-                Active
-              </span>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-semibold hover:bg-surface hover:text-primary transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {refreshing ? 'Refreshing…' : 'Refresh Now'}
+              </button>
               <a
                 href="/api/jobber-auth"
                 onClick={(e) => { e.preventDefault(); window.location.href = '/api/jobber-auth'; }}
@@ -231,6 +276,29 @@ function JobberConnectionPanel() {
           )
         )}
       </div>
+
+      {/* Diagnostic token state */}
+      {!loading && status?.connected && (
+        <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-[11px] text-muted">
+          <div><span className="font-semibold text-secondary">Token expires:</span> {fmtTime(status.expires_at)} {timeUntilExpiry() && <span className="text-muted">({timeUntilExpiry()})</span>}</div>
+          <div><span className="font-semibold text-secondary">Last refreshed:</span> {fmtTime(status.refreshed_at)}</div>
+          <div><span className="font-semibold text-secondary">Refresh token:</span> {status.has_refresh_token ? <span className="text-emerald-500">stored</span> : <span className="text-red-500">missing</span>}</div>
+          <div><span className="font-semibold text-secondary">Server env:</span> {status.has_client_id && status.has_client_secret ? <span className="text-emerald-500">OK</span> : <span className="text-red-500">missing {!status.has_client_id && 'CLIENT_ID '}{!status.has_client_secret && 'CLIENT_SECRET'}</span>}</div>
+          {status.last_refresh_error && (
+            <div className="col-span-2 mt-1 text-red-500 break-words">
+              <span className="font-semibold">Last refresh error:</span> {status.last_refresh_error}
+              <span className="block text-muted text-[10px] mt-0.5">at {fmtTime(status.last_refresh_attempt)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {refreshMsg && (
+        <p className={`mt-3 text-xs rounded-lg p-3 break-words ${refreshMsg.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40'}`}>
+          {refreshMsg.text}
+        </p>
+      )}
+
       {errorMsg && (
         <p className="mt-3 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 rounded-lg p-3 break-all">
           Jobber Error: {errorMsg}
@@ -591,24 +659,21 @@ export function SettingsContent() { return null; }
 /* ─── Main Settings Page ─── */
 
 export default function Settings() {
-  const { ownerMode } = useAuth();
-  const navigate = useNavigate();
+  const { ownerMode, signOut } = useAuth();
   const [searchParams] = useSearchParams();
+  const visibleNav = SETTINGS_NAV.filter(i => ownerMode || !i.ownerOnly);
   const [activeSection, setActiveSection] = useState(() => {
-    // Auto-open connections if redirected from Jobber OAuth
     if (searchParams.get('jobber')) return 'connections';
-    return 'business';
+    return ownerMode ? 'business' : 'account';
   });
-
-  if (!ownerMode) { navigate('/'); return null; }
 
   return (
     <div className="space-y-4">
       {/* Mobile tab bar */}
-      <div className="sm:hidden flex gap-1 bg-surface-alt p-1 rounded-xl">
-        {SETTINGS_NAV.map((item) => (
+      <div className="sm:hidden flex gap-1 bg-surface-alt p-1 rounded-xl overflow-x-auto">
+        {visibleNav.map((item) => (
           <button key={item.id} onClick={() => setActiveSection(item.id)}
-            className={`flex-1 py-2.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+            className={`flex-1 min-w-max py-2.5 px-3 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
               activeSection === item.id ? 'bg-card text-primary shadow-sm' : 'text-muted'
             }`}>
             {item.label}
@@ -621,7 +686,7 @@ export default function Settings() {
         <div className="w-48 shrink-0 hidden sm:block">
           <h2 className="text-lg font-bold text-primary mb-4">Settings</h2>
           <nav className="space-y-1">
-            {SETTINGS_NAV.map((item) => {
+            {visibleNav.map((item) => {
               const Icon = item.icon;
               const active = activeSection === item.id;
               return (
@@ -639,14 +704,30 @@ export default function Settings() {
 
         {/* Content */}
         <div className="flex-1 min-w-0">
-        {activeSection === 'business' && <BusinessProfileSection />}
-        {activeSection === 'connections' && <ConnectionsSection />}
-        {activeSection === 'checklists' && <ChecklistsSection />}
+        {activeSection === 'business' && ownerMode && <BusinessProfileSection />}
+        {activeSection === 'connections' && ownerMode && <ConnectionsSection />}
+        {activeSection === 'checklists' && ownerMode && <ChecklistsSection />}
 
-        {activeSection === 'team' && (
+        {activeSection === 'team' && ownerMode && (
           <Suspense fallback={<div className="text-center py-8 text-muted text-sm">Loading...</div>}>
             <TeamManagement />
           </Suspense>
+        )}
+
+        {activeSection === 'account' && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-bold text-primary">Account</h3>
+              <p className="text-sm text-muted mt-1">Sign out of your account on this device.</p>
+            </div>
+            <button
+              onClick={() => signOut()}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors cursor-pointer"
+            >
+              <LogOut size={16} />
+              Sign Out
+            </button>
+          </div>
         )}
 
         </div>

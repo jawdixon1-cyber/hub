@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Sparkles, ArrowLeft } from 'lucide-react';
 import Card from '../components/Card';
 import EditModal from '../components/EditModal';
@@ -57,8 +57,13 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
   const [showAIGenerator, setShowAIGenerator] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmDeleteText, setConfirmDeleteText] = useState('');
-  const visibleTabs = allowedPlaybooks
-    ? ALL_TABS.filter((t) => allowedPlaybooks.includes(t.playbookKey))
+  const [searchParams] = useSearchParams();
+  const roleParam = searchParams.get('role');
+  const effectiveAllowed = roleParam === 'gm' ? ['strategy']
+    : roleParam === 'field' ? ['service']
+    : allowedPlaybooks;
+  const visibleTabs = effectiveAllowed
+    ? ALL_TABS.filter((t) => effectiveAllowed.includes(t.playbookKey))
     : ALL_TABS;
 
   const [filter, setFilter] = useState(() => {

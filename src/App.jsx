@@ -34,6 +34,7 @@ import {
   FileSignature,
   Hammer,
   UserPlus2,
+  BarChart3,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
@@ -80,6 +81,8 @@ const Invoices = lazy(() => import('./pages/Invoices'));
 const Payments = lazy(() => import('./pages/Payments'));
 const Hiring = lazy(() => import('./pages/Hiring'));
 const ApplyForm = lazy(() => import('./pages/ApplyForm'));
+const Insights = lazy(() => import('./pages/Insights'));
+const InsightsRecurringClients = lazy(() => import('./pages/Insights').then(m => ({ default: m.RecurringClientsReport })));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -87,7 +90,7 @@ const NAV_ITEMS = [
 ];
 
 const TEAM_TOOLS_ITEMS = [
-  { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
+  { id: 'guides-field', path: '/guides?role=field', label: 'Playbooks', icon: BookOpen },
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
@@ -107,10 +110,9 @@ const OPERATIONS_ITEMS = [
 ];
 
 const OWNER_ITEMS = [
-  { id: 'marketing', path: '/marketing', label: 'Leads', icon: MapPinned },
+  { id: 'guides-gm', path: '/guides?role=gm', label: 'Playbooks', icon: BookOpen },
   { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
-  { id: 'labor', path: '/labor', label: 'Profitability', icon: TrendingUp },
-  { id: 'finance', path: '/finance', label: 'Finance', icon: DollarSign },
+  { id: 'insights', path: '/insights', label: 'Insights', icon: BarChart3 },
 ];
 
 
@@ -315,6 +317,22 @@ function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // ── Jobber token keepalive ──
+  // Jobber's refresh tokens rotate on use and are invalidated after prolonged idle
+  // periods. Ping the refresh endpoint every 45 min while the app is open so the
+  // token never goes stale. Owners only — team members don't use Jobber-backed data.
+  useEffect(() => {
+    if (!ownerMode) return;
+    let timer;
+    const ping = () => {
+      fetch('/api/jobber-data?action=refresh', { method: 'POST' }).catch(() => {});
+    };
+    // Run once after 30s so it's noticed if Jobber is disconnected, then every 45 min
+    const initial = setTimeout(ping, 30000);
+    timer = setInterval(ping, 45 * 60 * 1000);
+    return () => { clearTimeout(initial); clearInterval(timer); };
+  }, [ownerMode]);
+
   const permissions = useAppStore((s) => s.permissions);
   const userEmail = user?.email?.toLowerCase();
   const allowedPlaybooks = ownerMode
@@ -392,6 +410,7 @@ function AppShell() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [teamToolsOpen, setTeamToolsOpen] = useState(false);
   const [ownerToolsOpen, setOwnerToolsOpen] = useState(true);
+  const [operationsOpen, setOperationsOpen] = useState(false);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((v) => {
@@ -408,7 +427,10 @@ function AppShell() {
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
-    return location.pathname.startsWith(path);
+    const [p, qs] = path.split('?');
+    const pathMatch = location.pathname.startsWith(p);
+    if (!qs) return pathMatch;
+    return pathMatch && location.search.includes(qs);
   };
 
   const handleNav = (path) => {
@@ -466,8 +488,14 @@ function AppShell() {
       {ownerMode && (
         <>
           <div className="h-px bg-border-subtle my-3 mx-2" />
-          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Operations</p>}
-          {OPERATIONS_ITEMS.map((item) => {
+          {!collapsed && (
+            <button onClick={() => setOperationsOpen((o) => !o)}
+              className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
+              <span>Operations</span>
+              <ChevronDown size={14} className={`transition-transform ${operationsOpen ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+          {(operationsOpen || collapsed) && OPERATIONS_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
             return (
@@ -475,13 +503,13 @@ function AppShell() {
                 key={item.id}
                 onClick={() => handleNav(item.path)}
                 title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
                   active
                     ? 'bg-brand-light text-brand-text-strong'
                     : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
                 }`}
               >
-                <Icon size={20} className="shrink-0" />
+                <Icon size={18} className="shrink-0" />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </button>
             );
@@ -572,7 +600,7 @@ function AppShell() {
               </div>
               {!sidebarCollapsed && <span className="truncate">{currentUser}</span>}
             </button>
-            {!sidebarCollapsed && ownerMode && (
+            {!sidebarCollapsed && (
               <button
                 onClick={() => navigate('/settings')}
                 title="Settings"
@@ -710,6 +738,10 @@ function AppShell() {
                 <Route path="/hiring" element={<Hiring />} />
                 <Route path="/finance" element={<Finance />} />
                 <Route path="/labor" element={<LaborEfficiency />} />
+                <Route path="/insights" element={<Insights />} />
+                <Route path="/insights/clients" element={<InsightsRecurringClients />} />
+                <Route path="/insights/leads" element={<Marketing />} />
+                <Route path="/insights/profitability" element={<LaborEfficiency />} />
                 {/* Redirects for old routes */}
                 <Route path="/commander" element={<Navigate to="/sales" replace />} />
                 <Route path="/pipeline" element={<Navigate to="/sales" replace />} />

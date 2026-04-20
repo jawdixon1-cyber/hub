@@ -371,12 +371,6 @@ export default function Profile() {
           </div>
         </div>
 
-        <button
-          onClick={handleSignOut}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors cursor-pointer"
-        >
-          <LogOut size={18} /> Sign Out
-        </button>
       </div>
     );
   }
@@ -447,16 +441,6 @@ export default function Profile() {
             <ChevronRight size={16} className="text-muted" />
           </button>
         </div>
-      )}
-
-      {/* ── Sign Out (not in preview) ── */}
-      {!isPreview && (
-        <button
-          onClick={handleSignOut}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors cursor-pointer"
-        >
-          <LogOut size={18} /> Sign Out
-        </button>
       )}
 
       {/* ── Agreement Signing Modal ── */}

@@ -91,7 +91,14 @@ async function fetchRecurringJobs() {
           jobNumber
           jobStatus
           total
-          lineItems { nodes { totalPrice quantity } }
+          lineItems { nodes { name totalPrice quantity } }
+          visits(first: 5) {
+            nodes {
+              id
+              completedAt
+              lineItems { nodes { name totalPrice quantity } }
+            }
+          }
           startAt
           completedAt
           createdAt
@@ -346,13 +353,49 @@ export default async function handler(req, res) {
       if (!clientRoster[cid]) {
         clientRoster[cid] = { name, phone, email, jobs: [], totalPerVisit: 0, totalMonthly: 0 };
       }
-      // Use only recurring line items (qty > 0) for per-visit, excluding one-time add-ons
-      const items = job.lineItems?.nodes || [];
-      const recurringTotal = items.filter(li => li.quantity > 0).reduce((s, li) => s + (parseFloat(li.totalPrice) || 0), 0);
-      const perVisit = recurringTotal > 0 ? recurringTotal : (job.total || 0);
+      // The job's line items ARE the recurring service template in Jobber — that's the
+      // configured recurring price. Per-visit overrides (setup fees on first visit,
+      // lock-in discounts) are visit-level and shouldn't affect the baseline.
+      //
+      // Heuristic: some clients have one-time items (setup fees, first-visit discounts,
+      // sign-up promos) accidentally added to their recurring job. Exclude items whose
+      // name matches one-time patterns so the baseline recurring rate is accurate.
+      const ONE_TIME_PATTERNS = /\b(first[\s-]?(service|visit|time|cut|mow)|setup|set[\s-]?up|initial|one[\s-]?time|signup|sign[\s-]?up|lock[\s-]?in|promo|promotional|intro(ductory)?|kickoff|kick[\s-]?off|start[\s-]?up)\b/i;
+      const isRecurring = (li) => li.quantity > 0 && !ONE_TIME_PATTERNS.test(li.name || '');
+
+      // Primary source: job's own line items (the recurring template)
+      const jobItems = job.lineItems?.nodes || [];
+      let sourceItems = jobItems;
+      let itemSource = 'job';
+
+      // Fallback: if job has no line items, use a visit's line items. Prefer completed
+      // visits (most recent), but fall through to any visit that has line items so we
+      // can capture upcoming scheduled visits too.
+      if (jobItems.length === 0) {
+        const visits = job.visits?.nodes || [];
+        const completed = visits.filter(v => v.completedAt).sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+        const anyWithItems = visits.find(v => (v.lineItems?.nodes || []).length > 0);
+        const ref = completed.find(v => (v.lineItems?.nodes || []).length > 0) || anyWithItems;
+        if (ref) {
+          sourceItems = ref.lineItems?.nodes || [];
+          itemSource = ref.completedAt ? 'visit' : 'upcoming visit';
+        }
+      }
+
+      const recurringItems = sourceItems.filter(isRecurring);
+      const perVisit = recurringItems.reduce((s, li) => s + (parseFloat(li.totalPrice) || 0), 0) || (job.total || 0);
+      const services = [...new Set(recurringItems.map(li => (li.name || '').trim()).filter(Boolean))];
+      const lineItemsBreakdown = sourceItems.map(li => ({
+        name: li.name || '',
+        quantity: li.quantity,
+        totalPrice: parseFloat(li.totalPrice) || 0,
+        excluded: !isRecurring(li),
+      }));
       const { visitsPerMonth } = parseFrequency(calRule);
       const monthly = Math.round(perVisit * visitsPerMonth * 100) / 100;
-      clientRoster[cid].jobs.push({ jobId: job.id, jobNumber: job.jobNumber, frequency: freqLabel, perVisit, monthly, billingType: job.billingType || 'unknown' });
+      const startDate = job.visitSchedule?.startDate || job.startAt || null;
+      const endDate = job.visitSchedule?.endDate || job.endAt || null;
+      clientRoster[cid].jobs.push({ jobId: job.id, jobNumber: job.jobNumber, frequency: freqLabel, perVisit, monthly, services, startDate, endDate, lineItems: lineItemsBreakdown, itemSource, billingType: job.billingType || 'unknown' });
       clientRoster[cid].totalPerVisit += perVisit;
       clientRoster[cid].totalMonthly += monthly;
     }
