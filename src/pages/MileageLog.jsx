@@ -402,11 +402,33 @@ export default function MileageLog() {
     const y = now.getFullYear();
     const m = now.getMonth();
     const pad = (n) => String(n).padStart(2, '0');
+    // Monday as first day of the week
+    const mondayOffset = (d) => { const day = d.getDay(); return day === 0 ? -6 : 1 - day; };
+    const startOfWeek = (offsetWeeks = 0) => {
+      const d = new Date(now);
+      d.setDate(d.getDate() + mondayOffset(d) + offsetWeeks * 7);
+      return d;
+    };
+    const endOfWeek = (offsetWeeks = 0) => {
+      const s = startOfWeek(offsetWeeks);
+      s.setDate(s.getDate() + 6);
+      return s;
+    };
     switch (dateRange) {
       case 'today': {
         const today = getTodayInTimezone();
         return { from: today, to: today };
       }
+      case 'yesterday': {
+        const y2 = toDateStringInTimezone(new Date(now - 86400000));
+        return { from: y2, to: y2 };
+      }
+      case 'this-week':
+        return { from: toDateStringInTimezone(startOfWeek(0)), to: toDateStringInTimezone(endOfWeek(0)) };
+      case 'last-week':
+        return { from: toDateStringInTimezone(startOfWeek(-1)), to: toDateStringInTimezone(endOfWeek(-1)) };
+      case 'last-7':
+        return { from: toDateStringInTimezone(new Date(now - 7 * 86400000)), to: getTodayInTimezone() };
       case 'this-month':
         return { from: `${y}-${pad(m + 1)}-01`, to: `${y}-${pad(m + 1)}-${pad(new Date(y, m + 1, 0).getDate())}` };
       case 'last-month': {
@@ -453,7 +475,11 @@ export default function MileageLog() {
     return true;
   });
 
-  const sorted = [...filtered].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  const sorted = [...filtered].sort((a, b) => {
+    const cmp = (b.date || '').localeCompare(a.date || '');
+    if (cmp !== 0) return cmp;
+    return (b.createdAt || '').localeCompare(a.createdAt || '');
+  });
   const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
   const safePage = Math.min(page, totalPages);
   const paginated = sorted.slice((safePage - 1) * perPage, safePage * perPage);
@@ -699,6 +725,10 @@ export default function MileageLog() {
           className="flex-1 min-w-0 rounded-xl border border-border-strong bg-card px-3 py-2 text-xs font-medium text-primary outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
         >
           <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="this-week">This Week</option>
+          <option value="last-week">Last Week</option>
+          <option value="last-7">Last 7 Days</option>
           <option value="this-month">This Month</option>
           <option value="last-month">Last Month</option>
           <option value="last-30">Last 30 Days</option>

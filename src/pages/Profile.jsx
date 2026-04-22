@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { SettingsContent } from './Settings';
-import { DEFAULT_AGREEMENT_VERSION, AGREEMENT_SECTIONS as DEFAULT_SECTIONS, FINAL_AGREEMENT_TEXT as DEFAULT_FINAL_TEXT } from '../data/employmentAgreement';
+import { DEFAULT_AGREEMENT_VERSION, AGREEMENT_SECTIONS as DEFAULT_SECTIONS, FINAL_AGREEMENT_TEXT as DEFAULT_FINAL_TEXT, getCurrentAgreementVersion } from '../data/employmentAgreement';
 
 const AgreementSigningFlow = lazy(() => import('../components/AgreementSigningFlow'));
 
@@ -341,7 +341,7 @@ export default function Profile() {
   const setSignedAgreements = useAppStore((s) => s.setSignedAgreements);
   const strikes = useAppStore((s) => s.strikes) || [];
   const storeAgreementConfig = useAppStore((s) => s.agreementConfig);
-  const AGREEMENT_VERSION = storeAgreementConfig?.version || DEFAULT_AGREEMENT_VERSION;
+  const AGREEMENT_VERSION = getCurrentAgreementVersion(storeAgreementConfig);
 
   const handleSignOut = async () => { await signOut(); };
   const [previewTeamView, setPreviewTeamView] = useState(false);

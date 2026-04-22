@@ -40,6 +40,7 @@ import {
 import { supabase } from './lib/supabase';
 import { useAuth } from './contexts/AuthContext';
 import { AppStoreProvider, useAppStore } from './store/AppStoreContext';
+import { getCurrentAgreementVersion } from './data/employmentAgreement';
 import LoginForm from './components/LoginForm';
 import IdeaBank from './components/IdeaBank';
 import MessagesButton from './components/MessagesButton';
@@ -342,10 +343,7 @@ function AppShell() {
   // ── Agreement gate for team members ──
   const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
   const agreementConfig = useAppStore((s) => s.agreementConfig);
-  // Use the higher of stored version or default version (2.0)
-  const storedVersion = agreementConfig?.version || '1.0';
-  const defaultVersion = '2.1';
-  const currentAgreementVersion = parseFloat(storedVersion) >= parseFloat(defaultVersion) ? storedVersion : defaultVersion;
+  const currentAgreementVersion = getCurrentAgreementVersion(agreementConfig);
 
   const hasSignedCurrent = ownerMode || signedAgreements.some(
     (a) => a.memberEmail === userEmail && a.version === currentAgreementVersion
@@ -517,28 +515,6 @@ function AppShell() {
 
           <div className="h-px bg-border-subtle my-3 mx-2" />
           {!collapsed && (
-            <button onClick={() => setTeamToolsOpen((o) => !o)}
-              className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
-              <span>Team Tools</span>
-              <ChevronDown size={14} className={`transition-transform ${teamToolsOpen ? 'rotate-180' : ''}`} />
-            </button>
-          )}
-          {(teamToolsOpen || collapsed) && TEAM_TOOLS_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            return (
-              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-                }`}>
-                <Icon size={18} className="shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
-            );
-          })}
-
-          <div className="h-px bg-border-subtle my-3 mx-2" />
-          {!collapsed && (
             <button onClick={() => setOwnerToolsOpen((o) => !o)}
               className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
               <span>Owner Tools</span>
@@ -559,6 +535,28 @@ function AppShell() {
                     : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
                 }`}
               >
+                <Icon size={18} className="shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </button>
+            );
+          })}
+
+          <div className="h-px bg-border-subtle my-3 mx-2" />
+          {!collapsed && (
+            <button onClick={() => setTeamToolsOpen((o) => !o)}
+              className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
+              <span>Team Tools</span>
+              <ChevronDown size={14} className={`transition-transform ${teamToolsOpen ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+          {(teamToolsOpen || collapsed) && TEAM_TOOLS_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.path);
+            return (
+              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
+                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                }`}>
                 <Icon size={18} className="shrink-0" />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </button>

@@ -36,6 +36,8 @@ import {
   ArrowUpDown,
   MessageSquare,
   Loader2,
+  Target,
+  BookOpen,
 } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
 
@@ -1411,8 +1413,10 @@ We run background checks. If you have a record, just be upfront about it. Honest
    APPLICATIONS TAB — Screening Pipeline
    ═══════════════════════════════════════════ */
 const PIPELINE = [
-  { id: 'new', label: 'Screening', color: 'text-blue-400', bg: 'bg-blue-500/15', dot: 'bg-blue-400' },
-  { id: 'contacted', label: 'Talk To', color: 'text-amber-400', bg: 'bg-amber-500/15', dot: 'bg-amber-400' },
+  { id: 'new', label: 'Applied', color: 'text-blue-400', bg: 'bg-blue-500/15', dot: 'bg-blue-400' },
+  { id: 'contacted', label: 'Phone Screen', color: 'text-amber-400', bg: 'bg-amber-500/15', dot: 'bg-amber-400' },
+  { id: 'onboarding', label: 'Trial Scheduled', color: 'text-cyan-400', bg: 'bg-cyan-500/15', dot: 'bg-cyan-400' },
+  { id: 'trial_day', label: 'Trial Day', color: 'text-purple-400', bg: 'bg-purple-500/15', dot: 'bg-purple-400' },
   { id: 'hired', label: 'Hired', color: 'text-green-400', bg: 'bg-green-500/15', dot: 'bg-green-400' },
   { id: 'rejected', label: 'Rejected', color: 'text-red-400', bg: 'bg-red-500/15', dot: 'bg-red-400' },
 ];
@@ -1453,7 +1457,7 @@ function scoreApplication(data) {
   return { score: Math.max(0, Math.min(10, score)), flags, greens };
 }
 
-const statusColor = (s) => s === 'new' ? 'bg-blue-500/15 text-blue-400' : s === 'contacted' ? 'bg-amber-500/15 text-amber-400' : s === 'hired' ? 'bg-green-500/15 text-green-400' : s === 'rejected' ? 'bg-red-500/15 text-red-400' : 'bg-surface-alt text-muted';
+const statusColor = (s) => s === 'new' ? 'bg-blue-500/15 text-blue-400' : s === 'contacted' ? 'bg-amber-500/15 text-amber-400' : s === 'onboarding' ? 'bg-cyan-500/15 text-cyan-400' : s === 'trial_day' ? 'bg-purple-500/15 text-purple-400' : s === 'hired' ? 'bg-green-500/15 text-green-400' : s === 'rejected' ? 'bg-red-500/15 text-red-400' : 'bg-surface-alt text-muted';
 
 function ApplicationsTab() {
   const applications = useAppStore((s) => s.applications) || [];
@@ -1461,11 +1465,14 @@ function ApplicationsTab() {
   const form = useAppStore((s) => s.applicationForm);
   const phoneScreenQuestions = useAppStore((s) => s.phoneScreenQuestions) || [];
   const setPhoneScreenQuestions = useAppStore((s) => s.setPhoneScreenQuestions);
+  const onboardingSteps = useAppStore((s) => s.onboardingSteps) || [];
+  const setOnboardingSteps = useAppStore((s) => s.setOnboardingSteps);
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState('new');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('date');
   const [editingQuestions, setEditingQuestions] = useState(false);
+  const [editingOnboarding, setEditingOnboarding] = useState(false);
 
   const [sending, setSending] = useState(null);
 
@@ -1474,6 +1481,26 @@ function ApplicationsTab() {
       ? { ...a, phoneScreen: { ...(a.phoneScreen || {}), [qid]: value } }
       : a));
     setSelected((s) => ({ ...s, phoneScreen: { ...(s.phoneScreen || {}), [qid]: value } }));
+  };
+
+  const toggleOnboardingStep = (stepId) => {
+    const current = selected.onboarding?.[stepId];
+    const next = current?.done
+      ? { done: false, completedAt: null }
+      : { done: true, completedAt: new Date().toISOString() };
+    setApplications(applications.map((a) => a.id === selected.id
+      ? { ...a, onboarding: { ...(a.onboarding || {}), [stepId]: next } }
+      : a));
+    setSelected((s) => ({ ...s, onboarding: { ...(s.onboarding || {}), [stepId]: next } }));
+  };
+
+  const setOnboardingNote = (stepId, note) => {
+    const current = selected.onboarding?.[stepId] || {};
+    const next = { ...current, note };
+    setApplications(applications.map((a) => a.id === selected.id
+      ? { ...a, onboarding: { ...(a.onboarding || {}), [stepId]: next } }
+      : a));
+    setSelected((s) => ({ ...s, onboarding: { ...(s.onboarding || {}), [stepId]: next } }));
   };
 
   const SMS_TEMPLATES = {
@@ -1741,15 +1768,21 @@ function ApplicationsTab() {
                   </div>
                 )}
 
-                {/* Actions */}
-                <div className="grid grid-cols-3 gap-2">
-                  <button onClick={() => markStatus(selected.id, 'contacted')} disabled={!!sending} className={`py-3 rounded-xl text-[13px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'contacted' ? 'bg-amber-400 text-black' : 'bg-amber-500/12 text-amber-400 hover:bg-amber-500/20'}`}>
-                    {sending === 'contacted' ? <Loader2 size={13} className="animate-spin" /> : <MessageSquare size={13} />} Talk To
+                {/* Actions — pipeline stage buttons */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  <button onClick={() => markStatus(selected.id, 'contacted')} disabled={!!sending} className={`py-3 rounded-xl text-[12px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'contacted' ? 'bg-amber-400 text-black' : 'bg-amber-500/12 text-amber-400 hover:bg-amber-500/20'}`}>
+                    {sending === 'contacted' ? <Loader2 size={13} className="animate-spin" /> : <MessageSquare size={13} />} Phone Screen
                   </button>
-                  <button onClick={() => markStatus(selected.id, 'hired')} disabled={!!sending} className={`py-3 rounded-xl text-[13px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'hired' ? 'bg-green-400 text-black' : 'bg-green-500/12 text-green-400 hover:bg-green-500/20'}`}>
+                  <button onClick={() => markStatus(selected.id, 'onboarding')} disabled={!!sending} className={`py-3 rounded-xl text-[12px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'onboarding' ? 'bg-cyan-400 text-black' : 'bg-cyan-500/12 text-cyan-400 hover:bg-cyan-500/20'}`}>
+                    {sending === 'onboarding' ? <Loader2 size={13} className="animate-spin" /> : <ClipboardList size={13} />} Schedule Trial
+                  </button>
+                  <button onClick={() => markStatus(selected.id, 'trial_day')} disabled={!!sending} className={`py-3 rounded-xl text-[12px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'trial_day' ? 'bg-purple-400 text-black' : 'bg-purple-500/12 text-purple-400 hover:bg-purple-500/20'}`}>
+                    {sending === 'trial_day' ? <Loader2 size={13} className="animate-spin" /> : <Target size={13} />} Trial Day
+                  </button>
+                  <button onClick={() => markStatus(selected.id, 'hired')} disabled={!!sending} className={`py-3 rounded-xl text-[12px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'hired' ? 'bg-green-400 text-black' : 'bg-green-500/12 text-green-400 hover:bg-green-500/20'}`}>
                     {sending === 'hired' ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Hire
                   </button>
-                  <button onClick={() => markStatus(selected.id, 'rejected')} disabled={!!sending} className={`py-3 rounded-xl text-[13px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'rejected' ? 'bg-red-400 text-black' : 'bg-red-500/12 text-red-400 hover:bg-red-500/20'}`}>
+                  <button onClick={() => markStatus(selected.id, 'rejected')} disabled={!!sending} className={`py-3 rounded-xl text-[12px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'rejected' ? 'bg-red-400 text-black' : 'bg-red-500/12 text-red-400 hover:bg-red-500/20'}`}>
                     {sending === 'rejected' ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />} Reject
                   </button>
                 </div>
@@ -1834,6 +1867,86 @@ function ApplicationsTab() {
                   );
                 })()}
 
+                {/* Trial Agreement — show at Trial Scheduled + Trial Day */}
+                {(selected.status === 'onboarding' || selected.status === 'trial_day') && (
+                  <TrialAgreementPanel
+                    applicant={selected}
+                    onUpdate={(next) => {
+                      setApplications(applications.map((a) => a.id === selected.id ? next : a));
+                      setSelected(next);
+                    }}
+                  />
+                )}
+
+                {/* Trial Day Playbook — your script for the day */}
+                {(selected.status === 'onboarding' || selected.status === 'trial_day') && (
+                  <TrialDayPlaybookPanel />
+                )}
+
+                {/* Onboarding checklist — shows for onboarding + trial_day + hired status */}
+                {(selected.status === 'onboarding' || selected.status === 'trial_day' || selected.status === 'hired') && (() => {
+                  const PHASE_META = {
+                    before: { label: 'Before trial day', sub: 'Online — they do these the day before' },
+                    morning: { label: 'Morning of trial', sub: 'In person — you hand these off' },
+                    after: { label: 'After trial (if hired)', sub: 'Only when you decide to keep them' },
+                  };
+                  const phases = ['before', 'morning', 'after'];
+                  const stepsByPhase = phases.map(p => ({ phase: p, steps: onboardingSteps.filter(s => s.phase === p) }));
+                  const totalSteps = onboardingSteps.length;
+                  const doneCount = onboardingSteps.filter(s => selected.onboarding?.[s.id]?.done).length;
+                  return (
+                    <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ClipboardList size={14} className="text-cyan-400" />
+                          <p className="text-sm font-black text-primary">Onboarding</p>
+                          <span className="text-[11px] text-muted font-semibold">{doneCount}/{totalSteps}</span>
+                        </div>
+                        <button onClick={() => setEditingOnboarding(true)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted hover:text-primary cursor-pointer">
+                          <Pencil size={11} /> Edit steps
+                        </button>
+                      </div>
+                      {stepsByPhase.map(({ phase, steps }) => steps.length === 0 ? null : (
+                        <div key={phase} className="space-y-2">
+                          <div>
+                            <p className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">{PHASE_META[phase].label}</p>
+                            <p className="text-[10px] text-muted italic">{PHASE_META[phase].sub}</p>
+                          </div>
+                          <div className="space-y-1.5">
+                            {steps.map((s) => {
+                              const state = selected.onboarding?.[s.id] || {};
+                              const done = !!state.done;
+                              return (
+                                <div key={s.id} className="bg-card rounded-lg border border-border-subtle p-2.5">
+                                  <div className="flex items-start gap-2.5">
+                                    <button onClick={() => toggleOnboardingStep(s.id)}
+                                      className={`w-5 h-5 rounded-md shrink-0 mt-0.5 flex items-center justify-center transition-colors ${done ? 'bg-green-500 border-green-500' : 'border border-border-default hover:border-brand'} cursor-pointer`}>
+                                      {done && <Check size={12} className="text-black" />}
+                                    </button>
+                                    <div className="flex-1 min-w-0">
+                                      <p className={`text-[13px] font-semibold ${done ? 'text-muted line-through' : 'text-primary'}`}>{s.label}</p>
+                                      {done && state.completedAt && (
+                                        <p className="text-[10px] text-muted mt-0.5">{new Date(state.completedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</p>
+                                      )}
+                                      <input
+                                        type="text"
+                                        value={state.note || ''}
+                                        onChange={(e) => setOnboardingNote(s.id, e.target.value)}
+                                        placeholder="note (optional)"
+                                        className="w-full mt-1.5 bg-transparent text-[11px] text-secondary placeholder:text-placeholder-muted focus:outline-none"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
                 {/* Phone Screen questionnaire */}
                 <div className="rounded-xl border border-border-subtle bg-surface-alt/50 p-4 space-y-3">
                   <div className="flex items-center justify-between">
@@ -1871,16 +1984,9 @@ function ApplicationsTab() {
                             <p className="text-xs text-secondary italic leading-relaxed">{label}</p>
                           </div>
                         ) : (
-                          <div key={q.id}>
-                            <label className="block text-xs font-semibold text-secondary mb-1.5">{label}</label>
-                            {hint && <p className="text-[10px] text-muted mb-1.5 italic">{hint}</p>}
-                            <textarea
-                              value={selected.phoneScreen?.[q.id] || ''}
-                              onChange={(e) => saveAnswer(q.id, e.target.value)}
-                              rows={2}
-                              placeholder="Their answer..."
-                              className="w-full bg-card rounded-lg px-3 py-2 text-sm text-primary placeholder:text-placeholder-muted focus:outline-none focus:ring-1 focus:ring-border-default resize-none"
-                            />
+                          <div key={q.id} className="py-1">
+                            <p className="text-sm font-semibold text-primary leading-snug">{label}</p>
+                            {hint && <p className="text-[10px] text-muted mt-1 italic">{hint}</p>}
                           </div>
                         );
                       })}
@@ -1973,6 +2079,65 @@ function ApplicationsTab() {
           onClose={() => setEditingQuestions(false)}
         />
       )}
+
+      {editingOnboarding && (
+        <OnboardingStepsEditor
+          steps={onboardingSteps}
+          onSave={(next) => { setOnboardingSteps(next); setEditingOnboarding(false); }}
+          onClose={() => setEditingOnboarding(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function OnboardingStepsEditor({ steps, onSave, onClose }) {
+  const [items, setItems] = useState(steps);
+  const update = (i, patch) => setItems(items.map((s, idx) => idx === i ? { ...s, ...patch } : s));
+  const remove = (i) => setItems(items.filter((_, idx) => idx !== i));
+  const addTo = (phase) => setItems([...items, { id: crypto.randomUUID().slice(0, 8), label: '', phase }]);
+  const PHASES = [
+    { id: 'before', label: 'Before trial day' },
+    { id: 'morning', label: 'Morning of trial' },
+    { id: 'after', label: 'After trial (if hired)' },
+  ];
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-card rounded-2xl border border-border-subtle w-full max-w-lg max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
+          <p className="text-sm font-black text-primary">Onboarding Steps</p>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-surface-alt text-muted cursor-pointer"><X size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-5">
+          {PHASES.map((phase) => {
+            const phaseItems = items.map((s, i) => ({ ...s, idx: i })).filter(s => s.phase === phase.id);
+            return (
+              <div key={phase.id} className="space-y-2">
+                <p className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">{phase.label}</p>
+                {phaseItems.map((s) => (
+                  <div key={s.id} className="flex items-start gap-2">
+                    <input
+                      type="text"
+                      value={s.label}
+                      onChange={(e) => update(s.idx, { label: e.target.value })}
+                      placeholder="Step..."
+                      className="flex-1 bg-surface-alt rounded-lg px-3 py-2 text-sm text-primary placeholder:text-placeholder-muted focus:outline-none focus:ring-1 focus:ring-border-default"
+                    />
+                    <button onClick={() => remove(s.idx)} className="p-2 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10 cursor-pointer"><Trash2 size={14} /></button>
+                  </div>
+                ))}
+                <button onClick={() => addTo(phase.id)} className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-border-subtle text-xs font-semibold text-muted hover:text-primary hover:border-border-default cursor-pointer">
+                  <Plus size={13} /> Add step
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-border-subtle">
+          <button onClick={onClose} className="px-3 py-2 rounded-lg text-xs font-semibold text-muted hover:bg-surface-alt cursor-pointer">Cancel</button>
+          <button onClick={() => onSave(items.filter((s) => s.label.trim()))} className="px-3 py-2 rounded-lg text-xs font-bold bg-brand text-on-brand hover:bg-brand-hover cursor-pointer">Save</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2011,6 +2176,239 @@ function PhoneScreenEditor({ questions, onSave, onClose }) {
           <button onClick={() => onSave(items.filter((q) => q.label.trim()))} className="px-3 py-2 rounded-lg text-xs font-bold bg-brand text-on-brand hover:bg-brand-hover cursor-pointer">Save</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── Trial Agreement Panel ── */
+function TrialAgreementPanel({ applicant, onUpdate }) {
+  const template = useAppStore((s) => s.trialAgreement);
+  const [signing, setSigning] = useState(false);
+  const [viewingContent, setViewingContent] = useState(false);
+  const sig = applicant.trialAgreement;
+
+  const handleSigned = (payload) => {
+    onUpdate({ ...applicant, trialAgreement: payload, onboarding: { ...(applicant.onboarding || {}), trial_agreement: { done: true, completedAt: payload.signedAt } } });
+    setSigning(false);
+  };
+
+  const handleUnsign = () => {
+    if (!confirm('Remove this signature?')) return;
+    const onb = { ...(applicant.onboarding || {}) };
+    delete onb.trial_agreement;
+    onUpdate({ ...applicant, trialAgreement: null, onboarding: onb });
+  };
+
+  return (
+    <div className={`rounded-xl border p-4 space-y-3 ${sig ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/40 bg-amber-500/10'}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FileText size={14} className={sig ? 'text-emerald-400' : 'text-amber-400'} />
+          <p className="text-sm font-black text-primary">Trial Agreement</p>
+          {sig && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">Signed</span>}
+          {!sig && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">Needs signature</span>}
+        </div>
+        <button onClick={() => setViewingContent((v) => !v)} className="text-[11px] font-semibold text-muted hover:text-primary cursor-pointer">
+          {viewingContent ? 'Hide' : 'View'} text
+        </button>
+      </div>
+
+      {viewingContent && (
+        <div className="bg-card rounded-lg border border-border-subtle p-3 space-y-3 max-h-80 overflow-y-auto">
+          {(template?.sections || []).map((s) => (
+            <div key={s.id}>
+              <p className="text-[11px] font-black text-primary uppercase tracking-wider mb-1">{s.title}</p>
+              <div className="text-xs text-secondary prose prose-sm prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: s.body }} />
+            </div>
+          ))}
+          <div className="pt-2 border-t border-border-subtle">
+            <p className="text-[11px] font-black text-primary uppercase tracking-wider mb-1">Acknowledgment</p>
+            <p className="text-xs text-secondary italic">{template?.acknowledgment || ''}</p>
+          </div>
+        </div>
+      )}
+
+      {sig ? (
+        <div className="flex items-center justify-between gap-3 bg-card rounded-lg border border-border-subtle p-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {sig.signatureDataUrl && <img src={sig.signatureDataUrl} alt="signature" className="h-10 w-auto bg-white rounded border border-border-subtle" />}
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-primary truncate">{sig.printedName}</p>
+              <p className="text-[10px] text-muted">{new Date(sig.signedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} · v{sig.version}</p>
+            </div>
+          </div>
+          <button onClick={handleUnsign} className="text-[11px] font-semibold text-muted hover:text-red-400 cursor-pointer shrink-0">Unsign</button>
+        </div>
+      ) : (
+        <button onClick={() => setSigning(true)} className="w-full py-2.5 rounded-lg bg-brand text-on-brand text-sm font-bold hover:bg-brand-hover cursor-pointer inline-flex items-center justify-center gap-2">
+          <PenTool size={14} /> Sign now
+        </button>
+      )}
+
+      {signing && <TrialSignModal template={template} applicant={applicant} onSigned={handleSigned} onClose={() => setSigning(false)} />}
+    </div>
+  );
+}
+
+function TrialSignModal({ template, applicant, onSigned, onClose }) {
+  const canvasRef = useRef(null);
+  const drawing = useRef(false);
+  const last = useRef({ x: 0, y: 0 });
+  const [printedName, setPrintedName] = useState(applicant?.data?.name || [applicant?.data?.first_name, applicant?.data?.last_name].filter(Boolean).join(' ') || '');
+  const [confirmed, setConfirmed] = useState(false);
+  const [error, setError] = useState(null);
+
+  const getPos = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: (clientX - rect.left) * (canvas.width / rect.width), y: (clientY - rect.top) * (canvas.height / rect.height) };
+  };
+  const startDraw = (e) => { e.preventDefault(); drawing.current = true; last.current = getPos(e); };
+  const draw = (e) => {
+    e.preventDefault();
+    if (!drawing.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    const pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(last.current.x, last.current.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    last.current = pos;
+  };
+  const endDraw = () => { drawing.current = false; };
+  const clearCanvas = () => {
+    const c = canvasRef.current;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+  };
+  const initCanvas = useCallback((el) => {
+    canvasRef.current = el;
+    if (el) {
+      const ctx = el.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, el.width, el.height);
+    }
+  }, []);
+
+  const handleSubmit = () => {
+    setError(null);
+    if (!printedName.trim()) { setError('Print your name'); return; }
+    if (!confirmed) { setError('Check the confirmation box'); return; }
+    const canvas = canvasRef.current;
+    if (!canvas) { setError('Signature required'); return; }
+    const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    let drawn = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i] < 100 || data[i + 1] < 100) drawn++;
+    if (drawn < 300) { setError('Draw a more complete signature'); return; }
+    onSigned({
+      version: template?.version || '1.0',
+      signedAt: new Date().toISOString(),
+      printedName: printedName.trim(),
+      signatureDataUrl: canvas.toDataURL('image/png'),
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
+      <div className="bg-card rounded-2xl border border-border-subtle w-full max-w-lg my-8" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
+          <p className="text-sm font-black text-primary">Sign Trial Agreement</p>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-surface-alt text-muted cursor-pointer"><X size={16} /></button>
+        </div>
+        <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+          <div className="bg-surface-alt rounded-lg p-3 space-y-3">
+            {(template?.sections || []).map((s) => (
+              <div key={s.id}>
+                <p className="text-[11px] font-black text-primary uppercase tracking-wider mb-1">{s.title}</p>
+                <div className="text-xs text-secondary prose prose-sm prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: s.body }} />
+              </div>
+            ))}
+          </div>
+
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-1 w-4 h-4 accent-brand" />
+            <span className="text-xs text-secondary">{template?.acknowledgment || ''}</span>
+          </label>
+
+          <div>
+            <label className="block text-[11px] font-black text-muted uppercase tracking-wider mb-1.5">Printed Name</label>
+            <input type="text" value={printedName} onChange={(e) => setPrintedName(e.target.value)} placeholder="Full name" className="w-full bg-surface-alt rounded-lg px-3 py-2 text-sm text-primary placeholder:text-placeholder-muted focus:outline-none focus:ring-1 focus:ring-border-default" />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-black text-muted uppercase tracking-wider mb-1.5">Signature</label>
+            <canvas
+              ref={initCanvas}
+              width={500}
+              height={180}
+              className="w-full border border-border-default rounded-lg bg-white touch-none"
+              style={{ height: 150 }}
+              onMouseDown={startDraw}
+              onMouseMove={draw}
+              onMouseUp={endDraw}
+              onMouseLeave={endDraw}
+              onTouchStart={startDraw}
+              onTouchMove={draw}
+              onTouchEnd={endDraw}
+            />
+            <button onClick={clearCanvas} className="mt-1 text-[11px] text-muted hover:text-primary cursor-pointer">Clear</button>
+          </div>
+
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-border-subtle">
+          <button onClick={onClose} className="px-3 py-2 rounded-lg text-xs font-semibold text-muted hover:bg-surface-alt cursor-pointer">Cancel</button>
+          <button onClick={handleSubmit} className="px-4 py-2 rounded-lg text-xs font-bold bg-brand text-on-brand hover:bg-brand-hover cursor-pointer">Sign</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Trial Day Playbook Panel ── */
+function TrialDayPlaybookPanel() {
+  const playbook = useAppStore((s) => s.trialDayPlaybook) || '';
+  const setPlaybook = useAppStore((s) => s.setTrialDayPlaybook);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(playbook);
+
+  const save = () => { setPlaybook(draft); setEditing(false); };
+
+  return (
+    <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BookOpen size={14} className="text-purple-400" />
+          <p className="text-sm font-black text-primary">Trial Day Playbook</p>
+          <span className="text-[10px] text-muted italic">your script</span>
+        </div>
+        {editing ? (
+          <div className="flex items-center gap-1">
+            <button onClick={() => { setDraft(playbook); setEditing(false); }} className="text-[11px] font-semibold text-muted hover:text-primary cursor-pointer">Cancel</button>
+            <button onClick={save} className="text-[11px] font-bold text-brand-text hover:text-brand-text-strong cursor-pointer">Save</button>
+          </div>
+        ) : (
+          <button onClick={() => { setDraft(playbook); setEditing(true); }} className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted hover:text-primary cursor-pointer">
+            <Pencil size={11} /> Edit
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={16}
+          className="w-full bg-card rounded-lg px-3 py-2 text-xs font-mono text-primary focus:outline-none focus:ring-1 focus:ring-border-default resize-y"
+        />
+      ) : (
+        <div className="bg-card rounded-lg border border-border-subtle p-3 text-sm text-secondary prose prose-sm prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: playbook }} />
+      )}
     </div>
   );
 }

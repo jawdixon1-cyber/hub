@@ -5,6 +5,7 @@ import {
   AGREEMENT_SECTIONS as DEFAULT_SECTIONS,
   FINAL_AGREEMENT_TEXT as DEFAULT_FINAL_TEXT,
   DEFAULT_AGREEMENT_VERSION,
+  getCurrentAgreementConfig,
 } from '../data/employmentAgreement';
 
 /* ── Signature Pad ── */
@@ -82,7 +83,7 @@ function AgreementSection({ section, index }) {
 /* ── Main Signing Flow ── */
 export default function AgreementSigningFlow({ onClose, onComplete, memberName = '', memberEmail = '' }) {
   const storeConfig = useAppStore((s) => s.agreementConfig);
-  const config = storeConfig?.sections ? storeConfig : { version: DEFAULT_AGREEMENT_VERSION, sections: DEFAULT_SECTIONS, finalText: DEFAULT_FINAL_TEXT };
+  const config = getCurrentAgreementConfig(storeConfig, DEFAULT_SECTIONS, DEFAULT_FINAL_TEXT);
   const SECTIONS = config.sections;
   const FINAL_TEXT = config.finalText;
   const VERSION = config.version;

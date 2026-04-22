@@ -1,6 +1,21 @@
 export const DEFAULT_AGREEMENT_VERSION = '2.1';
 export const DEFAULT_AGREEMENT_DATE = '2026-04-10';
 
+// Single source of truth for "which agreement version does the team need right now?"
+// Used at both sign-time and check-time so a signature always matches the required version.
+export function getCurrentAgreementVersion(storedConfig) {
+  const storedVer = parseFloat(storedConfig?.version || '0');
+  const defaultVer = parseFloat(DEFAULT_AGREEMENT_VERSION || '0');
+  return storedVer >= defaultVer ? (storedConfig.version || DEFAULT_AGREEMENT_VERSION) : DEFAULT_AGREEMENT_VERSION;
+}
+
+export function getCurrentAgreementConfig(storedConfig, defaultSections, defaultFinalText) {
+  const storedVer = parseFloat(storedConfig?.version || '0');
+  const defaultVer = parseFloat(DEFAULT_AGREEMENT_VERSION || '0');
+  if (storedConfig?.sections && storedVer >= defaultVer) return storedConfig;
+  return { version: DEFAULT_AGREEMENT_VERSION, sections: defaultSections, finalText: defaultFinalText };
+}
+
 export const AGREEMENT_SECTIONS = [
   {
     id: 'values',

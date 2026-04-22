@@ -155,7 +155,7 @@ function TodayView({ allJobs, dayData }) {
         </div>
       ))}
 
-      {todayJobs.sort((a, b) => (a.completedAt || a.date || '').localeCompare(b.completedAt || b.date || '')).map(j => {
+      {todayJobs.sort((a, b) => (a.startAt || a.date || '').localeCompare(b.startAt || b.date || '')).map(j => {
         const bp = j.byPerson || {};
         const hasPeople = Object.keys(bp).length > 0;
         const profit = (j.visitTotal || j.revenue) - j.laborCost - j.expenses;
@@ -174,6 +174,12 @@ function TodayView({ allJobs, dayData }) {
                   {j.title && j.title !== j.client && (
                     <p className="text-[10px] text-muted truncate">{j.title}</p>
                   )}
+                  {j.startAt && (() => {
+                    const d = new Date(j.startAt);
+                    if (isNaN(d.getTime())) return null;
+                    const t = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+                    return <p className="text-[10px] text-muted">Started {t}</p>;
+                  })()}
                 </div>
                 <div className="text-right shrink-0 ml-3">
                   <p className="text-sm font-black text-primary">{fmtDollarsExact(j.visitTotal || j.revenue)}</p>
@@ -421,11 +427,21 @@ function ClientView({ allJobs }) {
 // ══════════════════════════════════════════
 
 function JobsView({ allJobs }) {
-  const [sortBy, setSortBy] = useState('laborPct');
+  const [sortBy, setSortBy] = useState('date');
 
   const sorted = useMemo(() => {
     const jobs = allJobs.filter(j => j.revenue > 0 || j.laborCost > 0);
     return jobs.sort((a, b) => {
+      if (sortBy === 'date') {
+        // Day descending (latest day first), then start-time ascending within the day
+        // so earliest-started shows at the top of today and latest at the bottom.
+        const da = a.date || '';
+        const db = b.date || '';
+        if (da !== db) return db.localeCompare(da);
+        const ta = new Date(a.startAt || 0).getTime();
+        const tb = new Date(b.startAt || 0).getTime();
+        return ta - tb;
+      }
       if (sortBy === 'laborPct') return b.laborPct - a.laborPct;
       if (sortBy === 'profit') return (a.revenue - a.laborCost - a.expenses) - (b.revenue - b.laborCost - b.expenses);
       if (sortBy === 'revenue') return b.revenue - a.revenue;
@@ -439,8 +455,8 @@ function JobsView({ allJobs }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-1.5">
-        {[['laborPct', 'Worst Labor %'], ['profit', 'Lowest Profit'], ['revenue', 'Top Revenue'], ['hours', 'Most Hours']].map(([k, l]) => (
+      <div className="flex gap-1.5 flex-wrap">
+        {[['date', 'Most Recent'], ['laborPct', 'Worst Labor %'], ['profit', 'Lowest Profit'], ['revenue', 'Top Revenue'], ['hours', 'Most Hours']].map(([k, l]) => (
           <button key={k} onClick={() => setSortBy(k)}
             className={`px-2.5 py-1 text-[11px] font-bold rounded-md cursor-pointer ${sortBy === k ? 'bg-brand text-on-brand' : 'bg-surface-alt text-secondary hover:bg-brand-light'}`}>{l}</button>
         ))}
@@ -966,7 +982,10 @@ export default function LaborEfficiency() {
         totalExpenses += dailyExpenses;
 
         allJobs.push({
-          id: v.id + ds, date: ds, client: v.client, title: v.title || '', revenue: dailyRevenue,
+          id: v.id + ds, date: ds,
+          startAt: v.startAt || v.completedAt || null,
+          completedAt: v.completedAt || v.startAt || null,
+          client: v.client, title: v.title || '', revenue: dailyRevenue,
           visitTotal: rawJobTotal,
           laborCost: cost, hours: hrs, expenses: dailyExpenses,
           laborPct: dailyRevenue > 0 && cost > 0 ? (cost / dailyRevenue) * 100 : 0,

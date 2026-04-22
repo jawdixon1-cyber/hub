@@ -9,6 +9,7 @@ import {
   AGREEMENT_SECTIONS as DEFAULT_SECTIONS,
   FINAL_AGREEMENT_TEXT as DEFAULT_FINAL_TEXT,
   DEFAULT_AGREEMENT_VERSION,
+  getCurrentAgreementConfig,
 } from '../data/employmentAgreement';
 
 const AgreementSigningFlow = lazy(() => import('../components/AgreementSigningFlow'));
@@ -42,16 +43,7 @@ function migrateSections(sections) {
 // Helper to get live agreement config
 function useAgreementConfig() {
   const config = useAppStore((s) => s.agreementConfig);
-  if (config && config.sections) {
-    const storedVer = parseFloat(config.version || '0');
-    const defaultVer = parseFloat(DEFAULT_AGREEMENT_VERSION || '0');
-    if (storedVer >= defaultVer) return config;
-  }
-  return {
-    version: DEFAULT_AGREEMENT_VERSION,
-    sections: DEFAULT_SECTIONS,
-    finalText: DEFAULT_FINAL_TEXT,
-  };
+  return getCurrentAgreementConfig(config, DEFAULT_SECTIONS, DEFAULT_FINAL_TEXT);
 }
 
 /* ══════════════════════════════════════════════

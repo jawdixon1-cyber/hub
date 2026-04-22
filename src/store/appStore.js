@@ -29,6 +29,7 @@ import {
   initialMowingNotifications,
 } from '../data';
 import { initialHiringContent, initialApplicationForm, initialJobPost } from '../data/hiringDefaults';
+import { TRIAL_AGREEMENT_SECTIONS, TRIAL_AGREEMENT_ACKNOWLEDGMENT, DEFAULT_TRIAL_AGREEMENT_VERSION, DEFAULT_TRIAL_DAY_PLAYBOOK } from '../data/trialAgreement';
 import { DEFAULT_ROLES, DEFAULT_ROLES_VERSION } from '../data/roleTemplates';
 
 const DATA_CACHE_KEY = 'greenteam-data-cache';
@@ -80,6 +81,24 @@ const STATE_KEYS = [
   { key: 'applicationForm',     supaKey: 'greenteam-applicationForm',     initial: initialApplicationForm },
   { key: 'applications',        supaKey: 'greenteam-applications',        initial: [] },
   { key: 'jobPost',             supaKey: 'greenteam-jobPost',             initial: initialJobPost },
+  { key: 'trialAgreement', supaKey: 'greenteam-trialAgreement', initial: { version: DEFAULT_TRIAL_AGREEMENT_VERSION, sections: TRIAL_AGREEMENT_SECTIONS, acknowledgment: TRIAL_AGREEMENT_ACKNOWLEDGMENT } },
+  { key: 'trialDayPlaybook', supaKey: 'greenteam-trialDayPlaybook', initial: DEFAULT_TRIAL_DAY_PLAYBOOK },
+  { key: 'onboardingSteps', supaKey: 'greenteam-onboardingSteps', initial: [
+    // Before trial — online stuff they do the day before
+    { id: 'trial_agreement', label: 'Sign Trial Day Agreement', phase: 'before' },
+    { id: 'payroll_form', label: 'Fill out payroll form (W-4, I-9, direct deposit)', phase: 'before' },
+    { id: 'emergency_contact', label: 'Provide emergency contact info', phase: 'before' },
+    { id: 'hub_invite', label: 'Create Hub account (send invite)', phase: 'before' },
+    { id: 'jobber_invite', label: 'Add to Jobber', phase: 'before' },
+    // Morning of trial
+    { id: 'uniform', label: 'Issue uniform', phase: 'morning' },
+    { id: 'equipment', label: 'Issue tools/equipment', phase: 'morning' },
+    { id: 'first_job_brief', label: 'Walk through first job + expectations', phase: 'morning' },
+    // After trial — only if they passed and are being kept on
+    { id: 'standards_agreement', label: 'Sign full Standards Agreement', phase: 'after' },
+    { id: 'payroll_active', label: 'Activate on payroll', phase: 'after' },
+    { id: 'assign_role', label: 'Assign role + permissions in Hub', phase: 'after' },
+  ] },
   { key: 'phoneScreenQuestions', supaKey: 'greenteam-phoneScreenQuestions', initial: [
     { id: 'opener', label: "Hey [name], this is Jude from Hey Jude's Lawn Care — how's it going?" },
     { id: 'frame', label: "Quick thing before we dive in — this call goes both ways. I wanna see if you're the right fit for us, and I want you to see if we're the right spot for you. I care more about who you are than your resume. So just be real with me — no right or wrong answers.", type: 'info' },

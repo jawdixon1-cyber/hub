@@ -444,8 +444,10 @@ async function handleLaborData(req, res) {
     const hoursByDate = {};
     const costByDate = {};
     const personByDate = {};
+    const earliestStartByDate = {};
     for (const t of jobTs) {
-      const d = (t.startAt || '').split('T')[0];
+      const startRaw = t.startAt || '';
+      const d = startRaw.split('T')[0];
       if (!d) continue;
       const hrs = (t.duration || 0) / 3600;
       const name = t.user?.name?.full || 'Unknown';
@@ -458,6 +460,7 @@ async function handleLaborData(req, res) {
       personByDate[d][name].hours += hrs;
       personByDate[d][name].cost += cost;
       if (rate > 0) personByDate[d][name].rate = rate;
+      if (!earliestStartByDate[d] || startRaw < earliestStartByDate[d]) earliestStartByDate[d] = startRaw;
     }
 
     const totalJobHours = Object.values(hoursByDate).reduce((s, h) => s + h, 0);
@@ -478,6 +481,7 @@ async function handleLaborData(req, res) {
         id: `${jobId}-${dateStr}`,
         title,
         completedAt: dateStr,
+        startAt: earliestStartByDate[dateStr] || null,
         jobId,
         jobNumber,
         client: clientName,
