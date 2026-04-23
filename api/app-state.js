@@ -50,6 +50,38 @@ async function handleTeamAuth(req, res) {
       if (error) return res.status(400).json({ error: error.message });
       return res.json({ success: true });
     }
+    case 'createApplicantLogin': {
+      // Creates a Supabase auth user for a job applicant so they can self-onboard at /onboard.
+      // Returns a generated temp password the owner can share via their own SMS.
+      const { email, applicantName, applicantId } = req.body;
+      if (!email || !applicantId) return res.status(400).json({ error: 'email and applicantId required' });
+      const emailCheck = await validateEmail(email);
+      if (!emailCheck.valid) return res.status(400).json({ error: emailCheck.error });
+      // Fixed default password — everyone gets the same for easy onboarding
+      const password = 'Password123!';
+      // If the user already exists (re-drag), update password instead of creating
+      let userId = null;
+      try {
+        const { data: existing } = await db.auth.admin.listUsers();
+        const found = (existing?.users || []).find((u) => u.email?.toLowerCase() === email.trim().toLowerCase());
+        if (found) {
+          const { error: upErr } = await db.auth.admin.updateUserById(found.id, { password, user_metadata: { ...found.user_metadata, display_name: applicantName || found.user_metadata?.display_name || email, role: 'applicant', applicantId } });
+          if (upErr) return res.status(400).json({ error: upErr.message });
+          userId = found.id;
+        }
+      } catch {}
+      if (!userId) {
+        const { data, error } = await db.auth.admin.createUser({
+          email: email.trim().toLowerCase(),
+          password,
+          email_confirm: true,
+          user_metadata: { display_name: applicantName || email, role: 'applicant', applicantId },
+        });
+        if (error) return res.status(400).json({ error: error.message });
+        userId = data.user.id;
+      }
+      return res.json({ success: true, userId, email: email.trim().toLowerCase(), password });
+    }
     default: return res.status(400).json({ error: `Unknown action: ${action}` });
   }
 }

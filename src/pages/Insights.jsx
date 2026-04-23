@@ -25,7 +25,8 @@ const latest = (dates) => {
 const REPORTS = [
   { id: 'clients', path: '/insights/clients', label: 'Recurring Clients', description: 'Full roster with frequency, service, dates, and revenue', icon: Users },
   { id: 'leads', path: '/insights/leads', label: 'Leads', description: 'Where your requests come from and how sources perform', icon: MapPinned },
-  { id: 'profitability', path: '/insights/profitability', label: 'Profitability', description: 'Labor efficiency, margins, and job performance', icon: TrendingUp },
+  { id: 'profitability', path: '/insights/profitability-full', label: 'Profitability', description: 'One-off jobs, recurring jobs, labor + contribution margin per job', icon: TrendingUp },
+  { id: 'profitability-today', path: '/insights/profitability', label: 'Profitability Today', description: 'Today\'s lawns with labor cost, revenue, and per-crew breakdown', icon: TrendingUp },
 ];
 
 export default function Insights() {

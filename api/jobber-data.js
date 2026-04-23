@@ -103,9 +103,11 @@ async function fetchVisits(start, end) {
   // Lean visit query — line items are fetched per-job below (deduped + cached).
   const allVisits = [];
   let cursor = null, hasNext = true;
+  let page = 0;
   while (hasNext) {
+    if (page++ > 0) await new Promise(r => setTimeout(r, 500));
     const after = cursor ? `, after: "${cursor}"` : '';
-    const data = await jobberQuery(`{ visits(first: 100${after}, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title completedAt startAt endAt job { id jobNumber total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
+    const data = await jobberQuery(`{ visits(first: 100${after}, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title completedAt startAt endAt job { id jobNumber jobType jobStatus total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
     allVisits.push(...(data.visits?.nodes || []));
     hasNext = data.visits?.pageInfo?.hasNextPage || false;
     cursor = data.visits?.pageInfo?.endCursor || null;
@@ -122,7 +124,9 @@ async function fetchTimesheets(start, end) {
 
   const all = [];
   let cursor = null, hasNext = true;
+  let page = 0;
   while (hasNext) {
+    if (page++ > 0) await new Promise(r => setTimeout(r, 500));
     const after = cursor ? `, after: "${cursor}"` : '';
     const data = await jobberQuery(`{ timeSheetEntries(first: 100${after}, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id startAt endAt duration labourRate label user { id name { full } } job { id } } pageInfo { hasNextPage endCursor } } }`);
     all.push(...(data.timeSheetEntries?.nodes || []));
@@ -141,7 +145,9 @@ async function fetchExpenses(start, end) {
 
   const all = [];
   let cursor = null, hasNext = true;
+  let page = 0;
   while (hasNext) {
+    if (page++ > 0) await new Promise(r => setTimeout(r, 500));
     const after = cursor ? `, after: "${cursor}"` : '';
     const data = await jobberQuery(`{ expenses(first: 100${after}, filter: { date: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title total date description linkedJob { id jobNumber } paidBy { name { full } } } pageInfo { hasNextPage endCursor } } }`);
     all.push(...(data.expenses?.nodes || []));
@@ -214,8 +220,13 @@ async function fetchVisitLineItemsTotal(visitId) {
 async function handleLaborData(req, res) {
   const { start, end } = req.query;
   if (!start || !end) return res.status(400).json({ error: 'start and end required' });
+  // Skip per-visit line item calls — callers who only need job-level totals can set this
+  // to avoid Jobber's per-visit rate limit. Saves N API calls where N = visit count.
+  const skipLineItems = req.query.skipLineItems === '1';
+  // Skip the per-job expenses catch-up loop (edge-case expenses outside window). Saves N calls.
+  const skipJobExpenses = req.query.skipJobExpenses === '1';
 
-  const cacheKey = `${start}|${end}`;
+  const cacheKey = `${start}|${end}|${skipLineItems ? 'nopv' : 'full'}|${skipJobExpenses ? 'noje' : 'je'}`;
   const cached = laborCache[cacheKey];
   if (cached && Date.now() - cached.time < LABOR_CACHE_TTL) {
     return res.json(cached.data);
@@ -224,7 +235,9 @@ async function handleLaborData(req, res) {
   let visits, timesheets, expenses;
   try {
     visits = await fetchVisits(start, end);
+    await new Promise(r => setTimeout(r, 500));
     timesheets = await fetchTimesheets(start, end);
+    await new Promise(r => setTimeout(r, 500));
     expenses = await fetchExpenses(start, end);
   } catch (err) {
     console.error('[Labor] Fetch error:', err.message);
@@ -248,33 +261,38 @@ async function handleLaborData(req, res) {
 
   // ── Per-visit line item totals (the actual price for THAT visit) ──
   // Throttled separate fetch to avoid Jobber rate limiting.
+  // Skipped when caller only needs job-level totals (saves N API calls).
   const visitLineItemTotals = {};
-  for (const v of visits) {
-    if (!v.id) continue;
-    visitLineItemTotals[v.id] = await fetchVisitLineItemsTotal(v.id);
-    await new Promise((r) => setTimeout(r, 350));
+  if (!skipLineItems) {
+    for (const v of visits) {
+      if (!v.id) continue;
+      visitLineItemTotals[v.id] = await fetchVisitLineItemsTotal(v.id);
+      await new Promise((r) => setTimeout(r, 350));
+    }
   }
 
   // ── Per-job expenses (catches expenses whose own date falls outside the window) ──
-  const uniqueJobIdsForExpenses = [...new Set(visits.map(v => v.job?.id).filter(Boolean))];
-  const seenExpenseIds = new Set(expenses.map(e => e.id));
-  for (const jobId of uniqueJobIdsForExpenses) {
-    const jobExps = await fetchJobExpenses(jobId);
-    for (const e of jobExps) {
-      if (seenExpenseIds.has(e.id)) continue;
-      // Anchor to a date inside the queried window so it gets attributed.
-      // Prefer the expense's own date if it's in range, else use the first visit date for this job.
-      const expDate = (e.date || '').split('T')[0];
-      let anchorDate = expDate && grouped[expDate] ? expDate : null;
-      if (!anchorDate) {
-        const visitDates = visits.filter(v => v.job?.id === jobId).map(v => (v.completedAt || v.startAt || '').split('T')[0]).filter(Boolean).sort();
-        anchorDate = visitDates.find(d => grouped[d]) || null;
+  // Skip when the caller just needs job-level totals — this loop makes 1 API call per unique
+  // job, which is what most often hits Jobber's rate limit.
+  if (!skipJobExpenses) {
+    const uniqueJobIdsForExpenses = [...new Set(visits.map(v => v.job?.id).filter(Boolean))];
+    const seenExpenseIds = new Set(expenses.map(e => e.id));
+    for (const jobId of uniqueJobIdsForExpenses) {
+      const jobExps = await fetchJobExpenses(jobId);
+      for (const e of jobExps) {
+        if (seenExpenseIds.has(e.id)) continue;
+        const expDate = (e.date || '').split('T')[0];
+        let anchorDate = expDate && grouped[expDate] ? expDate : null;
+        if (!anchorDate) {
+          const visitDates = visits.filter(v => v.job?.id === jobId).map(v => (v.completedAt || v.startAt || '').split('T')[0]).filter(Boolean).sort();
+          anchorDate = visitDates.find(d => grouped[d]) || null;
+        }
+        if (!anchorDate) continue;
+        expenses.push({ ...e, date: anchorDate + 'T12:00:00', linkedJob: { id: jobId, jobNumber: visits.find(v => v.job?.id === jobId)?.job?.jobNumber || null } });
+        seenExpenseIds.add(e.id);
       }
-      if (!anchorDate) continue;
-      expenses.push({ ...e, date: anchorDate + 'T12:00:00', linkedJob: { id: jobId, jobNumber: visits.find(v => v.job?.id === jobId)?.job?.jobNumber || null } });
-      seenExpenseIds.add(e.id);
+      await new Promise((r) => setTimeout(r, 250));
     }
-    await new Promise((r) => setTimeout(r, 250));
   }
 
   // ── Collect all visits ──
@@ -294,7 +312,7 @@ async function handleLaborData(req, res) {
       visitDuration = (new Date(visit.endAt) - new Date(visit.startAt)) / 3600000;
       if (visitDuration < 0) visitDuration = 0;
     }
-    const visitObj = { id: visit.id, title: visit.title, completedAt: visit.completedAt, startAt: visit.startAt, endAt: visit.endAt, visitDuration, jobId, jobNumber: visit.job?.jobNumber, jobTotal: rawTotal, visitTotal: rawTotal, client: visit.job?.client ? `${visit.job.client.firstName || ''} ${visit.job.client.lastName || ''}`.trim() : 'Unknown', labor: { totalHours: 0, totalCost: 0, byPerson: {} } };
+    const visitObj = { id: visit.id, title: visit.title, completedAt: visit.completedAt, startAt: visit.startAt, endAt: visit.endAt, visitDuration, jobId, jobNumber: visit.job?.jobNumber, jobType: visit.job?.jobType || null, jobStatus: visit.job?.jobStatus || null, jobTotal: rawTotal, visitTotal: rawTotal, client: visit.job?.client ? `${visit.job.client.firstName || ''} ${visit.job.client.lastName || ''}`.trim() : 'Unknown', labor: { totalHours: 0, totalCost: 0, byPerson: {} } };
     grouped[dateStr].visits.push(visitObj);
     allVisitRefs.push({ dateStr, visitObj, jobId, rawTotal });
   }
@@ -434,6 +452,8 @@ async function handleLaborData(req, res) {
     const clientName = refs.length > 0 ? refs[0].visitObj.client : info.clientName;
     const jobNumber = refs.length > 0 ? refs[0].visitObj.jobNumber : info.jobNumber;
     const title = refs.length > 0 ? refs[0].visitObj.title : info.title;
+    const jobType = refs.length > 0 ? refs[0].visitObj.jobType : null;
+    const jobStatus = refs.length > 0 ? refs[0].visitObj.jobStatus : null;
 
     // Get all timesheets and expenses for this job
     const jobTs = fullTsByJob[jobId] || [];
@@ -484,6 +504,8 @@ async function handleLaborData(req, res) {
         startAt: earliestStartByDate[dateStr] || null,
         jobId,
         jobNumber,
+        jobType,
+        jobStatus,
         client: clientName,
         jobTotal: visitRevenue,
         rawJobTotal: jobTotal,

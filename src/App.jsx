@@ -82,8 +82,10 @@ const Invoices = lazy(() => import('./pages/Invoices'));
 const Payments = lazy(() => import('./pages/Payments'));
 const Hiring = lazy(() => import('./pages/Hiring'));
 const ApplyForm = lazy(() => import('./pages/ApplyForm'));
+const ApplicantOnboarding = lazy(() => import('./pages/ApplicantOnboarding'));
 const Insights = lazy(() => import('./pages/Insights'));
 const InsightsRecurringClients = lazy(() => import('./pages/Insights').then(m => ({ default: m.RecurringClientsReport })));
+const InsightsProfitability = lazy(() => import('./pages/InsightsProfitability'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
@@ -221,6 +223,15 @@ function App() {
   const permissions = cloudData['greenteam-permissions'] || {};
   const userEmail = user?.email?.toLowerCase();
   const accessBypass = ['ethanm.brant@gmail.com'];
+  // Applicants invited via the Trial flow have role='applicant' and only see /onboard
+  const isApplicantRole = user?.user_metadata?.role === 'applicant';
+  if (isApplicantRole) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-surface flex items-center justify-center text-muted text-sm">Loading…</div>}>
+        <ApplicantOnboarding />
+      </Suspense>
+    );
+  }
   if (!ownerMode && userEmail && !permissions[userEmail] && !accessBypass.includes(userEmail)) {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center p-4">
@@ -740,6 +751,7 @@ function AppShell() {
                 <Route path="/insights/clients" element={<InsightsRecurringClients />} />
                 <Route path="/insights/leads" element={<Marketing />} />
                 <Route path="/insights/profitability" element={<LaborEfficiency />} />
+                <Route path="/insights/profitability-full" element={<InsightsProfitability />} />
                 {/* Redirects for old routes */}
                 <Route path="/commander" element={<Navigate to="/sales" replace />} />
                 <Route path="/pipeline" element={<Navigate to="/sales" replace />} />

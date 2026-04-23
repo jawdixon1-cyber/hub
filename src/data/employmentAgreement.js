@@ -1,5 +1,5 @@
-export const DEFAULT_AGREEMENT_VERSION = '2.1';
-export const DEFAULT_AGREEMENT_DATE = '2026-04-10';
+export const DEFAULT_AGREEMENT_VERSION = '2.2';
+export const DEFAULT_AGREEMENT_DATE = '2026-04-22';
 
 // Single source of truth for "which agreement version does the team need right now?"
 // Used at both sign-time and check-time so a signature always matches the required version.
@@ -23,6 +23,25 @@ export const AGREEMENT_SECTIONS = [
     body: `<p>These are the values we live by.</p>
 <p><strong>Trust in God · Own the Outcome · Set the Standard · Discipline is Freedom · No Shortcuts, No Excuses · Integrity Always · Win as a Team · Over-Deliver for Clients · Keep Your Word · Never Quit</strong></p>
 <p>Our goal is to deliver the best lawn care experience in Rock Hill - for every single client, every single time. No missed spots, no confusion, no cutting corners. When we pull up to a property, the client should feel taken care of from start to finish. That's the standard we hold ourselves to.</p>`,
+  },
+  {
+    id: 'trial-performance',
+    title: 'Performance Expectations (Trial Period)',
+    body: `<p>All new hires start on a <strong>14-day trial period</strong>. During this time, performance is evaluated <strong>daily</strong> based on:</p>
+<ul>
+  <li>Effort and work pace</li>
+  <li>Attention to detail</li>
+  <li>Attitude and coachability</li>
+  <li>Ability to follow direction and improve quickly</li>
+</ul>
+<p>This is not just about avoiding mistakes. This is about actively <strong>improving</strong> and <strong>contributing</strong> to the team.</p>
+<p>At the end of the 14 days, a decision will be made to:</p>
+<ul>
+  <li>Continue employment</li>
+  <li>Extend the trial period</li>
+  <li>Or part ways</li>
+</ul>
+<p>Consistent effort, urgency, and willingness to learn are required to stay on the team.</p>`,
   },
   {
     id: 'accountability',

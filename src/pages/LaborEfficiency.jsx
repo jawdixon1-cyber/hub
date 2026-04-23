@@ -992,6 +992,8 @@ export default function LaborEfficiency() {
           revPerHour: hrs > 0 ? dailyRevenue / hrs : 0,
           byPerson: vl.byPerson || {},
           jobId: v.jobId || null,
+          jobType: v.jobType || null,
+          jobStatus: v.jobStatus || null,
         });
       }
     }

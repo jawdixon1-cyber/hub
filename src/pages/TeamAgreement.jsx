@@ -1,8 +1,9 @@
 import { useState, useEffect, lazy, Suspense, useCallback } from 'react';
-import { Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Save, Eye, Edit3, AlertTriangle, Check, FileText, X, Shield } from 'lucide-react';
+import { Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Save, Eye, Edit3, AlertTriangle, Check, FileText, X, Shield, Download } from 'lucide-react';
 import { DEFAULT_ROLES, DEFAULT_ROLES_VERSION } from '../data/roleTemplates';
 
 const RichTextEditor = lazy(() => import('../components/RichTextEditor'));
+const InlineDocEditor = lazy(() => import('../components/InlineDocEditor'));
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import {
@@ -217,6 +218,240 @@ function RolesEditor() {
   );
 }
 
+// Open a print-ready PDF of the agreement in a new tab and trigger browser's Save as PDF
+function downloadAgreementPdf(sections, version, signature) {
+  const sigBlock = signature?.signatureDataUrl ? `
+    <div class="sigblock">
+      <div>
+        <p class="sig-label">Signed by</p>
+        <p class="sig-name">${signature.printedName || signature.memberName || ''}</p>
+        <p class="sig-date">${new Date(signature.signedAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+      </div>
+      <img src="${signature.signatureDataUrl}" alt="Signature" class="sig-img" />
+    </div>` : '';
+  const sectionHtml = sections.map((s) => `
+    <section>
+      ${s.title ? `<h2>${s.title}</h2>` : ''}
+      <div class="section-body">${s.body}</div>
+    </section>
+  `).join('');
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Team Agreement — Hey Jude's Lawn Care</title>
+<style>
+@page { size: letter; margin: 0.75in; }
+* { box-sizing: border-box; }
+body { font-family: Georgia, 'Times New Roman', serif; color: #111; background: #fff; margin: 0; padding: 24px; line-height: 1.5; font-size: 11pt; }
+.header { text-align: center; border-bottom: 2px solid #111; padding-bottom: 16px; margin-bottom: 24px; }
+.header h1 { margin: 0; font-size: 22pt; letter-spacing: 2px; font-family: Helvetica, Arial, sans-serif; font-weight: 900; }
+.header .sub { margin-top: 6px; font-size: 10pt; color: #555; letter-spacing: 1px; text-transform: uppercase; }
+section { break-inside: avoid; margin-bottom: 16px; }
+section h2 { font-family: Helvetica, Arial, sans-serif; font-size: 12pt; font-weight: 900; letter-spacing: 0.5px; color: #111; margin: 16px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #ccc; text-transform: uppercase; }
+section .section-body { font-size: 11pt; }
+section p { margin: 6px 0; } section ul, section ol { margin: 6px 0 6px 20px; } section li { margin: 3px 0; }
+strong { font-weight: 700; }
+.sigblock { break-inside: avoid; margin-top: 32px; padding-top: 18px; border-top: 1px solid #111; display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; }
+.sig-label { font-size: 9pt; color: #666; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 4px; }
+.sig-name { font-size: 13pt; font-weight: 700; margin: 0; }
+.sig-date { font-size: 10pt; color: #555; margin: 4px 0 0; }
+.sig-img { max-height: 70px; max-width: 260px; }
+.footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #ccc; font-size: 8pt; color: #888; text-align: center; }
+@media print { body { padding: 0; } }
+</style></head>
+<body>
+<div class="header"><h1>TEAM AGREEMENT</h1><p class="sub">Hey Jude's Lawn Care · Version ${version}</p></div>
+${sectionHtml}
+${sigBlock}
+<div class="footer">Hey Jude's Lawn Care — Team Agreement v${version} — Generated ${new Date().toLocaleDateString()}</div>
+</body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('Pop-up blocked. Allow pop-ups to download the PDF.'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 400);
+}
+
+// Reusable paper-style agreement view — looks like an official document.
+// If `onUpdateSection` or `onUpdateTitle` is provided, sections become Google Docs-style inline editable.
+function PaperAgreement({ sections, version, signature, effectiveDate, onUpdateSection, onUpdateTitle, onAddSection, onRemoveSection }) {
+  const numberedSections = sections.filter((s) => s.title);
+  const lastSection = sections.find((s) => !s.title); // e.g. the sign-off block with no title
+  const editable = !!onUpdateSection;
+  const dateStr = effectiveDate
+    ? new Date(effectiveDate).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+    : null;
+  return (
+    <>
+      <div
+        className="agreement-paper mx-auto"
+        style={{
+          background: '#fdfcf7',
+          color: '#111',
+          fontFamily: "'Times New Roman', Times, Georgia, serif",
+          padding: '72px 80px',
+          maxWidth: '8.5in',
+          borderRadius: '2px',
+          boxShadow: '0 30px 60px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.05) inset',
+          border: '1px solid rgba(0,0,0,0.12)',
+          lineHeight: 1.7,
+        }}
+      >
+        {/* Letterhead */}
+        <div style={{ textAlign: 'center', marginBottom: 8 }}>
+          <p style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 10, letterSpacing: 4, textTransform: 'uppercase', color: '#666', margin: 0, fontWeight: 700 }}>
+            Hey Jude's Lawn Care
+          </p>
+        </div>
+
+        {/* Title block */}
+        <div style={{ textAlign: 'center', padding: '18px 0 22px', borderTop: '1px solid #111', borderBottom: '3px double #111', marginBottom: 36 }}>
+          <h1 style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 30, letterSpacing: 4, fontWeight: 900, margin: 0, color: '#0a0a0a' }}>
+            TEAM AGREEMENT
+          </h1>
+          <p style={{ margin: '12px 0 0', fontSize: 11, color: '#555', letterSpacing: 2, textTransform: 'uppercase', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
+            Version {version}{dateStr ? `  ·  Effective ${dateStr}` : ''}
+          </p>
+        </div>
+
+        {/* Numbered sections */}
+        {numberedSections.map((s, i) => {
+          const idx = i + 1;
+          return (
+            <section
+              key={s.id}
+              className="paper-section"
+              style={{ marginBottom: 26, pageBreakInside: 'avoid', position: 'relative' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 10 }}>
+                <span style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 13, fontWeight: 900, color: '#0a0a0a', minWidth: 28, letterSpacing: 0.5 }}>
+                  {String(idx).padStart(2, '0')}.
+                </span>
+                {editable && onUpdateTitle ? (
+                  <input
+                    value={s.title}
+                    onChange={(e) => onUpdateTitle(s.id, e.target.value)}
+                    style={{
+                      fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+                      fontSize: 13, fontWeight: 900, letterSpacing: 1.5, textTransform: 'uppercase',
+                      margin: 0, color: '#0a0a0a', flex: 1,
+                      background: 'transparent', border: 'none', outline: 'none', padding: 0,
+                    }}
+                    onFocus={(e) => { e.target.style.background = 'rgba(176,255,3,0.15)'; }}
+                    onBlur={(e) => { e.target.style.background = 'transparent'; }}
+                  />
+                ) : (
+                  <h2 style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 13, fontWeight: 900, letterSpacing: 1.5, textTransform: 'uppercase', margin: 0, color: '#0a0a0a', flex: 1 }}>
+                    {s.title}
+                  </h2>
+                )}
+                {editable && onRemoveSection && (
+                  <button
+                    onClick={() => { if (confirm(`Remove "${s.title}"?`)) onRemoveSection(s.id); }}
+                    className="paper-remove-btn"
+                    title="Remove section"
+                    style={{
+                      fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+                      fontSize: 10, fontWeight: 700, color: '#c44',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      opacity: 0, transition: 'opacity 150ms',
+                    }}
+                  >✕</button>
+                )}
+              </div>
+              {editable ? (
+                <Suspense fallback={<div style={{ fontSize: 12.5, paddingLeft: 42, color: '#888' }}>…</div>}>
+                  <InlineDocEditor
+                    content={s.body}
+                    onChange={(html) => onUpdateSection(s.id, html)}
+                    style={{ paddingLeft: 42 }}
+                    className="agreement-pdf-body inline-editor"
+                  />
+                </Suspense>
+              ) : (
+                <div
+                  className="agreement-pdf-body"
+                  style={{ fontSize: 12.5, color: '#111', paddingLeft: 42, textAlign: 'justify' }}
+                  dangerouslySetInnerHTML={{ __html: s.body }}
+                />
+              )}
+            </section>
+          );
+        })}
+
+        {/* Add section button (editable mode only) */}
+        {editable && onAddSection && (
+          <button
+            onClick={onAddSection}
+            style={{
+              width: '100%', padding: '10px', margin: '8px 0 20px',
+              background: 'transparent', border: '1px dashed #bbb', borderRadius: 4,
+              fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+              fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
+              color: '#888', cursor: 'pointer',
+            }}
+          >+ Add Section</button>
+        )}
+
+        {/* Final sign-off (untitled) section */}
+        {lastSection && (
+          <div
+            className="agreement-pdf-body"
+            style={{ fontSize: 12.5, color: '#111', marginTop: 28, paddingTop: 18, borderTop: '1px solid #bbb', textAlign: 'center' }}
+            dangerouslySetInnerHTML={{ __html: lastSection.body }}
+          />
+        )}
+
+        {/* Signature block */}
+        {signature ? (
+          <div style={{ marginTop: 40, paddingTop: 22, borderTop: '2px solid #111', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36 }}>
+            <div>
+              <div style={{ borderBottom: '1px solid #111', paddingBottom: 4, minHeight: 44, display: 'flex', alignItems: 'flex-end' }}>
+                {signature.signatureDataUrl && (
+                  <img src={signature.signatureDataUrl} alt="Signature" style={{ maxHeight: 40, maxWidth: '100%', background: 'transparent' }} />
+                )}
+              </div>
+              <p style={{ fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: 1.5, margin: '6px 0 0', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>Team Member Signature</p>
+              <p style={{ fontSize: 12, fontWeight: 700, margin: '8px 0 0', color: '#111' }}>{signature.printedName || signature.memberName || ''}</p>
+            </div>
+            <div>
+              <div style={{ borderBottom: '1px solid #111', paddingBottom: 4, minHeight: 44, display: 'flex', alignItems: 'flex-end', fontSize: 13, color: '#111' }}>
+                {new Date(signature.signedAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+              </div>
+              <p style={{ fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: 1.5, margin: '6px 0 0', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>Date Signed</p>
+            </div>
+          </div>
+        ) : (
+          <div style={{ marginTop: 40, paddingTop: 22, borderTop: '2px solid #111', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36 }}>
+            <div>
+              <div style={{ borderBottom: '1px solid #111', minHeight: 44 }}></div>
+              <p style={{ fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: 1.5, margin: '6px 0 0', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>Team Member Signature</p>
+            </div>
+            <div>
+              <div style={{ borderBottom: '1px solid #111', minHeight: 44 }}></div>
+              <p style={{ fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: 1.5, margin: '6px 0 0', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>Date Signed</p>
+            </div>
+          </div>
+        )}
+      </div>
+      <style>{`
+        .agreement-pdf-body p { margin: 8px 0; }
+        .agreement-pdf-body ul, .agreement-pdf-body ol { margin: 8px 0 8px 22px; padding: 0; }
+        .agreement-pdf-body li { margin: 5px 0; }
+        .agreement-pdf-body strong { font-weight: 700; }
+        .agreement-pdf-body a { color: #111; text-decoration: underline; }
+        .paper-section:hover .paper-remove-btn { opacity: 0.7; }
+        .paper-section .paper-remove-btn:hover { opacity: 1 !important; }
+        .agreement-pdf-body.inline-editor .tiptap { outline: none; font-size: 12.5pt; color: #111; text-align: justify; line-height: 1.7; font-family: 'Times New Roman', Times, Georgia, serif; }
+        .agreement-pdf-body.inline-editor .tiptap p { margin: 8px 0; }
+        .agreement-pdf-body.inline-editor .tiptap ul, .agreement-pdf-body.inline-editor .tiptap ol { margin: 8px 0 8px 22px; padding: 0; }
+        .agreement-pdf-body.inline-editor .tiptap li { margin: 5px 0; }
+        .agreement-pdf-body.inline-editor .tiptap strong { font-weight: 700; }
+        .agreement-pdf-body.inline-editor .tiptap:focus-within { background: rgba(176,255,3,0.04); }
+      `}</style>
+    </>
+  );
+}
+
 function AgreementEditor() {
   const config = useAgreementConfig();
   const setAgreementConfig = useAppStore((s) => s.setAgreementConfig);
@@ -282,23 +517,22 @@ function AgreementEditor() {
           <p className="text-xs text-muted">Version {version}</p>
         </div>
         <div className="flex items-center gap-2">
-          {mode === 'edit' && hasChanges && (
-            <button onClick={handleSave}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold hover:bg-brand-hover cursor-pointer">
-              <Save size={12} /> Save & Publish v{bumpVersion()}
-            </button>
+          {hasChanges && (
+            <>
+              <button onClick={() => { setSections(config.sections || []); setHasChanges(false); }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-bold hover:bg-brand-light cursor-pointer">
+                <X size={12} /> Discard
+              </button>
+              <button onClick={handleSave}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold hover:bg-brand-hover cursor-pointer">
+                <Save size={12} /> Save & Publish v{bumpVersion()}
+              </button>
+            </>
           )}
-          {mode !== 'edit' ? (
-            <button onClick={() => setMode('edit')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-bold hover:bg-brand-light cursor-pointer">
-              <Edit3 size={12} /> Edit
-            </button>
-          ) : (
-            <button onClick={() => { setMode('status'); setSections(config.sections || []); setHasChanges(false); setEditingId(null); }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-bold hover:bg-brand-light cursor-pointer">
-              <X size={12} /> Cancel
-            </button>
-          )}
+          <button onClick={() => downloadAgreementPdf(sections, version)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-bold hover:bg-brand-light cursor-pointer">
+            <Download size={12} /> PDF
+          </button>
           {mode !== 'preview' ? (
             <button onClick={() => setMode('preview')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-bold hover:bg-brand-light cursor-pointer">
@@ -307,71 +541,35 @@ function AgreementEditor() {
           ) : (
             <button onClick={() => setMode('status')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-bold hover:bg-brand-light cursor-pointer">
-              Back
+              <Edit3 size={12} /> Edit
             </button>
           )}
         </div>
       </div>
 
-      {/* ═══ EDIT MODE — click a section to edit it ═══ */}
-      {mode === 'edit' && (
-        <div className="space-y-3">
-          <p className="text-[10px] text-muted">Click any section to edit it. Only changed sections will be highlighted for your team.</p>
-          <div className="rounded-xl bg-card border border-border-subtle overflow-hidden">
-            {sections.map((s) => (
-              <div key={s.id} className={`px-6 py-4 border-b border-border-subtle/50 last:border-0 ${editingId === s.id ? 'bg-brand/[0.03]' : 'hover:bg-surface-alt/30 cursor-pointer'}`}
-                onClick={() => { if (editingId !== s.id) setEditingId(s.id); }}>
-                {s.title && <h3 className="text-[13px] font-black text-primary mb-2">{s.title}</h3>}
-                {editingId === s.id ? (
-                  <div>
-                    <Suspense fallback={<div className="text-muted text-xs py-2">Loading...</div>}>
-                      <RichTextEditor content={s.body} onChange={(html) => updateSection(s.id, html)} />
-                    </Suspense>
-                    <button onClick={(e) => { e.stopPropagation(); setEditingId(null); }}
-                      className="mt-2 text-[10px] text-muted hover:text-primary cursor-pointer">Done editing</button>
-                  </div>
-                ) : (
-                  <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: s.body }} />
-                )}
-              </div>
-            ))}
-          </div>
-
-          <RolesEditor />
-
-          {hasChanges && (
-            <button onClick={handleSave}
-              className="w-full py-3 rounded-xl bg-brand text-on-brand font-bold text-sm hover:bg-brand-hover cursor-pointer">
-              Save & Publish v{bumpVersion()}
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* ═══ PREVIEW MODE ═══ */}
+      {/* ═══ PREVIEW MODE ═══ (read-only, exactly as team members see it) */}
       {mode === 'preview' && (
-        <div className="rounded-xl bg-card border border-border-subtle overflow-hidden">
-          {sections.map((s) => (
-            <div key={s.id} className="px-6 py-4">
-              {s.title && <h3 className="text-[15px] font-black text-primary mb-2">{s.title}</h3>}
-              <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: s.body }} />
-            </div>
-          ))}
-        </div>
+        <PaperAgreement sections={sections} version={version} />
       )}
 
-      {/* ═══ STATUS MODE ═══ */}
+      {/* ═══ STATUS MODE — Google Docs-style inline editing ═══ */}
       {mode === 'status' && (
         <div className="space-y-4">
-          {/* Agreement preview */}
-          <div className="rounded-xl bg-card border border-border-subtle overflow-hidden">
-            {sections.map((s) => (
-              <div key={s.id} className="px-6 py-4">
-                {s.title && <h3 className="text-[15px] font-black text-primary mb-2">{s.title}</h3>}
-                <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: s.body }} />
-              </div>
-            ))}
-          </div>
+          <PaperAgreement
+            sections={sections}
+            version={version}
+            onUpdateSection={updateSection}
+            onUpdateTitle={(id, title) => { setSections(prev => prev.map(s => s.id === id ? { ...s, title } : s)); setHasChanges(true); }}
+            onAddSection={() => {
+              const id = 'section-' + Date.now();
+              setSections(prev => [...prev.filter(s => s.title), { id, title: 'New Section', body: '<p></p>' }, ...prev.filter(s => !s.title)]);
+              setHasChanges(true);
+            }}
+            onRemoveSection={(id) => {
+              setSections(prev => prev.filter(s => s.id !== id));
+              setHasChanges(true);
+            }}
+          />
 
           {/* Team Members */}
           <div className="space-y-2">
@@ -642,33 +840,43 @@ function TeamMemberAgreementView() {
   const isSigned = !needsNewVersion || signed;
   const display = signed ? signedAgreements[signedAgreements.length - 1] : latestAgreement;
 
-  return (
-    <div className="max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="text-center mb-6">
-        <h1 className="text-2xl font-black text-primary tracking-tight">TEAM AGREEMENT</h1>
-        <p className="text-xs text-muted mt-1">Hey Jude's Lawn Care · v{config.version}</p>
-      </div>
+  const downloadPdf = () => downloadAgreementPdf(sections, config.version, display);
 
-      {/* Status */}
+  return (
+    <div className="max-w-3xl mx-auto">
+      {/* Status banner (not part of the document) */}
       {isSigned ? (
-        <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 mb-6">
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 mb-4">
           <Check size={18} className="text-emerald-500 shrink-0" />
           <div>
             <p className="text-sm text-emerald-400 font-bold">Signed</p>
             <p className="text-[11px] text-muted">{display ? new Date(display.signedAt).toLocaleDateString() : ''}</p>
           </div>
           {display?.signatureDataUrl && (
-            <img src={display.signatureDataUrl} alt="Signature" className="ml-auto rounded border border-emerald-500/20 h-10" />
+            <img src={display.signatureDataUrl} alt="Signature" className="ml-auto rounded border border-emerald-500/20 h-10 bg-white" />
           )}
+          <button
+            onClick={downloadPdf}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/30 transition-colors cursor-pointer"
+          >
+            <Download size={13} /> PDF
+          </button>
         </div>
       ) : (
-        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 mb-6">
-          <div className="flex items-center gap-2">
-            <AlertTriangle size={16} className="text-amber-500 shrink-0" />
-            <p className="text-sm text-amber-400 font-semibold">
-              {latestAgreement ? 'Agreement Updated - review changes and sign below' : 'Review and sign below'}
-            </p>
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 mb-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={16} className="text-amber-500 shrink-0" />
+              <p className="text-sm text-amber-400 font-semibold">
+                {latestAgreement ? 'Agreement Updated — review and sign below' : 'Review and sign below'}
+              </p>
+            </div>
+            <button
+              onClick={downloadPdf}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 text-xs font-semibold hover:bg-amber-500/30 transition-colors cursor-pointer"
+            >
+              <Download size={13} /> PDF
+            </button>
           </div>
           {hasChanges && (
             <div className="flex items-center gap-4 mt-2 pl-6 text-[10px] font-bold">
@@ -679,33 +887,93 @@ function TeamMemberAgreementView() {
         </div>
       )}
 
-      {/* One continuous agreement document */}
-      <div className="rounded-xl bg-card border border-border-subtle overflow-hidden mb-6">
-        {sections.map((s, i) => {
+      {/* PDF-style document */}
+      <div
+        className="agreement-paper mx-auto mb-6 shadow-2xl"
+        style={{
+          background: '#fafaf7',
+          color: '#1a1a1a',
+          fontFamily: 'Georgia, "Times New Roman", serif',
+          padding: '56px 64px',
+          borderRadius: '4px',
+          border: '1px solid rgba(0,0,0,0.08)',
+          lineHeight: 1.6,
+        }}
+      >
+        {/* Document header */}
+        <div style={{ textAlign: 'center', borderBottom: '2px solid #111', paddingBottom: 18, marginBottom: 28 }}>
+          <h1 style={{ fontFamily: 'Helvetica, Arial, sans-serif', fontSize: 28, letterSpacing: 3, fontWeight: 900, margin: 0, color: '#111' }}>
+            TEAM AGREEMENT
+          </h1>
+          <p style={{ margin: '8px 0 0', fontSize: 11, color: '#666', letterSpacing: 1.5, textTransform: 'uppercase' }}>
+            Hey Jude's Lawn Care · Version {config.version}
+          </p>
+        </div>
+
+        {/* Sections as document body */}
+        {sections.map((s) => {
           const changed = sectionChanges[s.id];
           const isChanged = changed && !isSigned;
           const prevBody = prevById[s.id]?.body;
           const showDiff = isChanged && changed === 'updated' && prevBody;
-          // Determine if this is a "header" section (values, accountability) vs a standard
-          const isFirst = i === 0;
           return (
-            <div key={s.id} className={`px-6 ${isFirst ? 'pt-6' : 'pt-0'} pb-4 ${isChanged ? 'bg-amber-500/[0.04] border-l-2 border-amber-500/40' : ''}`}>
+            <section
+              key={s.id}
+              style={{
+                marginBottom: 18,
+                pageBreakInside: 'avoid',
+                paddingLeft: isChanged ? 12 : 0,
+                borderLeft: isChanged ? '3px solid #d97706' : 'none',
+              }}
+            >
               {s.title && (
-                <div className="flex items-center gap-2 mb-2">
-                  <h3 className="text-[15px] font-black text-primary">{s.title}</h3>
-                  {changed === 'new' && !isSigned && <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase">New</span>}
-                  {changed === 'updated' && !isSigned && <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[9px] font-bold uppercase">Updated</span>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, borderBottom: '1px solid #d4d0c5', paddingBottom: 4 }}>
+                  <h2 style={{ fontFamily: 'Helvetica, Arial, sans-serif', fontSize: 13, fontWeight: 900, letterSpacing: 0.5, textTransform: 'uppercase', margin: 0, color: '#111' }}>
+                    {s.title}
+                  </h2>
+                  {changed === 'new' && !isSigned && <span style={{ fontSize: 9, fontWeight: 700, color: '#059669', background: '#d1fae5', padding: '2px 6px', borderRadius: 3, letterSpacing: 0.5 }}>NEW</span>}
+                  {changed === 'updated' && !isSigned && <span style={{ fontSize: 9, fontWeight: 700, color: '#d97706', background: '#fef3c7', padding: '2px 6px', borderRadius: 3, letterSpacing: 0.5 }}>UPDATED</span>}
                 </div>
               )}
               {showDiff ? (
-                <DiffView oldBody={prevBody} newBody={s.body} />
+                <div style={{ color: '#1a1a1a' }}>
+                  <DiffView oldBody={prevBody} newBody={s.body} />
+                </div>
               ) : (
-                <div className="text-sm text-secondary leading-relaxed agreement-content" dangerouslySetInnerHTML={{ __html: s.body }} />
+                <div
+                  className="agreement-pdf-body"
+                  style={{ fontSize: 13, color: '#1a1a1a' }}
+                  dangerouslySetInnerHTML={{ __html: s.body }}
+                />
               )}
-            </div>
+            </section>
           );
         })}
+
+        {/* Signature block in the document */}
+        {isSigned && display && (
+          <div style={{ marginTop: 36, paddingTop: 18, borderTop: '1px solid #111', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 24 }}>
+            <div>
+              <p style={{ fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: 1, margin: '0 0 4px' }}>Signed by</p>
+              <p style={{ fontSize: 15, fontWeight: 700, margin: 0, color: '#111' }}>{display.printedName || display.memberName || ''}</p>
+              <p style={{ fontSize: 11, color: '#555', margin: '4px 0 0' }}>
+                {new Date(display.signedAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+              </p>
+            </div>
+            {display.signatureDataUrl && (
+              <img src={display.signatureDataUrl} alt="Signature" style={{ maxHeight: 70, maxWidth: 260, background: '#fff', padding: 4, border: '1px solid #e5e5e5', borderRadius: 4 }} />
+            )}
+          </div>
+        )}
       </div>
+
+      <style>{`
+        .agreement-pdf-body p { margin: 6px 0; }
+        .agreement-pdf-body ul, .agreement-pdf-body ol { margin: 6px 0 6px 22px; }
+        .agreement-pdf-body li { margin: 3px 0; }
+        .agreement-pdf-body strong { font-weight: 700; }
+        .agreement-pdf-body a { color: #1a1a1a; text-decoration: underline; }
+      `}</style>
 
       {/* Roles */}
       {allRoles.length > 0 && (

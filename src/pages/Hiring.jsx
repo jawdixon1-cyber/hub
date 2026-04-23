@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   Plus,
@@ -36,7 +36,6 @@ import {
   ArrowUpDown,
   MessageSquare,
   Loader2,
-  Target,
   BookOpen,
 } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
@@ -1415,8 +1414,7 @@ We run background checks. If you have a record, just be upfront about it. Honest
 const PIPELINE = [
   { id: 'new', label: 'Applied', color: 'text-blue-400', bg: 'bg-blue-500/15', dot: 'bg-blue-400' },
   { id: 'contacted', label: 'Phone Screen', color: 'text-amber-400', bg: 'bg-amber-500/15', dot: 'bg-amber-400' },
-  { id: 'onboarding', label: 'Trial Scheduled', color: 'text-cyan-400', bg: 'bg-cyan-500/15', dot: 'bg-cyan-400' },
-  { id: 'trial_day', label: 'Trial Day', color: 'text-purple-400', bg: 'bg-purple-500/15', dot: 'bg-purple-400' },
+  { id: 'onboarding', label: 'Trial', color: 'text-cyan-400', bg: 'bg-cyan-500/15', dot: 'bg-cyan-400' },
   { id: 'hired', label: 'Hired', color: 'text-green-400', bg: 'bg-green-500/15', dot: 'bg-green-400' },
   { id: 'rejected', label: 'Rejected', color: 'text-red-400', bg: 'bg-red-500/15', dot: 'bg-red-400' },
 ];
@@ -1457,7 +1455,57 @@ function scoreApplication(data) {
   return { score: Math.max(0, Math.min(10, score)), flags, greens };
 }
 
-const statusColor = (s) => s === 'new' ? 'bg-blue-500/15 text-blue-400' : s === 'contacted' ? 'bg-amber-500/15 text-amber-400' : s === 'onboarding' ? 'bg-cyan-500/15 text-cyan-400' : s === 'trial_day' ? 'bg-purple-500/15 text-purple-400' : s === 'hired' ? 'bg-green-500/15 text-green-400' : s === 'rejected' ? 'bg-red-500/15 text-red-400' : 'bg-surface-alt text-muted';
+const statusColor = (s) => s === 'new' ? 'bg-blue-500/15 text-blue-400' : s === 'contacted' ? 'bg-amber-500/15 text-amber-400' : s === 'onboarding' ? 'bg-cyan-500/15 text-cyan-400' : s === 'hired' ? 'bg-green-500/15 text-green-400' : s === 'rejected' ? 'bg-red-500/15 text-red-400' : 'bg-surface-alt text-muted';
+
+function StateFilterDropdown({ shownStates, toggleState, counts }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const STATES = [
+    { k: 'open',     label: 'Open',     ids: ['new', 'contacted', 'onboarding'] },
+    { k: 'hired',    label: 'Hired',    ids: ['hired'] },
+    { k: 'rejected', label: 'Rejected', ids: ['rejected'] },
+  ];
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  const summary = shownStates.size === 3 ? 'All states'
+    : [...shownStates].map((k) => STATES.find((s) => s.k === k)?.label).filter(Boolean).join(', ');
+  const totalCount = STATES.filter((s) => shownStates.has(s.k)).reduce((n, s) => n + s.ids.reduce((a, id) => a + (counts[id] || 0), 0), 0);
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-alt text-xs font-semibold text-secondary hover:text-primary cursor-pointer">
+        <span>Show: <span className="text-primary">{summary}</span></span>
+        <span className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full text-[10px] font-black bg-surface-strong text-muted">{totalCount}</span>
+        <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-30 w-48 bg-card rounded-xl border border-border-subtle shadow-lg py-1">
+          {STATES.map((s) => {
+            const active = shownStates.has(s.k);
+            const count = s.ids.reduce((a, id) => a + (counts[id] || 0), 0);
+            return (
+              <button key={s.k} onClick={() => toggleState(s.k)}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-secondary hover:bg-surface-alt cursor-pointer">
+                <span className="flex items-center gap-2">
+                  <span className={`w-4 h-4 rounded-sm border flex items-center justify-center ${active ? 'bg-brand border-brand' : 'border-border-default'}`}>
+                    {active && <Check size={11} className="text-on-brand" />}
+                  </span>
+                  {s.label}
+                </span>
+                <span className="text-[10px] font-black text-muted">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ApplicationsTab() {
   const applications = useAppStore((s) => s.applications) || [];
@@ -1468,11 +1516,34 @@ function ApplicationsTab() {
   const onboardingSteps = useAppStore((s) => s.onboardingSteps) || [];
   const setOnboardingSteps = useAppStore((s) => s.setOnboardingSteps);
   const [selected, setSelected] = useState(null);
-  const [filter, setFilter] = useState('new');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('date');
   const [editingQuestions, setEditingQuestions] = useState(false);
   const [editingOnboarding, setEditingOnboarding] = useState(false);
+  const [dragOverCol, setDragOverCol] = useState(null);
+  const [draggingId, setDraggingId] = useState(null);
+  // When moving an applicant to Trial we show a setup modal to create their Hub login.
+  const [trialSetupFor, setTrialSetupFor] = useState(null); // { applicant, previousStatus }
+  // Show-state filter: 'open' | 'hired' | 'rejected' — multi-select set. Defaults to Open only.
+  const [shownStates, setShownStates] = useState(() => {
+    try { const s = localStorage.getItem('hiring-states'); return s ? new Set(JSON.parse(s)) : new Set(['open']); } catch { return new Set(['open']); }
+  });
+  const toggleState = (k) => {
+    setShownStates((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      if (next.size === 0) next.add('open'); // never empty
+      try { localStorage.setItem('hiring-states', JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  };
+  const visibleStatusIds = useMemo(() => {
+    const ids = [];
+    if (shownStates.has('open')) ids.push('new', 'contacted', 'onboarding');
+    if (shownStates.has('hired')) ids.push('hired');
+    if (shownStates.has('rejected')) ids.push('rejected');
+    return ids;
+  }, [shownStates]);
 
   const [sending, setSending] = useState(null);
 
@@ -1510,8 +1581,34 @@ function ApplicationsTab() {
   };
 
   const markStatus = async (id, status) => {
-    setApplications(applications.map((a) => a.id === id ? { ...a, status } : a));
-    if (selected?.id === id) setSelected((s) => ({ ...s, status }));
+    // Intercept moves to Trial — show setup modal so owner can provision login + get SMS text.
+    // Skip if the applicant already has onboarding credentials (re-drag, toggling states).
+    if (status === 'onboarding') {
+      const app = applications.find((a) => a.id === id);
+      if (app && !app.onboarding?.credentials) {
+        setTrialSetupFor(app);
+        return;
+      }
+    }
+    // Preserve pre-tag pipeline position so we can show the card back in that column
+    // when the owner toggles the Hired/Rejected filter on.
+    setApplications(applications.map((a) => {
+      if (a.id !== id) return a;
+      const wasTerminal = a.status === 'hired' || a.status === 'rejected';
+      const becomingTerminal = status === 'hired' || status === 'rejected';
+      const next = { ...a, status };
+      if (becomingTerminal && !wasTerminal) next.previousStatus = a.status || 'new';
+      if (!becomingTerminal) delete next.previousStatus;
+      return next;
+    }));
+    if (selected?.id === id) setSelected((s) => {
+      const wasTerminal = s.status === 'hired' || s.status === 'rejected';
+      const becomingTerminal = status === 'hired' || status === 'rejected';
+      const next = { ...s, status };
+      if (becomingTerminal && !wasTerminal) next.previousStatus = s.status || 'new';
+      if (!becomingTerminal) delete next.previousStatus;
+      return next;
+    });
 
     // Send SMS
     const app = applications.find((a) => a.id === id);
@@ -1537,21 +1634,6 @@ function ApplicationsTab() {
   // Enrich apps with scores
   const enriched = applications.map((app) => ({ ...app, ...scoreApplication(app.data || {}) }));
 
-  // Filter + search
-  const searchLower = search.toLowerCase();
-  const filtered = enriched.filter((app) => {
-    if (filter !== 'all' && (app.status || 'new') !== filter) return false;
-    if (search) {
-      const d = app.data || {};
-      if (![d.name, d.phone, d.email, d.city_zip].filter(Boolean).join(' ').toLowerCase().includes(searchLower)) return false;
-    }
-    return true;
-  });
-
-  const sorted = [...filtered].sort((a, b) => {
-    if (sortBy === 'score') return b.score - a.score;
-    return new Date(b.submittedAt) - new Date(a.submittedAt);
-  });
 
   // Counts
   const counts = { all: applications.length };
@@ -1665,21 +1747,12 @@ function ApplicationsTab() {
 
   return (
     <div className="space-y-4">
-      {/* Pipeline segmented tabs */}
-      <div className="flex items-center gap-1 p-1 rounded-xl bg-surface-alt">
-        {PIPELINE.map((p) => (
-          <button
-            key={p.id}
-            onClick={() => setFilter(p.id)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              filter === p.id ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'
-            }`}
-          >
-            <span>{p.label}</span>
-            <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-black ${filter === p.id ? p.bg + ' ' + p.color : 'bg-surface-strong text-muted'}`}>{counts[p.id] || 0}</span>
-          </button>
-        ))}
-      </div>
+      {/* Show-state filter */}
+      {!selected && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <StateFilterDropdown shownStates={shownStates} toggleState={toggleState} counts={counts} />
+        </div>
+      )}
 
       {!selected && (
         <div className="flex items-center gap-2">
@@ -1742,7 +1815,15 @@ function ApplicationsTab() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-xl font-black text-primary leading-tight">{fullName(d)}</h2>
                       {age && <span className="text-sm font-semibold text-muted">{age}</span>}
-                      {(selected.status || 'new') !== 'new' && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColor(selected.status)}`}>{PIPELINE.find(p => p.id === selected.status)?.label || selected.status}</span>}
+                      <select
+                        value={selected.status || 'new'}
+                        onChange={(e) => markStatus(selected.id, e.target.value)}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none pr-5 bg-right bg-no-repeat ${statusColor(selected.status || 'new')}`}
+                        style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")", backgroundPosition: 'right 4px center', backgroundSize: '8px' }}
+                        title="Change stage"
+                      >
+                        {PIPELINE.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                      </select>
                     </div>
                     <p className="text-xs text-muted mt-1">{new Date(selected.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
                   </div>
@@ -1768,24 +1849,48 @@ function ApplicationsTab() {
                   </div>
                 )}
 
-                {/* Actions — pipeline stage buttons */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  <button onClick={() => markStatus(selected.id, 'contacted')} disabled={!!sending} className={`py-3 rounded-xl text-[12px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'contacted' ? 'bg-amber-400 text-black' : 'bg-amber-500/12 text-amber-400 hover:bg-amber-500/20'}`}>
-                    {sending === 'contacted' ? <Loader2 size={13} className="animate-spin" /> : <MessageSquare size={13} />} Phone Screen
-                  </button>
-                  <button onClick={() => markStatus(selected.id, 'onboarding')} disabled={!!sending} className={`py-3 rounded-xl text-[12px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'onboarding' ? 'bg-cyan-400 text-black' : 'bg-cyan-500/12 text-cyan-400 hover:bg-cyan-500/20'}`}>
-                    {sending === 'onboarding' ? <Loader2 size={13} className="animate-spin" /> : <ClipboardList size={13} />} Schedule Trial
-                  </button>
-                  <button onClick={() => markStatus(selected.id, 'trial_day')} disabled={!!sending} className={`py-3 rounded-xl text-[12px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'trial_day' ? 'bg-purple-400 text-black' : 'bg-purple-500/12 text-purple-400 hover:bg-purple-500/20'}`}>
-                    {sending === 'trial_day' ? <Loader2 size={13} className="animate-spin" /> : <Target size={13} />} Trial Day
-                  </button>
-                  <button onClick={() => markStatus(selected.id, 'hired')} disabled={!!sending} className={`py-3 rounded-xl text-[12px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'hired' ? 'bg-green-400 text-black' : 'bg-green-500/12 text-green-400 hover:bg-green-500/20'}`}>
-                    {sending === 'hired' ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Hire
-                  </button>
-                  <button onClick={() => markStatus(selected.id, 'rejected')} disabled={!!sending} className={`py-3 rounded-xl text-[12px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${selected.status === 'rejected' ? 'bg-red-400 text-black' : 'bg-red-500/12 text-red-400 hover:bg-red-500/20'}`}>
-                    {sending === 'rejected' ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />} Reject
-                  </button>
-                </div>
+                {/* Actions — one primary next-step + reject. Context-aware per status. */}
+                {(() => {
+                  const NEXT = {
+                    new:          { label: 'Phone Screen',  status: 'contacted',   Icon: MessageSquare, tone: 'amber'  },
+                    contacted:    { label: 'Schedule Trial', status: 'onboarding',  Icon: ClipboardList, tone: 'cyan'   },
+                    onboarding:   { label: 'Hire',          status: 'hired',       Icon: Check,         tone: 'green'  },
+                  };
+                  const primary = NEXT[selected.status || 'new'];
+                  const TONE_CLASSES = {
+                    amber:  'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25',
+                    cyan:   'bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25',
+                    purple: 'bg-purple-500/15 text-purple-400 hover:bg-purple-500/25',
+                    green:  'bg-green-500/15 text-green-400 hover:bg-green-500/25',
+                  };
+                  const showReopen = selected.status === 'hired' || selected.status === 'rejected';
+                  if (showReopen) {
+                    return (
+                      <div className="grid grid-cols-1 gap-2">
+                        <button onClick={() => markStatus(selected.id, 'contacted')} disabled={!!sending}
+                          className="py-3 rounded-xl text-[13px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 bg-surface-alt text-secondary hover:bg-surface hover:text-primary">
+                          {sending ? <Loader2 size={14} className="animate-spin" /> : <ChevronLeft size={14} />} Reopen as Phone Screen
+                        </button>
+                      </div>
+                    );
+                  }
+                  if (!primary) return null;
+                  const Icon = primary.Icon;
+                  return (
+                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                      <button onClick={() => markStatus(selected.id, primary.status)} disabled={!!sending}
+                        className={`py-3 rounded-xl text-[13px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-2 ${TONE_CLASSES[primary.tone]}`}>
+                        {sending === primary.status ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
+                        {primary.label}
+                      </button>
+                      <button onClick={() => markStatus(selected.id, 'rejected')} disabled={!!sending}
+                        className="px-5 py-3 rounded-xl text-[13px] font-bold cursor-pointer transition-colors flex items-center justify-center gap-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20">
+                        {sending === 'rejected' ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                        Reject
+                      </button>
+                    </div>
+                  );
+                })()}
 
                 {/* Answers — all questions in form order with N/A for unanswered */}
                 {(() => {
@@ -1868,7 +1973,7 @@ function ApplicationsTab() {
                 })()}
 
                 {/* Trial Agreement — show at Trial Scheduled + Trial Day */}
-                {(selected.status === 'onboarding' || selected.status === 'trial_day') && (
+                {selected.status === 'onboarding' && (
                   <TrialAgreementPanel
                     applicant={selected}
                     onUpdate={(next) => {
@@ -1879,12 +1984,12 @@ function ApplicationsTab() {
                 )}
 
                 {/* Trial Day Playbook — your script for the day */}
-                {(selected.status === 'onboarding' || selected.status === 'trial_day') && (
+                {selected.status === 'onboarding' && (
                   <TrialDayPlaybookPanel />
                 )}
 
-                {/* Onboarding checklist — shows for onboarding + trial_day + hired status */}
-                {(selected.status === 'onboarding' || selected.status === 'trial_day' || selected.status === 'hired') && (() => {
+                {/* Onboarding checklist — shows for onboarding + hired status */}
+                {(selected.status === 'onboarding' || selected.status === 'hired') && (() => {
                   const PHASE_META = {
                     before: { label: 'Before trial day', sub: 'Online — they do these the day before' },
                     morning: { label: 'Morning of trial', sub: 'In person — you hand these off' },
@@ -2004,72 +2109,150 @@ function ApplicationsTab() {
           })()}
         </div>
       ) : (
-        <div className="space-y-2">
-          {sorted.length === 0 && <p className="text-sm text-muted text-center py-16">No applicants match.</p>}
-          {sorted.map((app) => {
+        (() => {
+          // Enriched list, filtered by search only (columns handle state filtering)
+          const q = search.toLowerCase().trim();
+          const pool = enriched.filter((app) => {
+            if (!q) return true;
+            const d = app.data || {};
+            return [d.name, d.first_name, d.last_name, d.phone, d.email, d.city_zip, d.city].filter(Boolean).join(' ').toLowerCase().includes(q);
+          });
+
+          // Columns are always the three open stages. Hired/Rejected don't get their own column —
+          // when their filter is ON, those cards reappear inside the column they came from (previousStatus).
+          const columnStages = PIPELINE.filter(col => col.id !== 'hired' && col.id !== 'rejected');
+          const showHired = shownStates.has('hired');
+          const showRejected = shownStates.has('rejected');
+          const appsForColumn = (colId) => {
+            // Active cards in this stage
+            const active = pool.filter((a) => (a.status || 'new') === colId);
+            // Hired/Rejected cards whose previousStatus was this column
+            const terminal = pool.filter((a) => {
+              const s = a.status;
+              if (s !== 'hired' && s !== 'rejected') return false;
+              if (s === 'hired' && !showHired) return false;
+              if (s === 'rejected' && !showRejected) return false;
+              return (a.previousStatus || 'new') === colId;
+            });
+            return [...active, ...terminal];
+          };
+
+          const renderCard = (app) => {
             const d = app.data || {};
             const name = fullName(d);
-            const age = d.dob ? (() => { const bd = new Date(d.dob); const a = Math.floor((Date.now() - bd.getTime()) / 31557600000); return a > 0 && a < 100 ? a : null; })() : null;
-
-            // Top 3 pill tags (prioritize red flags first)
-            const tags = [];
-            if (d.background_check === 'Yes') tags.push({ label: 'Background', bad: true });
-            if (d.tobacco_use === 'Yes') tags.push({ label: 'Nicotine', bad: true });
-            if (d.injuries === 'Yes') tags.push({ label: 'Injury', bad: true });
-            if (d.drivers_license === 'No') tags.push({ label: 'No license', bad: true });
-            if (d.physical_ability === 'No') tags.push({ label: "Can't do physical", bad: true });
-            if (d.years_landscaping === '5+ years') tags.push({ label: '5+ yrs exp', good: true });
-            else if (d.years_landscaping === '3-5 years') tags.push({ label: '3-5 yrs exp', good: true });
-            else if (d.years_landscaping === '1-2 years') tags.push({ label: '1-2 yrs exp', good: true });
-            if (d.leadership_exp === 'Yes') tags.push({ label: 'Lead exp', good: true });
-            if (d.how_long === '1+ years' || d.how_long === 'Long-term / as long as it works') tags.push({ label: 'Long-term', good: true });
-
+            const isHired = app.status === 'hired';
+            const isRejected = app.status === 'rejected';
             return (
-              <button
+              <div
                 key={app.id}
+                draggable
+                onDragStart={(e) => { e.dataTransfer.setData('text/plain', app.id); e.dataTransfer.effectAllowed = 'move'; setDraggingId(app.id); }}
+                onDragEnd={() => { setDraggingId(null); setDragOverCol(null); }}
                 onClick={() => setSelected(app)}
-                className="w-full bg-card rounded-2xl p-4 flex items-center gap-4 hover:bg-surface-alt transition-colors cursor-pointer text-left"
+                className={`group bg-card rounded-xl p-2.5 cursor-pointer hover:ring-1 hover:ring-border-default active:cursor-grabbing ${isHired ? 'opacity-80 ring-1 ring-green-500/30' : ''} ${isRejected ? 'opacity-60' : ''}`}
               >
-                {/* Score ring */}
-                <div
-                  className="relative w-12 h-12 rounded-full flex items-center justify-center shrink-0"
-                  style={{ background: `conic-gradient(${scoreColor(app.score)} ${app.score * 36}deg, var(--color-surface-alt) 0)` }}
-                >
-                  <div className="absolute inset-1 rounded-full bg-card flex items-center justify-center">
-                    <span className={`text-sm font-black ${scoreTone(app.score)}`}>{app.score}</span>
-                  </div>
-                </div>
-
-                {/* Middle */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-[15px] font-bold text-primary truncate">{name}</p>
-                    {age && <span className="text-xs font-semibold text-muted">{age}</span>}
-                    {(app.status || 'new') !== 'new' && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColor(app.status)}`}>{PIPELINE.find(p => p.id === app.status)?.label || app.status}</span>}
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5 text-xs text-muted truncate">
-                    {location(d) && <span className="truncate">{location(d)}</span>}
-                    {location(d) && d.phone && <span>·</span>}
-                    {d.phone && <span className="truncate">{fmtPhone(d.phone)}</span>}
-                  </div>
-                  {tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {tags.slice(0, 4).map((t, i) => (
-                        <span key={i} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${t.bad ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}>{t.label}</span>
-                      ))}
+                <div className="flex items-center gap-2">
+                  <div
+                    className="relative w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                    style={{ background: `conic-gradient(${scoreColor(app.score)} ${app.score * 36}deg, var(--color-surface-alt) 0)` }}
+                  >
+                    <div className="absolute inset-1 rounded-full bg-card flex items-center justify-center">
+                      <span className={`text-[10px] font-black ${scoreTone(app.score)}`}>{app.score}</span>
                     </div>
-                  )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className={`text-[13px] font-bold truncate ${isRejected ? 'text-muted line-through' : 'text-primary'}`}>{name}</p>
+                      {isHired && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400">Hired</span>}
+                      {isRejected && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400">Rejected</span>}
+                    </div>
+                    <p className="text-[10px] text-muted truncate">{new Date(app.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{d.city ? ` · ${d.city}` : ''}</p>
+                  </div>
                 </div>
-
-                {/* Date + chevron */}
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className="text-[11px] text-muted">{new Date(app.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-                  <ChevronRight size={16} className="text-muted" />
-                </div>
-              </button>
+                <select
+                  value={app.status || 'new'}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => { e.stopPropagation(); markStatus(app.id, e.target.value); }}
+                  className="mt-2 w-full text-[10px] font-semibold bg-surface-alt text-secondary rounded-md px-1.5 py-1 cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                >
+                  {PIPELINE.map((p) => <option key={p.id} value={p.id}>Move to {p.label}</option>)}
+                </select>
+              </div>
             );
-          })}
-        </div>
+          };
+
+          return (
+            <div className="space-y-4">
+              {/* Pipeline columns: Applied / Phone Screen / Trial */}
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: 'thin' }}>
+                {columnStages.map((col) => {
+                  const colApps = appsForColumn(col.id).sort((a, b) => sortBy === 'score' ? b.score - a.score : new Date(b.submittedAt) - new Date(a.submittedAt));
+                  const isDragOver = dragOverCol === col.id;
+                  return (
+                    <div
+                      key={col.id}
+                      className={`shrink-0 w-[260px] rounded-2xl bg-surface-alt/50 border transition-colors ${isDragOver ? 'border-brand bg-brand/5' : 'border-border-subtle'}`}
+                      onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.id); }}
+                      onDragLeave={() => setDragOverCol(null)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const appId = e.dataTransfer.getData('text/plain');
+                        if (appId) markStatus(appId, col.id);
+                        setDragOverCol(null);
+                      }}
+                    >
+                      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-subtle/60">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${col.dot}`} />
+                          <span className="text-xs font-bold text-primary">{col.label}</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-muted bg-card px-1.5 py-0.5 rounded-full">{colApps.length}</span>
+                      </div>
+                      <div className="p-2 space-y-2 min-h-[140px]">
+                        {colApps.length === 0
+                          ? <p className="text-[11px] text-muted italic text-center py-6">Drop here to move</p>
+                          : colApps.map(renderCard)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Hired / Rejected drop zones — only appear while a card is being dragged */}
+              {draggingId && (
+                <div className="fixed left-1/2 bottom-6 -translate-x-1/2 z-40 w-[520px] max-w-[92vw] grid grid-cols-2 gap-3 animate-in">
+                  {[
+                    { id: 'hired',    label: 'Hired',    icon: Check, base: 'bg-green-500/10 border-green-500/40',  dragCls: 'border-green-500 bg-green-500/25 scale-105', accent: 'bg-green-500/20 text-green-400' },
+                    { id: 'rejected', label: 'Rejected', icon: X,     base: 'bg-red-500/10 border-red-500/40',      dragCls: 'border-red-500 bg-red-500/25 scale-105',     accent: 'bg-red-500/20 text-red-400'    },
+                  ].map((zone) => {
+                    const Icon = zone.icon;
+                    const isDragOver = dragOverCol === zone.id;
+                    return (
+                      <div
+                        key={zone.id}
+                        className={`rounded-2xl border-2 border-dashed backdrop-blur-md shadow-2xl transition-all ${isDragOver ? zone.dragCls : zone.base}`}
+                        onDragOver={(e) => { e.preventDefault(); setDragOverCol(zone.id); }}
+                        onDragLeave={() => setDragOverCol(null)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const appId = e.dataTransfer.getData('text/plain');
+                          if (appId) markStatus(appId, zone.id);
+                          setDragOverCol(null);
+                          setDraggingId(null);
+                        }}
+                      >
+                        <div className="flex items-center justify-center gap-2 px-4 py-5">
+                          <span className={`w-7 h-7 rounded-full inline-flex items-center justify-center ${zone.accent}`}><Icon size={14} /></span>
+                          <span className="text-sm font-black text-primary">Drop to {zone.label}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()
       )}
 
       {editingQuestions && (
@@ -2087,8 +2270,254 @@ function ApplicationsTab() {
           onClose={() => setEditingOnboarding(false)}
         />
       )}
+
+      {trialSetupFor && (
+        <TrialSetupModal
+          applicant={trialSetupFor}
+          onClose={() => setTrialSetupFor(null)}
+          onComplete={(updatedApp) => {
+            // Persist credentials + advance status to 'onboarding'
+            setApplications(applications.map((a) => a.id === updatedApp.id ? updatedApp : a));
+            if (selected?.id === updatedApp.id) setSelected(updatedApp);
+            setTrialSetupFor(null);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+function TrialSetupModal({ applicant, onClose, onComplete }) {
+  const d = applicant.data || {};
+  const email = d.email || '';
+  const firstName = d.first_name || (d.name || '').split(' ')[0] || '';
+  const lastName = d.last_name || (d.name || '').split(' ').slice(1).join(' ') || '';
+  const name = d.name || [d.first_name, d.last_name].filter(Boolean).join(' ');
+  const phoneFmt = fmtPhoneStatic(d.phone || '');
+  const phoneDigits = String(d.phone || '').replace(/\D/g, '');
+
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState(null);
+  const [credentials, setCredentials] = useState(null);
+  const [jobberDone, setJobberDone] = useState(false);
+  const [payrollDone, setPayrollDone] = useState(false);
+  const [trialStart, setTrialStart] = useState('');
+  const [trialEnd, setTrialEnd] = useState('');
+  const [copiedField, setCopiedField] = useState(null);
+  const [textedDone, setTextedDone] = useState(false);
+
+  const copyText = (text, field) => {
+    navigator.clipboard.writeText(text).then(() => { setCopiedField(field); setTimeout(() => setCopiedField(null), 1200); });
+  };
+
+  const handleCreate = async () => {
+    setError(null); setCreating(true);
+    try {
+      const res = await fetch('/api/app-state?key=team-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'createApplicantLogin', email, applicantName: name, applicantId: applicant.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create login');
+      setCredentials({ email: data.email, password: data.password });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleStartChange = (v) => {
+    setTrialStart(v);
+    if (v && !trialEnd) {
+      const d0 = new Date(v + 'T12:00:00');
+      d0.setDate(d0.getDate() + 13);
+      setTrialEnd(d0.toISOString().slice(0, 10));
+    }
+  };
+
+  const fmtDateLong = (iso) => iso ? new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) : '';
+
+  const smsMessage = `Hey ${firstName || 'there'}, you're locked in for your trial at Hey Jude's Lawn Care from ${fmtDateLong(trialStart)} through ${fmtDateLong(trialEnd)}. Before day 1, finish your onboarding here — takes about 10 min:
+
+hub.heyjudeslawncare.com
+Email: ${credentials?.email || email}
+Password: ${credentials?.password || 'Password123!'}
+
+You'll sign our team agreement, activate your Jobber invite (check your email), and finish your payroll form. Text me if anything's weird.`;
+
+  const allDone = !!credentials && jobberDone && payrollDone && trialStart && trialEnd && textedDone;
+
+  const handleDone = () => {
+    onComplete({
+      ...applicant,
+      status: 'onboarding',
+      previousStatus: applicant.status || 'new',
+      onboarding: {
+        ...(applicant.onboarding || {}),
+        trialStart, trialEnd,
+        trialDate: trialStart,
+        credentials,
+        jobberInvited: jobberDone,
+        payrollInvited: payrollDone,
+        createdAt: new Date().toISOString(),
+      },
+    });
+  };
+
+  const CopyField = ({ label, value, field }) => (
+    <div className="flex items-center gap-2">
+      <label className="text-[10px] font-black text-muted uppercase tracking-wider w-14 shrink-0">{label}</label>
+      <div className="flex-1 bg-surface-alt rounded-lg px-3 py-1.5 text-sm text-primary truncate font-mono">{value || '—'}</div>
+      <button onClick={() => copyText(value || '', field)} disabled={!value}
+        className="px-2 py-1.5 rounded-lg text-[11px] font-bold text-muted hover:text-primary hover:bg-surface-alt disabled:opacity-30 cursor-pointer inline-flex items-center gap-1">
+        <Copy size={11} /> {copiedField === field ? '✓' : 'Copy'}
+      </button>
+    </div>
+  );
+
+  const StepHeader = ({ n, label, done, onToggle }) => (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={!onToggle}
+      className="w-full flex items-center gap-3 mb-3 text-left group cursor-pointer disabled:cursor-default"
+    >
+      <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 border-2 transition-colors ${done ? 'bg-emerald-500 border-emerald-500' : 'bg-transparent border-border-default group-hover:border-brand'}`}>
+        {done && <Check size={14} strokeWidth={3} className="text-black" />}
+      </div>
+      <span className="text-[10px] font-black text-muted tabular-nums">{String(n).padStart(2, '0')}</span>
+      <p className={`text-sm font-bold transition-colors ${done ? 'text-muted line-through' : 'text-primary group-hover:text-brand-text'}`}>{label}</p>
+    </button>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
+      <div className="bg-card rounded-2xl border border-border-subtle w-full max-w-xl my-8" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
+          <div>
+            <p className="text-sm font-black text-primary">Set up {name}'s trial</p>
+            <p className="text-[11px] text-muted mt-0.5">Complete the 5 steps below, then hit Done.</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-surface-alt text-muted cursor-pointer"><X size={16} /></button>
+        </div>
+
+        <div className="p-4 space-y-5 max-h-[75vh] overflow-y-auto">
+          {/* Reference info at top — copy once, use everywhere */}
+          <div className="rounded-xl bg-surface-alt/40 border border-border-subtle p-3 space-y-1.5">
+            <p className="text-[10px] font-black text-muted uppercase tracking-wider mb-1.5">Reference — paste into Jobber + payroll</p>
+            <CopyField label="First" value={firstName} field="ref-first" />
+            <CopyField label="Last" value={lastName} field="ref-last" />
+            <CopyField label="Email" value={email} field="ref-email" />
+            <CopyField label="Phone" value={phoneFmt} field="ref-phone" />
+          </div>
+
+          {/* STEP 1: Create Hub login */}
+          <div>
+            <StepHeader n={1} label="Create Hub login" done={!!credentials}
+              onToggle={credentials ? null : (email && !creating ? handleCreate : null)} />
+            <div className="pl-10 space-y-2">
+              {credentials ? (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 text-sm">
+                  <p className="text-emerald-400 font-bold mb-1">Login created</p>
+                  <p className="text-xs text-muted">Email: <span className="font-mono text-primary">{credentials.email}</span></p>
+                  <p className="text-xs text-muted">Password: <span className="font-mono text-primary">{credentials.password}</span></p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-muted">Creates a Hub login for them at hub.heyjudeslawncare.com with password <span className="font-mono text-primary">Password123!</span></p>
+                  <button onClick={handleCreate} disabled={!email || creating}
+                    className="px-3 py-2 rounded-lg text-xs font-bold bg-brand text-on-brand hover:bg-brand-hover disabled:opacity-50 cursor-pointer inline-flex items-center gap-1.5">
+                    {creating ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                    Create Hub login
+                  </button>
+                  {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* STEP 2: Add to Jobber */}
+          <div>
+            <StepHeader n={2} label="Add to Jobber" done={jobberDone} onToggle={() => setJobberDone((v) => !v)} />
+            <div className="pl-10">
+              <a href="https://secure.getjobber.com/employees" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary hover:bg-surface hover:text-primary text-xs font-bold cursor-pointer">
+                <ExternalLink size={12} /> Open Jobber
+              </a>
+            </div>
+          </div>
+
+          {/* STEP 3: Add to payroll */}
+          <div>
+            <StepHeader n={3} label="Add to payroll" done={payrollDone} onToggle={() => setPayrollDone((v) => !v)} />
+            <div className="pl-10">
+              <a href="https://app.gusto.com/" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary hover:bg-surface hover:text-primary text-xs font-bold cursor-pointer">
+                <ExternalLink size={12} /> Open Gusto
+              </a>
+            </div>
+          </div>
+
+          {/* STEP 4: Trial dates */}
+          <div>
+            <StepHeader n={4} label="Pick trial dates" done={!!trialStart && !!trialEnd} />
+            <div className="pl-10 grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-black text-muted uppercase tracking-wider mb-1.5">Trial start</label>
+                <input type="date" value={trialStart} onChange={(e) => handleStartChange(e.target.value)}
+                  className="w-full bg-surface-alt rounded-lg px-3 py-2 text-sm text-primary focus:outline-none focus:ring-1 focus:ring-border-default" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-muted uppercase tracking-wider mb-1.5">Trial end</label>
+                <input type="date" value={trialEnd} onChange={(e) => setTrialEnd(e.target.value)}
+                  className="w-full bg-surface-alt rounded-lg px-3 py-2 text-sm text-primary focus:outline-none focus:ring-1 focus:ring-border-default" />
+              </div>
+            </div>
+          </div>
+
+          {/* STEP 5: Text them */}
+          <div>
+            <StepHeader n={5} label="Text them this message" done={textedDone} onToggle={() => setTextedDone((v) => !v)} />
+            <div className="pl-10 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted">Pre-filled with their login + trial dates</p>
+                <button onClick={() => copyText(smsMessage, 'sms')} className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-text hover:text-brand-text-strong cursor-pointer">
+                  <Copy size={11} /> {copiedField === 'sms' ? 'Copied!' : 'Copy message'}
+                </button>
+              </div>
+              <textarea value={smsMessage} readOnly rows={10}
+                className="w-full bg-surface-alt rounded-lg px-3 py-2 text-xs text-primary font-mono focus:outline-none focus:ring-1 focus:ring-border-default resize-none" />
+              {phoneDigits && (
+                <a href={`sms:${phoneDigits}`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary hover:bg-surface hover:text-primary text-xs font-bold cursor-pointer">
+                  <MessageSquare size={12} /> Open Messages to {phoneFmt}
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border-subtle">
+          <p className="text-[11px] text-muted">{allDone ? 'All set — commit the move' : 'Finish every step above'}</p>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-3 py-2 rounded-lg text-xs font-semibold text-muted hover:bg-surface-alt cursor-pointer">Cancel</button>
+            <button onClick={handleDone} disabled={!allDone}
+              className="px-4 py-2 rounded-lg text-xs font-bold bg-brand text-on-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer inline-flex items-center gap-1.5">
+              <Check size={14} /> Done — move to Trial
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function fmtPhoneStatic(v) {
+  const digits = String(v || '').replace(/\D/g, '');
+  if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
+  return v;
 }
 
 function OnboardingStepsEditor({ steps, onSave, onClose }) {
