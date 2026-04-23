@@ -225,6 +225,7 @@ export default function ApplicantOnboarding() {
             onComplete={handleSigned}
             memberName={applicant.data?.name || ''}
             memberEmail={userEmail}
+            configOverride={config}
           />
         </Suspense>
       )}

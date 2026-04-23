@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
-import { useAppStore } from '../store/AppStoreContext';
 import {
   AGREEMENT_SECTIONS as DEFAULT_SECTIONS,
   FINAL_AGREEMENT_TEXT as DEFAULT_FINAL_TEXT,
@@ -81,9 +80,8 @@ function AgreementSection({ section, index }) {
 }
 
 /* ── Main Signing Flow ── */
-export default function AgreementSigningFlow({ onClose, onComplete, memberName = '', memberEmail = '' }) {
-  const storeConfig = useAppStore((s) => s.agreementConfig);
-  const config = getCurrentAgreementConfig(storeConfig, DEFAULT_SECTIONS, DEFAULT_FINAL_TEXT);
+export default function AgreementSigningFlow({ onClose, onComplete, memberName = '', memberEmail = '', configOverride = null }) {
+  const config = configOverride || getCurrentAgreementConfig(null, DEFAULT_SECTIONS, DEFAULT_FINAL_TEXT);
   const SECTIONS = config.sections;
   const FINAL_TEXT = config.finalText;
   const VERSION = config.version;

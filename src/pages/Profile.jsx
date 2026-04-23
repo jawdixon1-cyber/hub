@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { SettingsContent } from './Settings';
-import { DEFAULT_AGREEMENT_VERSION, AGREEMENT_SECTIONS as DEFAULT_SECTIONS, FINAL_AGREEMENT_TEXT as DEFAULT_FINAL_TEXT, getCurrentAgreementVersion } from '../data/employmentAgreement';
+import { DEFAULT_AGREEMENT_VERSION, AGREEMENT_SECTIONS as DEFAULT_SECTIONS, FINAL_AGREEMENT_TEXT as DEFAULT_FINAL_TEXT, getCurrentAgreementVersion, getCurrentAgreementConfig } from '../data/employmentAgreement';
 
 const AgreementSigningFlow = lazy(() => import('../components/AgreementSigningFlow'));
 
@@ -451,6 +451,7 @@ export default function Profile() {
             onComplete={handleSignComplete}
             memberName={currentUser || ''}
             memberEmail={userEmail}
+            configOverride={getCurrentAgreementConfig(storeAgreementConfig, DEFAULT_SECTIONS, DEFAULT_FINAL_TEXT)}
           />
         </Suspense>
       )}
