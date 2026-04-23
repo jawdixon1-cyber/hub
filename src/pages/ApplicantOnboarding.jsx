@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense, Component } from 'react';
 import { Check, Circle, LogOut, ExternalLink, FileText, Briefcase, DollarSign } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -10,6 +10,27 @@ import {
 } from '../data/employmentAgreement';
 
 const AgreementSigningFlow = lazy(() => import('../components/AgreementSigningFlow'));
+
+class SigningErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error('[SigningFlow] crashed:', error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={this.props.onClose}>
+          <div className="bg-card rounded-2xl border border-red-500/40 p-6 max-w-md" onClick={(e) => e.stopPropagation()}>
+            <p className="text-red-400 font-bold mb-2">Agreement crashed</p>
+            <pre className="text-[11px] text-muted whitespace-pre-wrap break-words">{String(this.state.error?.message || this.state.error)}</pre>
+            {this.state.error?.stack && <pre className="text-[10px] text-muted mt-2 whitespace-pre-wrap break-words max-h-48 overflow-auto">{this.state.error.stack}</pre>}
+            <button onClick={this.props.onClose} className="mt-4 px-3 py-2 rounded-lg text-xs font-bold bg-surface-alt text-secondary cursor-pointer">Close</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function ApplicantOnboarding() {
   const { user, signOut } = useAuth();
@@ -219,15 +240,17 @@ export default function ApplicantOnboarding() {
 
       {/* Agreement signing modal */}
       {showSigning && (
-        <Suspense fallback={null}>
-          <AgreementSigningFlow
-            onClose={() => setShowSigning(false)}
-            onComplete={handleSigned}
-            memberName={applicant.data?.name || ''}
-            memberEmail={userEmail}
-            configOverride={config}
-          />
-        </Suspense>
+        <SigningErrorBoundary onClose={() => setShowSigning(false)}>
+          <Suspense fallback={<div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center text-muted text-sm">Loading…</div>}>
+            <AgreementSigningFlow
+              onClose={() => setShowSigning(false)}
+              onComplete={handleSigned}
+              memberName={applicant.data?.name || ''}
+              memberEmail={userEmail}
+              configOverride={config}
+            />
+          </Suspense>
+        </SigningErrorBoundary>
       )}
     </div>
   );
