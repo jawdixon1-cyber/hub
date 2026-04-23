@@ -285,32 +285,45 @@ function PaperAgreement({ sections, version, signature, effectiveDate, onUpdateS
       <div
         className="agreement-paper mx-auto"
         style={{
-          background: '#fdfcf7',
-          color: '#111',
+          background: 'linear-gradient(180deg, #fdfcf7 0%, #fbfaf4 100%)',
+          color: '#0a0a0a',
           fontFamily: "'Times New Roman', Times, Georgia, serif",
-          padding: '72px 80px',
-          maxWidth: '8.5in',
+          padding: '1in 1in',
+          width: '8.5in',
+          maxWidth: '100%',
+          minHeight: '11in',
           borderRadius: '2px',
-          boxShadow: '0 30px 60px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.05) inset',
-          border: '1px solid rgba(0,0,0,0.12)',
-          lineHeight: 1.7,
+          boxShadow: '0 40px 80px rgba(0,0,0,0.45), 0 10px 20px rgba(0,0,0,0.25), 0 1px 0 rgba(255,255,255,0.05) inset',
+          border: '1px solid rgba(0,0,0,0.14)',
+          lineHeight: 1.65,
+          position: 'relative',
         }}
       >
-        {/* Letterhead */}
-        <div style={{ textAlign: 'center', marginBottom: 8 }}>
-          <p style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 10, letterSpacing: 4, textTransform: 'uppercase', color: '#666', margin: 0, fontWeight: 700 }}>
-            Hey Jude's Lawn Care
-          </p>
+        {/* Formal letterhead with company name + document reference */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: 14, borderBottom: '1px solid #111', marginBottom: 28 }}>
+          <div>
+            <p style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 14, letterSpacing: 3, textTransform: 'uppercase', color: '#111', margin: 0, fontWeight: 900 }}>
+              Hey Jude's Lawn Care
+            </p>
+            <p style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: '#777', margin: '3px 0 0', fontWeight: 600 }}>
+              Rock Hill, SC
+            </p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <p style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: '#777', margin: 0, fontWeight: 600 }}>Document</p>
+            <p style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 11, color: '#111', margin: '2px 0 0', fontWeight: 700 }}>TA-{version}</p>
+            {dateStr && (
+              <p style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 9, color: '#777', margin: '6px 0 0', letterSpacing: 0.5 }}>Effective {dateStr}</p>
+            )}
+          </div>
         </div>
 
         {/* Title block */}
-        <div style={{ textAlign: 'center', padding: '18px 0 22px', borderTop: '1px solid #111', borderBottom: '3px double #111', marginBottom: 36 }}>
-          <h1 style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 30, letterSpacing: 4, fontWeight: 900, margin: 0, color: '#0a0a0a' }}>
-            TEAM AGREEMENT
+        <div style={{ textAlign: 'center', marginBottom: 40 }}>
+          <h1 style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 34, letterSpacing: 6, fontWeight: 900, margin: 0, color: '#0a0a0a' }}>
+            TEAM&nbsp;AGREEMENT
           </h1>
-          <p style={{ margin: '12px 0 0', fontSize: 11, color: '#555', letterSpacing: 2, textTransform: 'uppercase', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
-            Version {version}{dateStr ? `  ·  Effective ${dateStr}` : ''}
-          </p>
+          <div style={{ width: 80, height: 3, background: '#111', margin: '14px auto 0' }} />
         </div>
 
         {/* Numbered sections */}
@@ -320,11 +333,11 @@ function PaperAgreement({ sections, version, signature, effectiveDate, onUpdateS
             <section
               key={s.id}
               className="paper-section"
-              style={{ marginBottom: 26, pageBreakInside: 'avoid', position: 'relative' }}
+              style={{ marginBottom: 28, pageBreakInside: 'avoid', position: 'relative' }}
             >
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 10 }}>
-                <span style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 13, fontWeight: 900, color: '#0a0a0a', minWidth: 28, letterSpacing: 0.5 }}>
-                  {String(idx).padStart(2, '0')}.
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 8, borderBottom: '1px solid rgba(0,0,0,0.18)', paddingBottom: 6 }}>
+                <span style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 11, fontWeight: 900, color: '#111', minWidth: 40, letterSpacing: 1 }}>
+                  § {String(idx).padStart(2, '0')}
                 </span>
                 {editable && onUpdateTitle ? (
                   <input
@@ -332,7 +345,7 @@ function PaperAgreement({ sections, version, signature, effectiveDate, onUpdateS
                     onChange={(e) => onUpdateTitle(s.id, e.target.value)}
                     style={{
                       fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
-                      fontSize: 13, fontWeight: 900, letterSpacing: 1.5, textTransform: 'uppercase',
+                      fontSize: 12, fontWeight: 900, letterSpacing: 2, textTransform: 'uppercase',
                       margin: 0, color: '#0a0a0a', flex: 1,
                       background: 'transparent', border: 'none', outline: 'none', padding: 0,
                     }}
@@ -340,7 +353,7 @@ function PaperAgreement({ sections, version, signature, effectiveDate, onUpdateS
                     onBlur={(e) => { e.target.style.background = 'transparent'; }}
                   />
                 ) : (
-                  <h2 style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 13, fontWeight: 900, letterSpacing: 1.5, textTransform: 'uppercase', margin: 0, color: '#0a0a0a', flex: 1 }}>
+                  <h2 style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 12, fontWeight: 900, letterSpacing: 2, textTransform: 'uppercase', margin: 0, color: '#0a0a0a', flex: 1 }}>
                     {s.title}
                   </h2>
                 )}
@@ -359,18 +372,18 @@ function PaperAgreement({ sections, version, signature, effectiveDate, onUpdateS
                 )}
               </div>
               {editable ? (
-                <Suspense fallback={<div style={{ fontSize: 12.5, paddingLeft: 42, color: '#888' }}>…</div>}>
+                <Suspense fallback={<div style={{ fontSize: 12.5, paddingLeft: 52, color: '#888' }}>…</div>}>
                   <InlineDocEditor
                     content={s.body}
                     onChange={(html) => onUpdateSection(s.id, html)}
-                    style={{ paddingLeft: 42 }}
+                    style={{ paddingLeft: 52 }}
                     className="agreement-pdf-body inline-editor"
                   />
                 </Suspense>
               ) : (
                 <div
                   className="agreement-pdf-body"
-                  style={{ fontSize: 12.5, color: '#111', paddingLeft: 42, textAlign: 'justify' }}
+                  style={{ fontSize: 13, color: '#111', paddingLeft: 52, textAlign: 'justify', hyphens: 'auto' }}
                   dangerouslySetInnerHTML={{ __html: s.body }}
                 />
               )}
@@ -432,9 +445,15 @@ function PaperAgreement({ sections, version, signature, effectiveDate, onUpdateS
             </div>
           </div>
         )}
+
+        {/* Document footer — looks like a printed PDF footer */}
+        <div style={{ marginTop: 40, paddingTop: 12, borderTop: '1px solid rgba(0,0,0,0.12)', display: 'flex', justifyContent: 'space-between', fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", fontSize: 9, color: '#888', letterSpacing: 0.5 }}>
+          <span>HEY JUDE'S LAWN CARE · TEAM AGREEMENT</span>
+          <span>DOCUMENT TA-{version}</span>
+        </div>
       </div>
       <style>{`
-        .agreement-pdf-body p { margin: 8px 0; }
+        .agreement-pdf-body p { margin: 9px 0; }
         .agreement-pdf-body ul, .agreement-pdf-body ol { margin: 8px 0 8px 22px; padding: 0; }
         .agreement-pdf-body li { margin: 5px 0; }
         .agreement-pdf-body strong { font-weight: 700; }
