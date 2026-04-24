@@ -1524,6 +1524,8 @@ function ApplicationsTab() {
   const [draggingId, setDraggingId] = useState(null);
   // When moving an applicant to Trial we show a setup modal to create their Hub login.
   const [trialSetupFor, setTrialSetupFor] = useState(null); // { applicant, previousStatus }
+  // When finalizing a hire we confirm team-member status + pay rate before flipping the status.
+  const [hireFor, setHireFor] = useState(null);
   // Show-state filter: 'open' | 'hired' | 'rejected' — multi-select set. Defaults to Open only.
   const [shownStates, setShownStates] = useState(() => {
     try { const s = localStorage.getItem('hiring-states'); return s ? new Set(JSON.parse(s)) : new Set(['open']); } catch { return new Set(['open']); }
@@ -1587,6 +1589,14 @@ function ApplicationsTab() {
       const app = applications.find((a) => a.id === id);
       if (app && !app.onboarding?.credentials) {
         setTrialSetupFor(app);
+        return;
+      }
+    }
+    // Intercept moves to Hired — confirm team-member status + base pay, then promote.
+    if (status === 'hired') {
+      const app = applications.find((a) => a.id === id);
+      if (app && !app.onboarding?.hiredAt) {
+        setHireFor(app);
         return;
       }
     }
@@ -2283,6 +2293,177 @@ function ApplicationsTab() {
           }}
         />
       )}
+
+      {hireFor && (
+        <HireModal
+          applicant={hireFor}
+          onClose={() => setHireFor(null)}
+          onComplete={(updatedApp) => {
+            setApplications(applications.map((a) => a.id === updatedApp.id ? updatedApp : a));
+            if (selected?.id === updatedApp.id) setSelected(updatedApp);
+            setHireFor(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function HireModal({ applicant, onClose, onComplete }) {
+  const permissions = useAppStore((s) => s.permissions) || {};
+  const setPermissions = useAppStore((s) => s.setPermissions);
+
+  const d = applicant.data || {};
+  const email = (d.email || '').toLowerCase();
+  const firstName = d.first_name || (d.name || '').split(' ')[0] || '';
+  const name = d.name || [d.first_name, d.last_name].filter(Boolean).join(' ');
+  const phoneFmt = fmtPhoneStatic(d.phone || '');
+  const phoneDigits = String(d.phone || '').replace(/\D/g, '');
+
+  const [payRate, setPayRate] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const payNum = parseFloat(payRate);
+  const validPay = !isNaN(payNum) && payNum > 0;
+
+  const message = `Congrats ${firstName || 'there'} — you're officially on the team at Hey Jude's Lawn Care. Starting base pay is $${validPay ? payNum.toFixed(2) : '__'}/hr.\n\nOne last thing: log into hub.heyjudeslawncare.com and sign our team agreement so we're all on the same page. Your login is the same email/password you've been using.\n\nWelcome aboard.`;
+
+  const copy = (text) => {
+    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+  };
+
+  const handleConfirm = async () => {
+    if (!validPay) { setError('Enter a starting base pay'); return; }
+    setError(null); setSaving(true);
+    try {
+      // Promote their Supabase role from 'applicant' to 'member' so they see the full Hub
+      const res = await fetch('/api/app-state?key=team-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'promoteApplicantToMember', email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to promote');
+      // Add/update their permissions entry
+      setPermissions({
+        ...permissions,
+        [email]: {
+          ...(permissions[email] || {}),
+          name,
+          phone: phoneFmt,
+          payRate: payNum,
+          hiredAt: new Date().toISOString(),
+        },
+      });
+      setDone(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFinish = () => {
+    onComplete({
+      ...applicant,
+      status: 'hired',
+      previousStatus: applicant.status || 'new',
+      onboarding: {
+        ...(applicant.onboarding || {}),
+        hiredAt: new Date().toISOString(),
+        basePayRate: payNum,
+      },
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
+      <div className="bg-card rounded-2xl border border-border-subtle w-full max-w-lg my-8" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
+          <div>
+            <p className="text-sm font-black text-primary">Add {name} as a team member</p>
+            <p className="text-[11px] text-muted mt-0.5">Confirms them on the team and sets their starting base pay.</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-surface-alt text-muted cursor-pointer"><X size={16} /></button>
+        </div>
+
+        {!done ? (
+          <div className="p-4 space-y-4">
+            <div className="bg-surface-alt rounded-lg p-3 space-y-1 text-sm">
+              <p className="text-xs text-muted">Name</p>
+              <p className="font-bold text-primary">{name}</p>
+              <p className="text-xs text-muted mt-2">Email</p>
+              <p className="font-mono text-primary">{email}</p>
+              <p className="text-xs text-muted mt-2">Phone</p>
+              <p className="font-mono text-primary">{phoneFmt}</p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-black text-muted uppercase tracking-wider mb-1.5">Starting base pay</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm">$</span>
+                <input
+                  type="number" step="0.25" min="0"
+                  value={payRate}
+                  onChange={(e) => setPayRate(e.target.value)}
+                  placeholder="16.00"
+                  autoFocus
+                  className="w-full bg-surface-alt rounded-lg pl-7 pr-14 py-2.5 text-base font-bold text-primary focus:outline-none focus:ring-1 focus:ring-border-default"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted text-xs">/ hour</span>
+              </div>
+              <p className="text-[10px] text-muted mt-1">Can be changed later on their profile</p>
+            </div>
+
+            {error && <p className="text-xs text-red-400">{error}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={onClose} className="px-3 py-2 rounded-lg text-xs font-semibold text-muted hover:bg-surface-alt cursor-pointer">Cancel</button>
+              <button onClick={handleConfirm} disabled={!validPay || saving}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-brand text-on-brand hover:bg-brand-hover disabled:opacity-50 cursor-pointer inline-flex items-center gap-1.5">
+                {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                Confirm team member
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 space-y-4">
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Check size={14} className="text-emerald-400" />
+                <p className="text-sm font-bold text-emerald-400">{firstName} is on the team</p>
+              </div>
+              <p className="text-[11px] text-muted mt-1">Promoted to full Hub access · Base pay ${payNum.toFixed(2)}/hr</p>
+              <p className="text-[11px] text-muted">Next time they log in they'll be prompted to sign the team agreement.</p>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] font-black text-muted uppercase tracking-wider">Text to send them</label>
+                <button onClick={() => copy(message)} className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-text hover:text-brand-text-strong cursor-pointer">
+                  <Copy size={11} /> {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <textarea value={message} readOnly rows={8}
+                className="w-full bg-surface-alt rounded-lg px-3 py-2 text-xs text-primary font-mono focus:outline-none resize-none" />
+              {phoneDigits && (
+                <a href={`sms:${phoneDigits}`} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary hover:bg-surface hover:text-primary text-xs font-bold cursor-pointer">
+                  <MessageSquare size={12} /> Open Messages to {phoneFmt}
+                </a>
+              )}
+            </div>
+
+            <div className="flex justify-end">
+              <button onClick={handleFinish} className="px-4 py-2 rounded-lg text-xs font-bold bg-brand text-on-brand hover:bg-brand-hover cursor-pointer">
+                Done — mark as Hired
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2453,9 +2634,9 @@ You'll sign our team agreement, activate your Jobber invite (check your email), 
           <div>
             <StepHeader n={3} label="Add to payroll" done={payrollDone} onToggle={() => setPayrollDone((v) => !v)} />
             <div className="pl-10">
-              <a href="https://app.gusto.com/" target="_blank" rel="noopener noreferrer"
+              <a href="https://workforcenow.adp.com/" target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary hover:bg-surface hover:text-primary text-xs font-bold cursor-pointer">
-                <ExternalLink size={12} /> Open Gusto
+                <ExternalLink size={12} /> Open ADP
               </a>
             </div>
           </div>

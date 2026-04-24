@@ -14,6 +14,7 @@ import {
 } from '../data/employmentAgreement';
 
 const AgreementSigningFlow = lazy(() => import('../components/AgreementSigningFlow'));
+import { PdfAgreementUploader, PdfAgreementView, NoPdfWarning } from '../components/PdfAgreement';
 
 // Migrate old sections (expectations + accountability + policies) into a single { standards & policies }
 // Migrate legacy section IDs only — never overwrite user-edited content
@@ -1090,6 +1091,138 @@ function TeamMemberAgreementView() {
     </div>
   );
 }
+
+/* ── PDF-based agreement: owner uploads, everyone signs ── */
+
+function OwnerPdfAgreementView() {
+  const agreementPdf = useAppStore((s) => s.agreementPdf);
+  const setAgreementPdf = useAppStore((s) => s.setAgreementPdf);
+  const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
+  const setSignedAgreements = useAppStore((s) => s.setSignedAgreements);
+  const permissions = useAppStore((s) => s.permissions) || {};
+  const [showUpload, setShowUpload] = useState(!agreementPdf);
+
+  const memberAgreements = {};
+  for (const a of signedAgreements) {
+    if (!memberAgreements[a.memberEmail]) memberAgreements[a.memberEmail] = [];
+    memberAgreements[a.memberEmail].push(a);
+  }
+  const teamMembers = Object.entries(permissions);
+  const currentVersion = agreementPdf?.version || '';
+
+  const handleUploaded = (pdf) => {
+    setAgreementPdf(pdf);
+    // New version — everyone needs to re-sign. Clear old signatures so the gate re-engages.
+    setSignedAgreements([]);
+    setShowUpload(false);
+  };
+
+  return (
+    <div className="space-y-4 max-w-3xl mx-auto">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-black text-primary tracking-tight">TEAM AGREEMENT</h1>
+          <p className="text-xs text-muted">{agreementPdf ? `${agreementPdf.fileName} · v${currentVersion}` : 'Not uploaded'}</p>
+        </div>
+        {agreementPdf && !showUpload && (
+          <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-bold hover:text-primary hover:bg-surface cursor-pointer">Replace PDF</button>
+        )}
+      </div>
+
+      {showUpload && (
+        <div className="rounded-xl bg-card border border-border-subtle p-4 space-y-3">
+          {agreementPdf && (
+            <div className="text-xs text-muted">
+              Uploading a new PDF will <span className="text-amber-400 font-semibold">invalidate all existing signatures</span>. Everyone will need to re-sign.
+            </div>
+          )}
+          <PdfAgreementUploader current={agreementPdf} onUploaded={handleUploaded} />
+          {agreementPdf && (
+            <button onClick={() => setShowUpload(false)} className="text-xs text-muted hover:text-primary cursor-pointer">Cancel</button>
+          )}
+        </div>
+      )}
+
+      {agreementPdf && !showUpload && <PdfAgreementView pdf={agreementPdf} height={600} />}
+
+      {agreementPdf && teamMembers.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[10px] font-black text-muted uppercase tracking-widest">Team Members</p>
+          {teamMembers.map(([email, info]) => {
+            const agreements = memberAgreements[email] || [];
+            const latest = agreements[agreements.length - 1];
+            const isCurrent = latest?.version === currentVersion;
+            return (
+              <MemberRow key={email} email={email} name={info.name || email} latest={latest} isCurrent={isCurrent}
+                onReset={(e) => setSignedAgreements(signedAgreements.filter(a => a.memberEmail !== e))}
+                currentVersion={currentVersion} />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TeamMemberPdfAgreementView() {
+  const { user, currentUser } = useAuth();
+  const userEmail = user?.email?.toLowerCase();
+  const agreementPdf = useAppStore((s) => s.agreementPdf);
+  const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
+  const setSignedAgreements = useAppStore((s) => s.setSignedAgreements);
+
+  const myAgreements = signedAgreements.filter((a) => a.memberEmail === userEmail);
+  const latestAgreement = myAgreements[myAgreements.length - 1];
+  const needsSign = agreementPdf && (!latestAgreement || latestAgreement.version !== agreementPdf.version);
+  const [signing, setSigning] = useState(false);
+
+  const handleSigned = (record) => {
+    setSignedAgreements([...signedAgreements, record]);
+    setSigning(false);
+  };
+
+  if (!agreementPdf) {
+    return <div className="max-w-2xl mx-auto"><NoPdfWarning /></div>;
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-black text-primary tracking-tight">TEAM AGREEMENT</h1>
+          <p className="text-xs text-muted">{agreementPdf.fileName} · v{agreementPdf.version}</p>
+        </div>
+        {latestAgreement && !needsSign && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-bold">
+            <Check size={12} /> Signed {new Date(latestAgreement.signedAt).toLocaleDateString()}
+          </span>
+        )}
+        {needsSign && (
+          <button onClick={() => setSigning(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold hover:bg-brand-hover cursor-pointer">
+            Read + sign
+          </button>
+        )}
+      </div>
+
+      {needsSign && latestAgreement && (
+        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-400">
+          Agreement was updated — please review and re-sign.
+        </div>
+      )}
+
+      <PdfAgreementView pdf={agreementPdf} height={600} />
+
+      {signing && (
+        <Suspense fallback={null}>
+          <PdfSignLazy pdf={agreementPdf} onClose={() => setSigning(false)} onComplete={handleSigned}
+            memberName={currentUser || ''} memberEmail={userEmail} />
+        </Suspense>
+      )}
+    </div>
+  );
+}
+
+const PdfSignLazy = lazy(() => import('../components/PdfAgreement'));
 
 /* ── Main Export ── */
 export default function TeamAgreement() {

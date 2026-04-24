@@ -50,6 +50,19 @@ async function handleTeamAuth(req, res) {
       if (error) return res.status(400).json({ error: error.message });
       return res.json({ success: true });
     }
+    case 'promoteApplicantToMember': {
+      // Flip a user's role from 'applicant' to 'member' so they get Hub access instead of /onboard.
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: 'email required' });
+      const { data: existing } = await db.auth.admin.listUsers();
+      const found = (existing?.users || []).find((u) => u.email?.toLowerCase() === email.trim().toLowerCase());
+      if (!found) return res.status(404).json({ error: 'User not found' });
+      const { error } = await db.auth.admin.updateUserById(found.id, {
+        user_metadata: { ...found.user_metadata, role: 'member' },
+      });
+      if (error) return res.status(400).json({ error: error.message });
+      return res.json({ success: true, userId: found.id });
+    }
     case 'createApplicantLogin': {
       // Creates a Supabase auth user for a job applicant so they can self-onboard at /onboard.
       // Returns a generated temp password the owner can share via their own SMS.

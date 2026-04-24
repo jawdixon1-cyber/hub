@@ -10,6 +10,7 @@ import {
 } from '../data/employmentAgreement';
 
 const AgreementSigningFlow = lazy(() => import('../components/AgreementSigningFlow'));
+const PdfAgreementSigningFlow = lazy(() => import('../components/PdfAgreement'));
 
 class SigningErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -39,6 +40,7 @@ export default function ApplicantOnboarding() {
 
   const [applications, setApplications] = useState([]);
   const [agreementConfig, setAgreementConfig] = useState(null);
+  const [agreementPdf, setAgreementPdf] = useState(null);
   const [signedAgreements, setSignedAgreements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showSigning, setShowSigning] = useState(false);
@@ -47,11 +49,12 @@ export default function ApplicantOnboarding() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('app_state').select('key, value').in('key', ['greenteam-applications', 'greenteam-agreementConfig', 'greenteam-signedAgreements']);
+      const { data } = await supabase.from('app_state').select('key, value').in('key', ['greenteam-applications', 'greenteam-agreementConfig', 'greenteam-agreementPdf', 'greenteam-signedAgreements']);
       const map = {};
       for (const r of data || []) map[r.key] = r.value;
       setApplications(map['greenteam-applications'] || []);
       setAgreementConfig(map['greenteam-agreementConfig'] || null);
+      setAgreementPdf(map['greenteam-agreementPdf'] || null);
       setSignedAgreements(map['greenteam-signedAgreements'] || []);
       setLoading(false);
     })();
@@ -217,14 +220,14 @@ export default function ApplicantOnboarding() {
                             {saved ? 'Saved!' : 'Save emergency contact'}
                           </button>
                         </div>
-                      ) : (
+                      ) : step.action ? (
                         <div className="mt-3">
                           <button onClick={step.action}
                             className={`px-3 py-2 rounded-lg text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 ${step.done ? 'bg-surface-alt text-muted hover:text-primary' : 'bg-brand text-on-brand hover:bg-brand-hover'}`}>
                             {step.actionLabel}
                           </button>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 </div>

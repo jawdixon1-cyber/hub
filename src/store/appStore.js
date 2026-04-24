@@ -62,6 +62,7 @@ const STATE_KEYS = [
   { key: 'strikes',              supaKey: 'greenteam-strikes',              initial: [] },
   { key: 'signedAgreements',    supaKey: 'greenteam-signedAgreements',    initial: [] },
   { key: 'agreementConfig',    supaKey: 'greenteam-agreementConfig',    initial: null },
+  { key: 'agreementPdf',       supaKey: 'greenteam-agreementPdf',       initial: null },
   { key: 'presence',             supaKey: 'greenteam-presence',             initial: {} },
   { key: 'businessSettings',    supaKey: 'greenteam-businessSettings',    initial: { name: "Hey Jude's Lawn Care", city: 'Rock Hill', state: 'SC', lat: 34.9249, lon: -81.025 } },
   { key: 'quotes',              supaKey: 'greenteam-quotes',              initial: initialQuotes },
