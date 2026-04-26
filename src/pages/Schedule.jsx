@@ -538,7 +538,7 @@ export default function Schedule() {
   // The UI itself just reads from Supabase, so a slow/throttled sync doesn't block render.
   const triggerSync = useCallback(async () => {
     try {
-      await fetch('/api/hub-sync?source=jobber&entity=visits', { method: 'POST' });
+      await fetch('/api/jobber-data?action=hub-sync&source=jobber&entity=visits', { method: 'POST' });
     } catch {}
     // After sync, refresh from the table.
     loadJobberMonth();
