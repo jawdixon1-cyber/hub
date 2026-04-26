@@ -1248,36 +1248,29 @@ function TeamMemberPdfAgreementView() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <h1 className="text-lg font-black text-primary tracking-tight">TEAM AGREEMENT</h1>
-          <p className="text-xs text-muted">{agreementPdf.fileName} · v{agreementPdf.version}</p>
+      {/* Single banner: action + sign out, all in one row */}
+      {needsSign && (
+        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 flex items-center justify-between gap-3">
+          <div className="text-xs text-amber-500 leading-snug min-w-0">
+            <span className="font-bold">⚠️ Action required.</span> {latestAgreement ? 'Agreement was updated — re-sign to continue.' : 'Read and sign the agreement below.'}
+          </div>
+          <button onClick={signOut} className="text-xs font-bold text-muted hover:text-red-500 cursor-pointer shrink-0">
+            Sign Out
+          </button>
         </div>
-        <div className="flex items-center gap-2">
-          {latestAgreement && !needsSign && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-xs font-bold">
-              <Check size={12} /> Signed {new Date(latestAgreement.signedAt).toLocaleDateString()}
-            </span>
-          )}
-          {needsSign && (
-            <button onClick={signOut} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-muted hover:text-red-500 cursor-pointer">
-              Sign Out
-            </button>
-          )}
+      )}
+
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-base sm:text-lg font-black text-primary tracking-tight">TEAM AGREEMENT</h1>
+          <p className="text-[11px] text-muted truncate">{agreementPdf.fileName} · v{agreementPdf.version}</p>
         </div>
+        {latestAgreement && !needsSign && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-xs font-bold shrink-0">
+            <Check size={12} /> Signed {new Date(latestAgreement.signedAt).toLocaleDateString()}
+          </span>
+        )}
       </div>
-
-      {needsSign && latestAgreement && (
-        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-500">
-          The agreement was updated — please review and re-sign before continuing.
-        </div>
-      )}
-
-      {needsSign && !latestAgreement && (
-        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-500">
-          Read the agreement below, then sign at the bottom to access the rest of the app.
-        </div>
-      )}
 
       <PdfAgreementView pdf={agreementPdf} height={620} />
 

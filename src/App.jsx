@@ -451,10 +451,11 @@ function AppShell() {
   );
   const needsAgreement = !ownerMode && !!agreementPdf && !hasSignedCurrent;
 
-  // Force navigate to agreement page if not signed (allow profile for sign out)
+  // Force navigate to agreement page if not signed — no other route is accessible.
+  // Sign Out lives on the agreement page itself, so we don't need a /profile exception.
   useEffect(() => {
-    if (needsAgreement && location.pathname !== '/agreement' && location.pathname !== '/profile') {
-      navigate('/agreement');
+    if (needsAgreement && location.pathname !== '/agreement') {
+      navigate('/agreement', { replace: true });
     }
   }, [needsAgreement, location.pathname, navigate]);
 
@@ -642,6 +643,22 @@ function AppShell() {
     </nav>
   );
 
+  // ── Locked-down agreement gate: no sidebar, no header, just the agreement page ──
+  if (needsAgreement) {
+    return (
+      <div className="min-h-screen bg-surface">
+        <main className="px-4 py-4 sm:px-6 sm:py-8">
+          <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="w-8 h-8 border-4 border-brand-light border-t-brand rounded-full animate-spin" /></div>}>
+            <Routes>
+              <Route path="/agreement" element={<TeamAgreement />} />
+              <Route path="*" element={<Navigate to="/agreement" replace />} />
+            </Routes>
+          </Suspense>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-surface">
       {/* ─── Desktop Sidebar ─── */}
@@ -763,12 +780,6 @@ function AppShell() {
 
       {/* ─── Main Content ─── */}
       <main className={`${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60'} transition-all duration-200`}>
-        {needsAgreement && (
-          <div className="sticky top-0 z-40 bg-amber-500 text-black px-4 py-3 flex items-center gap-2">
-            <span className="font-black text-sm">⚠️ Action Required</span>
-            <span className="text-sm">— Sign the agreement to continue. Read and sign below.</span>
-          </div>
-        )}
         <div className={location.pathname === '/messages' || location.pathname === '/schedule' || location.pathname === '/clients' ? 'px-4 py-3' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8'}>
           <Suspense fallback={
             <div className="flex items-center justify-center py-20">
