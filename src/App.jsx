@@ -125,6 +125,19 @@ const OWNER_TOOLS_ITEMS = [
 
 const DATA_CACHE_KEY = 'greenteam-data-cache';
 
+// Critical keys — needed for the gate decision and first render.
+// Everything else loads in the background after the UI is interactive.
+const CRITICAL_KEYS = [
+  'greenteam-permissions',
+  'greenteam-agreementPdf',
+  'greenteam-agreementConfig',
+  'greenteam-signedAgreements',
+  'greenteam-presence',
+  'greenteam-roles',
+  'greenteam-announcements',
+  'greenteam-applicationForm',
+];
+
 function App() {
   const { session, user, ownerMode, orgId, loading: authLoading, signOut } = useAuth();
   const [cloudData, setCloudData] = useState(() => {
@@ -136,22 +149,66 @@ function App() {
     }
   });
   const [dataError, setDataError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
+  // Two-phase fetch:
+  //   1) Critical keys first → gate + first render
+  //   2) Everything else in the background → fills in heavy data without blocking
+  // On failure, cached data is preferred over a blocking error screen.
   const loadData = useCallback(async () => {
     setDataError(null);
-    try {
+    setRefreshing(true);
+
+    const mergeIntoCloud = (rows) => {
+      setCloudData((prev) => {
+        const next = { ...(prev || {}) };
+        for (const row of rows) next[row.key] = row.value;
+        try { localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      });
+    };
+
+    const fetchKeys = async (keys = null) => {
       let query = supabase.from('app_state').select('key, value');
-      // Scope to org if available (after multi-tenancy migration)
       if (orgId) query = query.eq('org_id', orgId);
+      if (keys) query = query.in('key', keys);
       const { data, error } = await query;
       if (error) throw error;
-      const map = {};
-      if (data) {
-        data.forEach((row) => { map[row.key] = row.value; });
+      return data || [];
+    };
+
+    // Retry helper with exponential backoff (3 attempts: 0s, 1s, 3s)
+    const withRetry = async (fn) => {
+      let lastErr;
+      for (let i = 0; i < 3; i++) {
+        try { return await fn(); }
+        catch (err) {
+          lastErr = err;
+          if (i < 2) await new Promise((r) => setTimeout(r, [1000, 3000][i]));
+        }
       }
-      setCloudData(map);
-      try { localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(map)); } catch {}
+      throw lastErr;
+    };
+
+    try {
+      // Phase 1: critical keys
+      const critical = await withRetry(() => fetchKeys(CRITICAL_KEYS));
+      mergeIntoCloud(critical);
+      setRefreshing(false);
+
+      // Phase 2: everything else, in the background
+      withRetry(() => fetchKeys()).then((rows) => {
+        // Merge — but exclude keys that came in critical to avoid stomping fresher data
+        const criticalSet = new Set(CRITICAL_KEYS);
+        const remaining = rows.filter((r) => !criticalSet.has(r.key));
+        mergeIntoCloud(remaining);
+      }).catch((err) => {
+        // Background failure is non-fatal — keep using critical + cached data
+        console.warn('[loadData] background fetch failed:', err.message);
+      });
     } catch (err) {
+      setRefreshing(false);
+      // Soft-fail: only show error screen if we have *zero* cached data
       setCloudData((prev) => {
         if (!prev) setDataError(err.message || 'Failed to load data');
         return prev;
