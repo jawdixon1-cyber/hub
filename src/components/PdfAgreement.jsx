@@ -211,23 +211,38 @@ export function PdfAgreementUploader({ current, onUploaded, onClose }) {
   );
 }
 
-/* ── Read-only inline PDF display ── */
+/* ── Read-only inline PDF display ──
+   Mobile browsers (especially iOS Safari) only render page 1 of multi-page PDFs
+   in an iframe. So on mobile we surface a big "Open full agreement" button that
+   opens the PDF in the native viewer (which handles all pages + zoom properly),
+   plus we still show the iframe for the partial preview. */
 export function PdfAgreementView({ pdf, height = 600 }) {
   if (!pdf?.url) return null;
+  const isMobile = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
   return (
     <div className="rounded-xl overflow-hidden border border-border-subtle bg-card">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-surface-alt/40">
-        <div className="flex items-center gap-2">
-          <FileText size={12} className="text-muted" />
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-surface-alt/40 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <FileText size={12} className="text-muted shrink-0" />
           <span className="text-[11px] font-semibold text-secondary truncate">{pdf.fileName}</span>
-          <span className="text-[10px] text-muted">v{pdf.version}</span>
+          <span className="text-[10px] text-muted shrink-0">v{pdf.version}</span>
         </div>
-        <a href={pdf.url} target="_blank" rel="noopener noreferrer" download
-          className="inline-flex items-center gap-1 text-[11px] text-brand-text hover:text-brand-text-strong cursor-pointer">
-          <Download size={11} /> Download
+        <a href={pdf.url} target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-[11px] text-brand-text hover:text-brand-text-strong cursor-pointer shrink-0">
+          <Download size={11} /> {isMobile ? 'Open' : 'Download'}
         </a>
       </div>
-      <iframe src={`${pdf.url}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`} title="Agreement" style={{ width: '100%', height, border: 0 }} />
+      {isMobile ? (
+        <div className="p-4 space-y-3">
+          <a href={pdf.url} target="_blank" rel="noopener noreferrer"
+            className="block w-full px-4 py-3 rounded-xl bg-brand text-on-brand text-sm font-bold text-center hover:bg-brand-hover cursor-pointer">
+            📄 Open Full Agreement
+          </a>
+          <p className="text-[11px] text-muted text-center">Tap above to read all pages, then return here to sign.</p>
+        </div>
+      ) : (
+        <iframe src={`${pdf.url}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`} title="Agreement" style={{ width: '100%', height, border: 0 }} />
+      )}
     </div>
   );
 }
