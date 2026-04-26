@@ -98,16 +98,11 @@ export default function TeamManagement() {
       .catch(() => {});
   }, []);
 
-  if (!ownerMode) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted">Access denied.</p>
-        <button onClick={() => navigate('/')} className="mt-4 text-sm text-blue-600 underline cursor-pointer">
-          Go Home
-        </button>
-      </div>
-    );
-  }
+  // Non-owners shouldn't see this page — bounce them to Home silently.
+  useEffect(() => {
+    if (!ownerMode) navigate('/', { replace: true });
+  }, [ownerMode, navigate]);
+  if (!ownerMode) return null;
 
   const realMembers = Object.entries(permissions).map(([memberEmail, data]) => ({
     email: memberEmail,
