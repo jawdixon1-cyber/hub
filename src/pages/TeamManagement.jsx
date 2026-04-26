@@ -110,12 +110,16 @@ export default function TeamManagement() {
     playbooks: data.playbooks || [],
     roleId: data.roleId || null,
     payRate: data.payRate || null,
+    isTrial: !!data.isTrial,
   }));
 
-  // Trial applicants — already have a Hub login, awaiting hire decision
+  // Trial applicants — already have a Hub login, awaiting hire decision.
+  // Skip any whose email already lives in permissions (they've been granted full access).
   const applications = useAppStore((s) => s.applications) || [];
+  const realEmails = new Set(realMembers.map((m) => m.email.toLowerCase()));
   const trialMembers = applications
     .filter((a) => a.status === 'onboarding' && (a.data?.email || a.onboarding?.loginEmail))
+    .filter((a) => !realEmails.has((a.onboarding?.loginEmail || a.data?.email || '').toLowerCase()))
     .map((a) => ({
       email: (a.onboarding?.loginEmail || a.data?.email || '').toLowerCase(),
       name: a.data?.name || [a.data?.first_name, a.data?.last_name].filter(Boolean).join(' ') || 'Applicant',
@@ -564,7 +568,9 @@ export default function TeamManagement() {
                         </button>
                       )}
                       {roleName ? (
-                        <span className="text-xs font-bold px-3 py-1.5 rounded-lg bg-surface-alt text-secondary border border-border-subtle">{roleName}</span>
+                        <span className={`text-xs font-bold px-3 py-1.5 rounded-lg border ${member.isTrial ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' : 'bg-surface-alt text-secondary border-border-subtle'}`}>
+                          {roleName}{member.isTrial ? ' Trial' : ''}
+                        </span>
                       ) : (
                         <span className="text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-500">No role</span>
                       )}
