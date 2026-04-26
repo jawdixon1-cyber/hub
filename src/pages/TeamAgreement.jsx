@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Save, Eye, Edit3, AlertTriangle, Check, FileText, X, Shield, Download } from 'lucide-react';
 import { DEFAULT_ROLES, DEFAULT_ROLES_VERSION } from '../data/roleTemplates';
 
@@ -1184,6 +1185,7 @@ function InlineSignaturePad({ onChange }) {
 }
 
 function TeamMemberPdfAgreementView() {
+  const navigate = useNavigate();
   const { user, currentUser, signOut } = useAuth();
   const userEmail = user?.email?.toLowerCase();
   const agreementPdf = useAppStore((s) => s.agreementPdf);
@@ -1230,6 +1232,8 @@ function TeamMemberPdfAgreementView() {
         signedAt: new Date().toISOString(),
       };
       await setSignedAgreements([...signedAgreements, record]);
+      // Land them on Home, not back on this page
+      navigate('/', { replace: true });
     } finally {
       setSubmitting(false);
     }
