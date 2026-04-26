@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense, useCallback } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
 import { Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Save, Eye, Edit3, AlertTriangle, Check, FileText, X, Shield, Download } from 'lucide-react';
 import { DEFAULT_ROLES, DEFAULT_ROLES_VERSION } from '../data/roleTemplates';
 
@@ -591,22 +591,6 @@ function AgreementEditor() {
             }}
           />
 
-          {/* Team Members */}
-          <div className="space-y-2">
-            <p className="text-[10px] font-black text-muted uppercase tracking-widest">Team Members</p>
-            {teamMembers.length === 0 ? (
-              <p className="text-xs text-muted">No team members added yet.</p>
-            ) : (
-              teamMembers.map(([email, info]) => {
-                const agreements = memberAgreements[email] || [];
-                const latest = agreements[agreements.length - 1];
-                const isCurrent = latest?.version === version;
-                return (
-                  <MemberRow key={email} email={email} name={info.name || email} latest={latest} isCurrent={isCurrent} onReset={handleResetMember} currentVersion={version} />
-                );
-              })
-            )}
-          </div>
         </div>
       )}
     </div>
@@ -1117,15 +1101,27 @@ function OwnerPdfAgreementView() {
     setShowUpload(false);
   };
 
+  const handleRemove = () => {
+    if (!confirm('Remove the current agreement? All existing signatures will also be cleared.')) return;
+    setAgreementPdf(null);
+    setSignedAgreements([]);
+    setShowUpload(true);
+  };
+
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-lg font-black text-primary tracking-tight">TEAM AGREEMENT</h1>
           <p className="text-xs text-muted">{agreementPdf ? `${agreementPdf.fileName} · v${currentVersion}` : 'Not uploaded'}</p>
         </div>
         {agreementPdf && !showUpload && (
-          <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-bold hover:text-primary hover:bg-surface cursor-pointer">Replace PDF</button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-alt text-secondary text-xs font-bold hover:text-primary hover:bg-surface cursor-pointer">Replace PDF</button>
+            <button onClick={handleRemove} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-500 text-xs font-bold hover:bg-red-500/20 cursor-pointer">
+              <Trash2 size={12} /> Remove
+            </button>
+          </div>
         )}
       </div>
 
@@ -1144,28 +1140,51 @@ function OwnerPdfAgreementView() {
       )}
 
       {agreementPdf && !showUpload && <PdfAgreementView pdf={agreementPdf} height={600} />}
+    </div>
+  );
+}
 
-      {agreementPdf && teamMembers.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[10px] font-black text-muted uppercase tracking-widest">Team Members</p>
-          {teamMembers.map(([email, info]) => {
-            const agreements = memberAgreements[email] || [];
-            const latest = agreements[agreements.length - 1];
-            const isCurrent = latest?.version === currentVersion;
-            return (
-              <MemberRow key={email} email={email} name={info.name || email} latest={latest} isCurrent={isCurrent}
-                onReset={(e) => setSignedAgreements(signedAgreements.filter(a => a.memberEmail !== e))}
-                currentVersion={currentVersion} />
-            );
-          })}
-        </div>
-      )}
+// Inline signature pad — used directly under the PDF (no modal, single page)
+function InlineSignaturePad({ onChange }) {
+  const ref = useRef(null);
+  const drawing = useRef(false);
+
+  const reset = () => {
+    const c = ref.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    c.width = 600; c.height = 180;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  };
+  useEffect(() => { reset(); }, []);
+
+  const pos = (e) => {
+    const r = ref.current.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: (t.clientX - r.left) * (600 / r.width), y: (t.clientY - r.top) * (180 / r.height) };
+  };
+  const start = (e) => { e.preventDefault(); drawing.current = true; const p = pos(e); const ctx = ref.current.getContext('2d'); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+  const move = (e) => { if (!drawing.current) return; e.preventDefault(); const p = pos(e); const ctx = ref.current.getContext('2d'); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+  const end = () => { drawing.current = false; onChange?.(ref.current); };
+  const clear = () => { reset(); onChange?.(null); };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Sign here</p>
+        <button type="button" onClick={clear} className="text-[10px] text-muted hover:text-red-500 cursor-pointer">Clear</button>
+      </div>
+      <canvas ref={ref} className="w-full rounded-lg border border-border-default cursor-crosshair"
+        style={{ height: 160, touchAction: 'none', background: '#fff' }}
+        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={end} />
     </div>
   );
 }
 
 function TeamMemberPdfAgreementView() {
-  const { user, currentUser } = useAuth();
+  const { user, currentUser, signOut } = useAuth();
   const userEmail = user?.email?.toLowerCase();
   const agreementPdf = useAppStore((s) => s.agreementPdf);
   const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
@@ -1173,59 +1192,126 @@ function TeamMemberPdfAgreementView() {
 
   const myAgreements = signedAgreements.filter((a) => a.memberEmail === userEmail);
   const latestAgreement = myAgreements[myAgreements.length - 1];
-  const needsSign = agreementPdf && (!latestAgreement || latestAgreement.version !== agreementPdf.version);
-  const [signing, setSigning] = useState(false);
+  const needsSign = !!agreementPdf && (!latestAgreement || latestAgreement.version !== agreementPdf.version);
 
-  const handleSigned = (record) => {
-    setSignedAgreements([...signedAgreements, record]);
-    setSigning(false);
+  const [printedName, setPrintedName] = useState(currentUser || '');
+  const [confirmed, setConfirmed] = useState(false);
+  const [signature, setSignature] = useState(null);
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const validateSignature = (canvas) => {
+    if (!canvas) return false;
+    const ctx = canvas.getContext('2d');
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let drawn = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] < 100 && data[i + 1] < 100 && data[i + 2] < 100) drawn++;
+    }
+    return drawn > 300;
+  };
+
+  const handleSign = async () => {
+    setError(null);
+    if (!printedName.trim()) { setError('Print your name'); return; }
+    if (!signature || !validateSignature(signature)) { setError('Draw your signature above'); return; }
+    if (!confirmed) { setError('Check the acknowledgment box'); return; }
+    setSubmitting(true);
+    try {
+      const record = {
+        id: `agree-${Date.now()}`,
+        version: agreementPdf.version,
+        pdfUrl: agreementPdf.url,
+        pdfFileName: agreementPdf.fileName,
+        memberEmail: userEmail,
+        memberName: printedName.trim(),
+        printedName: printedName.trim(),
+        signatureDataUrl: signature.toDataURL('image/png'),
+        signedAt: new Date().toISOString(),
+      };
+      await setSignedAgreements([...signedAgreements, record]);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (!agreementPdf) {
-    return <div className="max-w-2xl mx-auto"><NoPdfWarning /></div>;
+    return (
+      <div className="max-w-2xl mx-auto space-y-4">
+        <NoPdfWarning />
+        <div className="text-center">
+          <button onClick={signOut} className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-red-500 cursor-pointer">Sign Out</button>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-lg font-black text-primary tracking-tight">TEAM AGREEMENT</h1>
           <p className="text-xs text-muted">{agreementPdf.fileName} · v{agreementPdf.version}</p>
         </div>
-        {latestAgreement && !needsSign && (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-bold">
-            <Check size={12} /> Signed {new Date(latestAgreement.signedAt).toLocaleDateString()}
-          </span>
-        )}
-        {needsSign && (
-          <button onClick={() => setSigning(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold hover:bg-brand-hover cursor-pointer">
-            Read + sign
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {latestAgreement && !needsSign && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-xs font-bold">
+              <Check size={12} /> Signed {new Date(latestAgreement.signedAt).toLocaleDateString()}
+            </span>
+          )}
+          {needsSign && (
+            <button onClick={signOut} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-muted hover:text-red-500 cursor-pointer">
+              Sign Out
+            </button>
+          )}
+        </div>
       </div>
 
       {needsSign && latestAgreement && (
-        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-400">
-          Agreement was updated — please review and re-sign.
+        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-500">
+          The agreement was updated — please review and re-sign before continuing.
         </div>
       )}
 
-      <PdfAgreementView pdf={agreementPdf} height={600} />
+      {needsSign && !latestAgreement && (
+        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-500">
+          Read the agreement below, then sign at the bottom to access the rest of the app.
+        </div>
+      )}
 
-      {signing && (
-        <Suspense fallback={null}>
-          <PdfSignLazy pdf={agreementPdf} onClose={() => setSigning(false)} onComplete={handleSigned}
-            memberName={currentUser || ''} memberEmail={userEmail} />
-        </Suspense>
+      <PdfAgreementView pdf={agreementPdf} height={620} />
+
+      {needsSign && (
+        <div className="rounded-2xl border border-border-subtle bg-card p-5 space-y-4">
+          <h2 className="text-base font-black text-primary">Sign Agreement</h2>
+
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-1 w-4 h-4 accent-brand" />
+            <span className="text-sm text-secondary">I have read, understand, and agree to the terms of this agreement.</span>
+          </label>
+
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-muted mb-1">Printed Name</label>
+            <input type="text" value={printedName} onChange={(e) => setPrintedName(e.target.value)} placeholder="Full name"
+              className="w-full bg-surface-alt rounded-lg px-3 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-brand" />
+          </div>
+
+          <InlineSignaturePad onChange={setSignature} />
+
+          {error && <p className="text-xs text-red-500">{error}</p>}
+
+          <button onClick={handleSign} disabled={submitting}
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-brand text-on-brand text-sm font-bold hover:bg-brand-hover cursor-pointer disabled:opacity-50">
+            <Check size={14} /> {submitting ? 'Signing…' : 'Sign Agreement'}
+          </button>
+        </div>
       )}
     </div>
   );
 }
 
-const PdfSignLazy = lazy(() => import('../components/PdfAgreement'));
-
 /* ── Main Export ── */
 export default function TeamAgreement() {
   const { ownerMode } = useAuth();
-  return ownerMode ? <AgreementEditor /> : <TeamMemberAgreementView />;
+  return ownerMode ? <OwnerPdfAgreementView /> : <TeamMemberPdfAgreementView />;
 }

@@ -20,7 +20,7 @@ const SETTINGS_NAV = [
   { id: 'connections', label: 'Connections', icon: Plug, ownerOnly: true },
   { id: 'checklists', label: 'Checklists', icon: ClipboardCheck, ownerOnly: true },
   { id: 'team', label: 'Team', icon: Users, ownerOnly: true },
-  { id: 'account', label: 'Account', icon: LogOut },
+  { id: 'account', label: 'Account', icon: LogOut, hideForOwner: true },
 ];
 
 /* ─── Equipment Section ─── */
@@ -661,7 +661,7 @@ export function SettingsContent() { return null; }
 export default function Settings() {
   const { ownerMode, signOut } = useAuth();
   const [searchParams] = useSearchParams();
-  const visibleNav = SETTINGS_NAV.filter(i => ownerMode || !i.ownerOnly);
+  const visibleNav = SETTINGS_NAV.filter(i => (ownerMode || !i.ownerOnly) && !(ownerMode && i.hideForOwner));
   const [activeSection, setActiveSection] = useState(() => {
     if (searchParams.get('jobber')) return 'connections';
     return ownerMode ? 'business' : 'account';

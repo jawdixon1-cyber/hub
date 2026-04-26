@@ -2,10 +2,10 @@ import { useState } from 'react';
 import {
   ArrowLeft, Shield, CheckSquare, FileSignature,
   ClipboardCheck, LogIn, Pencil,
-  Check, ChevronRight, ChevronDown,
+  Check, ChevronRight, ChevronDown, X,
   Lightbulb, MessageSquare, GraduationCap, Trash2,
   Wrench, RotateCcw, AlertTriangle, UserCheck, UserX,
-  AlertOctagon,
+  AlertOctagon, DollarSign, Phone, Mail, User,
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -61,6 +61,41 @@ function getDefaultActionItems(stepId) {
   return data[stepId] || [];
 }
 
+function InlineEdit({ value, onSave, displayClass = '', inputClass = '', placeholder = '', format, type = 'text' }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || '');
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <input
+          type={type}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          autoFocus
+          onBlur={() => { onSave(draft); setEditing(false); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { onSave(draft); setEditing(false); }
+            if (e.key === 'Escape') { setDraft(value || ''); setEditing(false); }
+          }}
+          className={`flex-1 bg-card rounded-lg border border-brand px-2 py-1 outline-none ${inputClass}`}
+        />
+      </div>
+    );
+  }
+
+  const display = format ? format(value) : value;
+  return (
+    <button
+      onClick={() => { setDraft(value || ''); setEditing(true); }}
+      className={`group flex items-center gap-1.5 cursor-text ${displayClass}`}
+    >
+      <span className={display ? '' : 'text-muted italic font-normal'}>{display || placeholder}</span>
+      <Pencil size={11} className="text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
+    </button>
+  );
+}
+
 function getInitials(name) {
   if (!name) return '?';
   const parts = name.trim().split(/\s+/);
@@ -87,6 +122,8 @@ export default function TeamMemberDetail() {
   const setStrikes = useAppStore((s) => s.setStrikes);
   const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
   const agreementConfig = useAppStore((s) => s.agreementConfig);
+  const applications = useAppStore((s) => s.applications) || [];
+  const setApplications = useAppStore((s) => s.setApplications);
 
   const [signatureModal, setSignatureModal] = useState(null);
   const [showStrikeForm, setShowStrikeForm] = useState(false);
@@ -114,7 +151,14 @@ export default function TeamMemberDetail() {
   const email = decodeURIComponent(memberEmail);
   const memberData = permissions[email];
 
-  if (!memberData) {
+  // Trial applicant fallback — they have a Hub login but aren't yet in permissions
+  const trialApp = !memberData ? applications.find((a) =>
+    a.status === 'onboarding' &&
+    ((a.onboarding?.loginEmail || '').toLowerCase() === email.toLowerCase() ||
+     (a.data?.email || '').toLowerCase() === email.toLowerCase())
+  ) : null;
+
+  if (!memberData && !trialApp) {
     return (
       <div className="text-center py-12">
         <p className="text-muted">Team member not found.</p>
@@ -123,9 +167,32 @@ export default function TeamMemberDetail() {
     );
   }
 
-  const name = memberData.name;
-  const playbooks = memberData.playbooks || [];
-  const role = memberData.role || 'Team Member';
+  const isTrial = !!trialApp;
+  const name = memberData?.name || trialApp?.data?.name || [trialApp?.data?.first_name, trialApp?.data?.last_name].filter(Boolean).join(' ') || 'Applicant';
+  const playbooks = memberData?.playbooks || (isTrial ? ['service'] : []);
+  const role = memberData?.role || 'Team Member';
+  const phone = memberData?.phone || trialApp?.data?.phone || '';
+  const payRate = memberData?.payRate ?? trialApp?.onboarding?.trialPayRate ?? null;
+  const roleId = memberData?.roleId || trialApp?.onboarding?.roleId || null;
+
+  const rolesData = useAppStore((s) => s.roles);
+  const allRoles = (rolesData && rolesData.items) ? rolesData.items : [];
+  const roleName = roleId ? (allRoles.find((r) => r.id === roleId)?.name || null) : null;
+
+  const updateField = (field, value) => {
+    if (isTrial) {
+      // Map field names to applicant data shape
+      const appId = trialApp.id;
+      const updateApp = (next) => setApplications(applications.map((a) => a.id === appId ? next : a));
+      if (field === 'name') updateApp({ ...trialApp, data: { ...trialApp.data, name: value } });
+      else if (field === 'phone') updateApp({ ...trialApp, data: { ...trialApp.data, phone: value } });
+      else if (field === 'payRate') updateApp({ ...trialApp, onboarding: { ...trialApp.onboarding, trialPayRate: value } });
+      else if (field === 'roleId') updateApp({ ...trialApp, onboarding: { ...trialApp.onboarding, roleId: value } });
+      else updateApp({ ...trialApp, onboarding: { ...trialApp.onboarding, [field]: value } });
+    } else {
+      setPermissions((prev) => ({ ...prev, [email]: { ...prev[email], [field]: value } }));
+    }
+  };
 
   /* ── Data helpers ── */
 
@@ -338,107 +405,141 @@ export default function TeamMemberDetail() {
       {/* ── Profile Header ── */}
       <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6">
         <div className="flex items-start gap-4">
-          <div className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold shrink-0 ${
-            isFullyOnboarded ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-light text-brand-text-strong'
-          }`}>
+          <div className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold shrink-0 bg-brand-light text-brand-text-strong">
             {getInitials(name)}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold text-primary">{name}</h1>
-              {editingRole ? (
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    value={roleInput}
-                    onChange={(e) => setRoleInput(e.target.value)}
-                    className="px-2 py-0.5 rounded-lg border border-border-strong text-xs font-medium text-primary w-28 outline-none focus:ring-1 focus:ring-brand"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        setPermissions((prev) => ({ ...prev, [email]: { ...prev[email], role: roleInput.trim() || undefined } }));
-                        setEditingRole(false);
-                      }
-                      if (e.key === 'Escape') setEditingRole(false);
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      setPermissions((prev) => ({ ...prev, [email]: { ...prev[email], role: roleInput.trim() || undefined } }));
-                      setEditingRole(false);
-                    }}
-                    className="p-1 rounded-lg text-brand-text hover:bg-brand-light cursor-pointer"
-                  >
-                    <Check size={14} />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => { setRoleInput(role); setEditingRole(true); }}
-                  className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 hover:opacity-80 cursor-pointer"
-                  title="Click to edit role"
-                >
-                  {role}
-                </button>
-              )}
-              {isFullyOnboarded && (
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                  Onboarded
-                </span>
-              )}
-            </div>
+            <InlineEdit
+              value={name}
+              onSave={(v) => updateField('name', v.trim() || name)}
+              displayClass="text-2xl font-bold text-primary"
+              inputClass="text-2xl font-bold text-primary"
+              placeholder="Name"
+            />
             <p className="text-sm text-tertiary mt-0.5">{email}</p>
+            {isFullyOnboarded && (
+              <span className="inline-block mt-2 text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500">
+                Onboarded
+              </span>
+            )}
+          </div>
+        </div>
 
-            {/* Team badges */}
-            <div className="flex items-center gap-2 mt-3 flex-wrap">
-              {editPlaybooks ? (
-                <>
-                  {PLAYBOOK_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.key}
-                      type="button"
-                      onClick={() => togglePlaybook(opt.key)}
-                      className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors border cursor-pointer ${
-                        editPlaybooks.includes(opt.key)
-                          ? `${opt.color} border-current`
-                          : 'bg-surface text-muted border-border-default'
-                      }`}
-                    >
+        {/* Editable fields grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
+          {/* Role */}
+          <div className="rounded-xl border border-border-subtle bg-surface-alt/30 p-3">
+            <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted mb-1.5">
+              <Shield size={11} /> Role
+            </label>
+            <select
+              value={roleId || ''}
+              onChange={(e) => updateField('roleId', e.target.value || null)}
+              className="w-full bg-card rounded-lg border border-border-subtle px-3 py-2 text-sm font-semibold text-primary outline-none focus:ring-2 focus:ring-brand cursor-pointer"
+            >
+              <option value="">No role</option>
+              {allRoles.map((r) => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Pay rate */}
+          <div className="rounded-xl border border-border-subtle bg-surface-alt/30 p-3">
+            <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted mb-1.5">
+              <DollarSign size={11} /> Pay Rate
+            </label>
+            <InlineEdit
+              value={payRate ? String(payRate) : ''}
+              onSave={(v) => {
+                const n = parseFloat(v);
+                updateField('payRate', isNaN(n) ? null : n);
+              }}
+              displayClass="text-sm font-semibold text-primary"
+              inputClass="text-sm font-semibold text-primary"
+              placeholder="Not set"
+              format={(v) => v ? `$${parseFloat(v).toFixed(2)}/hr` : ''}
+              type="number"
+            />
+          </div>
+
+          {/* Phone */}
+          <div className="rounded-xl border border-border-subtle bg-surface-alt/30 p-3">
+            <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted mb-1.5">
+              <Phone size={11} /> Phone
+            </label>
+            <InlineEdit
+              value={phone}
+              onSave={(v) => updateField('phone', v.trim())}
+              displayClass="text-sm font-semibold text-primary"
+              inputClass="text-sm font-semibold text-primary"
+              placeholder="Not set"
+            />
+          </div>
+
+          {/* Email (read-only) */}
+          <div className="rounded-xl border border-border-subtle bg-surface-alt/30 p-3">
+            <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted mb-1.5">
+              <Mail size={11} /> Email
+            </label>
+            <p className="text-sm font-semibold text-primary truncate" title={email}>{email}</p>
+            <p className="text-[10px] text-muted mt-0.5">Linked to login — change in Supabase</p>
+          </div>
+        </div>
+
+        {/* Playbook access */}
+        <div className="mt-4 pt-4 border-t border-border-subtle">
+          <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted mb-2">
+            <CheckSquare size={11} /> Playbook Access
+          </label>
+          <div className="flex items-center gap-2 flex-wrap">
+            {editPlaybooks ? (
+              <>
+                {PLAYBOOK_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => togglePlaybook(opt.key)}
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors border cursor-pointer ${
+                      editPlaybooks.includes(opt.key)
+                        ? `${opt.color} border-current`
+                        : 'bg-surface text-muted border-border-default'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                <button onClick={savePlaybooks} className="p-1.5 rounded-lg text-brand-text hover:bg-brand-light cursor-pointer" title="Save">
+                  <Check size={16} />
+                </button>
+                <button onClick={() => setEditPlaybooks(null)} className="p-1.5 rounded-lg text-muted hover:bg-surface cursor-pointer" title="Cancel">
+                  <X size={14} />
+                </button>
+              </>
+            ) : (
+              <>
+                {playbooks.map((key) => {
+                  const opt = PLAYBOOK_OPTIONS.find((o) => o.key === key);
+                  return opt ? (
+                    <span key={key} className={`px-2.5 py-0.5 rounded-md text-xs font-medium ${opt.color}`}>
                       {opt.label}
-                    </button>
-                  ))}
-                  <button onClick={savePlaybooks} className="p-1.5 rounded-lg text-brand-text hover:bg-brand-light cursor-pointer" title="Save">
-                    <Check size={16} />
-                  </button>
-                  <button onClick={() => setEditPlaybooks(null)} className="p-1.5 rounded-lg text-muted hover:bg-surface cursor-pointer" title="Cancel">
-                    <ArrowLeft size={14} />
-                  </button>
-                </>
-              ) : (
-                <>
-                  {playbooks.map((key) => {
-                    const opt = PLAYBOOK_OPTIONS.find((o) => o.key === key);
-                    return opt ? (
-                      <span key={key} className={`px-2.5 py-0.5 rounded-md text-xs font-medium ${opt.color}`}>
-                        {opt.label}
-                      </span>
-                    ) : null;
-                  })}
-                  {playbooks.length === 0 && <span className="text-xs text-muted">No playbook access</span>}
-                  <button onClick={startEditPlaybooks} className="p-1 rounded-lg text-muted hover:text-brand-text hover:bg-brand-light transition-colors cursor-pointer" title="Edit permissions">
-                    <Pencil size={14} />
-                  </button>
-                </>
-              )}
-            </div>
+                    </span>
+                  ) : null;
+                })}
+                {playbooks.length === 0 && <span className="text-xs text-muted">No playbook access</span>}
+                <button onClick={startEditPlaybooks} className="p-1 rounded-lg text-muted hover:text-brand-text hover:bg-brand-light transition-colors cursor-pointer" title="Edit permissions">
+                  <Pencil size={14} />
+                </button>
+              </>
+            )}
           </div>
         </div>
 
         {/* Action buttons */}
-        <div className="flex justify-end gap-2 mt-3">
+        <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border-subtle">
           <button
             onClick={() => setConfirmRemove(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
           >
             <Trash2 size={13} />
             Remove from Team

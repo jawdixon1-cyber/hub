@@ -440,6 +440,17 @@ export default function Profile() {
             </div>
             <ChevronRight size={16} className="text-muted" />
           </button>
+          <button
+            onClick={handleSignOut}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-card border border-border-subtle text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+          >
+            <LogOut size={18} />
+            <div className="flex-1 text-left">
+              <p className="text-sm font-semibold">Sign Out</p>
+              <p className="text-[11px] text-muted">End your session on this device</p>
+            </div>
+            <ChevronRight size={16} className="text-muted" />
+          </button>
         </div>
       )}
 
@@ -452,6 +463,8 @@ export default function Profile() {
             memberName={currentUser || ''}
             memberEmail={userEmail}
             configOverride={getCurrentAgreementConfig(storeAgreementConfig, DEFAULT_SECTIONS, DEFAULT_FINAL_TEXT)}
+            roles={allRoles}
+            myRoleName={(allRoles.find((r) => r.id === (permissions[userEmail]?.roleId))?.name) || permissions[userEmail]?.role || ''}
           />
         </Suspense>
       )}

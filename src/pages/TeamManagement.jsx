@@ -58,6 +58,9 @@ export default function TeamManagement() {
   const trainingConfig = useAppStore((s) => s.trainingConfig);
   const strikes = useAppStore((s) => s.strikes);
   const presence = useAppStore((s) => s.presence);
+  const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
+  const agreementConfig = useAppStore((s) => s.agreementConfig);
+  const currentAgreementVersion = agreementConfig?.version || null;
 
   // Add member form state
   const [showForm, setShowForm] = useState(false);
@@ -71,6 +74,8 @@ export default function TeamManagement() {
   const [formLoading, setFormLoading] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [removeLoading, setRemoveLoading] = useState(false);
+  const [editingPayFor, setEditingPayFor] = useState(null);
+  const [payDraft, setPayDraft] = useState('');
 
   // Auth user list (for last sign-in info)
   const [authUsers, setAuthUsers] = useState([]);
@@ -104,12 +109,31 @@ export default function TeamManagement() {
     );
   }
 
-  const members = Object.entries(permissions).map(([memberEmail, data]) => ({
+  const realMembers = Object.entries(permissions).map(([memberEmail, data]) => ({
     email: memberEmail,
     name: data.name,
     playbooks: data.playbooks || [],
     roleId: data.roleId || null,
+    payRate: data.payRate || null,
   }));
+
+  // Trial applicants — already have a Hub login, awaiting hire decision
+  const applications = useAppStore((s) => s.applications) || [];
+  const trialMembers = applications
+    .filter((a) => a.status === 'onboarding' && (a.data?.email || a.onboarding?.loginEmail))
+    .map((a) => ({
+      email: (a.onboarding?.loginEmail || a.data?.email || '').toLowerCase(),
+      name: a.data?.name || [a.data?.first_name, a.data?.last_name].filter(Boolean).join(' ') || 'Applicant',
+      playbooks: ['service'],
+      roleId: a.onboarding?.roleId || null,
+      isTrial: true,
+      applicantId: a.id,
+      trialStart: a.onboarding?.trialStart || a.onboarding?.trialDate || null,
+      trialEnd: a.onboarding?.trialEnd || null,
+      payRate: a.onboarding?.trialPayRate || a.onboarding?.payRate || null,
+    }));
+
+  const members = [...realMembers, ...trialMembers];
 
   // Roles from store (for the role picker)
   const rolesData = useAppStore((s) => s.roles);
@@ -123,6 +147,24 @@ export default function TeamManagement() {
         roleId: newRoleId,
       },
     });
+  };
+
+  const setApplications = useAppStore((s) => s.setApplications);
+  const savePayRate = (member, rawValue) => {
+    const n = parseFloat(rawValue);
+    const value = isNaN(n) || n <= 0 ? null : n;
+    if (member.isTrial) {
+      setApplications(applications.map((a) => a.id === member.applicantId
+        ? { ...a, onboarding: { ...(a.onboarding || {}), trialPayRate: value } }
+        : a));
+    } else {
+      setPermissions({
+        ...permissions,
+        [member.email]: { ...permissions[member.email], payRate: value },
+      });
+    }
+    setEditingPayFor(null);
+    setPayDraft('');
   };
 
   // Helper to find auth user by email
@@ -344,46 +386,23 @@ export default function TeamManagement() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const [teamTab, setTeamTab] = useState('members');
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-bold text-primary">Team</h1>
-          {teamTab === 'members' && (
-            <button
-              onClick={() => { setShowForm(!showForm); if (showForm) resetForm(); }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand font-medium text-sm hover:bg-brand-hover transition-colors cursor-pointer"
-            >
-              {showForm ? <ChevronUp size={18} /> : <Plus size={18} />}
-              {showForm ? 'Close' : 'Add Member'}
-            </button>
-          )}
-        </div>
-        {/* Tabs */}
-        <div className="flex items-center gap-1 bg-surface-alt rounded-lg p-1">
-          <button onClick={() => setTeamTab('members')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold cursor-pointer ${teamTab === 'members' ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'}`}>
-            <Users size={14} /> Members
-          </button>
-          <button onClick={() => setTeamTab('agreement')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold cursor-pointer ${teamTab === 'agreement' ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-secondary'}`}>
-            <FileText size={14} /> Agreement
+          <button
+            onClick={() => { setShowForm(!showForm); if (showForm) resetForm(); }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand font-medium text-sm hover:bg-brand-hover transition-colors cursor-pointer"
+          >
+            {showForm ? <ChevronUp size={18} /> : <Plus size={18} />}
+            {showForm ? 'Close' : 'Add Member'}
           </button>
         </div>
       </div>
 
-      {teamTab === 'agreement' && (
-        <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="w-6 h-6 border-2 border-brand-light border-t-brand rounded-full animate-spin" /></div>}>
-          <TeamAgreement />
-        </Suspense>
-      )}
-
-      {teamTab === 'members' && (<>
       <div>
-
       {/* Add Member Form */}
       {showForm && (
         <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-6">
@@ -482,153 +501,92 @@ export default function TeamManagement() {
             const activeStrikeCount = (strikes || []).filter(
               (s) => s.memberEmail === member.email && s.issuedAt >= thirtyDaysAgo
             ).length;
-            const isResetOpen = resetTarget === member.email;
+            const roleName = member.roleId ? (allRoles.find((r) => r.id === member.roleId)?.name || null) : null;
+            const memberSigned = signedAgreements.some((a) => a.memberEmail === member.email && (!currentAgreementVersion || a.version === currentAgreementVersion));
 
             return (
-              <div key={member.email} className="space-y-0">
+              <div key={member.email + (member.isTrial ? '-trial' : '')} className="space-y-0">
                 <div className="flex items-center gap-2">
-                  <button
+                  <div
                     onClick={() => navigate(`/team/${encodeURIComponent(member.email)}`)}
-                    className="flex-1 bg-card rounded-2xl shadow-sm border border-border-subtle overflow-hidden flex items-center gap-3 p-4 sm:p-5 text-left cursor-pointer hover:border-border-strong hover:shadow-md transition-all group"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/team/${encodeURIComponent(member.email)}`); }}
+                    className="flex-1 bg-card rounded-2xl shadow-sm border border-border-subtle overflow-hidden flex items-center gap-4 px-5 py-4 text-left cursor-pointer hover:border-border-strong hover:shadow-md transition-all group"
                   >
-                    <div className="relative">
-                      <div className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold shrink-0 bg-brand-light text-brand-text-strong">
+                    <div className="relative shrink-0">
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center text-base font-bold bg-brand-light text-brand-text-strong">
                         {getInitials(member.name)}
                       </div>
                       {(() => {
                         const p = (presence || {})[member.email];
-                        const isOnline = p?.status === 'online' && p?.lastSeen && (Date.now() - new Date(p.lastSeen).getTime()) < 300000; // online + seen within 5 min
+                        const isOnline = p?.status === 'online' && p?.lastSeen && (Date.now() - new Date(p.lastSeen).getTime()) < 300000;
                         return <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-card ${isOnline ? 'bg-emerald-500' : 'bg-gray-400'}`} />;
                       })()}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold text-primary truncate">{member.name}</h3>
-                        {activeStrikeCount === 1 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500">1 strike</span>}
-                        {activeStrikeCount === 2 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-500">2 strikes</span>}
-                        {activeStrikeCount >= 3 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-500">3 STRIKES</span>}
-                      </div>
-                      <p className="text-xs text-muted truncate">{member.email}</p>
-                      {(() => {
-                        const p = (presence || {})[member.email];
-                        const isOnline = p?.status === 'online' && p?.lastSeen && (Date.now() - new Date(p.lastSeen).getTime()) < 300000;
 
-                        const fmtTime = (iso) => {
-                          if (!iso) return '';
-                          const d = new Date(iso);
-                          return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
-                        };
-
-                        const fmtDuration = (startIso) => {
-                          if (!startIso) return '';
-                          const mins = Math.round((Date.now() - new Date(startIso).getTime()) / 60000);
-                          if (mins < 1) return 'just now';
-                          if (mins < 60) return `${mins}m`;
-                          const hrs = Math.floor(mins / 60);
-                          const rm = mins % 60;
-                          return rm > 0 ? `${hrs}h ${rm}m` : `${hrs}h`;
-                        };
-
-                        if (isOnline) {
-                          return (
-                            <p className="text-[10px] text-emerald-500 font-semibold mt-1">
-                              Active now · {fmtDuration(p.sessionStart)} {p.sessionStart ? `(since ${fmtTime(p.sessionStart)})` : ''}
-                            </p>
-                          );
-                        }
-                        if (p?.lastSeen) {
-                          return <p className="text-[10px] text-muted mt-1">Last active: {fmtTime(p.lastSeen)}</p>;
-                        }
-                        if (authUser?.lastSignIn) {
-                          return <p className="text-[10px] text-muted mt-1">Last login: {fmtTime(authUser.lastSignIn)}</p>;
-                        }
-                        return null;
-                      })()}
+                    <div className="flex-1 min-w-0 flex items-center gap-3">
+                      <h3 className="font-bold text-lg text-primary truncate">{member.name}</h3>
+                      {activeStrikeCount === 1 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500">1 strike</span>}
+                      {activeStrikeCount === 2 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-500">2 strikes</span>}
+                      {activeStrikeCount >= 3 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-500">3 STRIKES</span>}
                     </div>
 
-                    <ChevronRight size={18} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />
-                  </button>
+                    <div className="hidden sm:flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {editingPayFor === member.email ? (
+                        <div className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-card border border-brand">
+                          <span className="text-xs text-muted">$</span>
+                          <input
+                            type="number"
+                            step="0.25"
+                            min="0"
+                            autoFocus
+                            value={payDraft}
+                            onChange={(e) => setPayDraft(e.target.value)}
+                            onBlur={() => savePayRate(member, payDraft)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') savePayRate(member, payDraft);
+                              if (e.key === 'Escape') { setEditingPayFor(null); setPayDraft(''); }
+                            }}
+                            className="w-16 bg-transparent text-xs font-bold text-primary outline-none"
+                            placeholder="16.00"
+                          />
+                          <span className="text-xs text-muted">/hr</span>
+                        </div>
+                      ) : member.payRate ? (
+                        <button
+                          onClick={() => { setEditingPayFor(member.email); setPayDraft(String(member.payRate)); }}
+                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 cursor-pointer"
+                        >
+                          ${Number(member.payRate).toFixed(2)}/hr
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => { setEditingPayFor(member.email); setPayDraft(''); }}
+                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 cursor-pointer"
+                        >
+                          Set pay
+                        </button>
+                      )}
+                      {roleName ? (
+                        <span className="text-xs font-bold px-3 py-1.5 rounded-lg bg-surface-alt text-secondary border border-border-subtle">{roleName}</span>
+                      ) : (
+                        <span className="text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-500">No role</span>
+                      )}
+                      {memberSigned ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-500">
+                          <Check size={12} /> Signed
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-red-500/15 text-red-500">
+                          <AlertCircle size={12} /> Not signed
+                        </span>
+                      )}
+                    </div>
 
-                  {/* Role picker */}
-                  {allRoles.length > 0 && (
-                    <select
-                      value={member.roleId || ''}
-                      onChange={(e) => updateMemberRole(member.email, e.target.value || null)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="shrink-0 rounded-xl border border-border-subtle bg-card px-3 py-2.5 text-xs font-semibold text-secondary hover:bg-surface-alt cursor-pointer outline-none focus:ring-2 focus:ring-brand"
-                      title="Role"
-                    >
-                      <option value="">No role</option>
-                      {allRoles.map((r) => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))}
-                    </select>
-                  )}
-
-                  {/* Action buttons */}
-                  <div className="flex flex-col gap-1 shrink-0">
-                    <button
-                      onClick={() => {
-                        if (isResetOpen) {
-                          setResetTarget(null);
-                          setResetPassword('');
-                          setResetMsg('');
-                        } else {
-                          setResetTarget(member.email);
-                          setResetPassword('');
-                          setResetMsg('');
-                        }
-                      }}
-                      className="p-2.5 rounded-xl text-muted hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                      title="Reset password"
-                    >
-                      <KeyRound size={16} />
-                    </button>
-                    <button
-                      onClick={() => setConfirmRemove(member.email)}
-                      className="p-2.5 rounded-xl text-muted hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                      title="Remove member"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <ChevronRight size={20} className="text-muted shrink-0 group-hover:text-secondary transition-colors" />
                   </div>
                 </div>
-
-                {/* Inline Reset Password */}
-                {isResetOpen && (
-                  <div className="ml-13 mt-2 mb-1 bg-blue-50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800 p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-semibold text-blue-700 dark:text-blue-300">Reset Password for {member.name}</h4>
-                      <button
-                        onClick={() => { setResetTarget(null); setResetPassword(''); setResetMsg(''); }}
-                        className="text-blue-400 hover:text-blue-600 cursor-pointer"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={resetPassword}
-                        onChange={(e) => setResetPassword(e.target.value)}
-                        placeholder="New password (min 6 chars)"
-                        className="flex-1 rounded-lg border border-blue-200 dark:border-blue-700 px-3 py-2 text-sm text-primary bg-white dark:bg-gray-900 placeholder-placeholder-muted focus:ring-2 focus:ring-blue-400 outline-none"
-                      />
-                      <button
-                        onClick={() => handleResetPassword(member.email)}
-                        disabled={resetLoading}
-                        className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 cursor-pointer"
-                      >
-                        {resetLoading ? '...' : 'Reset'}
-                      </button>
-                    </div>
-                    {resetMsg && (
-                      <p className={`mt-2 text-xs ${resetMsg.includes('success') ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {resetMsg}
-                      </p>
-                    )}
-                  </div>
-                )}
               </div>
             );
           })}
@@ -671,7 +629,13 @@ export default function TeamManagement() {
         </div>
       )}
     </div>
-    </>)}
+
+    {/* Team Agreement — embedded below members */}
+    <div className="pt-4 border-t border-border-subtle">
+      <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="w-6 h-6 border-2 border-brand-light border-t-brand rounded-full animate-spin" /></div>}>
+        <TeamAgreement />
+      </Suspense>
+    </div>
     </div>
   );
 }

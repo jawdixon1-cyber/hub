@@ -595,6 +595,113 @@ async function handleYTDRevenue(req, res) {
 
 // ── Live Crew Status (who's clocked in right now) ──
 
+// Lightweight read-only today's visits for the Schedule tab.
+// Cached per-day for 60s so the schedule can poll without hammering Jobber.
+const todayVisitsCache = new Map(); // date -> { data, time }
+const TODAY_VISITS_TTL = 60 * 1000;
+
+async function handleTodayVisits(req, res) {
+  const today = req.query.date || new Date().toISOString().split('T')[0];
+  const cached = todayVisitsCache.get(today);
+  if (cached && Date.now() - cached.time < TODAY_VISITS_TTL) {
+    return res.json({ visits: cached.data, cached: true });
+  }
+  try {
+    const startISO = new Date(today + 'T00:00:00').toISOString();
+    const endPlusOne = new Date(today + 'T00:00:00');
+    endPlusOne.setDate(endPlusOne.getDate() + 1);
+    const endISO = endPlusOne.toISOString();
+    const data = await jobberQuery(`{
+      visits(first: 100, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) {
+        nodes {
+          id title startAt endAt completedAt
+          property { address { street1 city province postalCode } }
+          job {
+            id jobNumber jobType jobStatus
+            client { firstName lastName }
+          }
+          assignedUsers { nodes { id name { full } } }
+        }
+      }
+    }`);
+    const visits = (data.visits?.nodes || []).map((v) => ({
+      id: v.id,
+      title: v.title || '',
+      startAt: v.startAt,
+      endAt: v.endAt,
+      completedAt: v.completedAt,
+      jobNumber: v.job?.jobNumber || null,
+      jobType: v.job?.jobType || null,
+      jobStatus: v.job?.jobStatus || null,
+      clientName: v.job?.client ? `${v.job.client.firstName || ''} ${v.job.client.lastName || ''}`.trim() : 'Unknown',
+      address: v.property?.address ? [v.property.address.street1, v.property.address.city, v.property.address.province].filter(Boolean).join(', ') : '',
+      assignees: (v.assignedUsers?.nodes || []).map((u) => u.name?.full || u.id).filter(Boolean),
+    })).sort((a, b) => new Date(a.startAt || 0) - new Date(b.startAt || 0));
+    todayVisitsCache.set(today, { data: visits, time: Date.now() });
+    return res.json({ visits, cached: false });
+  } catch (err) {
+    console.error('[today-visits]', err.message);
+    if (cached) return res.json({ visits: cached.data, cached: true, stale: true });
+    if (err.code === 'JOBBER_DISCONNECTED') return res.status(401).json({ error: err.message, code: 'JOBBER_DISCONNECTED' });
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+// ── Month-range Jobber visits for the Schedule calendar ──
+// Cached per (start, end) key for 10 min. On throttle, returns last cached
+// version with stale: true so the calendar never goes blank.
+const monthVisitsCache = new Map(); // "start|end" -> { data, time }
+const MONTH_VISITS_TTL = 10 * 60 * 1000;
+
+async function handleMonthVisits(req, res) {
+  const startStr = req.query.start; // YYYY-MM-DD
+  const endStr = req.query.end;     // YYYY-MM-DD (exclusive)
+  if (!startStr || !endStr) return res.status(400).json({ error: 'start and end (YYYY-MM-DD) query params required' });
+
+  const cacheKey = `${startStr}|${endStr}`;
+  const cached = monthVisitsCache.get(cacheKey);
+  if (cached && Date.now() - cached.time < MONTH_VISITS_TTL) {
+    return res.json({ visits: cached.data, cached: true });
+  }
+  try {
+    const startISO = new Date(startStr + 'T00:00:00').toISOString();
+    const endISO = new Date(endStr + 'T00:00:00').toISOString();
+    const data = await jobberQuery(`{
+      visits(first: 200, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) {
+        nodes {
+          id title startAt endAt completedAt
+          property { address { street1 city province postalCode } }
+          job {
+            id jobNumber jobType jobStatus
+            client { firstName lastName }
+          }
+          assignedUsers { nodes { id name { full } } }
+        }
+      }
+    }`);
+    const visits = (data.visits?.nodes || []).map((v) => ({
+      id: v.id,
+      title: v.title || '',
+      startAt: v.startAt,
+      endAt: v.endAt,
+      completedAt: v.completedAt,
+      jobNumber: v.job?.jobNumber || null,
+      jobType: v.job?.jobType || null,
+      jobStatus: v.job?.jobStatus || null,
+      clientName: v.job?.client ? `${v.job.client.firstName || ''} ${v.job.client.lastName || ''}`.trim() : 'Unknown',
+      address: v.property?.address ? [v.property.address.street1, v.property.address.city, v.property.address.province].filter(Boolean).join(', ') : '',
+      assignees: (v.assignedUsers?.nodes || []).map((u) => u.name?.full || u.id).filter(Boolean),
+    })).sort((a, b) => new Date(a.startAt || 0) - new Date(b.startAt || 0));
+    monthVisitsCache.set(cacheKey, { data: visits, time: Date.now() });
+    return res.json({ visits, cached: false });
+  } catch (err) {
+    console.error('[month-visits]', err.message);
+    if (cached) return res.json({ visits: cached.data, cached: true, stale: true, error: err.message });
+    if (err.code === 'JOBBER_DISCONNECTED') return res.status(401).json({ error: err.message, code: 'JOBBER_DISCONNECTED' });
+    return res.status(500).json({ error: err.message });
+  }
+}
+
 async function handleCrewStatus(req, res) {
   const todayISO = new Date().toISOString().split('T')[0] + 'T00:00:00Z';
   const data = await jobberQuery(`{ timeSheetEntries(first: 100, filter: { startAt: { after: "${todayISO}" } }) { nodes { startAt endAt duration user { name { full } } job { id jobNumber title client { firstName lastName } } } } }`);
@@ -645,6 +752,8 @@ export default async function handler(req, res) {
     if (action === 'clients') return handleClientSearch(req, res);
     if (action === 'all-clients') return handleAllClients(req, res);
     if (action === 'labor') return handleLaborData(req, res);
+    if (action === 'today-visits') return handleTodayVisits(req, res);
+    if (action === 'month-visits') return handleMonthVisits(req, res);
     if (action === 'ytd-revenue') return handleYTDRevenue(req, res);
     return res.status(400).json({ error: 'action param required: status | crew-status | clients | labor | ytd-revenue' });
   } catch (err) {

@@ -227,7 +227,7 @@ export function PdfAgreementView({ pdf, height = 600 }) {
           <Download size={11} /> Download
         </a>
       </div>
-      <iframe src={pdf.url} title="Agreement" style={{ width: '100%', height, border: 0 }} />
+      <iframe src={`${pdf.url}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`} title="Agreement" style={{ width: '100%', height, border: 0 }} />
     </div>
   );
 }

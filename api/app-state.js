@@ -50,6 +50,34 @@ async function handleTeamAuth(req, res) {
       if (error) return res.status(400).json({ error: error.message });
       return res.json({ success: true });
     }
+    case 'updateApplicantOnboarding': {
+      // Patch a single applicant's onboarding object. Lets the applicant themselves
+      // save check-offs (Jobber activated, payroll done, emergency contact, etc.)
+      // without needing RLS write access to the full app_state row.
+      const { applicantId, patch } = req.body;
+      if (!applicantId || !patch) return res.status(400).json({ error: 'applicantId and patch required' });
+      const { data: row } = await db.from('app_state').select('value, org_id').eq('key', 'greenteam-applications').maybeSingle();
+      const current = row?.value || [];
+      const next = current.map((a) => a.id === applicantId ? { ...a, onboarding: { ...(a.onboarding || {}), ...patch } } : a);
+      const payload = { key: 'greenteam-applications', value: next, updated_at: new Date().toISOString() };
+      if (row?.org_id) payload.org_id = row.org_id;
+      const { error } = await db.from('app_state').upsert(payload, { onConflict: 'key' });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+    case 'applicantSignAgreement': {
+      // Applicant signs the team agreement — appends to greenteam-signedAgreements.
+      const { record } = req.body;
+      if (!record || !record.memberEmail) return res.status(400).json({ error: 'record with memberEmail required' });
+      const { data: row } = await db.from('app_state').select('value, org_id').eq('key', 'greenteam-signedAgreements').maybeSingle();
+      const current = Array.isArray(row?.value) ? row.value : [];
+      const next = [...current, record];
+      const payload = { key: 'greenteam-signedAgreements', value: next, updated_at: new Date().toISOString() };
+      if (row?.org_id) payload.org_id = row.org_id;
+      const { error } = await db.from('app_state').upsert(payload, { onConflict: 'key' });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
     case 'promoteApplicantToMember': {
       // Flip a user's role from 'applicant' to 'member' so they get Hub access instead of /onboard.
       const { email } = req.body;

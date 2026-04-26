@@ -37,6 +37,7 @@ import {
   MessageSquare,
   Loader2,
   BookOpen,
+  Target,
 } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
 
@@ -1836,6 +1837,14 @@ function ApplicationsTab() {
                       </select>
                     </div>
                     <p className="text-xs text-muted mt-1">{new Date(selected.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                    {(() => {
+                      const ts = selected.onboarding?.trialStart || selected.onboarding?.trialDate;
+                      const te = selected.onboarding?.trialEnd;
+                      if (!ts) return null;
+                      const fmt = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                      const label = te && te !== ts ? `${fmt(ts)} – ${fmt(te)}` : fmt(ts);
+                      return <p className="text-xs text-cyan-400 font-semibold mt-0.5">Trial · {label}</p>;
+                    })()}
                   </div>
                 </div>
 
@@ -1981,6 +1990,17 @@ function ApplicationsTab() {
                     </div>
                   );
                 })()}
+
+                {/* Skip onboarding — grant full Hub access while keeping trial status */}
+                {selected.status === 'onboarding' && !selected.onboarding?.skippedOnboarding && (
+                  <SkipOnboardingPanel
+                    applicant={selected}
+                    onDone={(next) => {
+                      setApplications(applications.map((a) => a.id === selected.id ? next : a));
+                      setSelected(next);
+                    }}
+                  />
+                )}
 
                 {/* Trial Agreement — show at Trial Scheduled + Trial Day */}
                 {selected.status === 'onboarding' && (
@@ -2482,6 +2502,8 @@ function TrialSetupModal({ applicant, onClose, onComplete }) {
   const [credentials, setCredentials] = useState(null);
   const [jobberDone, setJobberDone] = useState(false);
   const [payrollDone, setPayrollDone] = useState(false);
+  const [payRate, setPayRate] = useState('16');
+  const [role, setRole] = useState('Team Member');
   const [trialStart, setTrialStart] = useState('');
   const [trialEnd, setTrialEnd] = useState('');
   const [copiedField, setCopiedField] = useState(null);
@@ -2520,15 +2542,17 @@ function TrialSetupModal({ applicant, onClose, onComplete }) {
 
   const fmtDateLong = (iso) => iso ? new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) : '';
 
-  const smsMessage = `Hey ${firstName || 'there'}, you're locked in for your trial at Hey Jude's Lawn Care from ${fmtDateLong(trialStart)} through ${fmtDateLong(trialEnd)}. Before day 1, finish your onboarding here — takes about 10 min:
+  const smsMessage = `Hey ${firstName || 'there'}, you're locked in for your trial at Hey Jude's Lawn Care from ${fmtDateLong(trialStart)} through ${fmtDateLong(trialEnd)}. You'll trial as a ${role}${validPay ? ` at $${payNum.toFixed(2)}/hr` : ''}. Before day 1, finish your onboarding here — takes about 10 min:
 
 hub.heyjudeslawncare.com
 Email: ${credentials?.email || email}
 Password: ${credentials?.password || 'Password123!'}
 
-You'll sign our team agreement, activate your Jobber invite (check your email), and finish your payroll form. Text me if anything's weird.`;
+You'll sign our team agreement, activate your Jobber invite (check your email), and finish your ADP payroll form. Text me if anything's weird.`;
 
-  const allDone = !!credentials && jobberDone && payrollDone && trialStart && trialEnd && textedDone;
+  const payNum = parseFloat(payRate);
+  const validPay = !isNaN(payNum) && payNum > 0;
+  const allDone = !!credentials && jobberDone && payrollDone && trialStart && trialEnd && textedDone && validPay && role;
 
   const handleDone = () => {
     onComplete({
@@ -2542,6 +2566,8 @@ You'll sign our team agreement, activate your Jobber invite (check your email), 
         credentials,
         jobberInvited: jobberDone,
         payrollInvited: payrollDone,
+        trialPayRate: payNum,
+        trialRole: role,
         createdAt: new Date().toISOString(),
       },
     });
@@ -2641,19 +2667,40 @@ You'll sign our team agreement, activate your Jobber invite (check your email), 
             </div>
           </div>
 
-          {/* STEP 4: Trial dates */}
+          {/* STEP 4: Set trial terms */}
           <div>
-            <StepHeader n={4} label="Pick trial dates" done={!!trialStart && !!trialEnd} />
-            <div className="pl-10 grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] font-black text-muted uppercase tracking-wider mb-1.5">Trial start</label>
-                <input type="date" value={trialStart} onChange={(e) => handleStartChange(e.target.value)}
-                  className="w-full bg-surface-alt rounded-lg px-3 py-2 text-sm text-primary focus:outline-none focus:ring-1 focus:ring-border-default" />
+            <StepHeader n={4} label="Set trial terms" done={!!trialStart && !!trialEnd && validPay && !!role} />
+            <div className="pl-10 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-muted uppercase tracking-wider mb-1.5">Trial start</label>
+                  <input type="date" value={trialStart} onChange={(e) => handleStartChange(e.target.value)}
+                    className="w-full bg-surface-alt rounded-lg px-3 py-2 text-sm text-primary focus:outline-none focus:ring-1 focus:ring-border-default" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-muted uppercase tracking-wider mb-1.5">Trial end</label>
+                  <input type="date" value={trialEnd} onChange={(e) => setTrialEnd(e.target.value)}
+                    className="w-full bg-surface-alt rounded-lg px-3 py-2 text-sm text-primary focus:outline-none focus:ring-1 focus:ring-border-default" />
+                </div>
               </div>
-              <div>
-                <label className="block text-[10px] font-black text-muted uppercase tracking-wider mb-1.5">Trial end</label>
-                <input type="date" value={trialEnd} onChange={(e) => setTrialEnd(e.target.value)}
-                  className="w-full bg-surface-alt rounded-lg px-3 py-2 text-sm text-primary focus:outline-none focus:ring-1 focus:ring-border-default" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-muted uppercase tracking-wider mb-1.5">Role</label>
+                  <select value={role} onChange={(e) => setRole(e.target.value)}
+                    className="w-full bg-surface-alt rounded-lg px-3 py-2 text-sm text-primary focus:outline-none focus:ring-1 focus:ring-border-default cursor-pointer">
+                    <option value="Team Member">Team Member</option>
+                    <option value="Team Lead">Team Lead</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-muted uppercase tracking-wider mb-1.5">Trial pay</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm">$</span>
+                    <input type="number" step="0.25" min="0" value={payRate} onChange={(e) => setPayRate(e.target.value)}
+                      className="w-full bg-surface-alt rounded-lg pl-7 pr-12 py-2 text-sm text-primary focus:outline-none focus:ring-1 focus:ring-border-default" />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted text-[10px]">/ hr</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -2791,6 +2838,74 @@ function PhoneScreenEditor({ questions, onSave, onClose }) {
 }
 
 /* ── Trial Agreement Panel ── */
+function SkipOnboardingPanel({ applicant, onDone }) {
+  const permissions = useAppStore((s) => s.permissions) || {};
+  const setPermissions = useAppStore((s) => s.setPermissions);
+  const rolesData = useAppStore((s) => s.roles);
+  const allRoles = (rolesData && rolesData.items) ? rolesData.items : [];
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState(null);
+
+  const d = applicant.data || {};
+  const email = (d.email || '').toLowerCase();
+  const name = d.name || [d.first_name, d.last_name].filter(Boolean).join(' ');
+  const trialRole = applicant.onboarding?.trialRole;
+  const trialPay = applicant.onboarding?.trialPayRate;
+  const roleMatch = allRoles.find((r) => r.name === trialRole) || null;
+
+  const handleSkip = async () => {
+    setWorking(true); setError(null);
+    try {
+      // Promote their Supabase role → member so they skip /onboard and see the full Hub
+      const res = await fetch('/api/app-state?key=team-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'promoteApplicantToMember', email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to promote');
+      // Add to permissions so the access gate lets them in
+      setPermissions({
+        ...permissions,
+        [email]: {
+          ...(permissions[email] || {}),
+          name,
+          payRate: trialPay || (permissions[email]?.payRate),
+          roleId: roleMatch?.id || permissions[email]?.roleId,
+          role: trialRole || permissions[email]?.role,
+        },
+      });
+      onDone({
+        ...applicant,
+        onboarding: {
+          ...(applicant.onboarding || {}),
+          skippedOnboarding: true,
+          skippedAt: new Date().toISOString(),
+        },
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-start gap-3">
+      <Target size={16} className="text-amber-400 shrink-0 mt-0.5" />
+      <div className="flex-1">
+        <p className="text-sm font-bold text-amber-400">Skip the self-onboarding view</p>
+        <p className="text-xs text-muted mt-1">Give them full Hub access now. They'll still be marked as Trial — this just bypasses the onboarding checklist page so they see the Hub like a regular team member.</p>
+        {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+      </div>
+      <button onClick={handleSkip} disabled={working}
+        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 text-black hover:bg-amber-400 disabled:opacity-50 cursor-pointer shrink-0">
+        {working ? 'Working…' : 'Skip onboarding'}
+      </button>
+    </div>
+  );
+}
+
 function TrialAgreementPanel({ applicant, onUpdate }) {
   const template = useAppStore((s) => s.trialAgreement);
   const [signing, setSigning] = useState(false);

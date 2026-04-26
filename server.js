@@ -13,6 +13,8 @@ import qbAuth from './lib/qb-auth.js';
 import qbCallback from './lib/qb-callback.js';
 import qbData from './api/qb-data.js';
 import jobberDataHandler from './api/jobber-data.js';
+import hubSyncHandler from './api/hub-sync.js';
+import messagingHandler from './api/messaging.js';
 import teamAuthHandler from './lib/teamAuth.js';
 import ghlHandler from './lib/ghlHandler.js';
 import requestWebhook from './api/webhooks/request.js';
@@ -44,6 +46,12 @@ app.all('/api/qb-data', qbData);
 
 // Jobber data (clients search + labor data + refresh)
 app.all('/api/jobber-data', jobberDataHandler);
+
+// Hub sync — pulls Jobber → canonical hub_* tables
+app.all('/api/hub-sync', hubSyncHandler);
+
+// Messaging + storage uploads (PDF agreement, attachments, etc.)
+app.all('/api/messaging', messagingHandler);
 
 // Team auth management
 app.post('/api/team-auth', teamAuthHandler);

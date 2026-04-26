@@ -42,8 +42,6 @@ import { useAuth } from './contexts/AuthContext';
 import { AppStoreProvider, useAppStore } from './store/AppStoreContext';
 import { getCurrentAgreementVersion } from './data/employmentAgreement';
 import LoginForm from './components/LoginForm';
-import IdeaBank from './components/IdeaBank';
-import MessagesButton from './components/MessagesButton';
 
 /* ─── Lazy-loaded pages (code-split per route) ─── */
 const Home = lazy(() => import('./pages/Home'));
@@ -112,10 +110,14 @@ const OPERATIONS_ITEMS = [
   { id: 'payments', path: '/payments', label: 'Payments', icon: CreditCard },
 ];
 
-const OWNER_ITEMS = [
-  { id: 'guides-gm', path: '/guides?role=gm', label: 'Playbooks', icon: BookOpen },
+const OWNER_TOOLS_ITEMS = [
+  { id: 'guides', path: '/guides', label: 'Playbooks', icon: BookOpen },
   { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
   { id: 'insights', path: '/insights', label: 'Insights', icon: BarChart3 },
+  { id: 'messaging', path: '/messages', label: 'Messaging', icon: MessageSquare },
+  { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
+  { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
+  { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
 ];
 
 
@@ -315,6 +317,92 @@ function CreateButton({ collapsed, onNav }) {
   );
 }
 
+/* ─── Owner Settings Menu (Jobber-style dropdown) ─── */
+
+function OwnerSettingsMenu({ collapsed, currentUser, userEmail, onNav, onSignOut, isActivePath }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const popRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (popRef.current && !popRef.current.contains(e.target) && !btnRef.current?.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const handleOpen = () => {
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.top - 8, left: r.right + 8 });
+    }
+    setOpen((o) => !o);
+  };
+
+  const handleNav = (path) => {
+    onNav(path);
+    setOpen(false);
+  };
+
+  const isActive = isActivePath('/settings') || isActivePath('/profile') || isActivePath('/team');
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={handleOpen}
+        title="Settings"
+        className={`w-full flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+          isActive || open
+            ? 'bg-brand-light text-brand-text-strong'
+            : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+        }`}
+      >
+        <SettingsIcon size={20} className="shrink-0" />
+        {!collapsed && <span>Settings</span>}
+      </button>
+
+      {open && (
+        <div
+          ref={popRef}
+          className="fixed z-[100] w-72 bg-card border border-border-subtle rounded-xl shadow-2xl py-2"
+          style={{ bottom: window.innerHeight - pos.top, left: pos.left }}
+        >
+          <div className="px-4 py-3 border-b border-border-subtle">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-brand-light text-brand-text-strong flex items-center justify-center text-sm font-bold shrink-0">
+                {getInitials(currentUser)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-primary truncate">{currentUser}</p>
+                <p className="text-xs text-tertiary truncate">{userEmail}</p>
+              </div>
+            </div>
+          </div>
+          <div className="py-1">
+            <button onClick={() => handleNav('/settings')} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              Settings
+            </button>
+            <button onClick={() => handleNav('/team')} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              Manage Team
+            </button>
+          </div>
+          <div className="border-t border-border-subtle py-1">
+            <button onClick={() => { setOpen(false); onSignOut(); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              Log Out
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ─── AppShell (inner) — sidebar + main content ─── */
 
 function getInitials(name) {
@@ -325,7 +413,7 @@ function getInitials(name) {
 }
 
 function AppShell() {
-  const { user, currentUser, ownerMode } = useAuth();
+  const { user, currentUser, ownerMode, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -352,14 +440,16 @@ function AppShell() {
     : (permissions[userEmail]?.playbooks || ['service']);
 
   // ── Agreement gate for team members ──
+  // PDF-only flow: if owner has uploaded a PDF, every team member must sign that
+  // exact version before they can use the app. Owners are exempt.
   const signedAgreements = useAppStore((s) => s.signedAgreements) || [];
-  const agreementConfig = useAppStore((s) => s.agreementConfig);
-  const currentAgreementVersion = getCurrentAgreementVersion(agreementConfig);
+  const agreementPdf = useAppStore((s) => s.agreementPdf);
+  const currentAgreementVersion = agreementPdf?.version || null;
 
-  const hasSignedCurrent = ownerMode || signedAgreements.some(
+  const hasSignedCurrent = ownerMode || !agreementPdf || signedAgreements.some(
     (a) => a.memberEmail === userEmail && a.version === currentAgreementVersion
   );
-  const needsAgreement = !ownerMode && !hasSignedCurrent;
+  const needsAgreement = !ownerMode && !!agreementPdf && !hasSignedCurrent;
 
   // Force navigate to agreement page if not signed (allow profile for sign out)
   useEffect(() => {
@@ -417,8 +507,7 @@ function AppShell() {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [teamToolsOpen, setTeamToolsOpen] = useState(false);
-  const [ownerToolsOpen, setOwnerToolsOpen] = useState(true);
+  const [teamToolsOpen, setTeamToolsOpen] = useState(true);
   const [operationsOpen, setOperationsOpen] = useState(false);
 
   const toggleSidebar = () => {
@@ -451,7 +540,6 @@ function AppShell() {
   // Sidebar nav renderer (shared between desktop & mobile)
   const renderSidebarNav = (collapsed) => (
     <nav className="flex-1 overflow-y-auto">
-      {ownerMode && <CreateButton collapsed={collapsed} onNav={handleNav} />}
       <div className="py-3 px-2 space-y-1">
       {NAV_ITEMS.filter((item) => !item.ownerOnly || ownerMode).map((item) => {
         const Icon = item.icon;
@@ -477,7 +565,7 @@ function AppShell() {
       {!ownerMode && (
         <>
           <div className="h-px bg-border-subtle my-3 mx-2" />
-          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Team Tools</p>}
+          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Tools</p>}
           {TEAM_TOOLS_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
@@ -500,9 +588,12 @@ function AppShell() {
           {!collapsed && (
             <button onClick={() => setOperationsOpen((o) => !o)}
               className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
-              <span>Operations</span>
+              <span>Building</span>
               <ChevronDown size={14} className={`transition-transform ${operationsOpen ? 'rotate-180' : ''}`} />
             </button>
+          )}
+          {(operationsOpen || collapsed) && (
+            <CreateButton collapsed={collapsed} onNav={handleNav} />
           )}
           {(operationsOpen || collapsed) && OPERATIONS_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -526,41 +617,13 @@ function AppShell() {
 
           <div className="h-px bg-border-subtle my-3 mx-2" />
           {!collapsed && (
-            <button onClick={() => setOwnerToolsOpen((o) => !o)}
-              className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
-              <span>Owner Tools</span>
-              <ChevronDown size={14} className={`transition-transform ${ownerToolsOpen ? 'rotate-180' : ''}`} />
-            </button>
-          )}
-          {(ownerToolsOpen || collapsed) && OWNER_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleNav(item.path)}
-                title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                  active
-                    ? 'bg-brand-light text-brand-text-strong'
-                    : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-                }`}
-              >
-                <Icon size={18} className="shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
-            );
-          })}
-
-          <div className="h-px bg-border-subtle my-3 mx-2" />
-          {!collapsed && (
             <button onClick={() => setTeamToolsOpen((o) => !o)}
               className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
-              <span>Team Tools</span>
+              <span>Tools</span>
               <ChevronDown size={14} className={`transition-transform ${teamToolsOpen ? 'rotate-180' : ''}`} />
             </button>
           )}
-          {(teamToolsOpen || collapsed) && TEAM_TOOLS_ITEMS.map((item) => {
+          {(teamToolsOpen || collapsed) && OWNER_TOOLS_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
             return (
@@ -590,13 +653,22 @@ function AppShell() {
 
         {renderSidebarNav(sidebarCollapsed)}
 
-        {/* Profile */}
+        {/* Settings / Profile */}
         <div className="border-t border-border-subtle p-2 shrink-0">
-          <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-1'}`}>
+          {ownerMode ? (
+            <OwnerSettingsMenu
+              collapsed={sidebarCollapsed}
+              currentUser={currentUser}
+              userEmail={user?.email}
+              onNav={navigate}
+              onSignOut={signOut}
+              isActivePath={(p) => location.pathname === p}
+            />
+          ) : (
             <button
               onClick={() => navigate('/profile')}
               title={sidebarCollapsed ? currentUser : undefined}
-              className={`flex-1 flex items-center gap-3 ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              className={`w-full flex items-center gap-3 ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
                 isProfileActive
                   ? 'bg-brand-light text-brand-text-strong'
                   : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
@@ -609,20 +681,7 @@ function AppShell() {
               </div>
               {!sidebarCollapsed && <span className="truncate">{currentUser}</span>}
             </button>
-            {!sidebarCollapsed && (
-              <button
-                onClick={() => navigate('/settings')}
-                title="Settings"
-                className={`p-2 rounded-xl transition-colors ${
-                  location.pathname === '/settings'
-                    ? 'text-brand-text-strong bg-brand-light'
-                    : 'text-muted hover:text-primary hover:bg-surface-alt cursor-pointer'
-                }`}
-              >
-                <SettingsIcon size={18} />
-              </button>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Collapse toggle */}
@@ -672,10 +731,19 @@ function AppShell() {
           </div>
           {renderSidebarNav(false)}
           <div className="border-t border-border-subtle p-2 shrink-0">
-            <div className="flex items-center gap-1">
+            {ownerMode ? (
+              <OwnerSettingsMenu
+                collapsed={false}
+                currentUser={currentUser}
+                userEmail={user?.email}
+                onNav={(p) => { navigate(p); setMobileSidebarOpen(false); }}
+                onSignOut={signOut}
+                isActivePath={(p) => location.pathname === p}
+              />
+            ) : (
               <button
                 onClick={() => navigate('/profile')}
-                className={`flex-1 flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                   isProfileActive
                     ? 'bg-brand-light text-brand-text-strong'
                     : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
@@ -688,20 +756,7 @@ function AppShell() {
                 </div>
                 <span className="truncate">{currentUser}</span>
               </button>
-              {ownerMode && (
-                <button
-                  onClick={() => navigate('/settings')}
-                  title="Settings"
-                  className={`p-2 rounded-xl transition-colors ${
-                    location.pathname === '/settings'
-                      ? 'text-brand-text-strong bg-brand-light'
-                      : 'text-muted hover:text-primary hover:bg-surface-alt cursor-pointer'
-                  }`}
-                >
-                  <SettingsIcon size={18} />
-                </button>
-              )}
-            </div>
+            )}
           </div>
         </aside>
       </div>
@@ -709,14 +764,9 @@ function AppShell() {
       {/* ─── Main Content ─── */}
       <main className={`${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60'} transition-all duration-200`}>
         {needsAgreement && (
-          <div className="sticky top-0 z-40 bg-amber-500 text-black px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="font-black text-sm">⚠️ Agreement Required</span>
-              <span className="text-sm">— You must review and sign the team agreement to continue.</span>
-            </div>
-            <button onClick={() => navigate('/agreement')} className="px-4 py-1.5 rounded-lg bg-black text-amber-500 font-bold text-sm cursor-pointer hover:bg-black/80">
-              Go to Agreement
-            </button>
+          <div className="sticky top-0 z-40 bg-amber-500 text-black px-4 py-3 flex items-center gap-2">
+            <span className="font-black text-sm">⚠️ Action Required</span>
+            <span className="text-sm">— Sign the agreement to continue. Read and sign below.</span>
           </div>
         )}
         <div className={location.pathname === '/messages' || location.pathname === '/schedule' || location.pathname === '/clients' ? 'px-4 py-3' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8'}>
@@ -774,8 +824,6 @@ function AppShell() {
         </div>
       </main>
 
-      {ownerMode && <MessagesButton />}
-      {ownerMode && <IdeaBank />}
     </div>
   );
 }

@@ -13,6 +13,7 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const TYPE_COLORS = {
   visit: { bg: 'bg-emerald-600', light: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', text: 'text-emerald-400' },
+  'visit-other': { bg: 'bg-purple-600', light: 'bg-purple-500/20 text-purple-300 border-purple-500/30', text: 'text-purple-400' },
   assessment: { bg: 'bg-blue-600', light: 'bg-blue-500/20 text-blue-300 border-blue-500/30', text: 'text-blue-400' },
   task: { bg: 'bg-amber-600', light: 'bg-amber-500/20 text-amber-300 border-amber-500/30', text: 'text-amber-400' },
   event: { bg: 'bg-purple-600', light: 'bg-purple-500/20 text-purple-300 border-purple-500/30', text: 'text-purple-400' },
@@ -129,7 +130,8 @@ function EventCard({ item, onClick }) {
       draggable
       onDragStart={e => { e.dataTransfer.setData('text/plain', item.id); e.dataTransfer.effectAllowed = 'move'; }}
       onClick={onClick}
-      className={`w-full text-left px-1.5 py-1 rounded text-[9px] font-bold truncate cursor-grab active:cursor-grabbing transition-all hover:brightness-125 ${tc.bg} text-white`}>
+      className={`w-full text-left px-1.5 py-1 rounded text-[9px] font-bold leading-tight cursor-grab active:cursor-grabbing transition-all hover:brightness-125 ${tc.bg} text-white`}
+      style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>
       {!item.all_day && !item.anytime && <span className="opacity-80 mr-0.5">{formatTime(item.start_at)}</span>}
       {item.title}
     </button>
@@ -450,6 +452,25 @@ function EventDetail({ item, onClose, onStatusChange, onUpdateAssigned, onEdit }
 }
 
 /* ─── Main ─── */
+/* ── Quiet Jobber sync indicator ── */
+function JobberSyncIndicator({ loading, stale, error, count, onRefresh }) {
+  if (!loading && !stale && !error && count === 0) return null;
+  const statusColor = error ? 'text-red-400' : stale ? 'text-amber-400' : loading ? 'text-muted' : 'text-emerald-500';
+  const statusText = error ? `Jobber: ${error}` : stale ? `Showing cached Jobber visits (sync paused)` : loading ? 'Syncing Jobber…' : `${count} Jobber visit${count === 1 ? '' : 's'} this month`;
+  return (
+    <div className="flex items-center justify-between text-[11px] px-3 py-1.5 rounded-lg bg-surface-alt/40 border border-border-subtle/60">
+      <div className="flex items-center gap-2">
+        <span className={`w-1.5 h-1.5 rounded-full ${error ? 'bg-red-400' : stale ? 'bg-amber-400' : loading ? 'bg-muted animate-pulse' : 'bg-emerald-500'}`} />
+        <span className={statusColor}>{statusText}</span>
+      </div>
+      <button onClick={onRefresh} disabled={loading} title="Refresh Jobber"
+        className="p-1 rounded hover:bg-surface-alt text-muted hover:text-primary cursor-pointer disabled:opacity-50">
+        <Loader2 size={11} className={loading ? 'animate-spin' : ''} />
+      </button>
+    </div>
+  );
+}
+
 export default function Schedule() {
   const { orgId } = useAuth();
   const [items, setItems] = useState([]);
@@ -461,6 +482,79 @@ export default function Schedule() {
   const [typeFilter, setTypeFilter] = useState([]);   // [] = all
   const [statusFilter, setStatusFilter] = useState([]); // [] = all
   const [teamFilter, setTeamFilter] = useState([]);     // [] = all
+
+  // Live Jobber visits for the visible month — read-only sync, falls back on throttle
+  const [jobberVisits, setJobberVisits] = useState([]);
+  const [jobberLoading, setJobberLoading] = useState(false);
+  const [jobberError, setJobberError] = useState(null);
+  const [jobberStale, setJobberStale] = useState(false);
+
+  // Read visits from hub_visits (canonical schema, source-agnostic).
+  // The sync layer keeps these tables fresh from Jobber. UI never calls Jobber directly.
+  const jobberRangeKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
+  const loadJobberMonth = useCallback(async () => {
+    const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), -6);
+    const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 7);
+    setJobberLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('hub_visits')
+        .select('id, title, start_at, end_at, completed_at, address, status, source, source_id, contact_id, hub_visit_assignments(assignee_name)')
+        .gte('start_at', start.toISOString())
+        .lte('start_at', end.toISOString())
+        .order('start_at');
+      if (error) throw error;
+
+      // Pull contact names in a separate query (cheap, set lookup)
+      const contactIds = [...new Set((data || []).map((v) => v.contact_id).filter(Boolean))];
+      let contactMap = {};
+      if (contactIds.length > 0) {
+        const { data: contacts } = await supabase.from('contacts').select('id, name').in('id', contactIds);
+        contactMap = Object.fromEntries((contacts || []).map((c) => [c.id, c.name]));
+      }
+
+      const visits = (data || []).map((v) => ({
+        id: v.source_id || v.id,
+        title: v.title || '',
+        startAt: v.start_at,
+        endAt: v.end_at,
+        completedAt: v.completed_at,
+        clientName: contactMap[v.contact_id] || 'Unknown',
+        address: v.address || '',
+        assignees: (v.hub_visit_assignments || []).map((a) => a.assignee_name).filter(Boolean),
+      }));
+      setJobberVisits(visits);
+      setJobberStale(false);
+      setJobberError(null);
+    } catch (err) {
+      setJobberError(err.message);
+    } finally {
+      setJobberLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobberRangeKey]);
+
+  // Sync from Jobber → hub_visits in the background (and on mount).
+  // The UI itself just reads from Supabase, so a slow/throttled sync doesn't block render.
+  const triggerSync = useCallback(async () => {
+    try {
+      await fetch('/api/hub-sync?source=jobber&entity=visits', { method: 'POST' });
+    } catch {}
+    // After sync, refresh from the table.
+    loadJobberMonth();
+  }, [loadJobberMonth]);
+
+  useEffect(() => {
+    loadJobberMonth();
+    const id = setInterval(loadJobberMonth, 60_000);
+    return () => clearInterval(id);
+  }, [loadJobberMonth]);
+
+  // Kick off a background sync once per app load (and on month change).
+  useEffect(() => {
+    triggerSync();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobberRangeKey]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -558,7 +652,42 @@ export default function Schedule() {
 
   const today = ds(new Date());
   const weeks = useMemo(() => getMonthGrid(year, month), [year, month]);
-  const byDate = useMemo(() => { const m = {}; for (const it of items) { if (!m[it._ds]) m[it._ds] = []; m[it._ds].push(it); } return m; }, [items]);
+  // Map Jobber visits into EventCard-compatible shape and group by local date.
+  // - Title: prefer the visit/job title, fall back to client name
+  // - Anytime: when startAt is midnight in local TZ, treat it as "anytime" (no clock)
+  const jobberAsItems = useMemo(() => {
+    return jobberVisits.map((v) => {
+      const dt = v.startAt ? new Date(v.startAt) : null;
+      const dateKey = dt ? dt.toLocaleDateString('en-CA', { timeZone: getTimezone() }) : null;
+      const titleLower = (v.title || '').toLowerCase();
+      const isAssessment = titleLower.includes('assessment') || /assess|estimate|quote/i.test(v.title || '');
+      const isLawn = /\blawn\b/.test(titleLower);
+      // Detect "anytime" — Jobber gives midnight when no specific time is set
+      const localHM = dt ? dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false, timeZone: getTimezone() }) : null;
+      const isAnytime = !v.startAt || localHM === '00:00' || localHM === '24:00';
+      return {
+        id: `jobber-${v.id}`,
+        _ds: dateKey,
+        type: isAssessment ? 'assessment' : (isLawn ? 'visit' : 'visit-other'),
+        title: v.title || v.clientName || 'Visit',
+        start_at: v.startAt,
+        all_day: false,
+        anytime: isAnytime,
+        notes: v.address || '',
+        assigned_to: v.assignees || [],
+        status: v.completedAt ? 'complete' : 'scheduled',
+        _jobber: true,
+        _raw: v,
+      };
+    }).filter((it) => it._ds);
+  }, [jobberVisits]);
+
+  const byDate = useMemo(() => {
+    const m = {};
+    for (const it of items) { if (!m[it._ds]) m[it._ds] = []; m[it._ds].push(it); }
+    for (const it of jobberAsItems) { if (!m[it._ds]) m[it._ds] = []; m[it._ds].push(it); }
+    return m;
+  }, [items, jobberAsItems]);
 
   // Week view
   const weekDays = useMemo(() => {
@@ -568,12 +697,15 @@ export default function Schedule() {
 
   // Day view hours
   const dayStr = ds(currentDate);
-  const dayItems = items.filter(it => it._ds === dayStr);
+  const dayItems = byDate[dayStr] || [];
 
   return (
     <div className="space-y-3">
       {showNewEvent && <NewEventModal onClose={() => setShowNewEvent(null)} onSave={createEvent} defaultDate={showNewEvent} orgId={orgId} />}
       {selectedItem && <EventDetail item={selectedItem} onClose={() => setSelectedItem(null)} onStatusChange={updateStatus} onUpdateAssigned={updateAssigned} />}
+
+      {/* Jobber sync status — quiet indicator, the visits themselves render on the calendar */}
+      <JobberSyncIndicator loading={jobberLoading} stale={jobberStale} error={jobberError} count={jobberVisits.length} onRefresh={triggerSync} />
 
       {/* Header — Jobber style */}
       <div className="flex items-center justify-between">
@@ -642,7 +774,7 @@ export default function Schedule() {
                   <div key={day.str}
                     onClick={() => { if (day.inMonth) { setCurrentDate(day.date); setView('day'); } }}
                     onDrop={e => handleDrop(e, day.str)} onDragOver={handleDragOver}
-                    className={`border-r border-b border-border-subtle/40 aspect-square sm:aspect-auto sm:min-h-[130px] cursor-pointer hover:bg-white/[0.02] transition-colors ${
+                    className={`border-r border-b border-border-subtle/40 min-h-[130px] cursor-pointer hover:bg-white/[0.02] transition-colors ${
                       !day.inMonth ? 'bg-black/20' : isToday ? 'bg-brand/[0.07]' : ''
                     }`}>
                     <div className="flex items-center justify-between px-1.5 py-1">
@@ -657,8 +789,7 @@ export default function Schedule() {
                       </div>
                     </div>
                     <div className="px-0.5 pb-0.5 space-y-0.5">
-                      {di.slice(0, 4).map(it => <EventCard key={it.id} item={it} onClick={(e) => { e.stopPropagation(); setSelectedItem(it); }} />)}
-                      {di.length > 4 && <p className="text-[8px] text-muted font-bold px-1">+{di.length - 4} more</p>}
+                      {di.map(it => <EventCard key={it.id} item={it} onClick={(e) => { e.stopPropagation(); setSelectedItem(it); }} />)}
                     </div>
                   </div>
                 );

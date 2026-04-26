@@ -21,11 +21,12 @@ function ChecklistItem({ item, checked, onToggle }) {
 
   return (
     <div
+      style={item.indent ? { marginLeft: (item.indent || 0) * 24 } : undefined}
       className={`relative overflow-hidden rounded-xl px-4 py-3 select-none transition-all duration-300 ${
         done
           ? 'bg-brand-light/50 cursor-pointer'
           : 'bg-card hover:bg-surface-alt cursor-pointer active:scale-[0.98]'
-      } ${item.indent ? 'ml-6' : ''}`}
+      }`}
       onClick={handleClick}
       role="button"
       tabIndex={0}

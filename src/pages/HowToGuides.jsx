@@ -1,19 +1,20 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Sparkles, ArrowLeft } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Plus, Search, ArrowLeft } from 'lucide-react';
 import Card from '../components/Card';
 import EditModal from '../components/EditModal';
-import AIPlaybookModal from '../components/AIPlaybookModal';
 import { genId } from '../data';
 import { useAppStore } from '../store/AppStoreContext';
 import { toSlug } from '../utils/slug';
 
-const ALL_CATEGORIES = ['Field Team', 'General Manager'];
+const ALL_CATEGORIES = ['Team', 'Office'];
 
 const CATEGORY_TO_TYPE = {
+  'Team': 'service',
+  'Office': 'strategy',
+  // Backward compat for existing saved guides
   'Field Team': 'service',
   'General Manager': 'strategy',
-  // Backward compat for existing saved guides
   'Services': 'service',
   'Service': 'service',
   'Equipment': 'service',
@@ -25,36 +26,31 @@ const CATEGORY_TO_TYPE = {
 };
 
 const TYPE_TO_CATEGORY = {
-  'field-team': 'Field Team',
-  'service': 'Field Team',
-  'equipment': 'Field Team',
-  'software': 'Field Team',
-  'sales': 'Field Team',
-  'pme': 'Field Team',
-  'strategy': 'General Manager',
-  'owner': 'General Manager',
-  'gm-rhythm': 'General Manager',
-  'gm-people': 'General Manager',
-  'gm-sales': 'General Manager',
+  'field-team': 'Team',
+  'service': 'Team',
+  'equipment': 'Team',
+  'software': 'Team',
+  'sales': 'Team',
+  'pme': 'Team',
+  'strategy': 'Office',
+  'owner': 'Office',
+  'gm-rhythm': 'Office',
+  'gm-people': 'Office',
+  'gm-sales': 'Office',
 };
 
 const ALL_TABS = [
-  { key: 'field-team', label: 'Field Team', activeColor: 'text-brand-text-strong', playbookKey: 'service' },
-  { key: 'strategy', label: 'General Manager', activeColor: 'text-blue-700 dark:text-blue-300', playbookKey: 'strategy' },
+  { key: 'field-team', label: 'Team', activeColor: 'text-brand-text-strong', playbookKey: 'service' },
+  { key: 'strategy', label: 'Office', activeColor: 'text-blue-700 dark:text-blue-300', playbookKey: 'strategy' },
 ];
 
-
 export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
-  const defaultTab = 'field-team';
   const navigate = useNavigate();
-  const location = useLocation();
-  const returnTab = location.state?.tab;
   const items = useAppStore((s) => s.guides);
   const setItems = useAppStore((s) => s.setGuides);
 
   const [editing, setEditing] = useState(null);
   const [adding, setAdding] = useState(false);
-  const [showAIGenerator, setShowAIGenerator] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmDeleteText, setConfirmDeleteText] = useState('');
   const [searchParams] = useSearchParams();
@@ -66,41 +62,12 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
     ? ALL_TABS.filter((t) => effectiveAllowed.includes(t.playbookKey))
     : ALL_TABS;
 
-  const [filter, setFilter] = useState(() => {
-    const preferred = returnTab || defaultTab;
-    return visibleTabs.some((t) => t.key === preferred) ? preferred : (visibleTabs[0]?.key || 'field-team');
-  });
   const [search, setSearch] = useState('');
-
-  useEffect(() => {
-    if (visibleTabs.length > 0 && !visibleTabs.some((t) => t.key === filter)) {
-      setFilter(visibleTabs[0].key);
-    }
-  }, [visibleTabs, filter]);
 
   const query = search.toLowerCase().trim();
 
   const FIELD_TEAM_TYPES = ['service', 'equipment', 'software', 'field-team', 'sales', 'pme'];
   const GM_TYPES = ['strategy', 'owner', 'gm-rhythm', 'gm-people', 'gm-sales'];
-
-  const typeMatch = (itemType) => {
-    if (filter === 'field-team') return FIELD_TEAM_TYPES.includes(itemType);
-    if (filter === 'strategy') return GM_TYPES.includes(itemType);
-    return itemType === filter;
-  };
-
-  const allowedTypeMatch = (itemType) => {
-    return visibleTabs.some((t) => {
-      if (t.key === 'field-team') return FIELD_TEAM_TYPES.includes(itemType);
-      if (t.key === 'strategy') return GM_TYPES.includes(itemType);
-      return false;
-    });
-  };
-
-  const filtered = items.filter((i) => {
-    if (query) return allowedTypeMatch(i.type) && (i.title?.toLowerCase().includes(query) || i.summary?.toLowerCase().includes(query));
-    return typeMatch(i.type);
-  });
 
   const handleDelete = (item) => {
     setConfirmDelete(item);
@@ -127,19 +94,13 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
     setAdding(false);
   };
 
-  const handleAIGenerated = (generated) => {
-    const type = CATEGORY_TO_TYPE[generated.category] || 'service';
-    const newGuide = {
-      id: genId(),
-      title: generated.title,
-      summary: generated.summary,
-      content: generated.content,
-      type,
-      category: generated.category,
-    };
-    setItems([...items, newGuide]);
-    setShowAIGenerator(false);
-    setEditing(newGuide); // Open in edit mode so user can review/adjust
+  const sectionItems = (key) => {
+    const types = key === 'field-team' ? FIELD_TEAM_TYPES : GM_TYPES;
+    return items.filter((i) => {
+      if (!types.includes(i.type)) return false;
+      if (!query) return true;
+      return i.title?.toLowerCase().includes(query) || i.summary?.toLowerCase().includes(query);
+    });
   };
 
   return (
@@ -150,46 +111,20 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-primary">Playbooks</h1>
-          <p className="text-tertiary mt-1">Our standards for every job — and the best way to do them</p>
         </div>
         {ownerMode && (
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowAIGenerator(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-600 text-white font-medium text-sm hover:bg-purple-700 transition-colors"
-            >
-              <Sparkles size={18} /> AI Generate
-            </button>
-            <button
               onClick={() => setAdding(true)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand font-medium text-sm hover:bg-brand-hover transition-colors"
             >
-              <Plus size={18} /> Add Guide
+              <Plus size={18} /> Create Playbook
             </button>
           </div>
         )}
       </div>
 
-      {visibleTabs.length > 1 && (
-        <div className="flex items-center gap-1 bg-surface-alt p-1 rounded-xl w-fit mb-3 overflow-x-auto">
-          {visibleTabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setFilter(tab.key)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-                filter === tab.key
-                  ? `bg-card ${tab.activeColor} shadow-sm`
-                  : 'text-tertiary hover:text-secondary'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-
-      <div className="relative mb-4">
+      <div className="relative mb-6">
         <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
         <input
           type="text"
@@ -200,23 +135,31 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
         />
       </div>
 
-      {filtered.length === 0 ? (
-        <p className="text-muted text-sm">{query ? 'No playbooks match your search.' : ownerMode ? 'No playbooks in this category yet.' : 'No playbooks available yet.'}</p>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((item) => (
-            <Card
-              key={item.id}
-              item={item}
-              onClick={() => navigate(`/guides/${item.id}`, { state: { tab: filter } })}
-              onEdit={setEditing}
-              onDelete={handleDelete}
-              ownerMode={ownerMode}
-              themed
-            />
-          ))}
-        </div>
-      )}
+      {visibleTabs.map((tab) => {
+        const sectionGuides = sectionItems(tab.key);
+        return (
+          <section key={tab.key} className="mb-10">
+            <h2 className={`text-lg font-bold mb-3 ${tab.activeColor}`}>{tab.label}</h2>
+            {sectionGuides.length === 0 ? (
+              <p className="text-muted text-sm">{query ? 'No playbooks match your search.' : ownerMode ? 'No playbooks in this section yet.' : 'No playbooks available yet.'}</p>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {sectionGuides.map((item) => (
+                  <Card
+                    key={item.id}
+                    item={item}
+                    onClick={() => navigate(`/guides/${item.id}`, { state: { tab: tab.key } })}
+                    onEdit={setEditing}
+                    onDelete={handleDelete}
+                    ownerMode={ownerMode}
+                    themed
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
 
       {(editing || adding) && (
         <EditModal
@@ -228,13 +171,6 @@ export default function HowToGuides({ ownerMode, allowedPlaybooks }) {
           onClose={() => { setEditing(null); setAdding(false); }}
         />
       )}
-      {showAIGenerator && (
-        <AIPlaybookModal
-          onGenerated={handleAIGenerated}
-          onClose={() => setShowAIGenerator(false)}
-        />
-      )}
-
       {/* Confirm Delete Modal */}
       {confirmDelete && (
         <div

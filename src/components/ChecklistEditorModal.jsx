@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Plus, Trash2, GripVertical, ChevronUp, ChevronDown, Truck, Calendar, ExternalLink, Link } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, GripVertical, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, Truck, Calendar, ExternalLink, Link } from 'lucide-react';
 import { genId } from '../data';
 
 const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -81,6 +81,11 @@ export function ChecklistSection({ items, setItems }) {
   const update = (id, text) => setItems(all.map((i) => (i.id === id ? { ...i, text } : i)));
   const remove = (id) => setItems(all.filter((i) => i.id !== id));
   const toggleFieldWork = (id) => setItems(all.map((i) => (i.id === id ? { ...i, fieldWorkOnly: !i.fieldWorkOnly } : i)));
+  const indent = (id, dir) => setItems(all.map((i) => {
+    if (i.id !== id) return i;
+    const next = Math.max(0, Math.min(2, (i.indent || 0) + dir));
+    return { ...i, indent: next };
+  }));
   const toggleDay = (id, day) => setItems(all.map((i) => {
     if (i.id !== id) return i;
     const days = i.days || [];
@@ -166,16 +171,27 @@ export function ChecklistSection({ items, setItems }) {
                       onDragStart={(e) => onDragStart(e, fi)}
                       onDragEnd={onDragEnd}
                       onDragOver={(e) => onDragOver(e, fi)}
-                      className={`group flex items-center gap-2 px-4 py-2.5 border-t border-border-subtle/40 ${
+                      style={{ paddingLeft: 16 + (item.indent || 0) * 24 }}
+                      className={`group flex items-center gap-2 pr-4 py-2.5 border-t border-border-subtle/40 ${
                         dragFrom === fi ? 'opacity-20' : ''
                       } ${dragOver === fi && dragFrom != null && dragFrom !== fi ? 'border-t-brand border-t-2' : ''}`}
                     >
                       <GripVertical size={12} className="text-muted/20 group-hover:text-muted/50 cursor-grab active:cursor-grabbing shrink-0" />
+                      <button onClick={() => indent(item.id, -1)} disabled={(item.indent || 0) === 0}
+                        className="p-0.5 text-transparent group-hover:text-muted/40 hover:!text-secondary disabled:opacity-0 cursor-pointer shrink-0"
+                        title="Outdent">
+                        <ChevronLeft size={12} />
+                      </button>
+                      <button onClick={() => indent(item.id, 1)} disabled={(item.indent || 0) >= 2}
+                        className="p-0.5 text-transparent group-hover:text-muted/40 hover:!text-secondary disabled:opacity-0 cursor-pointer shrink-0"
+                        title="Indent">
+                        <ChevronRight size={12} />
+                      </button>
                       <EditableText
                         value={item.text}
                         onChange={(t) => update(item.id, t)}
-                        className="flex-1 text-sm text-primary cursor-text min-w-0"
-                        inputClassName="flex-1 w-full bg-transparent outline-none text-sm text-primary"
+                        className={`flex-1 cursor-text min-w-0 ${(item.indent || 0) > 0 ? 'text-[13px] text-secondary' : 'text-sm text-primary'}`}
+                        inputClassName={`flex-1 w-full bg-transparent outline-none ${(item.indent || 0) > 0 ? 'text-[13px] text-secondary' : 'text-sm text-primary'}`}
                       />
                       <button onClick={() => setShowDays(showDays === item.id ? null : item.id)}
                         className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg cursor-pointer shrink-0 transition-colors text-[9px] font-bold ${item.days?.length ? 'bg-brand/10 text-brand-text' : 'text-muted/40 group-hover:text-muted/60'}`}>
