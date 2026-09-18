@@ -8,6 +8,11 @@ import { syncJobberVisits, refreshLaborAggregates } from '../jobber-data.js';
 import { JobberDisconnectedError } from '../../lib/jobberClient.js';
 
 export default async function handler(req, res) {
+  // Jobber sync is paused — Boost is now the source of truth for clients/jobs.
+  // To re-enable, remove this guard and put the cron back in vercel.json.
+  if (process.env.JOBBER_SYNC_ENABLED !== 'true') {
+    return res.status(200).json({ paused: true, message: 'Jobber sync disabled' });
+  }
   const authHeader = req.headers.authorization;
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'unauthorized' });

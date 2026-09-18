@@ -39,7 +39,5 @@
       "maxDuration": 300
     }
   },
-  "crons": [
-    { "path": "/api/cron/sync-jobber", "schedule": "*/5 * * * *" }
-  ]
+  "crons": []
 }

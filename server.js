@@ -18,6 +18,12 @@ import teamAuthHandler from './lib/teamAuth.js';
 import ghlHandler from './lib/ghlHandler.js';
 import requestWebhook from './api/webhooks/request.js';
 import cronSyncJobber from './api/cron/sync-jobber.js';
+import stripeSetupIntent from './api/stripe-setup-intent.js';
+import stripeSaveCard from './api/stripe-save-card.js';
+import stripeListCards from './api/stripe-list-cards.js';
+import stripeDeleteCard from './api/stripe-delete-card.js';
+import stripeSetDefaultCard from './api/stripe-set-default-card.js';
+import stripeChargeCard from './api/stripe-charge-card.js';
 
 config({ path: '.env.local' });
 
@@ -61,6 +67,14 @@ app.post('/api/webhooks/request', requestWebhook);
 
 // Cron jobs (Vercel hits these on a schedule; expose locally for manual trigger)
 app.all('/api/cron/sync-jobber', cronSyncJobber);
+
+// Stripe (Connect — saves cards on connected accounts via SetupIntent)
+app.post('/api/stripe-setup-intent', stripeSetupIntent);
+app.post('/api/stripe-save-card', stripeSaveCard);
+app.get('/api/stripe-list-cards', stripeListCards);
+app.post('/api/stripe-delete-card', stripeDeleteCard);
+app.post('/api/stripe-set-default-card', stripeSetDefaultCard);
+app.post('/api/stripe-charge-card', stripeChargeCard);
 
 // Backwards compat routes (Express 5: req.query is read-only, so redirect instead)
 app.get('/api/jobber-clients', (req, res) => res.redirect(`/api/jobber-data?action=clients&${new URL(req.url, 'http://x').search.slice(1)}`));

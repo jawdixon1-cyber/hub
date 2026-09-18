@@ -270,7 +270,7 @@ export function HiringPagePreview({ content, steps, hideApplySection = false }) 
     <div className="rounded-2xl overflow-hidden" style={{ background: '#000', color: 'rgba(255,255,255,.92)', fontFamily: "'Montserrat', system-ui, sans-serif", lineHeight: 1.55, WebkitFontSmoothing: 'antialiased' }}>
       {/* LOGO BANNER */}
       <div className="flex items-center justify-center py-3 px-4" style={{ background: '#000', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
-        <img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/69a0cc399185ff63f8649cd6.png" alt="Hey Jude's Lawn Care" style={{ height: 44 }} />
+        <img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6a0c9c767f72486315221b19.png" alt="Hey Jude's Lawn Care" style={{ height: 44 }} />
       </div>
 
       {/* HERO */}
@@ -592,7 +592,7 @@ select.hj-input{appearance:none;cursor:pointer;background-image:url("data:image/
 
 <div class="hj-page">
 <div style="display:flex;align-items:center;justify-content:center;padding:12px 16px;background:#000;border-bottom:1px solid rgba(255,255,255,.08)">
-<img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/69a0cc399185ff63f8649cd6.png" alt="Hey Jude's Lawn Care" style="height:44px"/>
+<img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6a0c9c767f72486315221b19.png" alt="Hey Jude's Lawn Care" style="height:44px"/>
 </div>
 <div class="hj-hero">
 ${c.hero.badge ? '<div class="star-badge"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> ' + c.hero.badge + '</div>' : ''}

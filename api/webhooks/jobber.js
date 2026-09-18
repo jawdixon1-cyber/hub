@@ -176,6 +176,12 @@ async function handleJob(supabase, topic, itemId) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
+  // Jobber sync is paused. We accept the request (so Jobber doesn't see failures
+  // and retry forever) but skip the upsert. Re-enable with JOBBER_SYNC_ENABLED=true.
+  if (process.env.JOBBER_SYNC_ENABLED !== 'true') {
+    return res.status(200).json({ paused: true });
+  }
+
   const rawBody = await readRawBody(req);
   const sig = req.headers['x-jobber-hmac-sha256'];
   const secret = process.env.JOBBER_WEBHOOK_SECRET;

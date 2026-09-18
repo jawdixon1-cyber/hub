@@ -16,7 +16,6 @@ import {
   Receipt,
   LayoutGrid,
   ChevronDown,
-  Crosshair,
   GitBranch,
   MapPinned,
   DollarSign,
@@ -41,11 +40,18 @@ import {
   Sunset,
   Printer,
   DoorOpen,
+  Bell,
+  Search as SearchIcon,
+  HelpCircle,
+  Sparkles,
+  Globe,
+  Truck,
 } from 'lucide-react';
 
 import { supabase } from './lib/supabase';
 import { useAuth } from './contexts/AuthContext';
 import { AppStoreProvider, useAppStore } from './store/AppStoreContext';
+import { useLocalPref, PREF_HIDE_BUILDING, PREF_HIDE_SCHEDULE } from './hooks/useLocalPref';
 import { getCurrentAgreementVersion } from './data/employmentAgreement';
 import LoginForm from './components/LoginForm';
 
@@ -74,15 +80,20 @@ const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
 const Standards = lazy(() => import('./pages/Standards'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Commander = lazy(() => import('./pages/Commander'));
-const SalesPipeline = lazy(() => import('./pages/SalesPipeline'));
 const ServiceAgreement = lazy(() => import('./pages/ServiceAgreement'));
 const Territory = lazy(() => import('./pages/Dominate'));
+const Website = lazy(() => import('./pages/Website'));
+const PayrollBonus = lazy(() => import('./pages/PayrollBonus'));
+const Suppliers = lazy(() => import('./pages/Suppliers'));
 const MowingSchedule = lazy(() => import('./pages/MowingSchedule'));
 const Finance = lazy(() => import('./pages/Finance'));
 const LaborEfficiency = lazy(() => import('./pages/LaborEfficiency'));
 const Sales = lazy(() => import('./pages/Sales'));
 const Marketing = lazy(() => import('./pages/Marketing'));
 const Clients = lazy(() => import('./pages/Clients'));
+const EditClientPage = lazy(() => import('./pages/Clients').then(m => ({ default: m.EditClientPage })));
+const Quotes = lazy(() => import('./pages/Quotes'));
+const PublicQuoteView = lazy(() => import('./pages/PublicQuoteView'));
 const Messages = lazy(() => import('./pages/Messages'));
 const Requests = lazy(() => import('./pages/Requests'));
 const NewClient = lazy(() => import('./pages/NewClient'));
@@ -100,6 +111,7 @@ const InsightsDoorHangers = lazy(() => import('./pages/InsightsDoorHangers'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
+  { id: 'schedule', path: '/schedule', label: 'Schedule', icon: CalendarDays, ownerOnly: true },
 ];
 
 const TEAM_TOOLS_ITEMS = [
@@ -114,17 +126,17 @@ const TEAM_ITEMS = [
 ];
 
 const OPERATIONS_ITEMS = [
-  { id: 'schedule', path: '/schedule', label: 'Schedule', icon: CalendarDays },
-  { id: 'messaging', path: '/messages', label: 'Messaging', icon: MessageSquare },
   { id: 'clients', path: '/clients', label: 'Clients', icon: Users },
   { id: 'requests', path: '/requests', label: 'Requests', icon: Inbox },
-  { id: 'sales', path: '/sales', label: 'Quotes', icon: Crosshair },
+  { id: 'quotes', path: '/quotes', label: 'Quotes', icon: FileText },
   { id: 'jobs', path: '/jobs', label: 'Jobs', icon: Briefcase },
   { id: 'invoices', path: '/invoices', label: 'Invoices', icon: FileText },
-  { id: 'payments', path: '/payments', label: 'Payments', icon: CreditCard },
+  { id: 'payments', path: '/payments', label: 'Payments', icon: DollarSign },
 ];
 
 const OWNER_TOOLS_PINNED = [
+  { id: 'sales', path: '/sales', label: 'Calculate Quote', icon: Calculator },
+  { id: 'website', path: '/website', label: 'Website', icon: Globe },
   { id: 'guides', path: '/playbooks', label: 'Playbooks', icon: BookOpen },
   { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
   { id: 'insights', path: '/insights', label: 'Insights', icon: BarChart3 },
@@ -135,6 +147,8 @@ const OWNER_TOOLS_MORE = [
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
   { id: 'timesheets', path: '/timesheets', label: 'Timesheets', icon: Clock },
+  { id: 'payroll', path: '/payroll', label: 'Payroll & Bonus', icon: DollarSign },
+  { id: 'suppliers', path: '/suppliers', label: 'Suppliers', icon: Truck },
 ];
 const OWNER_TOOLS_ITEMS = [...OWNER_TOOLS_PINNED, ...OWNER_TOOLS_MORE];
 
@@ -165,6 +179,15 @@ const CRITICAL_KEYS = [
 ];
 
 function App() {
+  // Public quote view bypasses auth — clients use a tokenized URL.
+  const { pathname } = useLocation();
+  if (pathname.startsWith('/q/')) {
+    return (
+      <Suspense fallback={null}>
+        <Routes><Route path="/q/:token" element={<PublicQuoteView />} /></Routes>
+      </Suspense>
+    );
+  }
   const { session, user, ownerMode, orgId, loading: authLoading, signOut } = useAuth();
   const [cloudData, setCloudData] = useState(() => {
     try {
@@ -440,7 +463,7 @@ function OwnerSettingsMenu({ collapsed, currentUser, userEmail, onNav, onSignOut
         ref={btnRef}
         onClick={handleOpen}
         title="Settings"
-        className={`w-full flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+        className={`w-full flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
           isActive || open
             ? 'bg-brand-light text-brand-text-strong'
             : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
@@ -483,6 +506,57 @@ function OwnerSettingsMenu({ collapsed, currentUser, userEmail, onNav, onSignOut
         </div>
       )}
     </>
+  );
+}
+
+/* ─── Topbar settings menu — gear icon dropdown in the app top bar ─── */
+function TopbarSettingsMenu({ currentUser, userEmail, onNav, onSignOut }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title="Settings"
+        className={`p-1.5 rounded-lg cursor-pointer ${open ? 'bg-surface-alt text-primary' : 'text-muted hover:bg-surface-alt hover:text-primary'}`}
+      >
+        <SettingsIcon size={16} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 w-64 bg-card border border-border-subtle rounded-xl shadow-2xl py-2">
+          <div className="px-4 py-3 border-b border-border-subtle">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-brand-light text-brand-text-strong flex items-center justify-center text-xs font-bold shrink-0">
+                {getInitials(currentUser)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-primary truncate">{currentUser}</p>
+                <p className="text-xs text-tertiary truncate">{userEmail}</p>
+              </div>
+            </div>
+          </div>
+          <div className="py-1">
+            <button onClick={() => { setOpen(false); onNav('/team'); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              Manage Team
+            </button>
+            <button onClick={() => { setOpen(false); onNav('/settings'); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              Settings
+            </button>
+          </div>
+          <div className="border-t border-border-subtle py-1">
+            <button onClick={() => { setOpen(false); onSignOut(); }} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-surface-alt cursor-pointer">
+              Log Out
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -621,7 +695,9 @@ function AppShell() {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [teamToolsOpen, setTeamToolsOpen] = useState(true);
+  const [buildingOpen, setBuildingOpen] = useState(false);
+  const [hideBuilding] = useLocalPref(PREF_HIDE_BUILDING, false);
+  const [hideSchedule] = useLocalPref(PREF_HIDE_SCHEDULE, false);
   const [ownerMoreOpen, setOwnerMoreOpen] = useState(false);
   const [operationsOpen, setOperationsOpen] = useState(false);
 
@@ -656,7 +732,10 @@ function AppShell() {
   const renderSidebarNav = (collapsed) => (
     <nav className="flex-1 overflow-y-auto">
       <div className="py-3 px-2 space-y-1">
-      {NAV_ITEMS.filter((item) => !item.ownerOnly || ownerMode).map((item) => {
+      {NAV_ITEMS
+        .filter((item) => !item.ownerOnly || ownerMode)
+        .filter((item) => !(item.id === 'schedule' && hideSchedule))
+        .map((item) => {
         const Icon = item.icon;
         const active = isActive(item.path);
         return (
@@ -664,13 +743,13 @@ function AppShell() {
             key={item.id}
             onClick={() => handleNav(item.path)}
             title={collapsed ? item.label : undefined}
-            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+            className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
               active
                 ? 'bg-brand-light text-brand-text-strong'
                 : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
             }`}
           >
-            <Icon size={20} className="shrink-0" />
+            <Icon size={15} className="shrink-0" />
             {!collapsed && <span className="truncate">{item.label}</span>}
           </button>
         );
@@ -692,10 +771,10 @@ function AppShell() {
             const allDone = item.total > 0 && item.done === item.total;
             return (
               <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? `${item.label} ${item.done}/${item.total}` : undefined}
-                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
                   active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
                 }`}>
-                <Icon size={20} className="shrink-0" />
+                <Icon size={15} className="shrink-0" />
                 {!collapsed && (
                   <>
                     <span className="truncate flex-1 text-left">{item.label}</span>
@@ -716,7 +795,7 @@ function AppShell() {
           <div className="h-px bg-border-subtle my-3 mx-2" />
           {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted inline-flex items-center gap-1.5"><Printer size={11} /> Print Marketing</p>}
           <button onClick={() => handleNav('/print/hangers')} title={collapsed ? 'Door Hangers' : undefined}
-            className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+            className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
               isActive('/print/hangers') ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
             }`}>
             <DoorOpen size={18} className="shrink-0" />
@@ -735,10 +814,10 @@ function AppShell() {
             const active = isActive(item.path);
             return (
               <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
                   active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
                 }`}>
-                <Icon size={20} className="shrink-0" />
+                <Icon size={15} className="shrink-0" />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </button>
             );
@@ -748,76 +827,65 @@ function AppShell() {
 
       {ownerMode && (
         <>
-          <div className="h-px bg-border-subtle my-3 mx-2" />
-          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Daily</p>}
-          {[
-            { id: 'sod', path: '/workflow/start', label: 'Start of Day', icon: Sunrise, done: dailyProgress.startDone, total: dailyProgress.startTotal },
-            { id: 'eod', path: '/workflow/end',   label: 'End of Day',   icon: Sunset,  done: dailyProgress.endDone,   total: dailyProgress.endTotal   },
-            { id: 't-today', path: '/workflow/team-today', label: 'Team Today', icon: Sunrise,
-              done: dailyProgress.teamStartDone + dailyProgress.teamEndDone,
-              total: dailyProgress.teamStartTotal + dailyProgress.teamEndTotal },
-          ].map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            const allDone = item.total > 0 && item.done === item.total;
-            return (
-              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? `${item.label} ${item.done}/${item.total}` : undefined}
-                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-                }`}>
-                <Icon size={20} className="shrink-0" />
-                {!collapsed && (
-                  <>
-                    <span className="truncate flex-1 text-left">{item.label}</span>
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${allDone ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-tertiary'}`}>
-                      {item.done}/{item.total}
-                    </span>
-                  </>
-                )}
-              </button>
-            );
-          })}
-
-          <div className="h-px bg-border-subtle my-3 mx-2" />
-          {!collapsed && (
-            <button onClick={() => setTeamToolsOpen((o) => !o)}
+          {/* Building — CRM modules (Clients, Jobs, Quotes, Invoices, etc.).
+              Hidden entirely via Settings → Appearance. */}
+          {!hideBuilding && <div className="h-px bg-border-subtle my-2 mx-2" />}
+          {!hideBuilding && !collapsed && (
+            <button onClick={() => setBuildingOpen((o) => !o)}
               className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
-              <span>Tools</span>
-              <ChevronDown size={14} className={`transition-transform ${teamToolsOpen ? 'rotate-180' : ''}`} />
+              <span>Building</span>
+              <ChevronDown size={14} className={`transition-transform ${buildingOpen ? 'rotate-180' : ''}`} />
             </button>
           )}
-          {(teamToolsOpen || collapsed) && OWNER_TOOLS_PINNED.map((item) => {
+          {!hideBuilding && (buildingOpen || collapsed) && OPERATIONS_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
             return (
               <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
                   active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
                 }`}>
-                <Icon size={18} className="shrink-0" />
+                <Icon size={14} className="shrink-0" />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </button>
             );
           })}
 
-          {(teamToolsOpen || collapsed) && !collapsed && (
+          {/* Tools — no longer a collapsible group; these sit flat in the bar
+              alongside Home and Schedule. "More" still holds the overflow. */}
+          <div className="h-px bg-border-subtle my-3 mx-2" />
+          {OWNER_TOOLS_PINNED.map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.path);
+            return (
+              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
+                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
+                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                }`}>
+                <Icon size={15} className="shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </button>
+            );
+          })}
+
+          {!collapsed && (
             <button onClick={() => setOwnerMoreOpen((o) => !o)}
-              className="w-full flex items-center justify-between px-3 pl-6 py-2 mt-1 text-xs font-semibold text-muted hover:text-secondary cursor-pointer">
+              className="w-full flex items-center justify-between px-3 py-2 mt-1 text-xs font-semibold text-muted hover:text-secondary cursor-pointer">
               <span className="inline-flex items-center gap-2">
                 <ChevronRight size={14} className={`transition-transform ${ownerMoreOpen ? 'rotate-90' : ''}`} />
                 More
               </span>
             </button>
           )}
-          {(teamToolsOpen || collapsed) && (ownerMoreOpen || collapsed) && OWNER_TOOLS_MORE.map((item) => {
+          {(ownerMoreOpen || collapsed) && OWNER_TOOLS_MORE.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
             return (
               <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-10'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
                   active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
                 }`}>
-                <Icon size={18} className="shrink-0" />
+                <Icon size={14} className="shrink-0" />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </button>
             );
@@ -833,10 +901,10 @@ function AppShell() {
             const active = isActive(item.path);
             return (
               <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
                   active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
                 }`}>
-                <Icon size={18} className="shrink-0" />
+                <Icon size={14} className="shrink-0" />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </button>
             );
@@ -866,30 +934,21 @@ function AppShell() {
   return (
     <div className="min-h-screen bg-surface">
       {/* ─── Desktop Sidebar ─── */}
-      <aside className={`hidden lg:flex fixed left-0 top-0 h-full ${sidebarCollapsed ? 'w-16' : 'w-60'} bg-card border-r border-border-subtle z-40 flex-col transition-all duration-200`}>
+      <aside className={`hidden lg:flex fixed left-0 top-0 h-full ${sidebarCollapsed ? 'w-14' : 'w-52'} bg-surface-alt border-r border-border-subtle z-40 flex-col transition-all duration-200`}>
         {/* Logo */}
-        <div className={`h-16 flex items-center ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'} border-b border-border-subtle shrink-0`}>
-          <img src={'https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6a0e4dbce304c4490f517e68.png'} alt="Hey Jude's Lawn Care" className={`shrink-0 ${sidebarCollapsed ? 'h-10 w-10 object-contain' : 'h-10'}`} />
+        <div className={`h-16 flex items-center gap-2 ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'} border-b border-border-subtle shrink-0`}>
+          <img src={'https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6a0c9c767f72486315221b19.png'} alt="Hey Jude's Lawn Care" className={`shrink-0 ${sidebarCollapsed ? 'h-10 w-10 object-contain' : 'h-10'}`} />
         </div>
 
         {renderSidebarNav(sidebarCollapsed)}
 
-        {/* Settings / Profile */}
-        <div className="border-t border-border-subtle p-2 shrink-0">
-          {ownerMode ? (
-            <OwnerSettingsMenu
-              collapsed={sidebarCollapsed}
-              currentUser={currentUser}
-              userEmail={user?.email}
-              onNav={navigate}
-              onSignOut={signOut}
-              isActivePath={(p) => location.pathname === p}
-            />
-          ) : (
+        {/* Profile (non-owner only — owner uses the top-right gear menu) */}
+        {!ownerMode && (
+          <div className="border-t border-border-subtle p-2 shrink-0">
             <button
               onClick={() => navigate('/profile')}
               title={sidebarCollapsed ? currentUser : undefined}
-              className={`w-full flex items-center gap-3 ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              className={`w-full flex items-center gap-2.5 ${sidebarCollapsed ? 'justify-center px-2' : 'px-3'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
                 isProfileActive
                   ? 'bg-brand-light text-brand-text-strong'
                   : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
@@ -902,8 +961,8 @@ function AppShell() {
               </div>
               {!sidebarCollapsed && <span className="truncate">{currentUser}</span>}
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Collapse toggle */}
         <button
@@ -940,7 +999,7 @@ function AppShell() {
           className={`absolute inset-0 bg-black/50 transition-opacity duration-200 ${mobileSidebarOpen ? 'opacity-100' : 'opacity-0'}`}
           onClick={() => setMobileSidebarOpen(false)}
         />
-        <aside className={`absolute left-0 top-0 h-full w-72 bg-card shadow-2xl flex flex-col transition-transform duration-200 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <aside className={`absolute left-0 top-0 h-full w-72 bg-surface-alt shadow-2xl flex flex-col transition-transform duration-200 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <button
             onClick={() => setMobileSidebarOpen(false)}
             className="absolute top-4 right-4 p-1 text-muted hover:text-primary cursor-pointer z-10"
@@ -948,23 +1007,14 @@ function AppShell() {
             <X size={20} />
           </button>
           <div className="h-16 flex items-center px-4 border-b border-border-subtle shrink-0">
-            <img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6a0e4dbce304c4490f517e68.png" alt="Hey Jude's Lawn Care" className="h-10 shrink-0" />
+            <img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6a0c9c767f72486315221b19.png" alt="Hey Jude's Lawn Care" className="h-10 shrink-0" />
           </div>
           {renderSidebarNav(false)}
           <div className="border-t border-border-subtle p-2 shrink-0">
-            {ownerMode ? (
-              <OwnerSettingsMenu
-                collapsed={false}
-                currentUser={currentUser}
-                userEmail={user?.email}
-                onNav={(p) => { navigate(p); setMobileSidebarOpen(false); }}
-                onSignOut={signOut}
-                isActivePath={(p) => location.pathname === p}
-              />
-            ) : (
+            {!ownerMode && (
               <button
                 onClick={() => navigate('/profile')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
                   isProfileActive
                     ? 'bg-brand-light text-brand-text-strong'
                     : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
@@ -983,8 +1033,45 @@ function AppShell() {
       </div>
 
       {/* ─── Main Content ─── */}
-      <main className={`${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60'} transition-all duration-200`}>
-        <div className={location.pathname === '/messages' || location.pathname === '/schedule' || location.pathname === '/clients' ? 'px-4 py-3' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-8'}>
+      <main className={`${sidebarCollapsed ? 'lg:ml-14' : 'lg:ml-52'} transition-all duration-200`}>
+        {/* Top app bar — biz name · search · icons (Jobber-style) */}
+        <div className="sticky top-0 z-30 bg-card border-b border-border-subtle">
+          <div className="flex items-center gap-4 px-4 py-2.5">
+            <p className="text-sm font-medium text-muted truncate">Hey Jude's Lawn Care</p>
+            <div className="ml-auto flex items-center gap-2">
+              <div className="relative w-64">
+                <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                <input
+                  type="text"
+                  placeholder="Search"
+                  className="w-full pl-9 pr-8 py-1.5 rounded-full bg-surface-alt border border-border-subtle text-xs text-primary placeholder:text-muted focus:outline-none focus:border-brand/50"
+                />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted bg-card border border-border-subtle rounded px-1.5 py-0.5">/</span>
+              </div>
+            <div className="flex items-center gap-1">
+              <button title="AI" className="p-1.5 rounded-lg text-muted hover:bg-surface-alt hover:text-primary cursor-pointer">
+                <Sparkles size={16} />
+              </button>
+              <button onClick={() => navigate('/messages')} title="Messages" className="p-1.5 rounded-lg text-muted hover:bg-surface-alt hover:text-primary cursor-pointer">
+                <MessageSquare size={16} />
+              </button>
+              <button title="Notifications" className="relative p-1.5 rounded-lg text-muted hover:bg-surface-alt hover:text-primary cursor-pointer">
+                <Bell size={16} />
+              </button>
+              <button title="Help" className="p-1.5 rounded-lg text-muted hover:bg-surface-alt hover:text-primary cursor-pointer">
+                <HelpCircle size={16} />
+              </button>
+              <TopbarSettingsMenu
+                currentUser={currentUser}
+                userEmail={user?.email}
+                onNav={navigate}
+                onSignOut={signOut}
+              />
+            </div>
+            </div>
+          </div>
+        </div>
+        <div className={location.pathname === '/messages' || location.pathname === '/schedule' ? 'px-4 py-3' : 'px-[45px] py-3 sm:py-5'}>
           <Suspense fallback={
             <div className="flex items-center justify-center py-20">
               <div className="w-8 h-8 border-4 border-brand-light border-t-brand rounded-full animate-spin" />
@@ -997,6 +1084,9 @@ function AppShell() {
                 <Route path="/workflow/:kind/:stepIndex" element={<ChecklistWorkflow />} />
                 <Route path="/timesheets" element={<Timesheets />} />
                 <Route path="/eyeballs" element={<Eyeballs />} />
+                <Route path="/website" element={<Website />} />
+                <Route path="/payroll" element={<PayrollBonus />} />
+                <Route path="/suppliers" element={<Suppliers />} />
                 <Route path="/print/hangers" element={<PrintHangers />} />
                 <Route path="/playbooks" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
                 <Route path="/playbooks/:id" element={<PlaybookDetail ownerMode={ownerMode} />} />
@@ -1009,9 +1099,13 @@ function AppShell() {
                 <Route path="/sales" element={<Sales />} />
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/clients/new" element={<NewClient />} />
-                <Route path="/clients/:clientId" element={<Clients />} />
+                <Route path="/clients/:clientNumber" element={<Clients />} />
+                <Route path="/clients/:clientNumber/edit" element={<EditClientPage />} />
+                <Route path="/quotes" element={<Quotes />} />
+                <Route path="/quotes/:quoteNumber" element={<Quotes />} />
                 <Route path="/messages" element={<Messages />} />
                 <Route path="/requests" element={<Requests />} />
+                <Route path="/requests/:requestNumber" element={<Requests />} />
                 <Route path="/schedule" element={<Schedule />} />
                 <Route path="/jobs" element={<Jobs />} />
                 <Route path="/invoices" element={<Invoices />} />

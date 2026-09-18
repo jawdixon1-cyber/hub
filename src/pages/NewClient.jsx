@@ -269,16 +269,10 @@ export default function NewClient() {
             className="px-4 py-2.5 rounded-lg text-sm font-semibold text-muted hover:text-primary cursor-pointer border border-border-subtle hover:border-border-strong">
             Cancel
           </button>
-          <div className="flex items-center gap-2">
-            <button onClick={() => handleSave(true)} disabled={saving || !form.first_name}
-              className="px-4 py-2.5 rounded-lg border border-brand text-brand text-sm font-bold cursor-pointer hover:bg-brand/5 disabled:opacity-50">
-              Save and Create Another
-            </button>
-            <button onClick={() => handleSave(false)} disabled={saving || !form.first_name}
-              className="px-5 py-2.5 rounded-lg bg-brand text-on-brand text-sm font-bold hover:bg-brand-hover cursor-pointer disabled:opacity-50">
-              {saving ? 'Saving...' : 'Save client'}
-            </button>
-          </div>
+          <button onClick={() => handleSave(false)} disabled={saving || !form.first_name}
+            className="px-5 py-2.5 rounded-lg bg-brand text-on-brand text-sm font-bold hover:bg-brand-hover cursor-pointer disabled:opacity-50">
+            {saving ? 'Saving...' : 'Save client'}
+          </button>
         </div>
       </div>
     </div>

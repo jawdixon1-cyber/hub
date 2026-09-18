@@ -392,7 +392,7 @@ ${allPlans.map((p) => {
 <div class="hero-header">
   <div class="hero-header-inner">
     <div class="hero-logo">
-      <img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/69a0cc399185ff63f8649cd6.png" alt="Hey Jude's Lawn Care" />
+      <img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6a0c9c767f72486315221b19.png" alt="Hey Jude's Lawn Care" />
     </div>
     <div class="hero-title">
       <h1>Annual Service Agreement</h1>

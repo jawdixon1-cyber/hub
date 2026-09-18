@@ -24,7 +24,7 @@ export default function LoginForm() {
   return (
     <div className="min-h-screen bg-surface flex items-center justify-center p-4">
       <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-8 max-w-sm w-full text-center">
-        <img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6a0e4dbce304c4490f517e68.png" alt="Hey Jude's Lawn Care" className="h-20 mx-auto mb-6" />
+        <img src="https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6a0c9c767f72486315221b19.png" alt="Hey Jude's Lawn Care" className="h-20 mx-auto mb-6" />
 
         <form onSubmit={handleSubmit} className="space-y-4 text-left">
           <div>

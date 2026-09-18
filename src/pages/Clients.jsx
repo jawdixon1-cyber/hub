@@ -9,8 +9,15 @@ import {
 } from 'lucide-react';
 import { getTimezone, getTodayInTimezone } from '../utils/timezone';
 import { useAppStore } from '../store/AppStoreContext';
+import { bucketFor as requestBucketFor, STATUS_CONFIG as REQUEST_STATUS_CONFIG } from './Requests';
 
-function formatPhone(p) { return p?.number || p || ''; }
+function formatPhone(p) {
+  const raw = p?.number || p || '';
+  const digits = String(raw).replace(/\D/g, '');
+  if (digits.length === 10) return `${digits.slice(0,3)}-${digits.slice(3,6)}-${digits.slice(6)}`;
+  if (digits.length === 11 && digits[0] === '1') return `${digits.slice(1,4)}-${digits.slice(4,7)}-${digits.slice(7)}`;
+  return raw;
+}
 function formatEmail(e) { return e?.address || e || ''; }
 function primaryPhone(phones) { return formatPhone((phones || []).find(p => p.primary) || phones?.[0]); }
 function primaryEmail(emails) { return formatEmail((emails || []).find(e => e.primary) || emails?.[0]); }
@@ -432,7 +439,7 @@ const LEAD_SOURCES = ['Google', 'Facebook', 'Instagram', 'Nextdoor', 'Referral',
 const ALL_TAGS = ['vip', 'commercial', 'residential', 'referral', 'pct wt', 'syncing'];
 
 /* ─── Edit Client Modal ─── */
-function EditClientModal({ client, properties = [], onClose, onSave, onPropertiesChange, orgId }) {
+export function EditClientModal({ client, properties = [], onClose, onSave, onPropertiesChange, orgId, inline = false }) {
   const bizSettings = useAppStore((s) => s.businessSettings) || {};
   const primaryProp = properties[0];
   const billingMatches = primaryProp && client.billing_street === primaryProp.street && client.billing_city === primaryProp.city;
@@ -537,15 +544,17 @@ function EditClientModal({ client, properties = [], onClose, onSave, onPropertie
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-6 px-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative bg-card border border-border-subtle rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+    <div className={inline ? "max-w-3xl mx-auto" : "fixed inset-0 z-50 flex items-start justify-center pt-6 px-4"}>
+      {!inline && <div className="absolute inset-0 bg-black/60" onClick={onClose} />}
+      <div className={inline
+        ? "relative bg-card border border-border-subtle rounded-2xl overflow-hidden w-full flex flex-col"
+        : "relative bg-card border border-border-subtle rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col"}>
         <div className="h-1 bg-brand rounded-t-2xl shrink-0" />
         <div className="flex items-center justify-between px-6 py-3 border-b border-border-subtle shrink-0">
-          <h2 className="text-base font-bold text-primary">Edit Client</h2>
+          <h2 className={inline ? "text-xl font-black text-primary" : "text-base font-bold text-primary"}>Edit Client</h2>
           <button onClick={onClose} className="p-1 text-muted hover:text-primary cursor-pointer"><X size={16} /></button>
         </div>
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+        <div className={inline ? "p-6 space-y-5" : "flex-1 overflow-y-auto p-6 space-y-5"}>
           {/* Primary contact details — connected fields */}
           <div>
             <h3 className="text-xs font-bold text-muted uppercase mb-1">Primary contact details</h3>
@@ -685,22 +694,899 @@ function EditClientModal({ client, properties = [], onClose, onSave, onPropertie
 }
 
 /* ─── Client Detail ─── */
-function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, archiveClient, deleteClient, onClientUpdate }) {
+/* ─── Payment Methods — Stripe card-on-file ─── */
+function PaymentMethodsSection({ client, properties }) {
+  const [methods, setMethods] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  const fetchMethods = useCallback(async () => {
+    if (!client?.id) return;
+    setLoading(true);
+    const r = await fetch(`/api/stripe-list-cards?client_id=${client.id}`);
+    const { methods } = await r.json();
+    setMethods(methods || []);
+    setLoading(false);
+  }, [client?.id]);
+
+  useEffect(() => { fetchMethods(); }, [fetchMethods]);
+
+  // Build the default billing address from the client's billing_* fields if set,
+  // otherwise fall back to the primary property's address.
+  const billingAddress = (() => {
+    if (client.billing_street) {
+      return {
+        street: client.billing_street,
+        city: client.billing_city,
+        state: client.billing_state,
+        zip: client.billing_zip,
+      };
+    }
+    const p = properties?.[0];
+    if (p) return { street: p.street, city: p.city, state: p.state, zip: p.zip };
+    return null;
+  })();
+
+  return (
+    <div className="rounded-xl bg-card border border-border-subtle p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-base font-bold text-primary">Payment methods</h2>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="text-[11px] font-semibold text-brand-text hover:underline cursor-pointer"
+        >
+          + Add
+        </button>
+      </div>
+      <div className="rounded-lg bg-surface-alt/30 border border-border-subtle/50">
+        {loading && (
+          <div className="px-4 py-6 text-center"><p className="text-xs text-muted">Loading…</p></div>
+        )}
+        {!loading && methods.length === 0 && (
+          <div className="px-4 py-6 text-center"><p className="text-xs text-muted">No payment methods on file</p></div>
+        )}
+        {!loading && methods.length > 0 && (
+          <>
+            <div className="grid grid-cols-[1fr_100px_140px] px-4 py-2 border-b border-border-subtle/50">
+              <span className="text-[10px] font-semibold text-muted">Method</span>
+              <span className="text-[10px] font-semibold text-muted">Expiry</span>
+              <span className="text-[10px] font-semibold text-muted text-right"></span>
+            </div>
+            {methods.map((m) => (
+              <div key={m.id} className="grid grid-cols-[1fr_100px_140px] items-center px-4 py-3 border-b border-border-subtle/30 last:border-b-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase text-primary">{m.brand || 'Card'}</span>
+                  <span className="text-xs text-secondary">•••• {m.last4}</span>
+                  {m.is_default && <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-500/15 px-1.5 py-0.5 rounded">Default</span>}
+                </div>
+                <span className="text-xs text-secondary tabular-nums">{m.exp_month?.toString().padStart(2, '0')}/{m.exp_year}</span>
+                <div className="flex items-center gap-1 justify-end">
+                  {!m.is_default && (
+                    <button
+                      onClick={async () => {
+                        await fetch('/api/stripe-set-default-card', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ payment_method_row_id: m.id }),
+                        });
+                        fetchMethods();
+                      }}
+                      className="text-[10px] font-semibold text-brand-text hover:underline px-2 py-1 rounded cursor-pointer"
+                      title="Make this the default card"
+                    >
+                      Set default
+                    </button>
+                  )}
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Remove this card?')) return;
+                      await fetch('/api/stripe-delete-card', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ payment_method_row_id: m.id }),
+                      });
+                      fetchMethods();
+                    }}
+                    className="text-muted hover:text-rose-600 p-1 rounded cursor-pointer"
+                    title="Remove"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+
+      {showAddModal && (
+        <AddPaymentMethodModal
+          client={client}
+          billingAddress={billingAddress}
+          onClose={() => setShowAddModal(false)}
+          onSaved={() => { setShowAddModal(false); fetchMethods(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── Charge card modal — off-session PaymentIntent on connected account ─── */
+function ChargeCardModal({ client, methods, onClose }) {
+  const defaultMethod = methods.find(m => m.is_default) || methods[0];
+  const [selectedId, setSelectedId] = useState(defaultMethod?.id || '');
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  const cents = Math.round((parseFloat(amount || '0') || 0) * 100);
+  const canSubmit = cents >= 50 && selectedId && !submitting;
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const r = await fetch('/api/stripe-charge-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: client.id,
+          amount_cents: cents,
+          payment_method_row_id: selectedId,
+          description: description || undefined,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        setError(data.error || 'Charge failed');
+      } else if (data.status === 'succeeded') {
+        setResult(data);
+      } else {
+        setError(`Status: ${data.status}`);
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 overflow-y-auto p-6" onClick={onClose}>
+      <div className="bg-card rounded-xl w-full max-w-md shadow-xl mt-12" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
+          <h3 className="text-base font-bold text-primary">Charge card</h3>
+          <button onClick={onClose} className="text-muted hover:text-primary text-xl leading-none cursor-pointer">×</button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          {result ? (
+            <div className="text-center py-4">
+              <p className="text-emerald-700 font-bold text-lg">Charged ${(result.amount / 100).toFixed(2)}</p>
+              <p className="text-xs text-muted mt-1 font-mono">{result.payment_intent_id}</p>
+              <button onClick={onClose} className="mt-4 text-xs font-semibold text-brand-text hover:underline cursor-pointer">Done</button>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Amount</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary">$</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0.50"
+                    autoFocus
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full pl-7 pr-3 py-2 border border-border-subtle rounded-lg text-sm bg-surface-alt/30 focus:outline-none focus:ring-1 focus:ring-brand-text"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Card</label>
+                <select
+                  value={selectedId}
+                  onChange={(e) => setSelectedId(e.target.value)}
+                  className="w-full px-3 py-2 border border-border-subtle rounded-lg text-sm bg-surface-alt/30 cursor-pointer focus:outline-none focus:ring-1 focus:ring-brand-text"
+                >
+                  {methods.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {(m.brand || 'Card').toUpperCase()} •••• {m.last4}{m.is_default ? ' (Default)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Description (optional)</label>
+                <input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g. Mowing — June"
+                  className="w-full px-3 py-2 border border-border-subtle rounded-lg text-sm bg-surface-alt/30 focus:outline-none focus:ring-1 focus:ring-brand-text"
+                />
+              </div>
+              {error && <p className="text-xs text-rose-600">{error}</p>}
+              <button
+                onClick={submit}
+                disabled={!canSubmit}
+                className="w-full py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {submitting ? 'Charging…' : cents >= 50 ? `Charge $${(cents / 100).toFixed(2)}` : 'Enter amount'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Add Payment Method modal — Stripe card-on-file ─── */
+function AddPaymentMethodModal({ client, billingAddress, onClose, onSaved }) {
+  // Step 1: ask the server for a SetupIntent on the connected account.
+  // Step 2: render Stripe Elements with that connected account scope.
+  const [setup, setSetup] = useState(null);    // { client_secret, stripe_account_id } | null
+  const [bootErr, setBootErr] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/stripe-setup-intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_id: client.id }),
+        });
+        const data = await r.json();
+        if (cancelled) return;
+        if (!r.ok) { setBootErr(data.error || 'Failed to start Stripe.'); return; }
+        setSetup(data);
+      } catch (err) {
+        if (!cancelled) setBootErr(err.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [client.id]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center pt-12 px-4 overflow-y-auto"
+      onWheel={(e) => e.stopPropagation()}
+    >
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-card border border-border-subtle rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[calc(100vh-6rem)] mb-12">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle shrink-0">
+          <h2 className="text-lg font-black text-primary">Add payment method</h2>
+          <button onClick={onClose} className="p-1 text-muted hover:text-primary cursor-pointer">
+            <X size={18} />
+          </button>
+        </div>
+
+        {bootErr && (
+          <div className="p-6">
+            <div className="rounded-lg bg-rose-500/10 border border-rose-500/30 px-3 py-3 text-sm text-rose-800">
+              {bootErr}
+            </div>
+            <button onClick={onClose} className="mt-4 w-full px-4 py-2 rounded-lg bg-surface-alt text-sm font-bold text-secondary cursor-pointer">Close</button>
+          </div>
+        )}
+
+        {!bootErr && !setup && (
+          <div className="p-12 flex items-center justify-center">
+            <Loader2 size={20} className="animate-spin text-brand" />
+          </div>
+        )}
+
+        {setup && (
+          <StripeCardForm
+            client={client}
+            billingAddress={billingAddress}
+            setup={setup}
+            onClose={onClose}
+            onSaved={onSaved}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Card form — Jobber-style (just card number / MM/YY / CVC) ─── */
+function StripeCardForm({ client, billingAddress, setup, onClose, onSaved }) {
+  const [stripeReady, setStripeReady] = useState(false);
+  const [elementsInstance, setElementsInstance] = useState(null);
+  const [nameOnCard, setNameOnCard] = useState('');
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [addr, setAddr] = useState({
+    street: billingAddress?.street || '',
+    city: billingAddress?.city || '',
+    state: billingAddress?.state || '',
+    zip: billingAddress?.zip || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const numberRef = useRef(null);
+  const expiryRef = useRef(null);
+  const cvcRef = useRef(null);
+  const cardElsRef = useRef({ number: null, expiry: null, cvc: null });
+  const [cardError, setCardError] = useState(null); // live validation msg from Stripe
+
+  // Load Stripe.js scoped to the connected account.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { loadStripe } = await import('@stripe/stripe-js');
+      const stripe = await loadStripe(
+        import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY,
+        { stripeAccount: setup.stripe_account_id }
+      );
+      if (cancelled || !stripe) return;
+      const elements = stripe.elements({
+        appearance: {
+          theme: 'none',
+          disableAnimations: true,
+          variables: {
+            colorText: '#0a0a0a',
+            colorTextPlaceholder: '#9ca3af',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSizeBase: '14px',
+            spacingUnit: '4px',
+          },
+        },
+      });
+      setElementsInstance({ stripe, elements });
+    })();
+    return () => { cancelled = true; };
+  }, [setup.stripe_account_id]);
+
+  // Mount three separate card fields (number, expiry, CVC).
+  useEffect(() => {
+    if (!elementsInstance) return;
+    const baseStyle = {
+      base: {
+        fontFamily: 'Inter, system-ui, sans-serif',
+        fontSize: '14px',
+        color: '#0a0a0a',
+        '::placeholder': { color: '#9ca3af' },
+      },
+      invalid: { color: '#dc2626' },
+    };
+    // disableLink: true tells Stripe NOT to inject the Link autofill UI.
+    const number = elementsInstance.elements.create('cardNumber', {
+      style: baseStyle,
+      showIcon: true,
+      disableLink: true,
+    });
+    const expiry = elementsInstance.elements.create('cardExpiry', { style: baseStyle, disableLink: true });
+    const cvc = elementsInstance.elements.create('cardCvc', { style: baseStyle, disableLink: true });
+    number.mount(numberRef.current);
+    expiry.mount(expiryRef.current);
+    cvc.mount(cvcRef.current);
+    cardElsRef.current = { number, expiry, cvc };
+
+    // Surface live validation errors so the user knows what's wrong, not just "red".
+    const onChange = (ev) => {
+      if (ev.error) setCardError(ev.error.message);
+      else setCardError(null);
+    };
+    number.on('change', onChange);
+    expiry.on('change', onChange);
+    cvc.on('change', onChange);
+
+    // Wait for them to be ready before allowing save.
+    let readyCount = 0;
+    const onReady = () => { readyCount++; if (readyCount === 3) setStripeReady(true); };
+    number.on('ready', onReady);
+    expiry.on('ready', onReady);
+    cvc.on('ready', onReady);
+    return () => {
+      number.unmount(); expiry.unmount(); cvc.unmount();
+      setStripeReady(false);
+    };
+  }, [elementsInstance]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    if (!elementsInstance) { setError('Stripe not ready'); setSaving(false); return; }
+    const { stripe } = elementsInstance;
+    const cardNumber = cardElsRef.current.number;
+
+    // confirmCardSetup uses the SetupIntent client_secret we got earlier.
+    const { error: confirmErr, setupIntent } = await stripe.confirmCardSetup(
+      setup.client_secret,
+      {
+        payment_method: {
+          card: cardNumber,
+          billing_details: {
+            name: nameOnCard || undefined,
+            address: addr.street ? {
+              line1: addr.street,
+              city: addr.city || undefined,
+              state: addr.state || undefined,
+              postal_code: addr.zip || undefined,
+              country: 'US',
+            } : undefined,
+          },
+        },
+      }
+    );
+
+    if (confirmErr) { setError(confirmErr.message); setSaving(false); return; }
+    if (setupIntent?.status !== 'succeeded') {
+      setError(`Card save did not complete (status: ${setupIntent?.status || 'unknown'}).`);
+      setSaving(false);
+      return;
+    }
+
+    // Persist the saved payment_method to our DB.
+    const r = await fetch('/api/stripe-save-card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: client.id,
+        payment_method_id: setupIntent.payment_method,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) { setError(data.error || 'Failed to save card.'); setSaving(false); return; }
+
+    setSaving(false);
+    onSaved();
+  };
+
+  const inputCls = "w-full px-3 py-2.5 rounded-lg bg-surface-alt border border-border-subtle text-sm text-primary placeholder:text-muted focus:outline-none focus:border-brand/50";
+
+  return (
+    <>
+      <div className="p-6 space-y-5 overflow-y-auto flex-1 min-h-0">
+        {/* Card tile */}
+        <div className="relative rounded-xl bg-primary text-card p-4 w-32">
+          <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-card text-primary flex items-center justify-center">
+            <Check size={12} strokeWidth={3} />
+          </div>
+          <div className="w-8 h-6 rounded border-2 border-card mb-3 opacity-80" />
+          <p className="text-xs font-bold">Credit/Debit</p>
+        </div>
+
+        <div className="space-y-3">
+          <h3 className="text-sm font-bold text-primary">Card details</h3>
+          <input
+            value={nameOnCard}
+            onChange={(e) => setNameOnCard(e.target.value)}
+            placeholder="Name on card"
+            className={inputCls}
+          />
+          {/* Stripe split card elements — looks like Jobber */}
+          <div className={`rounded-lg bg-surface-alt border ${cardError ? 'border-rose-500' : 'border-border-subtle'}`}>
+            <div ref={numberRef} className="px-3 py-3 border-b border-border-subtle min-h-[44px]" />
+            <div className="grid grid-cols-2">
+              <div ref={expiryRef} className="px-3 py-3 border-r border-border-subtle min-h-[44px]" />
+              <div ref={cvcRef} className="px-3 py-3 min-h-[44px]" />
+            </div>
+          </div>
+          {cardError && (
+            <p className="text-xs text-rose-600 font-semibold">{cardError}</p>
+          )}
+          {!stripeReady && <p className="text-[11px] text-muted">Loading secure card input…</p>}
+        </div>
+
+        <div className="space-y-2">
+          <h3 className="text-sm font-bold text-primary">Billing Address</h3>
+          {!editingAddress ? (
+            <>
+              {addr.street ? (
+                <p className="text-sm text-secondary leading-snug">
+                  {addr.street}<br />
+                  {[addr.city, addr.state, addr.zip].filter(Boolean).join(', ')}
+                </p>
+              ) : (
+                <p className="text-sm text-muted italic">No billing address on file</p>
+              )}
+              <button
+                onClick={() => setEditingAddress(true)}
+                className="text-xs font-semibold text-brand-text hover:underline cursor-pointer"
+              >
+                Change
+              </button>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <input value={addr.street} onChange={(e) => setAddr((a) => ({ ...a, street: e.target.value }))} placeholder="Street" className={inputCls} />
+              <div className="grid grid-cols-3 gap-2">
+                <input value={addr.city} onChange={(e) => setAddr((a) => ({ ...a, city: e.target.value }))} placeholder="City" className={inputCls} />
+                <input value={addr.state} onChange={(e) => setAddr((a) => ({ ...a, state: e.target.value }))} placeholder="State" className={inputCls} />
+                <input value={addr.zip} onChange={(e) => setAddr((a) => ({ ...a, zip: e.target.value }))} placeholder="ZIP" className={inputCls} />
+              </div>
+              <button onClick={() => setEditingAddress(false)} className="text-xs font-semibold text-brand-text hover:underline cursor-pointer">Done</button>
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <div className="rounded-lg bg-rose-500/10 border border-rose-500/30 px-3 py-2 text-xs text-rose-800">
+            {error}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border-subtle">
+        <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-bold text-secondary hover:bg-surface-alt cursor-pointer">
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving || !stripeReady || !!cardError}
+          className="px-4 py-2 rounded-lg bg-brand text-on-brand text-sm font-bold hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </>
+  );
+}
+
+/* ─── Work Overview — jobs (real, from hub_jobs), other tabs TBD ─── */
+function WorkOverviewSection({ clientId, workTab, setWorkTab }) {
+  const [jobs, setJobs] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [quotes, setQuotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!clientId) return;
+    setLoading(true);
+    (async () => {
+      const [jobsRes, reqRes, quoteRes] = await Promise.all([
+        supabase.from('hub_jobs')
+          .select('id, title, type, status, job_number, total_amount, start_date, end_date, frequency_label')
+          .eq('contact_id', clientId)
+          .order('start_date', { ascending: false, nullsFirst: false }),
+        supabase.from('requests')
+          .select('id, request_number, title, status, assessment_date, created_at, raw_payload')
+          .eq('client_id', clientId)
+          .order('created_at', { ascending: false }),
+        supabase.from('hub_quotes')
+          .select('id, quote_number, title, status, total, created_at')
+          .eq('client_id', clientId)
+          .order('created_at', { ascending: false }),
+      ]);
+      setJobs(jobsRes.data || []);
+      setRequests(reqRes.data || []);
+      setQuotes(quoteRes.data || []);
+      setLoading(false);
+    })();
+  }, [clientId]);
+
+  // "Active" rolls up every kind of work that isn't archived (jobs + requests + quotes).
+  // "All Jobs" is the strict jobs-only view (default to active-only filter off).
+  const activeJobs     = jobs.filter((j) => j.status !== 'archived');
+  const activeRequests = requests.filter((r) => r.status !== 'lost' && r.status !== 'archived');
+  const activeQuotes   = quotes.filter((q) => q.status !== 'archived');
+  const activeAll = [
+    ...activeJobs.map(r => ({ ...r, _kind: 'job',     _ts: r.start_date || r.created_at })),
+    ...activeRequests.map(r => ({ ...r, _kind: 'request', _ts: r.created_at })),
+    ...activeQuotes.map(r => ({ ...r, _kind: 'quote',   _ts: r.created_at })),
+  ].sort((a, b) => (new Date(b._ts).getTime() || 0) - (new Date(a._ts).getTime() || 0));
+
+  const [jobsScope, setJobsScope] = useState('active'); // 'active' (everything) | 'all' (all jobs only)
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const scopeRef = useRef(null);
+  useEffect(() => {
+    if (!scopeOpen) return;
+    const onDown = (e) => { if (scopeRef.current && !scopeRef.current.contains(e.target)) setScopeOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [scopeOpen]);
+
+  // Type filter — multi-select chips. Empty set = no filter (show all kinds).
+  // Click a chip to add it, click its X to remove it.
+  const [typeFilter, setTypeFilter] = useState(() => new Set());
+  const toggleType = (t) => {
+    setTypeFilter(prev => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t); else next.add(t);
+      return next;
+    });
+  };
+  const removeType = (t) => {
+    setTypeFilter(prev => {
+      const next = new Set(prev);
+      next.delete(t);
+      return next;
+    });
+  };
+
+  const scopedRows = jobsScope === 'active' ? activeAll : jobs.map(r => ({ ...r, _kind: 'job' }));
+  // Apply type filter only if user has picked anything.
+  const tabRows = typeFilter.size === 0 ? scopedRows : scopedRows.filter(r => typeFilter.has(r._kind));
+  const isWired = true;
+
+  const fmtDate = (s) => {
+    if (!s) return '—';
+    const d = new Date(s);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+  const fmtMoney = (n) => (n == null ? '—' : `$${Number(n).toFixed(2)}`);
+
+  return (
+    <div className="rounded-xl bg-card border border-border-subtle p-5">
+      <h2 className="text-[11px] font-bold text-muted uppercase tracking-wider mb-3">Work Overview</h2>
+      <div className="flex items-center gap-1 mb-3">
+        {/* Scope dropdown — Active rollup (everything not archived) or All Jobs only. */}
+        <div className="relative" ref={scopeRef}>
+          <button
+            onClick={() => setScopeOpen(o => !o)}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer capitalize bg-surface-alt text-primary"
+          >
+            {jobsScope === 'active' ? 'Active' : 'All Jobs'}
+            <span className="ml-1 text-[10px] text-muted">{scopedRows.length}</span>
+            <ChevronDown size={11} className="text-muted" />
+          </button>
+          {scopeOpen && (
+            <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border-subtle rounded-lg shadow-2xl py-1 min-w-[140px]">
+              {[
+                { id: 'active', label: 'Active', count: activeAll.length },
+                { id: 'all',    label: 'All Jobs', count: jobs.length },
+              ].map(opt => (
+                <button key={opt.id}
+                  onClick={() => { setJobsScope(opt.id); setScopeOpen(false); }}
+                  className={`w-full px-3 py-1.5 text-left text-[11px] font-bold flex items-center justify-between hover:bg-surface-alt cursor-pointer ${jobsScope === opt.id ? 'text-primary' : 'text-secondary'}`}>
+                  <span>{opt.label}</span>
+                  <span className="text-[10px] text-muted">{opt.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Multi-select type filters. Empty = show all kinds. Selected chip shows X to remove. */}
+        {[
+          { id: 'request', label: 'Requests', count: requests.length },
+          { id: 'quote',   label: 'Quotes',   count: quotes.length },
+          { id: 'job',     label: 'Jobs',     count: jobs.length },
+          { id: 'invoice', label: 'Invoices', count: 0 },
+        ].map((t) => {
+          const selected = typeFilter.has(t.id);
+          return (
+            <button
+              key={t.id}
+              onClick={() => selected ? removeType(t.id) : toggleType(t.id)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${
+                selected ? 'bg-brand/15 text-brand-text border border-brand/40' : 'text-muted hover:text-secondary'
+              }`}
+            >
+              {t.label}
+              {t.count > 0 && <span className="text-[10px] text-muted">{t.count}</span>}
+              {selected && (
+                <span
+                  onClick={(e) => { e.stopPropagation(); removeType(t.id); }}
+                  className="ml-1 inline-flex items-center justify-center rounded-full hover:bg-brand/30">
+                  <X size={11} />
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <div className="rounded-lg bg-surface-alt/30 border border-border-subtle/50">
+        <div className="grid grid-cols-[1fr_120px_110px_100px] px-4 py-2 border-b border-border-subtle/50">
+          <span className="text-[10px] font-semibold text-muted">Item</span>
+          <span className="text-[10px] font-semibold text-muted">Date</span>
+          <span className="text-[10px] font-semibold text-muted">Status</span>
+          <span className="text-[10px] font-semibold text-muted text-right">Amount</span>
+        </div>
+        {loading && (
+          <div className="px-4 py-6 text-center"><p className="text-xs text-muted">Loading…</p></div>
+        )}
+        {!loading && !isWired && (
+          <div className="px-4 py-6 text-center">
+            <p className="text-xs text-muted capitalize">{workTab} aren't connected yet</p>
+          </div>
+        )}
+        {!loading && isWired && tabRows.length === 0 && (
+          <div className="px-4 py-6 text-center">
+            <p className="text-xs text-muted">No {workTab} items yet</p>
+          </div>
+        )}
+        {!loading && isWired && tabRows.map((row) => {
+          // Per-row adapter so requests/quotes/jobs render with their own column shape.
+          // When the "Active" rollup is showing, rows carry `_kind` so the renderer
+          // can dispatch even though workTab is 'jobs'.
+          const kind = row._kind || (workTab === 'requests' ? 'request' : workTab === 'quotes' ? 'quote' : 'job');
+          if (kind === 'request') {
+            const name = row.title || (row.raw_payload?.assessment?.instructions ? 'Untitled request' : 'Request');
+            // Derive the same bucket the Requests page uses — so a scheduled request
+            // shows as Upcoming / Today / Overdue, not the raw `status` column.
+            const bucket = requestBucketFor(row);
+            const cfg = REQUEST_STATUS_CONFIG[bucket] || REQUEST_STATUS_CONFIG.new;
+            return (
+              <div key={row.id}
+                onClick={() => navigate(`/requests/${row.request_number ?? row.id}`)}
+                className="grid grid-cols-[1fr_120px_110px_100px] items-center px-4 py-3 border-b border-border-subtle/30 last:border-b-0 cursor-pointer hover:bg-surface-alt/40">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-primary truncate">{name}</p>
+                  <p className="text-[10px] text-muted">{row.assessment_date ? 'Assessment scheduled' : 'New'}</p>
+                </div>
+                <span className="text-xs text-secondary">{fmtDate(row.created_at)}</span>
+                <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${cfg.text || 'text-amber-400'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                  {cfg.label}
+                </span>
+                <span className="text-xs text-muted tabular-nums text-right">—</span>
+              </div>
+            );
+          }
+          if (kind === 'quote') {
+            return (
+              <div key={row.id}
+                onClick={() => navigate(`/quotes/${row.quote_number ?? row.id}`)}
+                className="grid grid-cols-[1fr_120px_110px_100px] items-center px-4 py-3 border-b border-border-subtle/30 last:border-b-0 cursor-pointer hover:bg-surface-alt/40">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-primary truncate">{row.quote_number ? `#${row.quote_number} ` : ''}{row.title || 'Untitled quote'}</p>
+                  <p className="text-[10px] text-muted">Quote</p>
+                </div>
+                <span className="text-xs text-secondary">{fmtDate(row.created_at)}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-secondary">{(row.status || 'draft').replace(/_/g, ' ')}</span>
+                <span className="text-xs text-primary tabular-nums text-right">{fmtMoney(row.total)}</span>
+              </div>
+            );
+          }
+          // jobs / active jobs
+          return (
+            <div key={row.id} className="grid grid-cols-[1fr_120px_110px_100px] items-center px-4 py-3 border-b border-border-subtle/30 last:border-b-0">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-primary truncate">
+                  {row.job_number ? `#${row.job_number} ` : ''}{row.title || 'Untitled job'}
+                </p>
+                <p className="text-[10px] text-muted">
+                  {row.type === 'recurring' ? (row.frequency_label || 'Recurring') : 'One-off'}
+                </p>
+              </div>
+              <span className="text-xs text-secondary">{fmtDate(row.start_date)}</span>
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${row.status === 'active' ? 'text-emerald-400' : row.status === 'completed' ? 'text-muted' : 'text-amber-400'}`}>
+                {row.status}
+              </span>
+              <span className="text-xs text-primary tabular-nums text-right">{fmtMoney(row.total_amount)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Client Schedule — visits, assessments, tasks (completed-only filter) ─── */
+function ClientScheduleSection({ clientId }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'completed'
+  const [typeFilter, setTypeFilter] = useState('all');     // 'all' | 'visit' | 'assessment' | 'task'
+
+  useEffect(() => {
+    if (!clientId) return;
+    setLoading(true);
+    // Pull every Jobber-synced visit for this client. Jobs/visits are linked to
+    // contacts via hub_jobs.contact_id, and visits roll up via job_id.
+    (async () => {
+      const { data: jobs } = await supabase
+        .from('hub_jobs')
+        .select('id, title, type, status')
+        .eq('contact_id', clientId);
+      const jobIds = (jobs || []).map((j) => j.id);
+      if (jobIds.length === 0) { setItems([]); setLoading(false); return; }
+      const { data: visits } = await supabase
+        .from('hub_visits')
+        .select('id, job_id, title, scheduled_at, completed_at, status, type')
+        .in('job_id', jobIds)
+        .order('scheduled_at', { ascending: false });
+      const jobMap = Object.fromEntries((jobs || []).map((j) => [j.id, j]));
+      const rows = (visits || []).map((v) => {
+        const job = jobMap[v.job_id] || {};
+        // Type — explicit on visit if available; otherwise infer from job type.
+        const type = v.type || (job.type === 'assessment' ? 'assessment' : 'visit');
+        // Status — only "completed" or "scheduled" as requested.
+        const completed = !!v.completed_at || v.status === 'completed';
+        return {
+          id: v.id,
+          title: v.title || job.title || 'Visit',
+          type,
+          status: completed ? 'completed' : 'scheduled',
+          when: v.completed_at || v.scheduled_at,
+        };
+      });
+      setItems(rows);
+      setLoading(false);
+    })();
+  }, [clientId]);
+
+  const filtered = items.filter((r) => {
+    if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+    if (typeFilter !== 'all' && r.type !== typeFilter) return false;
+    return true;
+  });
+
+  const formatWhen = (d) => {
+    if (!d) return '—';
+    const dt = new Date(d);
+    if (isNaN(dt.getTime())) return '—';
+    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  return (
+    <div className="rounded-xl bg-card border border-border-subtle p-5">
+      <h2 className="text-[11px] font-bold text-muted uppercase tracking-wider mb-2">Client Schedule</h2>
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="px-3 py-1.5 rounded-lg bg-surface-alt border border-border-subtle text-xs font-bold text-primary cursor-pointer focus:outline-none focus:border-brand/50"
+        >
+          <option value="all">All types</option>
+          <option value="visit">Visits</option>
+          <option value="assessment">Assessments</option>
+          <option value="task">Tasks</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-1.5 rounded-lg bg-surface-alt border border-border-subtle text-xs font-bold text-primary cursor-pointer focus:outline-none focus:border-brand/50"
+        >
+          <option value="all">All statuses</option>
+          <option value="completed">Completed</option>
+        </select>
+      </div>
+
+      <div className="rounded-lg bg-surface-alt/30 border border-border-subtle/50">
+        <div className="grid grid-cols-[1fr_120px_120px_100px] px-4 py-2 border-b border-border-subtle/50">
+          <span className="text-[10px] font-semibold text-muted">Title</span>
+          <span className="text-[10px] font-semibold text-muted">Type</span>
+          <span className="text-[10px] font-semibold text-muted">Date</span>
+          <span className="text-[10px] font-semibold text-muted text-right">Status</span>
+        </div>
+        {loading && (
+          <div className="px-4 py-6 text-center"><p className="text-xs text-muted">Loading…</p></div>
+        )}
+        {!loading && filtered.length === 0 && (
+          <div className="px-4 py-6 text-center"><p className="text-xs text-muted">No scheduled items</p></div>
+        )}
+        {!loading && filtered.map((r) => (
+          <div key={r.id} className="grid grid-cols-[1fr_120px_120px_100px] px-4 py-2.5 border-b border-border-subtle/30 last:border-b-0 items-center">
+            <span className="text-xs text-primary truncate">{r.title}</span>
+            <span className="text-[11px] capitalize text-secondary">{r.type}</span>
+            <span className="text-[11px] text-secondary">{formatWhen(r.when)}</span>
+            <span className={`justify-self-end text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+              r.status === 'completed'
+                ? 'bg-emerald-500/15 text-emerald-700'
+                : 'bg-amber-500/15 text-amber-700'
+            }`}>
+              {r.status}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, archiveClient, deleteClient, onClientUpdate, clientIsLead }) {
+  const navigate = useNavigate();
   const name = [client.first_name, client.last_name].filter(Boolean).join(' ') || client.company_name || 'Unknown';
   const phone = primaryPhone(client.phones);
   const email = primaryEmail(client.emails);
   const billingAddr = [client.billing_street, client.billing_city, client.billing_state, client.billing_zip].filter(Boolean).join(', ');
-  const [workTab, setWorkTab] = useState('active');
+  const [workTab, setWorkTab] = useState('jobs');
   const [editProperty, setEditProperty] = useState(null);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [showEditClient, setShowEditClient] = useState(false);
-
   return (
     <div>
-      {showEditClient && (
-        <EditClientModal client={client} properties={properties} onClose={() => setShowEditClient(false)} onSave={onClientUpdate} onPropertiesChange={onPropertiesChange} orgId={orgId} />
-      )}
       {editProperty && (
         <PropertyEditor
           property={editProperty === 'new' ? null : editProperty}
@@ -710,36 +1596,52 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
           onSave={onPropertiesChange}
         />
       )}
-      {/* Back */}
-      <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-muted hover:text-primary cursor-pointer mb-3">
-        <ArrowLeft size={14} /> Back to clients
-      </button>
 
       {/* Two-column layout */}
       <div className="flex gap-5">
         {/* ─── Left: main content ─── */}
         <div className="flex-1 min-w-0 space-y-4">
 
-          {/* 1. Details card — name, buttons, contact info all in one */}
-          <div className="rounded-xl bg-card border border-border-subtle">
-            {/* Name + badge + action buttons */}
-            <div className="flex items-center justify-between p-5 border-b border-border-subtle">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-full bg-brand/15 border-2 border-brand/30 flex items-center justify-center text-base font-black text-brand shrink-0">
-                  {(client.first_name?.[0] || client.company_name?.[0] || '?').toUpperCase()}
+          {/* 1. Hero — avatar + name + contact chips + actions, no card frame */}
+          <div className="relative rounded-2xl border border-border-subtle bg-card">
+            <div className="flex items-start justify-between gap-4 p-6">
+              <div className="flex items-start gap-4 min-w-0">
+                <div className="w-14 h-14 rounded-2xl bg-brand-text/15 border border-brand-text/30 flex items-center justify-center shrink-0">
+                  <span className="text-xl font-black text-brand-text">{(name || '?').slice(0, 1).toUpperCase()}</span>
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    {client.is_lead ? (
-                      <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[10px] font-bold border border-amber-500/30">Lead</span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">Active</span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${clientIsLead ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${clientIsLead ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                      {clientIsLead ? 'Lead' : 'Active'}
+                    </span>
+                    {client.lead_source && (
+                      <>
+                        <span className="text-muted">·</span>
+                        <span className="text-[10px] text-muted">via {client.lead_source}</span>
+                      </>
                     )}
                   </div>
-                  <h1 className="text-xl font-black text-primary">{name}</h1>
+                  <h1 className="text-2xl font-black text-primary leading-tight">{name}</h1>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3">
+                    {phone ? (
+                      <a href={`tel:${phone}`} className="inline-flex items-center gap-1.5 text-xs text-secondary hover:text-brand-text">
+                        <Phone size={12} className="text-muted" /> {phone}
+                      </a>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-muted"><Phone size={12} /> No phone</span>
+                    )}
+                    {email ? (
+                      <a href={`mailto:${email}`} className="inline-flex items-center gap-1.5 text-xs text-secondary hover:text-brand-text break-all">
+                        <Mail size={12} className="text-muted" /> {email}
+                      </a>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-muted"><Mail size={12} /> No email</span>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {phone && (
                   <a href={`sms:${phone}`} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-alt border border-border-subtle text-xs font-semibold text-secondary hover:text-primary cursor-pointer">
                     <MessageSquare size={13} /> Text
@@ -766,6 +1668,10 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
                     </div>
                   )}
                 </div>
+                <button onClick={() => navigate(`/clients/${client.client_number ?? client.id}/edit`)}
+                  className="p-2 rounded-lg bg-surface-alt border border-border-subtle text-muted hover:text-primary cursor-pointer" title="Edit client">
+                  <Pencil size={15} />
+                </button>
                 <div className="relative">
                   <button onClick={() => setShowMoreMenu(o => !o)}
                     className="p-2 rounded-lg bg-surface-alt border border-border-subtle text-muted hover:text-primary cursor-pointer">
@@ -793,99 +1699,31 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
                 </div>
               </div>
             </div>
-            {/* Edit pencil — right aligned */}
-            <div className="flex justify-end px-5 pt-3">
-              <button onClick={() => setShowEditClient(true)}
-                className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface-alt cursor-pointer" title="Edit client">
-                <Pencil size={15} />
-              </button>
-            </div>
-            {/* Contact details grid */}
-            <div className="px-5 pb-5">
-              <div className="grid grid-cols-2 gap-y-3 gap-x-6">
-                <div>
-                  <p className="text-[10px] font-semibold text-muted uppercase">Phone</p>
-                  {phone ? <a href={`tel:${phone}`} className="text-sm text-brand-text hover:underline">{phone}</a> : <p className="text-sm text-muted">—</p>}
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-muted uppercase">Primary property</p>
-                  <p className="text-sm text-primary">{properties[0] ? [properties[0].street, properties[0].city, properties[0].state, properties[0].zip].filter(Boolean).join(', ') : '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-muted uppercase">Email</p>
-                  {email ? <a href={`mailto:${email}`} className="text-sm text-brand-text hover:underline break-all">{email}</a> : <p className="text-sm text-muted">—</p>}
-                  <p className="text-[10px] font-semibold text-muted uppercase mt-3">Lead source</p>
-                  <p className="text-sm text-primary">{client.lead_source || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-muted uppercase">Tags</p>
-                  {(client.tags || []).length > 0 ? (
-                    <div className="flex flex-wrap gap-1 mt-0.5">
-                      {client.tags.map(t => <span key={t} className="px-2 py-0.5 rounded-full bg-brand/10 text-brand-text text-[11px] font-semibold border border-brand/20">{t}</span>)}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted">None</p>
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
 
-          {/* 2. Work overview — separate card */}
-          <div className="rounded-xl bg-card border border-border-subtle p-5">
-            <h2 className="text-[11px] font-bold text-muted uppercase tracking-wider mb-3">Work Overview</h2>
-            <div className="flex items-center gap-1 mb-3">
-              {['active', 'requests', 'quotes', 'jobs', 'invoices'].map(t => (
-                <button key={t} onClick={() => setWorkTab(t)}
-                  className={`px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer capitalize ${
-                    workTab === t ? 'bg-surface-alt text-primary' : 'text-muted hover:text-secondary'
-                  }`}>{t}</button>
-              ))}
-            </div>
-            <div className="rounded-lg bg-surface-alt/30 border border-border-subtle/50">
-              <div className="grid grid-cols-4 px-4 py-2 border-b border-border-subtle/50">
-                <span className="text-[10px] font-semibold text-muted">Item</span>
-                <span className="text-[10px] font-semibold text-muted">Date</span>
-                <span className="text-[10px] font-semibold text-muted">Status</span>
-                <span className="text-[10px] font-semibold text-muted text-right">Amount</span>
-              </div>
-              <div className="px-4 py-6 text-center">
-                <p className="text-xs text-muted">No {workTab} items yet</p>
-              </div>
-            </div>
-          </div>
-
-          {/* 2. Additional contacts */}
-          <div className="rounded-xl bg-card border border-border-subtle p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-[11px] font-bold text-muted uppercase tracking-wider">Additional Contacts</h2>
-              <button className="text-[11px] font-semibold text-brand-text hover:underline cursor-pointer">Add Contact</button>
-            </div>
-            <div className="flex items-center gap-3 mt-3">
-              <div className="w-8 h-8 rounded-full bg-surface-alt border border-border-subtle flex items-center justify-center text-muted"><Users size={14} /></div>
-              <p className="text-xs text-muted">Add contacts to keep track of everyone you communicate with</p>
-            </div>
-          </div>
-
-          {/* 3. Additional Properties */}
+          {/* 2. Properties (Primary first, then any additional) */}
           <div className="rounded-xl bg-card border border-border-subtle p-5">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-[11px] font-bold text-muted uppercase tracking-wider">Additional Properties</h2>
+              <h2 className="text-[11px] font-bold text-muted uppercase tracking-wider">Properties</h2>
               <button onClick={() => setEditProperty('new')} className="text-[11px] font-semibold text-brand-text hover:underline cursor-pointer">+ Add</button>
             </div>
-            {properties.length <= 1 ? (
-              <p className="text-xs text-muted py-3">Add properties so you can organize work by location</p>
+            {properties.length === 0 ? (
+              <p className="text-xs text-muted py-3">Add a property so you can organize work by location</p>
             ) : (
               <div className="space-y-2">
-                {properties.slice(1).map(p => {
+                {properties.map((p, i) => {
                   const pAddr = [p.street, p.city, p.state, p.zip].filter(Boolean).join(', ');
                   const propNotes = p.notes ? p.notes.split(', ').filter(Boolean) : [];
+                  const isPrimary = i === 0;
                   return (
                     <div key={p.id} className="flex items-start gap-3 p-3 rounded-lg bg-surface-alt/30 border border-border-subtle/50 group">
                       <MapPin size={15} className="text-brand-text mt-0.5 shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-bold text-primary">{p.label || 'Primary'}</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-bold text-primary">{p.label || (isPrimary ? 'Primary' : 'Property')}</p>
+                            {isPrimary && <span className="text-[9px] font-bold uppercase tracking-wider text-brand-text bg-brand/10 px-1.5 py-0.5 rounded">Primary</span>}
+                          </div>
                           <button onClick={() => setEditProperty(p)}
                             className="opacity-0 group-hover:opacity-100 text-[10px] font-semibold text-brand-text hover:underline cursor-pointer transition-opacity">
                             Edit
@@ -906,64 +1744,15 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
             )}
           </div>
 
-          {/* 4. Billing */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-bold text-primary">Billing</h2>
-              <button className="text-[11px] font-semibold text-brand-text hover:underline cursor-pointer">Add billing information</button>
-            </div>
-            <div className="rounded-xl bg-card border border-border-subtle">
-              <div className="grid grid-cols-4 px-4 py-2.5 border-b border-border-subtle bg-surface-alt/30">
-                <span className="text-[10px] font-semibold text-muted">Item</span>
-                <span className="text-[10px] font-semibold text-muted">Applied to</span>
-                <span className="text-[10px] font-semibold text-muted">Created date</span>
-                <span className="text-[10px] font-semibold text-muted text-right">Amount</span>
-              </div>
-              <div className="px-4 py-6 text-center">
-                <p className="text-xs text-muted">No billing history</p>
-              </div>
-              <div className="flex items-center justify-between px-4 py-2.5 border-t border-border-subtle bg-surface-alt/30">
-                <span className="text-xs font-semibold text-primary">Current balance</span>
-                <span className="text-xs font-bold text-primary">-$0.00</span>
-              </div>
-            </div>
-          </div>
+          {/* 3. Work overview — separate card */}
+          <WorkOverviewSection clientId={client.id} workTab={workTab} setWorkTab={setWorkTab} />
 
-          {/* 5. Payment methods */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-bold text-primary">Payment methods</h2>
-              <button className="text-[11px] font-semibold text-brand-text hover:underline cursor-pointer">Add or request</button>
-            </div>
-            <div className="rounded-xl bg-card border border-border-subtle">
-              <div className="grid grid-cols-3 px-4 py-2.5 border-b border-border-subtle bg-surface-alt/30">
-                <span className="text-[10px] font-semibold text-muted">Method</span>
-                <span className="text-[10px] font-semibold text-muted">Expiry</span>
-                <span className="text-[10px] font-semibold text-muted text-right"></span>
-              </div>
-              <div className="px-4 py-6 text-center">
-                <p className="text-xs text-muted">No payment methods on file</p>
-              </div>
-            </div>
-          </div>
+          {/* Payment methods */}
+          <PaymentMethodsSection client={client} properties={properties} />
 
-          {/* 6. Client schedule */}
-          <div className="rounded-xl bg-card border border-border-subtle p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-[11px] font-bold text-muted uppercase tracking-wider">Client Schedule</h2>
-              <button className="text-[11px] font-semibold text-brand-text hover:underline cursor-pointer">+ Add</button>
-            </div>
-            <div className="rounded-lg bg-surface-alt/30 border border-border-subtle/50">
-              <div className="grid grid-cols-3 px-4 py-2 border-b border-border-subtle/50">
-                <span className="text-[10px] font-semibold text-muted">Schedule</span>
-                <span className="text-[10px] font-semibold text-muted">Title</span>
-                <span className="text-[10px] font-semibold text-muted text-right">Assigned</span>
-              </div>
-              <div className="px-4 py-6 text-center">
-                <p className="text-xs text-muted">No scheduled items</p>
-              </div>
-            </div>
-          </div>
+
+          {/* 6. Client schedule — every activity ever scheduled for this client */}
+          <ClientScheduleSection clientId={client.id} />
         </div>
 
         {/* ─── Right: sidebar ─── */}
@@ -973,21 +1762,12 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
             <h3 className="text-[11px] font-bold text-muted uppercase tracking-wider mb-3">Overview</h3>
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted">Overdue</span>
-                <span className="text-lg font-black text-primary">$0.00</span>
-              </div>
-              <div className="flex items-center justify-between">
                 <span className="text-xs text-muted">Current balance</span>
                 <span className="text-lg font-black text-primary">$0.00</span>
               </div>
-              <div className="h-px bg-border-subtle" />
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted">Lifetime value</span>
                 <span className="text-sm font-bold text-emerald-400">$0.00</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted">Total jobs</span>
-                <span className="text-sm font-bold text-primary">0</span>
               </div>
             </div>
           </div>
@@ -1008,7 +1788,7 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
 export default function Clients() {
   const { orgId } = useAuth();
   const navigate = useNavigate();
-  const { clientId: urlClientId } = useParams();
+  const { clientNumber: urlClientNumber } = useParams();
   const [allClients, setAllClients] = useState([]);
   const [properties, setProperties] = useState({});
   const [loading, setLoading] = useState(true);
@@ -1021,6 +1801,10 @@ export default function Clients() {
   const [moreMenuId, setMoreMenuId] = useState(null);
   const [tagEditClient, setTagEditClient] = useState(null);
 
+  // Active is derived: a client is "active" iff they have at least one job with status='active'.
+  // Lead = everyone else (no current job). The is_lead column on `clients` is ignored.
+  const [activeClientIds, setActiveClientIds] = useState(() => new Set());
+
   const fetchClients = useCallback(async () => {
     if (!orgId) return;
     setLoading(true);
@@ -1028,17 +1812,31 @@ export default function Clients() {
       .from('clients').select('*').eq('org_id', orgId).order('updated_at', { ascending: false });
     if (error) console.error('[Clients] fetch error:', error.message);
     setAllClients(data || []);
+    const clientIds = (data || []).map(c => c.id);
+    if (clientIds.length > 0) {
+      const { data: jobs } = await supabase
+        .from('hub_jobs')
+        .select('contact_id, status')
+        .in('contact_id', clientIds)
+        .eq('status', 'active');
+      setActiveClientIds(new Set((jobs || []).map(j => j.contact_id)));
+    } else {
+      setActiveClientIds(new Set());
+    }
     setLoading(false);
   }, [orgId]);
 
   useEffect(() => { fetchClients(); }, [fetchClients]);
 
+  const isActive = useCallback((c) => activeClientIds.has(c.id), [activeClientIds]);
+  const isLead = useCallback((c) => !activeClientIds.has(c.id), [activeClientIds]);
+
   // Filter + search
   const clients = (() => {
     let filtered = allClients;
-    if (statusFilter === 'leads-active') filtered = filtered.filter(c => c.is_lead || !c.is_lead); // all active (no archived concept yet)
-    else if (statusFilter === 'leads') filtered = filtered.filter(c => c.is_lead);
-    else if (statusFilter === 'active') filtered = filtered.filter(c => !c.is_lead);
+    if (statusFilter === 'leads-active') filtered = filtered; // both — nothing to drop
+    else if (statusFilter === 'leads') filtered = filtered.filter(c => isLead(c));
+    else if (statusFilter === 'active') filtered = filtered.filter(c => isActive(c));
     if (search.trim()) {
       const q = search.toLowerCase();
       filtered = filtered.filter(c =>
@@ -1050,8 +1848,11 @@ export default function Clients() {
     return filtered;
   })();
 
-  const selectClient = async (client) => {
+  // Selecting a client also updates the URL so refresh / back / share all work.
+  const selectClient = async (client, { skipNav } = {}) => {
     setSelected(client);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    if (!skipNav) navigate(`/clients/${client.client_number ?? client.id}`);
     if (!properties[client.id]) {
       const { data } = await supabase.from('properties').select('*').eq('client_id', client.id).order('created_at');
       setProperties(prev => ({ ...prev, [client.id]: data || [] }));
@@ -1087,13 +1888,21 @@ export default function Clients() {
     fetchClients();
   };
 
-  // Auto-open client from URL param
+  // Sync selection with URL — supports refresh, deep-link, browser back/forward.
+  // URL carries the short global client_number (Jobber-style), but we fall back
+  // to UUID match in case an old link is shared.
   useEffect(() => {
-    if (urlClientId && allClients.length > 0 && !selected) {
-      const c = allClients.find(cl => cl.id === urlClientId);
-      if (c) selectClient(c);
+    if (!urlClientNumber) {
+      if (selected) setSelected(null);
+      return;
     }
-  }, [urlClientId, allClients]);
+    if (allClients.length === 0) return;
+    const asNum = Number(urlClientNumber);
+    const matchByNumber = (cl) => Number.isFinite(asNum) && Number(cl.client_number) === asNum;
+    if (selected && (matchByNumber(selected) || selected.id === urlClientNumber)) return;
+    const c = allClients.find(cl => matchByNumber(cl) || cl.id === urlClientNumber);
+    if (c) selectClient(c, { skipNav: true });
+  }, [urlClientNumber, allClients]);
 
   const saveTags = async (id, tags) => {
     await supabase.from('clients').update({ tags, updated_at: new Date().toISOString() }).eq('id', id);
@@ -1114,22 +1923,47 @@ export default function Clients() {
     fetchClients();
   };
 
-  // Stats
-  const leadCount = allClients.filter(c => c.is_lead).length;
-  const clientCount = allClients.filter(c => !c.is_lead).length;
-  // Use org timezone for 30-day window (matches Jobber's calculation)
-  const todayStr = getTodayInTimezone(); // YYYY-MM-DD in Eastern
+  // Stats — live values when fetch is done; otherwise fall back to a localStorage
+  // cache from the last visit so we never flash "0" on a refresh.
+  const STATS_CACHE_KEY = 'boost-clients-stats-cache';
+  const leadCount = allClients.filter(c => isLead(c)).length;
+  const clientCount = allClients.filter(c => isActive(c)).length;
+  const todayStr = getTodayInTimezone();
   const thirtyDaysAgoDate = new Date(todayStr + 'T00:00:00');
   thirtyDaysAgoDate.setDate(thirtyDaysAgoDate.getDate() - 30);
   const thirtyDaysAgo = thirtyDaysAgoDate;
-
-  const newClients30 = allClients.filter(c => !c.is_lead && new Date(c.created_at) >= thirtyDaysAgo).length;
+  const newClients30 = allClients.filter(c => isActive(c) && new Date(c.created_at) >= thirtyDaysAgo).length;
   const newLeads30 = allClients.filter(c => new Date(c.created_at) >= thirtyDaysAgo).length;
+
+  const liveLoaded = allClients.length > 0;
+  const [cachedStats, setCachedStats] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(STATS_CACHE_KEY) || 'null'); } catch { return null; }
+  });
+  // Once live data arrives, persist the snapshot for next time.
+  useEffect(() => {
+    if (!liveLoaded) return;
+    const snapshot = { newLeads30, newClients30, clientCount, leadCount };
+    try { localStorage.setItem(STATS_CACHE_KEY, JSON.stringify(snapshot)); } catch { /* quota */ }
+    setCachedStats(snapshot);
+  }, [liveLoaded, newLeads30, newClients30, clientCount, leadCount]);
+  // What we actually render — prefer live, fall back to cache, finally null = skeleton.
+  const displayStats = liveLoaded
+    ? { newLeads30, newClients30, clientCount }
+    : (cachedStats || null);
 
   const statusLabel = statusFilter === 'leads-active' ? 'Leads and Active' : statusFilter === 'leads' ? 'Leads' : statusFilter === 'active' ? 'Active' : 'All';
 
+  // Don't flash the list while resolving /clients/:clientNumber on a fresh load.
+  if (urlClientNumber && !selected && (loading || allClients.length === 0)) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 size={20} className="text-muted animate-spin" />
+      </div>
+    );
+  }
+
   if (selected) {
-    return <ClientDetail client={selected} properties={properties[selected.id] || []} onBack={() => setSelected(null)} orgId={orgId} archiveClient={archiveClient} deleteClient={deleteClient} onPropertiesChange={async () => {
+    return <ClientDetail client={selected} clientIsLead={isLead(selected)} properties={properties[selected.id] || []} onBack={() => { setSelected(null); navigate('/clients'); }} orgId={orgId} archiveClient={archiveClient} deleteClient={deleteClient} onPropertiesChange={async () => {
       const { data } = await supabase.from('properties').select('*').eq('client_id', selected.id).order('created_at');
       setProperties(prev => ({ ...prev, [selected.id]: data || [] }));
     }} onClientUpdate={async (id, updates) => {
@@ -1144,20 +1978,13 @@ export default function Clients() {
       {showNewClient && <NewClientModal onClose={() => setShowNewClient(false)} onSave={createClient} />}
       {tagEditClient && <TagEditor client={tagEditClient} onClose={() => setTagEditClient(null)} onSave={saveTags} />}
 
-      {/* Header — title left, search + New Client right */}
+      {/* Header — title left, New Client right */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-black text-primary">Clients</h1>
-        <div className="flex items-center gap-2">
-          <div className="relative hidden sm:block">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-            <input type="text" placeholder="Search clients..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-9 pr-3 py-2 rounded-lg bg-surface-alt border border-border-subtle text-xs text-primary placeholder:text-muted focus:outline-none focus:border-brand/50 w-48" />
-          </div>
-          <button onClick={() => navigate('/clients/new')}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand text-sm font-bold hover:bg-brand-hover cursor-pointer">
-            New Client
-          </button>
-        </div>
+        <h1 className="text-4xl font-black text-primary">Clients</h1>
+        <button onClick={() => navigate('/clients/new')}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand text-sm font-bold hover:bg-brand-hover cursor-pointer">
+          New Client
+        </button>
       </div>
 
       {/* Stats row — 3 cards like Jobber */}
@@ -1168,7 +1995,9 @@ export default function Clients() {
             <TrendingUp size={14} className="text-emerald-500" />
           </div>
           <p className="text-xs text-muted">Past 30 days</p>
-          <p className="text-3xl font-black text-primary mt-1">{newLeads30}</p>
+          {displayStats
+            ? <p className="text-3xl font-black text-primary mt-1">{displayStats.newLeads30}</p>
+            : <span className="inline-block h-8 w-12 rounded-md bg-surface-alt animate-pulse mt-1" />}
         </div>
         <div className="rounded-xl bg-card border border-border-subtle p-4">
           <div className="flex items-center justify-between">
@@ -1176,26 +2005,31 @@ export default function Clients() {
             <TrendingUp size={14} className="text-emerald-500" />
           </div>
           <p className="text-xs text-muted">Past 30 days</p>
-          <p className="text-3xl font-black text-primary mt-1">{newClients30}</p>
+          {displayStats
+            ? <p className="text-3xl font-black text-primary mt-1">{displayStats.newClients30}</p>
+            : <span className="inline-block h-8 w-12 rounded-md bg-surface-alt animate-pulse mt-1" />}
         </div>
         <div className="rounded-xl bg-card border border-border-subtle p-4">
           <p className="text-xs font-bold text-muted">Total new clients</p>
           <p className="text-xs text-muted">Year to date</p>
-          <p className="text-3xl font-black text-primary mt-1">{clientCount}</p>
+          {displayStats
+            ? <p className="text-3xl font-black text-primary mt-1">{displayStats.clientCount}</p>
+            : <span className="inline-block h-8 w-12 rounded-md bg-surface-alt animate-pulse mt-1" />}
         </div>
       </div>
 
-      {/* Filtered clients + filter pills */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-sm font-bold text-primary">Filtered clients</span>
-        <span className="text-xs text-muted">({clients.length} results)</span>
+      {/* Filtered clients heading */}
+      <div>
+        <span className="text-base font-bold text-primary">Filtered clients</span>
+        <span className="text-xs text-muted ml-2">({clients.length} results)</span>
+      </div>
 
-        {/* Filter by tag pill */}
+      {/* Filters row + inline search on the right */}
+      <div className="flex items-center gap-3 flex-wrap">
         <button className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-surface-alt border border-border-subtle text-xs font-bold text-primary cursor-pointer hover:border-border-strong">
           Filter by tag <ChevronDown size={12} className="text-muted" />
         </button>
 
-        {/* Status filter dropdown */}
         <div className="relative">
           <button onClick={() => setShowStatusDropdown(!showStatusDropdown)}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-surface-alt border border-border-subtle text-xs font-bold text-primary cursor-pointer hover:border-border-strong">
@@ -1218,13 +2052,26 @@ export default function Clients() {
             </div>
           )}
         </div>
-      </div>
 
-      {/* Mobile search */}
-      <div className="relative sm:hidden">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-        <input type="text" placeholder="Search clients..." value={search} onChange={e => setSearch(e.target.value)}
-          className="pl-9 pr-3 py-2 rounded-lg bg-surface-alt border border-border-subtle text-xs text-primary placeholder:text-muted focus:outline-none focus:border-brand/50 w-full" />
+        <div className="relative ml-auto w-full sm:w-72">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            type="text"
+            placeholder="Search clients..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="pl-9 pr-8 py-2 rounded-full bg-surface-alt border border-border-subtle text-xs text-primary placeholder:text-muted focus:outline-none focus:border-brand/50 w-full"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-primary p-1 rounded-md cursor-pointer"
+              title="Clear search"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
       </div>
 
       {loading && <div className="flex items-center justify-center py-20"><Loader2 size={20} className="animate-spin text-brand" /></div>}
@@ -1236,13 +2083,13 @@ export default function Clients() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Table — flat, no outer card; just row dividers */}
       {!loading && clients.length > 0 && (
-        <div className="rounded-xl border border-border-subtle overflow-hidden">
+        <div className="-mx-2">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-surface-alt/50 text-left border-b border-border-subtle">
+                <tr className="text-left border-b border-border-subtle">
                   <th className="px-4 py-3 text-[11px] font-semibold text-muted">Name ↕</th>
                   <th className="px-4 py-3 text-[11px] font-semibold text-muted hidden sm:table-cell">Address</th>
                   <th className="px-4 py-3 text-[11px] font-semibold text-muted hidden md:table-cell">Tags</th>
@@ -1278,7 +2125,7 @@ export default function Clients() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        {c.is_lead ? (
+                        {isLead(c) ? (
                           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-400">
                             <span className="w-2 h-2 rounded-full bg-amber-500" /> Lead
                           </span>
@@ -1289,44 +2136,7 @@ export default function Clients() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {isHovered ? (
-                          <div className="flex items-center justify-end gap-1">
-                            <button onClick={(e) => { e.stopPropagation(); setTagEditClient(c); }}
-                              title="Tag" className="p-1.5 rounded-lg hover:bg-surface-alt text-muted hover:text-primary cursor-pointer">
-                              <Tag size={14} />
-                            </button>
-                            {email && (
-                              <a href={`mailto:${email}`} onClick={(e) => e.stopPropagation()}
-                                title="Email" className="p-1.5 rounded-lg hover:bg-surface-alt text-muted hover:text-primary cursor-pointer">
-                                <Mail size={14} />
-                              </a>
-                            )}
-                            <div className="relative">
-                              <button onClick={(e) => { e.stopPropagation(); setMoreMenuId(moreMenuId === c.id ? null : c.id); }}
-                                title="More actions" className="p-1.5 rounded-lg hover:bg-surface-alt text-muted hover:text-primary cursor-pointer">
-                                <MoreHorizontal size={14} />
-                              </button>
-                              {moreMenuId === c.id && (
-                                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border-subtle rounded-lg shadow-2xl min-w-[160px] py-1">
-                                  <button onClick={(e) => { e.stopPropagation(); archiveClient(c.id); }}
-                                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-alt cursor-pointer">
-                                    <Archive size={13} /> Archive
-                                  </button>
-                                  <button onClick={(e) => { e.stopPropagation(); deleteClient(c.id); }}
-                                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-red-400 hover:bg-surface-alt cursor-pointer">
-                                    <Trash2 size={13} /> Delete
-                                  </button>
-                                  <button onClick={(e) => { e.stopPropagation(); window.open(`/clients/${c.id}`, '_blank'); setMoreMenuId(null); }}
-                                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-alt cursor-pointer">
-                                    <ExternalLink size={13} /> Open in new tab
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-muted">{lastActivity(c.updated_at)}</p>
-                        )}
+                        <p className="text-xs text-muted">{lastActivity(c.updated_at)}</p>
                       </td>
                     </tr>
                   );
@@ -1337,5 +2147,85 @@ export default function Clients() {
         </div>
       )}
     </div>
+  );
+}
+
+/* ─── Edit Client Page (full-page route at /clients/:clientNumber/edit) ─── */
+export function EditClientPage() {
+  const { orgId } = useAuth();
+  const { clientNumber } = useParams();
+  const navigate = useNavigate();
+  const [client, setClient] = useState(null);
+  const [properties, setProperties] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (!orgId || !clientNumber) return;
+    setLoading(true);
+    const isUuid = /^[0-9a-f-]{36}$/i.test(String(clientNumber));
+    const asNum = Number(clientNumber);
+    let q = supabase.from('clients').select('*').eq('org_id', orgId);
+    q = isUuid ? q.eq('id', clientNumber) : q.eq('client_number', asNum);
+    const { data: rows, error } = await q.limit(1);
+    if (error) console.error('[EditClientPage] lookup error:', error.message);
+    const c = rows?.[0];
+    setClient(c || null);
+    if (c) {
+      const { data: props } = await supabase.from('properties').select('*').eq('client_id', c.id).order('created_at', { ascending: true });
+      setProperties(props || []);
+    }
+    setLoading(false);
+  }, [orgId, clientNumber]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // If the URL slug is the UUID but the client has a short client_number, swap to it.
+  useEffect(() => {
+    if (!client) return;
+    const isUuid = /^[0-9a-f-]{36}$/i.test(String(clientNumber));
+    if (isUuid && client.client_number) {
+      navigate(`/clients/${client.client_number}/edit`, { replace: true });
+    }
+  }, [client, clientNumber, navigate]);
+
+  const closeBack = () => {
+    if (client) navigate(`/clients/${client.client_number ?? client.id}`);
+    else navigate('/clients');
+  };
+
+  const saveClient = async (id, patch) => {
+    await supabase.from('clients').update(patch).eq('id', id);
+    // Propagate name/contact changes to any requests linked to this client + their
+    // schedule_items, so the assessment popup / request list don't show a stale snapshot.
+    const reqPatch = {};
+    if ('first_name' in patch) reqPatch.first_name = patch.first_name;
+    if ('last_name' in patch) reqPatch.last_name = patch.last_name;
+    if ('phones' in patch) reqPatch.phone = patch.phones?.[0]?.number || null;
+    if ('emails' in patch) reqPatch.email = patch.emails?.[0]?.address || null;
+    if (Object.keys(reqPatch).length === 0) return;
+    const { data: reqs } = await supabase.from('requests').update(reqPatch).eq('client_id', id).select('id, title, first_name, last_name');
+    for (const r of reqs || []) {
+      const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Unknown';
+      const newTitle = `Assessment: ${r.title || `Request for ${name}`}`;
+      await supabase.from('schedule_items').update({ title: newTitle }).eq('request_id', r.id).eq('type', 'assessment');
+    }
+  };
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-20"><Loader2 size={20} className="text-muted animate-spin" /></div>;
+  }
+  if (!client) {
+    return <div className="max-w-3xl mx-auto p-6 text-secondary">Client not found.</div>;
+  }
+  return (
+    <EditClientModal
+      inline
+      client={client}
+      properties={properties}
+      orgId={orgId}
+      onSave={saveClient}
+      onPropertiesChange={load}
+      onClose={closeBack}
+    />
   );
 }

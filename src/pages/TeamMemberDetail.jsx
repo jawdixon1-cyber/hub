@@ -297,8 +297,13 @@ export default function TeamMemberDetail() {
   };
 
   const removeMember = () => {
+    // Find the actual permissions key in case the URL-decoded email differs in
+    // casing/whitespace from what's stored. Without this, `delete next[email]`
+    // silently does nothing and the member never goes away.
     const next = { ...permissions };
-    delete next[email];
+    const target = email.trim().toLowerCase();
+    const matchedKey = Object.keys(next).find((k) => k.trim().toLowerCase() === target);
+    if (matchedKey) delete next[matchedKey];
     setPermissions(next);
     navigate('/team');
   };
@@ -394,9 +399,10 @@ export default function TeamMemberDetail() {
   };
 
   const handleDontHire = () => {
-    // Remove the member from the team
     const next = { ...permissions };
-    delete next[email];
+    const target = email.trim().toLowerCase();
+    const matchedKey = Object.keys(next).find((k) => k.trim().toLowerCase() === target);
+    if (matchedKey) delete next[matchedKey];
     setPermissions(next);
     navigate('/team');
   };

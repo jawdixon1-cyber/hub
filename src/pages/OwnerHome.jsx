@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef, useMemo, lazy, Suspense } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, Sun, Moon, Users, DollarSign, RotateCcw, Pencil, Plus, X, ChevronLeft, ChevronRight, Link2, ExternalLink, Briefcase, Play, Inbox, TrendingUp, TrendingDown, Minus, FileText } from 'lucide-react';
+import { Check, Sun, Moon, Users, DollarSign, RotateCcw, Pencil, Plus, X, ChevronLeft, ChevronRight, Link2, ExternalLink, Briefcase, Play, Inbox, TrendingUp, TrendingDown, Minus, FileText, Sunrise, Sunset, UsersRound, Crosshair, CreditCard, ArrowRight } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { getTodayInTimezone } from '../utils/timezone';
 import renderLinkedText from '../utils/renderLinkedText';
 import { genId } from '../data';
@@ -962,6 +964,197 @@ function ChecklistCard({ kind, title, icon: Icon, items, setItems, completedCoun
   );
 }
 
+/* ─── WorkflowRow — top-of-home funnel: Requests → Quotes → Jobs → Invoices ─── */
+function WorkflowRow() {
+  const navigate = useNavigate();
+  const { orgId } = useAuth();
+  // Hydrate from localStorage so the numbers show instantly across page loads.
+  // First-ever load gets a loading state (`hydrated: false`) instead of "0".
+  const WORKFLOW_CACHE_KEY = 'boost-home-workflow-cache';
+  const [data, setData] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem(WORKFLOW_CACHE_KEY) || 'null');
+      if (cached) return { ...cached, hydrated: true };
+    } catch { /* ignore */ }
+    return {
+      requests: { new: 0, assessmentsComplete: 0, overdue: 0 },
+      jobs: { active: 0, activeAmount: 0, requiresInvoicing: 0, requiresAmount: 0 },
+      hydrated: false,
+    };
+  });
+
+  useEffect(() => {
+    if (!orgId) return;
+    let cancelled = false;
+    (async () => {
+      const { data: reqs, error: reqErr } = await supabase
+        .from('requests')
+        .select('id, status, assessment_date, raw_payload')
+        .eq('org_id', orgId);
+      // Compare as YYYY-MM-DD strings in local time — `new Date("YYYY-MM-DD")` is UTC,
+      // which lies in negative-offset timezones (Eastern, etc.).
+      const td = new Date();
+      const todayYmd = `${td.getFullYear()}-${String(td.getMonth() + 1).padStart(2, '0')}-${String(td.getDate()).padStart(2, '0')}`;
+      const dateYmd = (s) => (s ? String(s).slice(0, 10) : '');
+      const isComplete = (r) => r.raw_payload?.assessment?.completed === true;
+      const newCount = (reqs || []).filter(r => r.status === 'new' && !r.assessment_date && !isComplete(r)).length;
+      const completeCount = (reqs || []).filter(isComplete).length;
+      const overdueCount = (reqs || []).filter(r => r.assessment_date && !isComplete(r) && dateYmd(r.assessment_date) < todayYmd).length;
+
+      const { data: clients } = await supabase.from('clients').select('id').eq('org_id', orgId);
+      const clientIds = (clients || []).map(c => c.id);
+      let active = 0, activeAmt = 0, reqInv = 0, reqAmt = 0;
+      if (clientIds.length > 0) {
+        const { data: jobs } = await supabase
+          .from('hub_jobs')
+          .select('status, total_amount')
+          .in('contact_id', clientIds);
+        for (const j of jobs || []) {
+          if (j.status === 'active') { active++; activeAmt += Number(j.total_amount) || 0; }
+          else if (j.status === 'completed') { reqInv++; reqAmt += Number(j.total_amount) || 0; }
+        }
+      }
+
+      if (cancelled) return;
+      const next = {
+        requests: { new: newCount, assessmentsComplete: completeCount, overdue: overdueCount },
+        jobs: { active, activeAmount: activeAmt, requiresInvoicing: reqInv, requiresAmount: reqAmt },
+        hydrated: true,
+      };
+      setData(next);
+      try { localStorage.setItem(WORKFLOW_CACHE_KEY, JSON.stringify(next)); } catch { /* ignore quota */ }
+    })();
+    return () => { cancelled = true; };
+  }, [orgId]);
+
+  const fmtMoney = (n) => {
+    if (!n) return '$0';
+    if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
+    return `$${Math.round(n)}`;
+  };
+
+  // Each row's `to` is what /<path>?status=<bucket> link the row jumps to.
+  const cards = [
+    {
+      label: 'Requests',
+      icon: Inbox,
+      bar: 'bg-amber-500',
+      path: '/requests',
+      headline: { num: data.requests.new, label: 'New', filter: 'new' },
+      rows: [
+        { label: 'Assessments complete', value: `(${data.requests.assessmentsComplete})`, filter: 'assessment_complete' },
+        { label: 'Overdue', value: `(${data.requests.overdue})`, filter: 'overdue' },
+      ],
+    },
+    {
+      label: 'Quotes',
+      icon: Crosshair,
+      bar: 'bg-rose-500',
+      path: '/sales',
+      headline: { num: 0, label: 'Approved' },
+      rows: [
+        { label: 'Draft', value: '(0)' },
+        { label: 'Changes requested', value: '(0)' },
+      ],
+    },
+    {
+      label: 'Jobs',
+      icon: Briefcase,
+      bar: 'bg-emerald-500',
+      path: '/jobs',
+      headline: { num: data.jobs.requiresInvoicing, amount: fmtMoney(data.jobs.requiresAmount), label: 'Requires invoicing' },
+      rows: [
+        { label: `Active (${data.jobs.active})`, value: fmtMoney(data.jobs.activeAmount) },
+        { label: 'Action required', value: '(0)' },
+      ],
+    },
+    {
+      label: 'Invoices',
+      icon: CreditCard,
+      bar: 'bg-sky-500',
+      path: '/invoices',
+      headline: { num: 0, amount: '$0', label: 'Awaiting payment' },
+      rows: [
+        { label: 'Draft', value: '(0)' },
+        { label: 'Past due', value: '(0)' },
+      ],
+    },
+  ];
+
+  const goTo = (path, filter) => {
+    navigate(filter ? `${path}?status=${encodeURIComponent(filter)}` : path);
+  };
+
+  return (
+    <div>
+      <h2 className="text-xs font-black uppercase tracking-[0.18em] text-tertiary mb-3">Workflow</h2>
+      {/* Single connected panel — sections share a wrapper, dividers + arrows between */}
+      <div className="relative overflow-hidden rounded-xl bg-card border border-border-subtle">
+        <div className="flex flex-col lg:flex-row items-stretch">
+          {cards.map((c, idx) => {
+            const Icon = c.icon;
+            return (
+              <div key={c.label} className="relative flex-1 min-w-0 flex">
+                <div className="relative flex-1 min-w-0">
+                  <div className={`absolute inset-x-0 top-0 h-1 ${c.bar}`} />
+                  <div className="p-4 pt-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Icon size={14} className="text-muted" />
+                      <span className="text-xs font-bold text-muted">{c.label}</span>
+                    </div>
+                    <button
+                      onClick={() => goTo(c.path, c.headline.filter)}
+                      className="w-full text-left cursor-pointer rounded-lg p-2 -mx-2 mb-1 border border-transparent hover:border-border-strong hover:bg-surface-alt/40 transition-colors"
+                    >
+                      <div className="flex items-baseline gap-2 mb-1">
+                        {data.hydrated ? (
+                          <span className="text-3xl font-black text-primary leading-none">{c.headline.num}</span>
+                        ) : (
+                          <span className="inline-block h-7 w-10 rounded-md bg-surface-alt animate-pulse" />
+                        )}
+                        {c.headline.amount && (
+                          data.hydrated
+                            ? <span className="text-sm font-bold text-secondary">{c.headline.amount}</span>
+                            : <span className="inline-block h-4 w-10 rounded-md bg-surface-alt animate-pulse" />
+                        )}
+                      </div>
+                      <p className="text-xs font-semibold text-secondary">{c.headline.label}</p>
+                    </button>
+                    <div className="space-y-1 border-t border-border-subtle pt-2 mt-2">
+                      {c.rows.map((row, i) => (
+                        <button
+                          key={i}
+                          onClick={() => goTo(c.path, row.filter)}
+                          className="w-full flex items-center justify-between text-xs px-2 py-1.5 rounded-md border border-transparent hover:border-border-strong hover:bg-surface-alt/40 cursor-pointer transition-colors"
+                        >
+                          <span className="text-muted">{row.label}</span>
+                          <span className="text-secondary tabular-nums">{row.value}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                {/* Connector: vertical divider + arrow chip floating over it. Hidden after the last section. */}
+                {idx < cards.length - 1 && (
+                  <>
+                    {/* Divider line — horizontal on mobile, vertical on lg+ */}
+                    <div className="hidden lg:block w-px bg-border-subtle" />
+                    <div className="block lg:hidden h-px bg-border-subtle" />
+                    {/* Arrow chip on top of the divider */}
+                    <div className="absolute z-10 left-1/2 lg:left-auto lg:right-0 top-full lg:top-1/2 -translate-x-1/2 lg:translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-card border border-border-subtle flex items-center justify-center">
+                      <ArrowRight size={12} className="text-muted rotate-90 lg:rotate-0" />
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function OwnerHome() {
   const navigate = useNavigate();
   const ownerStartChecklist = useAppStore((s) => s.ownerStartChecklist);
@@ -1072,8 +1265,44 @@ export default function OwnerHome() {
   // Route goal — target number of recurring clients to fill the route.
   const ROUTE_GOAL = 100;
 
+  const dailyShortcuts = [
+    { label: 'Start of Day', path: '/workflow/start', icon: Sunrise, done: startDone, total: startCheckable.length },
+    { label: 'End of Day', path: '/workflow/end', icon: Sunset, done: endDone, total: endCheckable.length },
+    { label: 'Team Today', path: '/workflow/team-today', icon: UsersRound, done: null, total: null },
+  ];
+
   return (
     <div className="pb-16 space-y-6 sm:space-y-8">
+      {/* Top-of-home Workflow row — Requests → Quotes → Jobs → Invoices */}
+      <WorkflowRow />
+
+      {/* Daily workflow shortcuts (moved from sidebar) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {dailyShortcuts.map((s) => {
+          const Icon = s.icon;
+          const allDone = s.total && s.done === s.total;
+          return (
+            <button
+              key={s.label}
+              onClick={() => navigate(s.path)}
+              className="flex items-center gap-3 rounded-xl bg-card border border-border-subtle p-4 text-left hover:border-border-strong cursor-pointer transition-colors"
+            >
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${allDone ? 'bg-emerald-500/15 text-emerald-500' : 'bg-surface-alt text-secondary'}`}>
+                <Icon size={16} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-primary">{s.label}</p>
+                {s.total != null ? (
+                  <p className={`text-[11px] font-semibold ${allDone ? 'text-emerald-500' : 'text-muted'}`}>{s.done}/{s.total} done</p>
+                ) : (
+                  <p className="text-[11px] text-muted">Team checklist</p>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Goal: fill the route */}
       <RouteGoalBanner
         clients={recurring.clients}

@@ -36,9 +36,16 @@ function makeDot(latlng, color, isFirst) {
 /** Fly the map to new coordinates */
 function FlyTo({ center, zoom }) {
   const map = useMap();
+  // Depend on the coordinate VALUES, not the array identity. Callers build
+  // `center` inline, so it's a new array every render — keying the effect on it
+  // re-flew the map after every state change (e.g. finishing a shape), yanking
+  // the view back out from wherever the user had zoomed to.
+  const lat = center?.[0] ?? null;
+  const lng = center?.[1] ?? null;
   useEffect(() => {
-    if (center) map.flyTo(center, zoom || 19, { duration: 1.5 });
-  }, [center, zoom, map]);
+    if (lat == null || lng == null) return;
+    map.flyTo([lat, lng], zoom || 19, { duration: 1.5 });
+  }, [lat, lng, zoom, map]);
   return null;
 }
 

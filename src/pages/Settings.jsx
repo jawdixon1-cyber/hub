@@ -13,10 +13,12 @@ import { useAuth } from '../contexts/AuthContext';
 
 /* ─── Settings Nav ─── */
 
-import { Building2, MapPin } from 'lucide-react';
+import { Building2, MapPin, LayoutList } from 'lucide-react';
+import { useLocalPref, SIDEBAR_TOGGLES } from '../hooks/useLocalPref';
 
 const SETTINGS_NAV = [
   { id: 'business', label: 'Business Profile', icon: Building2, ownerOnly: true },
+  { id: 'appearance', label: 'Appearance', icon: LayoutList, ownerOnly: true },
   { id: 'connections', label: 'Connections', icon: Plug, ownerOnly: true },
   { id: 'checklists', label: 'Checklists', icon: ClipboardCheck, ownerOnly: true },
   { id: 'team', label: 'Team', icon: Users, ownerOnly: true },
@@ -654,6 +656,57 @@ function RolesSection() {
 }
 
 /* ─── Legacy export for Profile.jsx ─── */
+/* ─── Appearance Section ─── */
+
+function SidebarToggleRow({ toggle }) {
+  const [hidden, setHidden] = useLocalPref(toggle.key, false);
+
+  return (
+    <div className="flex items-start justify-between gap-4 p-4 rounded-xl bg-surface-alt border border-border-subtle">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-primary">Show &ldquo;{toggle.label}&rdquo;</p>
+        <p className="text-xs text-muted mt-1">{toggle.description}</p>
+      </div>
+      <button
+        role="switch"
+        aria-checked={!hidden}
+        aria-label={`Show ${toggle.label} in the sidebar`}
+        onClick={() => setHidden(!hidden)}
+        className={`relative shrink-0 w-11 h-6 rounded-full transition-colors cursor-pointer ${
+          hidden ? 'bg-border-subtle' : 'bg-brand'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
+            hidden ? '' : 'translate-x-5'
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+function AppearanceSection() {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-bold text-primary">Appearance</h2>
+        <p className="text-sm text-muted mt-1">
+          Hide parts of the sidebar you aren&rsquo;t using yet. Turning something off
+          only removes the shortcut &mdash; the page still works and nothing is
+          deleted, so you can switch it back on any time. Applies to this device only.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {SIDEBAR_TOGGLES.map((toggle) => (
+          <SidebarToggleRow key={toggle.key} toggle={toggle} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsContent() { return null; }
 
 /* ─── Main Settings Page ─── */
@@ -705,6 +758,7 @@ export default function Settings() {
         {/* Content */}
         <div className="flex-1 min-w-0">
         {activeSection === 'business' && ownerMode && <BusinessProfileSection />}
+        {activeSection === 'appearance' && ownerMode && <AppearanceSection />}
         {activeSection === 'connections' && ownerMode && <ConnectionsSection />}
         {activeSection === 'checklists' && ownerMode && <ChecklistsSection />}
 

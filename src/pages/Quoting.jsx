@@ -2,9 +2,10 @@ import { useState, lazy, Suspense, useEffect } from 'react';
 import {
   Calculator, Trash2, ChevronDown, ChevronUp, Save,
   Settings, Plus, X, ArrowLeft, ArrowRight, Trees, Mountain,
-  Ruler, TreePine, Shrub, Fence, Scissors, Leaf, MapPin, CheckCircle, Loader2, FileText, CircleDot, CalendarDays, Sprout,
-  Search, User, Phone, Mail, Database,
+  Ruler, TreePine, Shrub, Fence, Scissors, Leaf, MapPin, CheckCircle, Loader2, CircleDot, CalendarDays, Sprout,
+  Search, User, Globe,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { genId, initialQuotingSettings } from '../data';
@@ -602,6 +603,7 @@ function PricingSettings({ settings, onUpdate, ownerMode }) {
 
 export default function Quoting() {
   const { currentUser, ownerMode } = useAuth();
+  const navigate = useNavigate();
   const quotes = useAppStore((s) => s.quotes);
   const setQuotes = useAppStore((s) => s.setQuotes);
   const settings = useAppStore((s) => s.quotingSettings) || initialQuotingSettings;
@@ -625,25 +627,65 @@ export default function Quoting() {
     overgrownBushes: { small: '', medium: '', large: '', xl: '', overgrown: '', override: false, overridePrice: '' },
     bushRemoval: { small: '', medium: '', large: '', xl: '', haulOff: '', override: false, overridePrice: '' },
     other: { overgrownLawn: '' },
-    annual: { enabled: false, lawnFrequency: 'weekly', mowingWeeks: '35', leafMaintVisits: '8', pineVisits: '1', leafVisits: '1', mulchVisits: '1', rockVisits: '1', edgingVisits: '1' },
   });
 
+  // ─── Session persistence ───
+  // A quote in progress survives a refresh. Without this, reloading anywhere in
+  // the flow dumps you back to the start and loses everything typed so far.
+  const SESSION_KEY = 'quoting-session';
+  const savedSession = (() => {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  })();
+
   // ─── Step state: 'list' | 'client' | 'measurements' | 'services' | 'calculator' ───
-  const [step, setStep] = useState('list');
-  const [quickMode, setQuickMode] = useState(false);
-  const [clientName, setClientName] = useState('');
-  const [clientAddress, setClientAddress] = useState('');
-  const [clientLatLng, setClientLatLng] = useState(null);
-  const [selectedServices, setSelectedServices] = useState(new Set());
-  const [data, setData] = useState(makeDefaults);
+  const [step, setStep] = useState(savedSession?.step || 'list');
+  const [quickMode, setQuickMode] = useState(savedSession?.quickMode || false);
+  const [clientName, setClientName] = useState(savedSession?.clientName || '');
+  const [clientAddress, setClientAddress] = useState(savedSession?.clientAddress || '');
+  const [clientLatLng, setClientLatLng] = useState(savedSession?.clientLatLng || null);
+  const [selectedServices, setSelectedServices] = useState(
+    () => new Set(savedSession?.selectedServices || [])
+  );
+  // Merge over defaults rather than replacing: a saved session from before a new
+  // field existed would otherwise leave that field undefined.
+  const [data, setData] = useState(() => {
+    const defs = makeDefaults();
+    if (!savedSession?.data) return defs;
+    const merged = { ...defs };
+    for (const k of Object.keys(defs)) merged[k] = { ...defs[k], ...(savedSession.data[k] || {}) };
+    return merged;
+  });
   const [showSaved, setShowSaved] = useState(true);
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [measurementsOpen, setMeasurementsOpen] = useState(false);
-  const [measurements, setMeasurements] = useState({ measurements: [], mapCenter: null, mapAddress: '' });
+  const [serviceQuery, setServiceQuery] = useState(''); // filters the calculator list
+  const [measurements, setMeasurements] = useState(
+    savedSession?.measurements || { measurements: [], mapCenter: null, mapAddress: '' }
+  );
 
   const addressAutocomplete = useAddressAutocomplete();
-  const [clientSelected, setClientSelected] = useState(false);
-  const [selectedClientInfo, setSelectedClientInfo] = useState(null); // { phone, email } from Jobber
+  const [clientSelected, setClientSelected] = useState(savedSession?.clientSelected || false);
+  // Jobber phone/email is still captured on select — nothing displays it since the
+  // confirmation row was slimmed down, but the wiring stays for when it's needed.
+  const [, setSelectedClientInfo] = useState(null);
+  const [addressOnly, setAddressOnly] = useState(savedSession?.addressOnly || false); // address with no client attached
+
+  // Write the session on every change. Sets don't survive JSON, so the service
+  // selection is stored as an array.
+  useEffect(() => {
+    try {
+      if (step === 'list') { localStorage.removeItem(SESSION_KEY); return; }
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        step, quickMode, clientName, clientAddress, clientLatLng, clientSelected, addressOnly,
+        selectedServices: [...selectedServices], data, measurements,
+      }));
+    } catch { /* private mode / quota — just don't persist */ }
+  }, [step, quickMode, clientName, clientAddress, clientLatLng, clientSelected, addressOnly,
+      selectedServices, data, measurements]);
   const savedClients = useAppStore((s) => s.clients) || [];
   const setSavedClients = useAppStore((s) => s.setClients);
   const agreements = useAppStore((s) => s.agreements) || [];
@@ -679,12 +721,10 @@ export default function Quoting() {
     return null;
   })();
 
+  // One calculator at a time for now — picking a service replaces whatever was
+  // selected. Clicking the current one clears it.
   const toggleService = (id) => {
-    setSelectedServices((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+    setSelectedServices((prev) => (prev.has(id) ? new Set() : new Set([id])));
   };
 
   const has = (id) => selectedServices.has(id);
@@ -722,33 +762,6 @@ export default function Quoting() {
   };
   const summary = calcSummary([lawnCalc, bushesCalc, leafMaintCalc, aerationCalc, mulchCalc, rockCalc, edgingCalc, pineCalc, leafCleanupCalc, overgrownBushesCalc, bushRemovalCalc, otherCalcs]);
 
-  // Compute annual total when annual contract is enabled
-  const annualTotal = (() => {
-    if (!data.annual.enabled) return null;
-    let total = 0;
-    if (has('lawn') && lawnCalc.quote > 0) {
-      const weeks = num(data.annual.mowingWeeks) || 35;
-      const isWeekly = data.annual.lawnFrequency === 'weekly';
-      const perCut = isWeekly ? lawnCalc.weekly : lawnCalc.biweekly;
-      total += perCut * (isWeekly ? weeks : Math.ceil(weeks / 2));
-    }
-    if (has('bushes') && bushesCalc.quote > 0) {
-      total += bushesCalc.perVisit * 3; // 3x/year: Apr, Jul, Oct
-    }
-    if (has('leafMaint') && leafMaintCalc.quote > 0) {
-      total += leafMaintCalc.perVisit * (num(data.annual.leafMaintVisits) || 8);
-    }
-    if (has('aeration') && aerationCalc.quote > 0) total += aerationCalc.quote;
-    if (has('mulch') && mulchCalc.quote > 0) total += mulchCalc.quote * (num(data.annual.mulchVisits) || 1);
-    if (has('rock') && rockCalc.quote > 0) total += rockCalc.quote * (num(data.annual.rockVisits) || 1);
-    if (has('edging') && edgingCalc.quote > 0) total += edgingCalc.quote * (num(data.annual.edgingVisits) || 1);
-    if (has('pine') && pineCalc.quote > 0) total += pineCalc.quote * (num(data.annual.pineVisits) || 1);
-    if (has('leafCleanup') && leafCleanupCalc.quote > 0) total += leafCleanupCalc.quote * (num(data.annual.leafVisits) || 1);
-    if (has('overgrownLawn')) total += num(data.other.overgrownLawn);
-    if (overgrownBushesCalc.quote > 0) total += overgrownBushesCalc.quote;
-    if (bushRemovalCalc.quote > 0) total += bushRemovalCalc.quote;
-    return total;
-  })();
 
 
   // ─── Actions ───
@@ -763,6 +776,7 @@ export default function Quoting() {
     setData(makeDefaults());
     setMeasurements({ measurements: [], mapCenter: null, mapAddress: '' });
     addressAutocomplete.clear();
+    setAddressOnly(false);
     setStep('client');
   };
 
@@ -797,10 +811,7 @@ export default function Quoting() {
       overgrownBushes: (has('bushes') && data.bushes.modes?.overgrown) ? { ...data.overgrownBushes } : null,
       bushRemoval: (has('bushes') && data.bushes.modes?.removal) ? { ...data.bushRemoval } : null,
       otherServices: { ...data.other },
-      annual: data.annual.enabled ? { ...data.annual } : null,
-      total: data.annual.enabled ? annualTotal : summary.totalQuote,
-      annualTotal: data.annual.enabled ? annualTotal : null,
-      monthlyPayment: data.annual.enabled ? Math.round((annualTotal / 12) * 100) / 100 : null,
+      total: summary.totalQuote,
       createdBy: currentUser,
       measurements: measurements.measurements,
       mapCenter: measurements.mapCenter,
@@ -835,62 +846,8 @@ export default function Quoting() {
     setStep('list');
   };
 
-  const handleDelete = (id) => {
-    setQuotes(quotes.filter((q) => q.id !== id));
-    setConfirmDeleteId(null);
-  };
-
-  const handleLoadQuote = (q) => {
-    setQuickMode(false);
-    setClientName(q.clientName);
-    setClientAddress(q.clientAddress || q.mapAddress || '');
-    setClientLatLng(q.clientLatLng || q.mapCenter || null);
-    const svcs = new Set(q.services || []);
-    // Backward compat: detect services from data if services array missing
-    if (svcs.size === 0) {
-      if (q.lawn && (num(q.lawn.sqft) || q.lawn.override)) svcs.add('lawn');
-      if (q.mulch && (num(q.mulch.sqft) || num(q.mulch.area))) svcs.add('mulch');
-      if (q.rock && (num(q.rock.sqft) || num(q.rock.area))) svcs.add('rock');
-      if (q.edging && num(q.edging.linearFeet)) svcs.add('edging');
-      if (q.pineNeedles && num(q.pineNeedles.bales)) svcs.add('pine');
-      if (q.leafCleanup) svcs.add('leafCleanup');
-      if (q.bushes && (num(q.bushes.small) || num(q.bushes.medium) || num(q.bushes.large) || num(q.bushes.xl) || num(q.bushes.bushCount))) svcs.add('bushes');
-      if (q.aeration && (num(q.aeration.sqft) || q.aeration.override)) svcs.add('aeration');
-      if (num(q.otherServices?.overgrownLawn)) svcs.add('overgrownLawn');
-      // Overgrown/removal bushes are now sub-modes of 'bushes'
-      // They'll be restored via bushes.modes when loading
-      // Backward compat: old "overgrown" → overgrownLawn
-      if (num(q.otherServices?.overgrown)) svcs.add('overgrownLawn');
-    }
-    setSelectedServices(svcs);
-    const defs = makeDefaults();
-    setData({
-      lawn: { ...defs.lawn, ...q.lawn },
-      bushes: { ...defs.bushes, ...q.bushes },
-      leafMaint: { ...defs.leafMaint, ...q.leafMaint },
-      aeration: { ...defs.aeration, ...q.aeration },
-      mulch: { ...defs.mulch, ...q.mulch },
-      rock: { ...defs.rock, ...q.rock },
-      edging: { ...defs.edging, ...q.edging },
-      pine: { ...defs.pine, ...q.pineNeedles },
-      leafCleanup: { ...defs.leafCleanup, ...q.leafCleanup },
-      overgrownBushes: { ...defs.overgrownBushes, ...(q.overgrownBushes || {}) },
-      bushRemoval: { ...defs.bushRemoval, ...(q.bushRemoval || {}) },
-      other: { ...defs.other, ...q.otherServices, overgrownLawn: q.otherServices?.overgrownLawn || q.otherServices?.overgrown || '' },
-      annual: { ...defs.annual, ...(q.annual || {}) },
-    });
-    setMeasurements({
-      measurements: q.measurements || [],
-      mapCenter: q.mapCenter || q.clientLatLng || null,
-      mapAddress: q.mapAddress || q.clientAddress || '',
-    });
-    setStep('calculator');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   // ─── Render: List view ───
 
-  const [showPastQuotes, setShowPastQuotes] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
   if (step === 'list') {
@@ -899,8 +856,8 @@ export default function Quoting() {
         {/* Header */}
         <div className="flex items-end justify-between pt-8">
           <div>
-            <h1 className="text-3xl font-bold text-primary tracking-tight">Quotes</h1>
-            <p className="text-sm text-muted mt-1">Build a new quote or view past ones</p>
+            <h1 className="text-3xl font-bold text-primary tracking-tight">Calculate Quote</h1>
+            <p className="text-sm text-muted mt-1">What do you want to do?</p>
           </div>
           <div className="flex items-center gap-1">
             {ownerMode && (
@@ -915,82 +872,54 @@ export default function Quoting() {
           </div>
         </div>
 
-        {/* Primary action card */}
-        <div className="bg-card rounded-2xl border border-border-subtle p-6 space-y-3">
+        {/* Two ways in: measure a property first, or go straight to the calculators. */}
+        <div className="grid gap-3 sm:grid-cols-2">
           <button
             onClick={startNewQuote}
-            className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-brand text-on-brand font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
+            className="group text-left bg-card rounded-2xl border border-border-subtle p-5 hover:border-brand hover:bg-surface-alt transition-colors cursor-pointer flex flex-col gap-3"
           >
-            <Plus size={18} />
-            New Quote
+            <span className="w-11 h-11 rounded-xl bg-brand-light text-brand-text-strong flex items-center justify-center shrink-0">
+              <Ruler size={20} />
+            </span>
+            <span className="block">
+              <span className="block text-base font-bold text-primary">Measure a property</span>
+              <span className="block text-xs text-muted mt-1 leading-relaxed">
+                Draw the lawn on a map to get exact square footage, then price the
+                services off those numbers.
+              </span>
+            </span>
+            <span className="mt-auto pt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-text group-hover:gap-2.5 transition-all">
+              Start measuring
+              <ArrowRight size={14} />
+            </span>
           </button>
+
           <button
             onClick={startQuickQuote}
-            className="w-full inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-muted text-xs font-medium hover:text-primary hover:bg-surface-alt transition-colors cursor-pointer"
+            className="group text-left bg-card rounded-2xl border border-border-subtle p-5 hover:border-brand hover:bg-surface-alt transition-colors cursor-pointer flex flex-col gap-3"
           >
-            <Calculator size={13} />
-            Quick Quote — skip to calculators
+            <span className="w-11 h-11 rounded-xl bg-surface-alt text-secondary flex items-center justify-center shrink-0">
+              <Calculator size={20} />
+            </span>
+            <span className="block">
+              <span className="block text-base font-bold text-primary">Use another calculator</span>
+              <span className="block text-xs text-muted mt-1 leading-relaxed">
+                Skip the measuring and price services directly &mdash; mulch, bushes,
+                aeration, leaf cleanup and the rest.
+              </span>
+            </span>
+            <span className="mt-auto pt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-text group-hover:gap-2.5 transition-all">
+              Pick a calculator
+              <ArrowRight size={14} />
+            </span>
           </button>
         </div>
-
-        {/* Past quotes link */}
-        {quotes.length > 0 && (
-          <button
-            onClick={() => setShowPastQuotes((v) => !v)}
-            className="w-full flex items-center justify-between px-1 text-xs font-semibold uppercase tracking-wider text-muted hover:text-primary transition-colors cursor-pointer"
-          >
-            <span className="flex items-center gap-2">
-              <FileText size={12} />
-              Past Quotes · {quotes.length}
-            </span>
-            <ChevronDown size={14} className={`transition-transform ${showPastQuotes ? 'rotate-180' : ''}`} />
-          </button>
-        )}
 
         {/* Expandable settings */}
         {showSettings && ownerMode && (
           <PricingSettings settings={settings} onUpdate={setSettings} ownerMode={ownerMode} />
         )}
 
-        {/* Expandable past quotes */}
-        {showPastQuotes && quotes.length > 0 && (
-          <div className="space-y-2">
-            {quotes.map((q) => (
-              <div key={q.id} className="bg-card rounded-xl shadow-sm border border-border-subtle p-4 flex items-center justify-between gap-3 hover:bg-surface-alt transition-colors">
-                <button onClick={() => handleLoadQuote(q)} className="flex-1 min-w-0 text-left cursor-pointer">
-                  <h3 className="text-sm font-bold text-primary truncate">{q.clientName}</h3>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    {(q.services || []).map((svc) => {
-                      const def = SERVICE_OPTIONS.find((s) => s.id === svc);
-                      return def ? <span key={svc} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-surface-alt text-secondary">{def.label}</span> : null;
-                    })}
-                  </div>
-                  <p className="text-xs text-tertiary mt-1">
-                    {q.date} &middot; {q.monthlyPayment ? `$${fmt(q.monthlyPayment)}/mo (Annual)` : `$${fmt(q.total)}`} &middot; by {q.createdBy}
-                  </p>
-                </button>
-                {ownerMode && (
-                  <button onClick={() => setConfirmDeleteId(q.id)} className="p-1.5 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer shrink-0" title="Delete quote">
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {confirmDeleteId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setConfirmDeleteId(null)}>
-            <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-lg font-bold text-primary mb-2">Delete Quote?</h3>
-              <p className="text-sm text-secondary mb-5">This will permanently remove this quote.</p>
-              <div className="flex gap-3 justify-end">
-                <button onClick={() => setConfirmDeleteId(null)} className="px-4 py-2 rounded-lg border border-border-strong text-secondary text-sm font-medium hover:bg-surface transition-colors cursor-pointer">Cancel</button>
-                <button onClick={() => handleDelete(confirmDeleteId)} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors cursor-pointer">Delete</button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -1124,12 +1053,6 @@ export default function Quoting() {
     };
 
     const matches = buildMatches();
-    const sourceBadge = {
-      jobber: { label: 'Jobber', color: 'bg-blue-500/10 text-blue-600' },
-      saved: { label: 'Saved', color: 'bg-purple-500/10 text-purple-600' },
-      contract: { label: 'Contract', color: 'bg-amber-500/10 text-amber-600' },
-      quote: { label: 'Quote', color: 'bg-slate-500/10 text-slate-600' },
-    };
 
     return (
       <div className="space-y-6 max-w-2xl mx-auto">
@@ -1139,141 +1062,108 @@ export default function Quoting() {
             <ArrowLeft size={20} className="text-secondary" />
           </button>
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-primary">New Quote</h1>
-            <p className="text-xs text-tertiary">Step 1 of 4 — Find or add a client</p>
-          </div>
-          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted">
-            {jobberLoading ? (
-              <><Loader2 size={11} className="animate-spin" /> Searching Jobber…</>
-            ) : (
-              <><Database size={11} /> Jobber live search</>
-            )}
+            <h1 className="text-2xl font-bold text-primary">Measure a property</h1>
           </div>
         </div>
 
         {/* Selected client card OR search */}
         {clientSelected ? (
-          <div className="bg-card rounded-2xl shadow-sm border border-brand/30 ring-1 ring-brand/20 overflow-hidden">
-            <div className="bg-brand/5 px-5 py-3 flex items-center justify-between border-b border-border-subtle">
-              <div className="flex items-center gap-2">
-                <CheckCircle size={16} className="text-brand" />
-                <span className="text-xs font-bold uppercase tracking-wider text-brand">Selected Client</span>
-              </div>
-              <button
-                onClick={() => {
-                  setClientSelected(false);
-                  setClientName('');
-                  setClientAddress('');
-                  setClientLatLng(null);
-                  setSelectedClientInfo(null);
-                  setMeasurements({ measurements: [], mapCenter: null, mapAddress: '' });
-                  addressAutocomplete.clear();
-                }}
-                className="text-xs text-muted hover:text-primary cursor-pointer"
-              >
-                Change
-              </button>
-            </div>
-            <div className="p-5 space-y-3">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-brand-light flex items-center justify-center shrink-0">
-                  <User size={18} className="text-brand-text-strong" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-lg font-bold text-primary truncate">{clientName}</h2>
-                  {clientAddress && (
-                    <p className="text-xs text-muted flex items-start gap-1 mt-0.5">
-                      <MapPin size={11} className="mt-0.5 shrink-0" />
-                      <span className="truncate">{clientAddress}</span>
-                    </p>
-                  )}
-                </div>
-              </div>
-              {selectedClientInfo && (selectedClientInfo.phone || selectedClientInfo.email) && (
-                <div className="flex flex-wrap gap-2 pt-2 border-t border-border-subtle/50">
-                  {selectedClientInfo.phone && (
-                    <a href={`tel:${selectedClientInfo.phone}`} className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-surface-alt text-secondary hover:bg-surface-alt/70">
-                      <Phone size={11} /> {selectedClientInfo.phone}
-                    </a>
-                  )}
-                  {selectedClientInfo.email && (
-                    <a href={`mailto:${selectedClientInfo.email}`} className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-surface-alt text-secondary hover:bg-surface-alt/70">
-                      <Mail size={11} /> {selectedClientInfo.email}
-                    </a>
-                  )}
-                </div>
-              )}
-              {clientLatLng && (
-                <p className="text-[11px] text-emerald-600 flex items-center gap-1">
-                  <CheckCircle size={11} /> Location pinned
-                </p>
+          /* Found it. Green check, what it found, and a way out. Nothing else. */
+          <div className="flex items-center gap-3 rounded-xl border border-brand/30 bg-brand/5 px-4 py-3.5">
+            <CheckCircle size={20} className="text-brand shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-primary truncate">{clientName}</p>
+              {!addressOnly && clientAddress && (
+                <p className="text-xs text-muted truncate">{clientAddress}</p>
               )}
             </div>
+            <button
+              onClick={() => {
+                setClientSelected(false);
+                setClientName('');
+                setClientAddress('');
+                setClientLatLng(null);
+                setSelectedClientInfo(null);
+                setAddressOnly(false);
+                setMeasurements({ measurements: [], mapCenter: null, mapAddress: '' });
+                addressAutocomplete.clear();
+              }}
+              className="p-1.5 -mr-1 rounded-lg text-muted hover:text-primary hover:bg-surface-alt transition-colors cursor-pointer shrink-0"
+              title="Choose someone else"
+            >
+              <X size={16} />
+            </button>
           </div>
         ) : (
-          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5 space-y-4">
-            {/* Big search */}
+          <div className="space-y-3">
+            {/* One box for both: names match saved/Jobber clients, anything
+                address-shaped comes back from Places. No modes to pick. */}
             <div className="relative">
               <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 type="text"
                 autoFocus
                 value={clientName}
-                onChange={(e) => { setClientName(e.target.value); setClientSelected(false); }}
-                placeholder="Search clients by name..."
-                className="w-full rounded-xl border border-border-strong bg-surface pl-11 pr-4 py-3.5 text-base text-primary outline-none focus:ring-2 focus:ring-brand placeholder:text-muted"
+                onChange={(e) => {
+                  setClientName(e.target.value);
+                  setClientSelected(false);
+                  setAddressOnly(false);
+                  addressAutocomplete.setSearch(e.target.value);
+                }}
+                placeholder="Name or address..."
+                className="w-full rounded-xl border border-border-strong bg-surface pl-11 pr-10 py-3.5 text-base text-primary outline-none focus:ring-2 focus:ring-brand placeholder:text-muted"
               />
+              {(jobberLoading || addressAutocomplete.loading) && (
+                <Loader2 size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted animate-spin" />
+              )}
             </div>
 
-            {/* Results */}
             {clientName.trim().length >= 2 && (
-              matches.length > 0 ? (
-                <div className="border border-border-subtle rounded-xl overflow-hidden divide-y divide-border-subtle/50 max-h-80 overflow-y-auto">
-                  {matches.map((m, i) => {
-                    const badge = sourceBadge[m.source] || sourceBadge.saved;
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => handleSelectClient(m)}
-                        className="w-full text-left px-4 py-3 hover:bg-surface-alt transition-colors cursor-pointer flex items-center gap-3"
-                      >
-                        <div className="w-9 h-9 rounded-full bg-surface-alt flex items-center justify-center shrink-0">
-                          <User size={15} className="text-muted" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-primary truncate">{m.name}</p>
-                          {m.address && <p className="text-[11px] text-muted truncate">{m.address}</p>}
-                          {(m.phone || m.email) && (
-                            <p className="text-[10px] text-muted truncate mt-0.5">
-                              {[m.phone, m.email].filter(Boolean).join(' · ')}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${badge.color}`}>{badge.label}</span>
-                          {m.hasMap && <span className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">Mapped</span>}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="border border-dashed border-border-subtle rounded-xl px-4 py-6 text-center">
-                  <p className="text-sm text-muted">No matches found</p>
+              <div className="rounded-xl overflow-hidden divide-y divide-border-subtle/50 max-h-96 overflow-y-auto">
+                {matches.map((m, i) => (
+                  <button
+                    key={`c${i}`}
+                    onClick={() => handleSelectClient(m)}
+                    className="w-full text-left px-3 py-3 hover:bg-surface-alt transition-colors cursor-pointer flex items-center gap-3"
+                  >
+                    <User size={16} className="text-muted shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-primary truncate">{m.name}</p>
+                      {m.address && <p className="text-[11px] text-muted truncate">{m.address}</p>}
+                    </div>
+                  </button>
+                ))}
+
+                {addressAutocomplete.suggestions.map((s, i) => (
+                  <button
+                    key={`a${i}`}
+                    onClick={() => {
+                      // No person attached — the address itself names the quote.
+                      setClientName(s.displayName);
+                      setClientAddress(s.displayName);
+                      setClientLatLng({ lat: s.lat, lng: s.lng });
+                      setSelectedClientInfo(null);
+                      setAddressOnly(true);
+                      setClientSelected(true);
+                      addressAutocomplete.clear();
+                    }}
+                    className="w-full text-left px-3 py-3 hover:bg-surface-alt transition-colors cursor-pointer flex items-center gap-3"
+                  >
+                    <MapPin size={16} className="text-muted shrink-0" />
+                    <p className="text-sm text-primary min-w-0 flex-1 truncate">{s.displayName}</p>
+                  </button>
+                ))}
+
+                {matches.length === 0 && addressAutocomplete.suggestions.length === 0 && !jobberLoading && !addressAutocomplete.loading && (
                   <button
                     onClick={() => { setClientSelected(true); setSelectedClientInfo(null); }}
-                    className="mt-2 text-xs text-brand font-semibold hover:underline cursor-pointer"
+                    className="w-full text-left px-3 py-3 hover:bg-surface-alt transition-colors cursor-pointer flex items-center gap-3"
                   >
-                    + Use "{clientName}" as new client
+                    <Plus size={16} className="text-muted shrink-0" />
+                    <p className="text-sm text-primary">Use &ldquo;{clientName}&rdquo; as a new client</p>
                   </button>
-                </div>
-              )
-            )}
-
-            {clientName.trim().length < 2 && (
-              <p className="text-[11px] text-muted text-center py-2">
-                Type at least 2 characters to search across Jobber, saved clients, contracts, and past quotes
-              </p>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -1349,7 +1239,7 @@ export default function Quoting() {
               setStep('measurements');
             }}
             disabled={!clientName.trim()}
-            className={`${savedProperty ? '' : 'flex-1'} inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl ${savedProperty ? 'border border-border-subtle text-secondary hover:bg-surface-alt' : 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:opacity-90'} font-semibold transition-opacity cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+            className={`${savedProperty ? '' : 'flex-1'} inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl ${savedProperty ? 'border border-border-subtle text-secondary hover:bg-surface-alt' : 'bg-brand text-on-brand hover:bg-brand-hover'} font-semibold transition-opacity cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
           >
             {savedProperty ? 'Re-map Property' : 'Next: Measure Property'} <ArrowRight size={16} />
           </button>
@@ -1361,6 +1251,18 @@ export default function Quoting() {
   // ─── Render: Measurements step ───
 
   if (step === 'measurements') {
+    // Use Earth's search form rather than hand-built @-camera coordinates. The
+    // camera syntax needs the real ground elevation in its altitude slot; passing
+    // 0 (sea level) with any tilt aims the camera below ground and the view slides
+    // off the lot entirely. /search/ lets Earth resolve elevation and framing, and
+    // drops a pin right on the point. Tilt from there by dragging.
+    const pin = measurements.mapCenter || clientLatLng;
+    const earthUrl = pin
+      ? `https://earth.google.com/web/search/${pin.lat},${pin.lng}`
+      : clientAddress
+        ? `https://earth.google.com/web/search/${encodeURIComponent(clientAddress)}`
+        : null;
+
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -1369,14 +1271,33 @@ export default function Quoting() {
           </button>
           <div>
             <h1 className="text-2xl font-bold text-primary">Measure Property</h1>
-            <p className="text-sm text-tertiary">Step 2 of 4: Draw areas on the map</p>
+            <p className="text-sm text-tertiary">Draw areas on the map</p>
           </div>
         </div>
 
-        {clientAddress && (
-          <p className="text-sm text-secondary flex items-center gap-2">
-            <MapPin size={14} className="text-muted" /> {clientAddress}
-          </p>
+        {(clientAddress || earthUrl) && (
+          <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-surface-alt px-4 py-3">
+            {clientAddress && (
+              <>
+                <MapPin size={16} className="text-muted shrink-0" />
+                <p className="text-sm text-secondary min-w-0 flex-1 truncate">{clientAddress}</p>
+              </>
+            )}
+            {earthUrl && (
+              /* Satellite tiles are often shot through tree cover. Earth's 3D view
+                 and history slider make it possible to see the ground. */
+              <a
+                href={earthUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${clientAddress ? '' : 'flex-1 justify-center'} inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border-strong text-secondary text-xs font-semibold hover:bg-card hover:text-primary transition-colors cursor-pointer shrink-0`}
+                title="Open this property in Google Earth"
+              >
+                <Globe size={13} />
+                Google Earth
+              </a>
+            )}
+          </div>
         )}
 
         <div className="bg-card rounded-2xl shadow-sm border border-border-subtle overflow-hidden">
@@ -1421,7 +1342,7 @@ export default function Quoting() {
 
         <button
           onClick={() => setStep('services')}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer"
+          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-brand text-on-brand font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
         >
           Next: Select Services
           <ArrowRight size={16} />
@@ -1441,44 +1362,76 @@ export default function Quoting() {
           </button>
           <div>
             <h1 className="text-2xl font-bold text-primary">Select Services</h1>
-            <p className="text-sm text-tertiary">{quickMode ? 'Step 1 of 2: Choose services' : 'Step 3 of 4: Choose services for this quote'}</p>
+            <p className="text-sm text-tertiary">Choose services</p>
           </div>
         </div>
 
-        <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6">
-          <label className="block text-sm font-semibold text-primary mb-3">What services does this quote include?</label>
-          <div className="space-y-5">
-            {SERVICE_SECTIONS.map((section) => (
-              <div key={section.label}>
-                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">{section.label}</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {section.services.map((svc) => {
-                    const Icon = svc.icon;
-                    const active = selectedServices.has(svc.id);
-                    return (
-                      <button
-                        key={svc.id}
-                        onClick={() => toggleService(svc.id)}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                          active
-                            ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 shadow-sm'
-                            : 'border-border-subtle hover:border-border-strong hover:bg-surface-alt'
-                        }`}
-                      >
-                        <Icon size={24} className={active ? 'text-emerald-600' : 'text-muted'} />
-                        <span className={`text-sm font-medium ${active ? 'text-emerald-700 dark:text-emerald-300' : 'text-secondary'}`}>{svc.label}</span>
-                        {active && (
-                          <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
+        {/* Search filters across every calculator; sections with no match drop
+            out so the list stays short rather than showing empty headings. */}
+        <div className="relative">
+          <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            type="text"
+            value={serviceQuery}
+            onChange={(e) => setServiceQuery(e.target.value)}
+            placeholder="Search calculators..."
+            className="w-full rounded-xl border border-border-subtle bg-card pl-10 pr-10 py-3 text-sm text-primary outline-none focus:ring-2 focus:ring-brand placeholder:text-muted"
+          />
+          {serviceQuery && (
+            <button
+              onClick={() => setServiceQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted hover:text-primary cursor-pointer"
+              aria-label="Clear search"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+
+        <div className="bg-card rounded-2xl border border-border-subtle overflow-hidden">
+          {(() => {
+            // One flat list — SERVICE_OPTIONS is already every calculator in
+            // section order, so the original grouping still sets the order
+            // without the headings taking up space.
+            const q = serviceQuery.trim().toLowerCase();
+            const matches = SERVICE_OPTIONS.filter((svc) => svc.label.toLowerCase().includes(q));
+
+            if (matches.length === 0) {
+              return (
+                <p className="px-5 py-10 text-center text-sm text-muted">
+                  No calculator matches &ldquo;{serviceQuery}&rdquo;.
+                </p>
+              );
+            }
+
+            return matches.map((svc) => {
+              const Icon = svc.icon;
+              const active = selectedServices.has(svc.id);
+              return (
+                <button
+                  key={svc.id}
+                  onClick={() => toggleService(svc.id)}
+                  className="w-full flex items-center gap-3.5 px-5 py-3.5 text-left border-t border-border-subtle/60 first:border-t-0 hover:bg-surface-alt transition-colors cursor-pointer"
+                >
+                  <Icon size={18} className={`shrink-0 ${active ? 'text-brand-text-strong' : 'text-muted'}`} />
+                  <span className={`flex-1 text-sm font-semibold ${active ? 'text-primary' : 'text-secondary'}`}>
+                    {svc.label}
+                  </span>
+                  <span
+                    className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                      active ? 'bg-brand' : 'border border-border-strong'
+                    }`}
+                  >
+                    {active && (
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M2.5 6L5 8.5L9.5 3.5" stroke="currentColor" className="text-on-brand" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </span>
+                </button>
+              );
+            });
+          })()}
         </div>
 
         <button
@@ -1493,7 +1446,7 @@ export default function Quoting() {
             setStep('calculator');
           }}
           disabled={selectedServices.size === 0}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-brand text-on-brand font-semibold hover:bg-brand-hover transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Next: Build Quote
           <ArrowRight size={16} />
@@ -1512,13 +1465,13 @@ export default function Quoting() {
         </button>
         <div className="flex-1">
           <h1 className="text-xl font-bold text-primary">{clientName}</h1>
-          <p className="text-sm text-tertiary">{quickMode ? 'Step 2 of 2: Fill in the numbers' : 'Step 4 of 4: Fill in the numbers'}</p>
+          <p className="text-sm text-tertiary">Fill in the numbers</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Only selected calculators */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="space-y-8">
+        {/* Calculators */}
+        <div className="space-y-6">
 
           {/* Collapsible measurements reference panel */}
           {measurements.measurements.length > 0 && (
@@ -1582,77 +1535,9 @@ export default function Quoting() {
             </div>
           )}
 
-          {/* ── Annual Contract Toggle ── */}
-          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CalendarDays size={18} className="text-blue-500" />
-                <span className="text-sm font-bold text-primary">Annual Contract</span>
-              </div>
-              <button
-                onClick={() => update('annual', 'enabled', !data.annual.enabled)}
-                className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
-                  data.annual.enabled
-                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-400'
-                    : 'bg-surface-alt text-muted border-border-subtle hover:text-secondary'
-                }`}
-              >
-                {data.annual.enabled ? 'Annual On' : 'Off'}
-              </button>
-            </div>
-            {data.annual.enabled && (
-              <div className="mt-4 space-y-3">
-                <p className="text-xs text-muted">Total annual cost divided by 12 = flat monthly payment.</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {has('lawn') && (
-                    <>
-                      <div>
-                        <label className="block text-xs font-medium text-secondary mb-1">Lawn Frequency</label>
-                        <select value={data.annual.lawnFrequency} onChange={(e) => update('annual', 'lawnFrequency', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
-                          <option value="weekly">Weekly</option>
-                          <option value="biweekly">Every Other Week</option>
-                        </select>
-                      </div>
-                      <InputField label="Mowing Weeks/Year" value={data.annual.mowingWeeks} onChange={(v) => update('annual', 'mowingWeeks', v)} placeholder="35" />
-                    </>
-                  )}
-                  {has('leafMaint') && <InputField label="Leaf Maint Visits/Year" value={data.annual.leafMaintVisits} onChange={(v) => update('annual', 'leafMaintVisits', v)} placeholder="8" />}
-                </div>
-                {(has('lawn') || has('leafMaint')) && (() => {
-                  const isWeekly = data.lawn?.override
-                    ? (data.lawn.overrideDisplay || 'eow') === 'weekly'
-                    : data.annual.lawnFrequency === 'weekly';
-                  const mowWeeks = num(data.annual.mowingWeeks) || 35;
-                  const mowVisits = isWeekly ? mowWeeks : Math.ceil(mowWeeks / 2);
-                  const leafVisits = num(data.annual.leafMaintVisits) || 8;
-                  const totalVisits = (has('lawn') ? mowVisits : 0) + (has('leafMaint') ? leafVisits : 0);
-                  return (
-                    <div className="mt-3 flex flex-wrap gap-3 text-xs">
-                      {has('lawn') && (
-                        <div className="bg-surface-alt rounded-lg px-3 py-2 border border-border-subtle">
-                          <span className="font-bold text-primary">Mowing</span>
-                          <span className="text-muted ml-1">Mar – Oct · {mowVisits} visits ({isWeekly ? 'Weekly' : 'EOW'})</span>
-                        </div>
-                      )}
-                      {has('leafMaint') && (
-                        <div className="bg-surface-alt rounded-lg px-3 py-2 border border-border-subtle">
-                          <span className="font-bold text-primary">Leaves</span>
-                          <span className="text-muted ml-1">Nov – Feb · {leafVisits} visits (EOW)</span>
-                        </div>
-                      )}
-                      <div className="bg-surface-alt rounded-lg px-3 py-2 border border-brand">
-                        <span className="font-bold text-brand-text-strong">Total: {totalVisits} visits/year</span>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-          </div>
-
           {/* ── Lawn Care ── */}
           {has('lawn') && (
-            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+            <div className="space-y-4 pb-8 border-b border-border-subtle">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Sprout size={20} className="text-green-600" /> Lawn Maintenance</h2>
                 <button
@@ -1721,7 +1606,7 @@ export default function Quoting() {
 
           {/* ── Bushes (Trimming / Overgrown / Removal) ── */}
           {has('bushes') && (
-            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-5">
+            <div className="pb-8 border-b border-border-subtle space-y-5">
               <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Shrub size={20} className="text-green-600" /> Bushes</h2>
 
               {/* Sub-mode toggles */}
@@ -1890,7 +1775,7 @@ export default function Quoting() {
 
           {/* ── Leaf Maintenance ── */}
           {has('leafMaint') && (
-            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+            <div className="space-y-4 pb-8 border-b border-border-subtle">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Leaf size={20} className="text-amber-500" /> Leaf Maintenance</h2>
                 <button
@@ -1923,7 +1808,7 @@ export default function Quoting() {
 
           {/* ── Aeration ── */}
           {has('aeration') && (
-            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+            <div className="space-y-4 pb-8 border-b border-border-subtle">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-primary flex items-center gap-2"><CircleDot size={20} className="text-green-600" /> Aeration</h2>
                 <button
@@ -2029,7 +1914,7 @@ export default function Quoting() {
 
           {/* ── Mulch ── */}
           {has('mulch') && (
-            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+            <div className="space-y-4 pb-8 border-b border-border-subtle">
               <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Trees size={20} className="text-emerald-600" /> Mulch</h2>
 
               {/* ── Inputs ── */}
@@ -2078,64 +1963,39 @@ export default function Quoting() {
                 <p className="text-[10px] text-muted mt-1">Cost {'$'}{fmt(mulchCalc.cogs)} + Revenue {'$'}{fmt(mulchCalc.labor)}</p>
               </div>
 
-              {/* ── Job Profit ── */}
-              {mulchCalc.quote > 0 && (() => {
-                const crewCost = num(data.mulch.crewSize) * num(data.mulch.estHours) * num(data.mulch.crewRate);
-                const profit = mulchCalc.labor - crewCost;
-                const profitPerHr = num(data.mulch.estHours) > 0 ? profit / num(data.mulch.estHours) : 0;
-                return (
-                  <div className="border-t border-border-subtle pt-4 space-y-3">
-                    <p className="text-xs font-bold text-secondary uppercase tracking-wide">Job Profit</p>
-                    <div className="grid grid-cols-3 gap-3">
-                      <InputField label="Crew Size" value={data.mulch.crewSize} onChange={(v) => update('mulch', 'crewSize', v)} placeholder="2" />
-                      <InputField label="Est. Hours" value={data.mulch.estHours} onChange={(v) => update('mulch', 'estHours', v)} placeholder="0" />
-                      <InputField label="Rate/hr" value={data.mulch.crewRate} onChange={(v) => update('mulch', 'crewRate', v)} prefix="$" placeholder="17" />
-                    </div>
-                    {num(data.mulch.estHours) > 0 && (
-                      <div className="space-y-1.5 text-sm">
-                        <div className="flex justify-between"><span className="text-muted">Crew cost ({data.mulch.crewSize} × {data.mulch.estHours}hr × ${data.mulch.crewRate})</span><span className="text-primary">${fmt(crewCost)}</span></div>
-                        <div className="flex justify-between font-semibold"><span className="text-secondary">Your Profit</span><span className={profit >= 0 ? 'text-emerald-400' : 'text-red-400'}>${fmt(profit)}</span></div>
-                        <div className="flex justify-between font-semibold"><span className="text-secondary">Profit / Hour</span><span className={profitPerHr >= 0 ? 'text-emerald-400' : 'text-red-400'}>${fmt(profitPerHr)}/hr</span></div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
             </div>
           )}
 
-          {/* ── Rock Installation ── */}
+          {/* ── Rock ── */}
           {has('rock') && (
-            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+            <div className="space-y-4 pb-8 border-b border-border-subtle">
               <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Mountain size={20} className="text-slate-500" /> Rock</h2>
 
-              {/* ── Inputs ── */}
+              {/* ── Inputs ── One field per row, top to bottom. ── */}
+              <InputField label="Sqft" value={data.rock.sqft} onChange={(v) => update('rock', 'sqft', v)} placeholder="0" />
+              <InputField label="Depth (in)" value={data.rock.depth} onChange={(v) => update('rock', 'depth', v)} placeholder="3" />
+              <InputField label="Charge / Yard" value={data.rock.chargePerYd} onChange={(v) => update('rock', 'chargePerYd', v)} prefix="$" placeholder="150" />
+
               <div>
-                <label className="block text-xs font-medium text-secondary mb-1">Rock Type</label>
-                <select value={data.rock.rockType} onChange={(e) => updateRockType(e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
-                  {rockTypes.map((t) => <option key={t.label} value={t.label}>{t.label} (${t.pricePerYd}/yd)</option>)}
+                <label className="block text-xs font-medium text-secondary mb-1">Equipment Rental</label>
+                <select value={data.rock.equipmentCost || ''} onChange={(e) => update('rock', 'equipmentCost', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                  <option value="">None</option>
+                  <option value="300">4 hour &mdash; $300</option>
+                  <option value="400">24 hour &mdash; $400</option>
                 </select>
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <InputField label="Sqft" value={data.rock.sqft} onChange={(v) => update('rock', 'sqft', v)} placeholder="0" />
-                <InputField label="Depth (in)" value={data.rock.depth} onChange={(v) => update('rock', 'depth', v)} placeholder="3" />
-                <InputField label="Equipment" value={data.rock.equipmentCost} onChange={(v) => update('rock', 'equipmentCost', v)} prefix="$" placeholder="0" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <InputField label="Charge / Yard" value={data.rock.chargePerYd} onChange={(v) => update('rock', 'chargePerYd', v)} prefix="$" placeholder="150" />
-                <div>
-                  <label className="block text-xs font-medium text-secondary mb-1">Difficulty</label>
-                  <select value={data.rock.difficulty} onChange={(e) => update('rock', 'difficulty', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
-                    <option value="easy">Easy (1.0x)</option>
-                    <option value="moderate">Moderate (1.1x)</option>
-                    <option value="hard">Hard (1.4x)</option>
-                  </select>
-                </div>
+
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">Difficulty</label>
+                <select value={data.rock.difficulty} onChange={(e) => update('rock', 'difficulty', e.target.value)} className="w-full rounded-lg border border-border-strong bg-card px-4 py-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand">
+                  <option value="easy">Easy (1.0x)</option>
+                  <option value="moderate">Moderate (1.1x)</option>
+                  <option value="hard">Hard (1.4x)</option>
+                </select>
               </div>
 
               {/* ── Breakdown ── */}
               <div className="border-t border-border-subtle pt-3 space-y-1.5 text-sm">
-                <div className="flex justify-between"><span className="text-muted">Yards needed (10% buffer)</span><span className="text-primary font-medium">{fmt(rockCalc.cubicYards)} yd</span></div>
                 <div className="flex justify-between"><span className="text-muted">Rock material</span><span className="text-primary">${fmt(rockCalc.material)}</span></div>
                 <div className="flex justify-between"><span className="text-muted">Fabric ({rockCalc.fabricRolls} roll{rockCalc.fabricRolls !== 1 ? 's' : ''})</span><span className="text-primary">${fmt(rockCalc.fabricCost)}</span></div>
                 <div className="flex justify-between"><span className="text-muted">Delivery ({rockCalc.loads} load{rockCalc.loads !== 1 ? 's' : ''})</span><span className="text-primary">${fmt(rockCalc.delivery)}</span></div>
@@ -2159,35 +2019,12 @@ export default function Quoting() {
                 <p className="text-[10px] text-muted mt-1">Cost {'$'}{fmt(rockCalc.cogs)} + Revenue {'$'}{fmt(rockCalc.labor)}</p>
               </div>
 
-              {/* ── Job Profit ── */}
-              {rockCalc.quote > 0 && (() => {
-                const crewCost = num(data.rock.crewSize) * num(data.rock.estHours) * num(data.rock.crewRate);
-                const profit = rockCalc.labor - crewCost;
-                const profitPerHr = num(data.rock.estHours) > 0 ? profit / num(data.rock.estHours) : 0;
-                return (
-                  <div className="border-t border-border-subtle pt-4 space-y-3">
-                    <p className="text-xs font-bold text-secondary uppercase tracking-wide">Job Profit</p>
-                    <div className="grid grid-cols-3 gap-3">
-                      <InputField label="Crew Size" value={data.rock.crewSize} onChange={(v) => update('rock', 'crewSize', v)} placeholder="2" />
-                      <InputField label="Est. Hours" value={data.rock.estHours} onChange={(v) => update('rock', 'estHours', v)} placeholder="0" />
-                      <InputField label="Rate/hr" value={data.rock.crewRate} onChange={(v) => update('rock', 'crewRate', v)} prefix="$" placeholder="17" />
-                    </div>
-                    {num(data.rock.estHours) > 0 && (
-                      <div className="space-y-1.5 text-sm">
-                        <div className="flex justify-between"><span className="text-muted">Crew cost ({data.rock.crewSize} × {data.rock.estHours}hr × ${data.rock.crewRate})</span><span className="text-primary">${fmt(crewCost)}</span></div>
-                        <div className="flex justify-between font-semibold"><span className="text-secondary">Your Profit</span><span className={profit >= 0 ? 'text-emerald-400' : 'text-red-400'}>${fmt(profit)}</span></div>
-                        <div className="flex justify-between font-semibold"><span className="text-secondary">Profit / Hour</span><span className={profitPerHr >= 0 ? 'text-emerald-400' : 'text-red-400'}>${fmt(profitPerHr)}/hr</span></div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
             </div>
           )}
 
           {/* ── Edging ── */}
           {has('edging') && (
-            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+            <div className="space-y-4 pb-8 border-b border-border-subtle">
               <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Ruler size={20} className="text-blue-500" /> Edging</h2>
 
               {/* ── Job Info ── */}
@@ -2249,7 +2086,7 @@ export default function Quoting() {
 
           {/* ── Pine Needles ── */}
           {has('pine') && (
-            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+            <div className="space-y-4 pb-8 border-b border-border-subtle">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-primary flex items-center gap-2"><TreePine size={20} className="text-amber-600" /> Pine Needles</h2>
                 <button
@@ -2290,7 +2127,7 @@ export default function Quoting() {
 
           {/* ── Leaf Cleanup ── */}
           {has('leafCleanup') && (
-            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+            <div className="space-y-4 pb-8 border-b border-border-subtle">
               <h2 className="text-lg font-bold text-primary flex items-center gap-2"><Leaf size={20} className="text-amber-600" /> Leaf Cleanup</h2>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
@@ -2373,7 +2210,7 @@ export default function Quoting() {
 
           {/* ── Other services (flat $) ── */}
           {has('overgrownLawn') && (
-            <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
+            <div className="space-y-4 pb-8 border-b border-border-subtle">
               <h2 className="text-lg font-bold text-primary">Other Services</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {has('overgrownLawn') && <InputField label="Overgrown Lawn" value={data.other.overgrownLawn} onChange={(v) => update('other', 'overgrownLawn', v)} prefix="$" placeholder="0" />}
@@ -2382,54 +2219,69 @@ export default function Quoting() {
           )}
         </div>
 
-        {/* Right: Summary */}
-        <div className="lg:col-span-1">
-          <div className="bg-card rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4 lg:sticky lg:top-24">
+        {/* Summary — last thing on the page, full width, no sticky column. */}
+        <div>
+          <div className="space-y-4 border-t-2 border-border-subtle pt-6">
+            {/* Rock type sits directly above the summary: tap one and the
+                totals underneath change, so you can compare without scrolling. */}
+            {has('rock') && (
+              <div className="pb-5">
+
+            <div>
+              <p className="text-xs font-semibold text-secondary mb-2">Quote by rock type</p>
+              {num(data.rock.sqft) > 0 ? (
+                <div className="rounded-xl border border-border-subtle overflow-hidden">
+                  {rockTypes.map((t) => {
+                    const active = data.rock.rockType === t.label;
+                    const q = calcRock({ ...data.rock, rockType: t.label, materialCostPerYd: t.pricePerYd }).quote;
+                    return (
+                      <button
+                        key={t.label}
+                        onClick={() => updateRockType(t.label)}
+                        className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left border-t border-border-subtle/60 first:border-t-0 transition-colors cursor-pointer ${
+                          active ? 'bg-brand-light' : 'hover:bg-surface-alt'
+                        }`}
+                      >
+                        <span className="min-w-0">
+                          <span className={`block text-sm font-semibold truncate ${active ? 'text-brand-text-strong' : 'text-primary'}`}>
+                            {t.label}
+                          </span>
+                          <span className="block text-[11px] text-muted">${t.pricePerYd}/yd material</span>
+                        </span>
+                        <span className={`text-base font-bold shrink-0 ${active ? 'text-brand-text-strong' : 'text-primary'}`}>
+                          ${fmt(q)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted">Enter sqft to price each rock type.</p>
+              )}
+            </div>
+              </div>
+            )}
+
             <h2 className="text-lg font-bold text-primary">Quote Summary</h2>
 
             {/* Per-service breakdown table */}
             {(() => {
-              const isAnnual = data.annual.enabled;
               const lines = [];
               let totalCost = 0;
 
               if (has('lawn') && lawnCalc.quote > 0) {
-                const isWeekly = data.lawn.override
-                  ? (data.lawn.overrideDisplay || 'eow') === 'weekly'
-                  : data.annual.lawnFrequency === 'weekly';
-                const perCut = isWeekly ? lawnCalc.weekly : lawnCalc.biweekly;
-                if (isAnnual) {
-                  const weeks = num(data.annual.mowingWeeks) || 35;
-                  const cuts = isWeekly ? weeks : Math.ceil(weeks / 2);
-                  const annual = perCut * cuts;
-                  lines.push({ label: 'Lawn Maintenance', per: perCut, times: cuts, timesLabel: isWeekly ? `${cuts} cuts` : `${cuts} cuts (EOW)`, quote: annual, cost: 0 });
-                } else {
-                  lines.push({ label: `Lawn Maintenance${data.lawn.override ? ' (Override)' : ''}`, detail: `W: $${fmt(lawnCalc.weekly)} / EOW: $${fmt(lawnCalc.biweekly)}`, quote: lawnCalc.biweekly, cost: 0 });
-                }
+                lines.push({ label: `Lawn Maintenance${data.lawn.override ? ' (Override)' : ''}`, detail: `W: $${fmt(lawnCalc.weekly)} / EOW: $${fmt(lawnCalc.biweekly)}`, quote: lawnCalc.biweekly, cost: 0 });
               }
               if (has('bushes') && bushesCalc.quote > 0) {
-                if (isAnnual) {
-                  const annual = bushesCalc.perVisit * 3;
-                  lines.push({ label: 'Bush Maintenance', per: bushesCalc.perVisit, times: 3, timesLabel: '3×/yr', quote: annual, cost: 0 });
-                } else {
-                  lines.push({ label: `Bush Maintenance${data.bushes.override ? ' (Override)' : ''}`, detail: '3×/yr (Apr, Jul, Oct) · Per Visit', quote: bushesCalc.perVisit, cost: 0 });
-                }
+                lines.push({ label: `Bush Maintenance${data.bushes.override ? ' (Override)' : ''}`, detail: '3×/yr (Apr, Jul, Oct) · Per Visit', quote: bushesCalc.perVisit, cost: 0 });
               }
               if (has('leafMaint') && leafMaintCalc.quote > 0) {
-                if (isAnnual) {
-                  const visits = num(data.annual.leafMaintVisits) || 8;
-                  const annual = leafMaintCalc.perVisit * visits;
-                  lines.push({ label: 'Leaf Maintenance', per: leafMaintCalc.perVisit, times: visits, timesLabel: `${visits}×/yr`, quote: annual, cost: 0 });
-                } else {
-                  lines.push({ label: `Leaf Maintenance${data.leafMaint.override ? ' (Override)' : ''}`, detail: 'Per Visit', quote: leafMaintCalc.perVisit, cost: 0 });
-                }
+                lines.push({ label: `Leaf Maintenance${data.leafMaint.override ? ' (Override)' : ''}`, detail: 'Per Visit', quote: leafMaintCalc.perVisit, cost: 0 });
               }
               if (has('aeration') && (aerationCalc.aerationPrice > 0 || aerationCalc.quote > 0)) {
                 const osCost = (data.aeration.includeOverseed && aerationCalc.overseedCogs) ? aerationCalc.overseedCogs : 0;
                 totalCost += osCost;
-                if (isAnnual) {
-                  lines.push({ label: data.aeration.includeOverseed ? 'Aeration + Seed' : 'Aeration', per: aerationCalc.quote, times: 1, timesLabel: '1×/yr', quote: aerationCalc.quote, cost: osCost });
-                } else {
+                {
                   const ap = aerationCalc.aerationPrice || aerationCalc.quote;
                   lines.push({ label: `Aeration${data.aeration.override ? ' (Override)' : ''}`, quote: ap, cost: 0 });
                   if (data.aeration.includeOverseed && aerationCalc.overseedQuote > 0) {
@@ -2439,59 +2291,38 @@ export default function Quoting() {
               }
               if (has('mulch') && mulchCalc.quote > 0) {
                 const mCostPer = mulchCalc.material + mulchCalc.delivery + mulchCalc.tax + (mulchCalc.equipment || 0);
-                const visits = isAnnual ? (num(data.annual.mulchVisits) || 1) : 1;
-                totalCost += mCostPer * visits;
-                lines.push(isAnnual
-                  ? { label: 'Mulch', per: mulchCalc.quote, times: visits, timesLabel: `${visits}×/yr`, quote: mulchCalc.quote * visits, cost: mCostPer * visits }
-                  : { label: 'Mulch', quote: mulchCalc.quote, cost: mCostPer });
+                totalCost += mCostPer;
+                lines.push({ label: 'Mulch', quote: mulchCalc.quote, cost: mCostPer });
               }
               if (has('rock') && rockCalc.quote > 0) {
                 const rCostPer = rockCalc.material + rockCalc.delivery + rockCalc.tax + (rockCalc.equipment || 0);
-                const visits = isAnnual ? (num(data.annual.rockVisits) || 1) : 1;
-                totalCost += rCostPer * visits;
-                lines.push(isAnnual
-                  ? { label: 'Rock', per: rockCalc.quote, times: visits, timesLabel: `${visits}×/yr`, quote: rockCalc.quote * visits, cost: rCostPer * visits }
-                  : { label: 'Rock', quote: rockCalc.quote, cost: rCostPer });
+                totalCost += rCostPer;
+                lines.push({ label: 'Rock', quote: rockCalc.quote, cost: rCostPer });
               }
               if (has('edging') && edgingCalc.quote > 0) {
                 const eCostPer = edgingCalc.material + edgingCalc.delivery + edgingCalc.tax;
-                const visits = isAnnual ? (num(data.annual.edgingVisits) || 1) : 1;
-                totalCost += eCostPer * visits;
-                lines.push(isAnnual
-                  ? { label: 'Edging', per: edgingCalc.quote, times: visits, timesLabel: `${visits}×/yr`, quote: edgingCalc.quote * visits, cost: eCostPer * visits }
-                  : { label: 'Edging', quote: edgingCalc.quote, cost: eCostPer });
+                totalCost += eCostPer;
+                lines.push({ label: 'Edging', quote: edgingCalc.quote, cost: eCostPer });
               }
               if (has('pine') && pineCalc.quote > 0) {
                 const pCostPer = pineCalc.cogs || 0;
-                const visits = isAnnual ? (num(data.annual.pineVisits) || 1) : 1;
-                totalCost += pCostPer * visits;
-                lines.push(isAnnual
-                  ? { label: 'Pine Needles', per: pineCalc.quote, times: visits, timesLabel: `${visits}×/yr`, quote: pineCalc.quote * visits, cost: pCostPer * visits }
-                  : { label: `Pine Needles${data.pine.override ? ' (Override)' : ''}`, detail: !data.pine.override && num(data.pine.bales) > 0 ? `${data.pine.bales} bales` : null, quote: pineCalc.quote, cost: pCostPer });
+                totalCost += pCostPer;
+                lines.push({ label: `Pine Needles${data.pine.override ? ' (Override)' : ''}`, detail: !data.pine.override && num(data.pine.bales) > 0 ? `${data.pine.bales} bales` : null, quote: pineCalc.quote, cost: pCostPer });
               }
               if (has('leafCleanup') && leafCleanupCalc.quote > 0) {
-                const visits = isAnnual ? (num(data.annual.leafVisits) || 1) : 1;
-                lines.push(isAnnual
-                  ? { label: 'Leaf Cleanup', per: leafCleanupCalc.quote, times: visits, timesLabel: `${visits}×/yr`, quote: leafCleanupCalc.quote * visits, cost: 0 }
-                  : { label: 'Leaf Cleanup', quote: leafCleanupCalc.quote, cost: 0 });
+                lines.push({ label: 'Leaf Cleanup', quote: leafCleanupCalc.quote, cost: 0 });
               }
               if (has('overgrownLawn') && num(data.other.overgrownLawn) > 0) {
                 const q = num(data.other.overgrownLawn);
-                lines.push(isAnnual
-                  ? { label: 'Overgrown Lawn', per: q, times: 1, timesLabel: '1×', quote: q, cost: 0 }
-                  : { label: 'Overgrown Lawn', quote: q, cost: 0 });
+                lines.push({ label: 'Overgrown Lawn', quote: q, cost: 0 });
               }
               if (overgrownBushesCalc.quote > 0) {
                 const q = overgrownBushesCalc.quote;
-                lines.push(isAnnual
-                  ? { label: `Overgrown Bushes${data.overgrownBushes.override ? ' (Override)' : ''}`, per: q, times: 1, timesLabel: '1×', quote: q, cost: 0 }
-                  : { label: `Overgrown Bushes${data.overgrownBushes.override ? ' (Override)' : ''}`, detail: overgrownBushesCalc.totalCount > 0 ? `${overgrownBushesCalc.totalCount} bushes (${overgrownBushesCalc.overgrownCount || 0} overgrown)` : null, quote: q, cost: 0 });
+                lines.push({ label: `Overgrown Bushes${data.overgrownBushes.override ? ' (Override)' : ''}`, detail: overgrownBushesCalc.totalCount > 0 ? `${overgrownBushesCalc.totalCount} bushes (${overgrownBushesCalc.overgrownCount || 0} overgrown)` : null, quote: q, cost: 0 });
               }
               if (bushRemovalCalc.quote > 0) {
                 const q = bushRemovalCalc.quote;
-                lines.push(isAnnual
-                  ? { label: `Bush Removal${data.bushRemoval.override ? ' (Override)' : ''}`, per: q, times: 1, timesLabel: '1×', quote: q, cost: 0 }
-                  : { label: `Bush Removal${data.bushRemoval.override ? ' (Override)' : ''}`, detail: bushRemovalCalc.totalCount > 0 ? `${bushRemovalCalc.totalCount} bushes removed` : null, quote: q, cost: 0 });
+                lines.push({ label: `Bush Removal${data.bushRemoval.override ? ' (Override)' : ''}`, detail: bushRemovalCalc.totalCount > 0 ? `${bushRemovalCalc.totalCount} bushes removed` : null, quote: q, cost: 0 });
               }
 
               const totalQuote = lines.reduce((s, l) => s + l.quote, 0);
@@ -2499,88 +2330,7 @@ export default function Quoting() {
 
               if (lines.length === 0) return <p className="text-sm text-muted italic">No services calculated yet.</p>;
 
-              // ── Annual view ──
-              if (isAnnual) {
-                const monthly = totalQuote / 12;
-                const monthlyCost = totalCost / 12;
-                const monthlyProfit = monthly - monthlyCost;
-                return (
-                  <div className="space-y-3">
-                    {/* Monthly payment hero */}
-                    <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-300 dark:border-blue-700 px-5 py-4 text-center">
-                      <p className="text-xs text-secondary mb-1">Monthly Payment</p>
-                      <p className="text-3xl font-bold text-blue-600">${fmt(monthly)}</p>
-                      <p className="text-[11px] text-muted mt-1">${fmt(totalQuote)}/yr &divide; 12 months</p>
-                    </div>
-
-                    {/* Header row */}
-                    <div className="grid grid-cols-[1fr_50px_65px_65px] gap-1 text-[10px] font-bold text-muted uppercase tracking-wider">
-                      <span>Service</span>
-                      <span className="text-right">Freq</span>
-                      <span className="text-right">Annual</span>
-                      <span className="text-right">Cost</span>
-                    </div>
-
-                    {/* Service rows */}
-                    <div className="space-y-1.5">
-                      {lines.map((l, i) => (
-                        <div key={i}>
-                          <div className="grid grid-cols-[1fr_50px_65px_65px] gap-1 items-center">
-                            <span className="text-xs font-medium text-primary truncate">{l.label}</span>
-                            <span className="text-[10px] text-right text-muted">{l.timesLabel}</span>
-                            <span className="text-xs text-right font-semibold text-primary">${fmt(l.quote)}</span>
-                            <span className="text-xs text-right text-muted">{l.cost > 0 ? `$${fmt(l.cost)}` : '\u2014'}</span>
-                          </div>
-                          {l.per > 0 && l.times > 1 && <p className="text-[10px] text-muted mt-0.5">${fmt(l.per)} each</p>}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Annual totals */}
-                    <div className="border-t-2 border-border-subtle pt-3 space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="font-bold text-primary">Annual Total</span>
-                        <span className="font-bold text-primary">${fmt(totalQuote)}</span>
-                      </div>
-                      {totalCost > 0 && (
-                        <>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-muted">Annual Cost</span>
-                            <span className="text-muted">${fmt(totalCost)}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="font-bold text-primary">Annual Profit</span>
-                            <span className={`font-bold ${totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>${fmt(totalProfit)}</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Monthly breakdown */}
-                    <div className="rounded-xl bg-surface-alt border border-border-subtle px-4 py-3 space-y-1.5">
-                      <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Monthly Breakdown</p>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-primary font-semibold">Revenue</span>
-                        <span className="text-primary font-semibold">${fmt(monthly)}</span>
-                      </div>
-                      {totalCost > 0 && (
-                        <>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-muted">Cost</span>
-                            <span className="text-muted">${fmt(monthlyCost)}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="font-semibold text-primary">Profit</span>
-                            <span className={`font-semibold ${monthlyProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>${fmt(monthlyProfit)}</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
-
-              // ── Standard (non-annual) view ──
+              // ── Quote breakdown ──
               return (
                 <div className="space-y-3">
                   {/* Total Quote */}
@@ -2625,9 +2375,54 @@ export default function Quoting() {
               );
             })()}
 
-            <button onClick={handleSave} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold hover:opacity-90 transition-opacity cursor-pointer">
+            <button onClick={handleSave} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-brand text-on-brand font-semibold hover:bg-brand-hover transition-colors cursor-pointer">
               <Save size={16} /> Save Quote
             </button>
+
+            {/* ── Materials needed ── What to buy for this job, and where from.
+                 Rock installs only for now. Each line links into Suppliers,
+                 pre-filtered, so the price, photo and address are one tap away. */}
+            {has('rock') && rockCalc.cubicYards > 0 && (
+              <div className="border-t-2 border-border-subtle pt-6 space-y-3">
+                <h2 className="text-lg font-bold text-primary">Materials Needed</h2>
+
+                <div className="rounded-xl bg-surface-alt border border-border-subtle px-4 py-3 flex items-baseline justify-between">
+                  <span className="text-sm font-semibold text-secondary">Rock to order</span>
+                  <span className="text-right">
+                    <span className="text-2xl font-bold text-primary">{fmt(rockCalc.cubicYards)}</span>
+                    <span className="text-sm text-muted ml-1">yd</span>
+                    <span className="block text-[11px] text-muted">includes 10% buffer</span>
+                  </span>
+                </div>
+
+                <div>
+                  {[
+                    { name: data.rock.rockType, qty: `${fmt(rockCalc.cubicYards)} yd`, search: data.rock.rockType },
+                    { name: 'Landscape fabric', qty: `${rockCalc.fabricRolls} roll${rockCalc.fabricRolls !== 1 ? 's' : ''}`, search: 'fabric' },
+                    { name: 'Delivery', qty: `${rockCalc.loads} load${rockCalc.loads !== 1 ? 's' : ''}`, search: null },
+                    ...(num(data.rock.equipmentCost) > 0
+                      ? [{ name: num(data.rock.equipmentCost) === 300 ? 'Skid rental — 4 hour' : 'Skid rental — 24 hour', qty: `$${fmt(num(data.rock.equipmentCost))}`, search: 'rental' }]
+                      : []),
+                  ].map((m) => (
+                    <div key={m.name} className="flex items-center gap-3 py-3 border-t border-border-subtle/60 first:border-t-0">
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-semibold text-primary truncate">{m.name}</span>
+                        <span className="block text-xs text-muted">{m.qty}</span>
+                      </span>
+                      {m.search && (
+                        <button
+                          onClick={() => navigate(`/suppliers?q=${encodeURIComponent(m.search)}`)}
+                          className="text-xs font-semibold text-brand-text hover:underline inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                        >
+                          Where to get <ArrowRight size={12} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       </div>

@@ -1140,7 +1140,16 @@ function FieldGuide() {
     {
       q: '⚠️ PHONE TRACKING — READ THIS FIRST',
       critical: true,
-      a: "This app tracks your walk via GPS. If your phone screen turns OFF or you switch to another app, **tracking STOPS** — your route disappears and you won't get credit for hangers dropped.\n\nWhile walking, you MUST:\n• Keep the phone awake — the app keeps the screen on, but don't manually lock it.\n• Turn brightness DOWN as low as you can still see, to save battery.\n• Carry a backup battery / charger — GPS for 2+ hours will drain ~25% of your battery.\n• Keep Boost in the foreground tab — don't open Instagram, Maps, etc. mid-trip.\n• If you must answer a call or check Maps, finish the trip first so progress is saved.\n\nWe're working on a real app that tracks in the background. For now, this is the rule.",
+      a: "This app tracks your walk via GPS. If your phone screen turns OFF or you switch to another app, **tracking STOPS** — your route disappears and you won't get credit for hangers dropped.\n\nWhile walking, you MUST:\n• Keep the phone awake — the app keeps the screen on, but don't manually lock it.\n• Turn brightness DOWN as low as you can still see, to save battery.\n• Carry a backup battery / charger — GPS for 2+ hours will drain ~25% of your battery.\n• Keep the Hey Jude's Lawn Care Management App in the foreground tab — don't open Instagram, Maps, etc. mid-trip.\n• If you must answer a call or check Maps, finish the trip first so progress is saved.\n\nWe're working on a real app that tracks in the background. For now, this is the rule.",
+    },
+    {
+      q: '💵 How do I get paid?',
+      pay: true,
+      a: "Pay is **performance-based** — you get paid for what you put out, not for hours walked.\n\n**Rate:** $90 per 250 hangers dropped (= $0.36 per hanger)\n\n**Examples:**\n• 250 hangers = $90\n• 500 hangers = $180\n• 750 hangers = $270\n• **1,000 hangers in a day = $360**\n\nThe app counts hangers you log at the end of each trip. Be honest — we audit by checking your route on the map against the count you entered. Inflated counts = no payout + you're out.",
+    },
+    {
+      q: '📦 How do I stack my hangers?',
+      a: "Before you leave the truck, **organize into stacks of 50**, rubber-banded. A typical bag of 500 hangers = 10 stacks of 50.\n\nWhy:\n• Easy counting — when you finish a stack, that's +50 toward your count\n• You can mentally track pace: \"I did 3 stacks this hour = 150 hangers\"\n• At end of trip, just count the leftover stacks → subtract from start → that's what went out\n\nKeep the unused stacks in a backpack or shoulder bag. Pull one stack at a time as you walk a block.",
     },
     {
       q: 'Where do I park?',
@@ -1189,19 +1198,21 @@ function FieldGuide() {
           const isOpen = open === i;
           const baseBg = s.critical
             ? `border-2 border-rose-400 ${isOpen ? 'bg-rose-50' : 'bg-rose-50 hover:bg-rose-100'}`
-            : (isOpen ? 'bg-surface-alt' : 'hover:bg-surface-alt');
+            : s.pay
+              ? `border-2 border-emerald-400 ${isOpen ? 'bg-emerald-50' : 'bg-emerald-50 hover:bg-emerald-100'}`
+              : (isOpen ? 'bg-surface-alt' : 'hover:bg-surface-alt');
           return (
             <div key={i} className={`rounded-2xl mb-1 ${baseBg}`}>
               <button
                 onClick={() => setOpen(isOpen ? null : i)}
                 className="w-full text-left px-4 py-3 flex items-center gap-3 cursor-pointer"
               >
-                <ChevronDown size={14} className={`${s.critical ? 'text-rose-700' : 'text-tertiary'} transition-transform shrink-0 ${isOpen ? 'rotate-0' : '-rotate-90'}`} />
-                <span className={`flex-1 text-sm font-black ${s.critical ? 'text-rose-900 uppercase tracking-wider' : 'font-bold text-primary'}`}>{s.q}</span>
+                <ChevronDown size={14} className={`${s.critical ? 'text-rose-700' : s.pay ? 'text-emerald-700' : 'text-tertiary'} transition-transform shrink-0 ${isOpen ? 'rotate-0' : '-rotate-90'}`} />
+                <span className={`flex-1 text-sm font-black ${s.critical ? 'text-rose-900 uppercase tracking-wider' : s.pay ? 'text-emerald-900' : 'font-bold text-primary'}`}>{s.q}</span>
               </button>
               {isOpen && (
                 <div className="px-11 pb-4 -mt-1">
-                  <p className={`text-sm leading-relaxed whitespace-pre-line ${s.critical ? 'text-rose-900 font-semibold' : 'text-primary'}`}>{s.a}</p>
+                  <p className={`text-sm leading-relaxed whitespace-pre-line ${s.critical ? 'text-rose-900 font-semibold' : s.pay ? 'text-emerald-900 font-medium' : 'text-primary'}`}>{s.a}</p>
                 </div>
               )}
             </div>
