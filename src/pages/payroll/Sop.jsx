@@ -2,19 +2,20 @@ import { Link } from 'react-router-dom';
 import { usePayroll } from './PayrollContext.jsx';
 import { Card } from './ui.jsx';
 
+const Step = ({ n, title, to, children }) => (
+  <li className="flex gap-4">
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#B0FF03] font-black">{n}</div>
+    <div className="flex-1">
+      <h4 className="font-bold">{title}{to && <Link to={to} className="ml-2 text-xs font-semibold text-[#4d7c0f] hover:underline">open →</Link>}</h4>
+      <div className="mt-1 text-sm text-slate-700 space-y-1">{children}</div>
+    </div>
+  </li>
+);
+const L = ({ items }) => <ul className="list-disc pl-5">{items.map((i) => <li key={i}>{i}</li>)}</ul>;
+
 export default function Sop() {
   const p = usePayroll();
   const T = p.settings.target_pct;
-  const Step = ({ n, title, to, children }) => (
-    <li className="flex gap-4">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#B0FF03] font-black">{n}</div>
-      <div className="flex-1">
-        <h4 className="font-bold">{title}{to && <Link to={to} className="ml-2 text-xs font-semibold text-[#4d7c0f] hover:underline">open →</Link>}</h4>
-        <div className="mt-1 text-sm text-slate-700 space-y-1">{children}</div>
-      </div>
-    </li>
-  );
-  const L = ({ items }) => <ul className="list-disc pl-5">{items.map((i) => <li key={i}>{i}</li>)}</ul>;
   return (
     <Card title="Hey Jude's Lawn Care — Weekly Payroll SOP">
       <p className="mb-5 text-sm text-slate-600">Follow this every payroll week. It mirrors the Run Payroll steps. Two rules underneath everything: <b>base pay follows the week the hours were worked; bonus follows the job until the job is complete.</b></p>
