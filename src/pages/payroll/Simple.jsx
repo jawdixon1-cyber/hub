@@ -7,8 +7,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { usePayroll } from './PayrollContext.jsx';
 import { Badge, Btn, Money, Hours, Pct, Tip, TIPS } from './ui.jsx';
-import { toCents, toDollars, toHundredths, laborCents } from '../../lib/payroll/money.js';
-import { addDaysISO, weekEndingFor } from '../../lib/payroll/engine.js';
+import { toCents, toDollars, toHundredths } from '../../lib/payroll/money.js';
+import { addDaysISO } from '../../lib/payroll/engine.js';
 import { exportRunCsv } from './RunDetail.jsx';
 
 const cell = 'w-full rounded-md border px-2 py-1.5 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-[#B0FF03] disabled:bg-slate-50 disabled:text-slate-500';
