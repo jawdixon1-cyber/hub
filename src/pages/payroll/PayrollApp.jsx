@@ -2,6 +2,7 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { PayrollProvider, usePayroll } from './PayrollContext.jsx';
 import Dashboard from './Dashboard.jsx';
+import Simple from './Simple.jsx';
 import Employees from './Employees.jsx';
 import Jobs from './Jobs.jsx';
 import JobDetail from './JobDetail.jsx';
@@ -14,9 +15,9 @@ import Sop from './Sop.jsx';
 import Settings from './Settings.jsx';
 
 const NAV = [
-  ['', 'Dashboard'], ['run', 'Run Payroll'], ['time', 'Time Entries'], ['jobs', 'Jobs'],
-  ['employees', 'Employees'], ['runs', 'Past Runs'], ['reports', 'Reports'], ['sop', 'SOP'], ['settings', 'Settings'],
+  ['', 'This Week'], ['employees', 'People'], ['runs', 'Past Weeks'], ['reports', 'Reports'], ['sop', 'SOP'], ['settings', 'Settings'],
 ];
+const DETAIL_NAV = [['dashboard', 'Dashboard'], ['run', 'Step-by-step'], ['time', 'Time Entries'], ['jobs', 'Jobs']];
 
 function Shell() {
   const p = usePayroll();
@@ -31,16 +32,20 @@ function Shell() {
         </div>
         <div className="text-xs text-slate-500">Week ending <b>{p.currentWeekEnding}</b> · target <b>{p.settings.target_pct}%</b></div>
       </div>
-      <nav className="mb-6 flex flex-wrap gap-1 border-b">
+      <nav className="mb-6 flex flex-wrap items-center gap-1 border-b">
         {NAV.map(([path, label]) => (
           <NavLink key={path} to={path === '' ? '/payroll' : `/payroll/${path}`} end={path === ''}
             className={({ isActive }) => `-mb-px border-b-2 px-3 py-2 text-sm font-semibold ${isActive ? 'border-[#4d7c0f] text-[#4d7c0f]' : 'border-transparent text-slate-500 hover:text-slate-900'}`}>
             {label}
           </NavLink>
         ))}
+        <span className="ml-auto flex gap-1 text-xs">
+          {DETAIL_NAV.map(([path, label]) => <NavLink key={path} to={`/payroll/${path}`} className={({ isActive }) => `px-2 py-2 ${isActive ? 'text-[#4d7c0f] font-semibold' : 'text-slate-400 hover:text-slate-700'}`}>{label}</NavLink>)}
+        </span>
       </nav>
       <Routes>
-        <Route index element={<Dashboard />} />
+        <Route index element={<Simple />} />
+        <Route path="dashboard" element={<Dashboard />} />
         <Route path="run" element={<RunPayroll />} />
         <Route path="run/:weekEnding" element={<RunPayroll />} />
         <Route path="time" element={<TimeEntries />} />
@@ -52,6 +57,7 @@ function Shell() {
         <Route path="reports" element={<Reports />} />
         <Route path="sop" element={<Sop />} />
         <Route path="settings" element={<Settings />} />
+        <Route path=":weekEnding" element={<Simple />} />
         <Route path="*" element={<Navigate to="/payroll" replace />} />
       </Routes>
     </div>
