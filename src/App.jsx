@@ -110,7 +110,6 @@ const InsightsDoorHangers = lazy(() => import('./pages/InsightsDoorHangers'));
 
 const NAV_ITEMS = [
   { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
-  { id: 'schedule', path: '/schedule', label: 'Schedule', icon: CalendarDays, ownerOnly: true },
 ];
 
 const TEAM_TOOLS_ITEMS = [
@@ -125,6 +124,7 @@ const TEAM_ITEMS = [
 ];
 
 const OPERATIONS_ITEMS = [
+  { id: 'schedule', path: '/schedule', label: 'Schedule', icon: CalendarDays },
   { id: 'clients', path: '/clients', label: 'Clients', icon: Users },
   { id: 'requests', path: '/requests', label: 'Requests', icon: Inbox },
   { id: 'quotes', path: '/quotes', label: 'Quotes', icon: FileText },
@@ -732,7 +732,6 @@ function AppShell() {
       <div className="py-3 px-2 space-y-1">
       {NAV_ITEMS
         .filter((item) => !item.ownerOnly || ownerMode)
-        .filter((item) => !(item.id === 'schedule' && hideSchedule))
         .map((item) => {
         const Icon = item.icon;
         const active = isActive(item.path);
@@ -835,7 +834,7 @@ function AppShell() {
               <ChevronDown size={14} className={`transition-transform ${buildingOpen ? 'rotate-180' : ''}`} />
             </button>
           )}
-          {!hideBuilding && (buildingOpen || collapsed) && OPERATIONS_ITEMS.map((item) => {
+          {!hideBuilding && (buildingOpen || collapsed) && OPERATIONS_ITEMS.filter((item) => !(item.id === 'schedule' && hideSchedule)).map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
             return (
