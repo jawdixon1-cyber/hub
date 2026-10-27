@@ -44,7 +44,6 @@ import {
   Search as SearchIcon,
   HelpCircle,
   Sparkles,
-  Globe,
   Truck,
 } from 'lucide-react';
 
@@ -136,7 +135,6 @@ const OPERATIONS_ITEMS = [
 
 const OWNER_TOOLS_PINNED = [
   { id: 'sales', path: '/sales', label: 'Quoter', icon: Calculator },
-  { id: 'website', path: '/website', label: 'Website', icon: Globe },
   { id: 'guides', path: '/playbooks', label: 'Playbooks', icon: BookOpen },
   { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
   { id: 'insights', path: '/insights', label: 'Insights', icon: BarChart3 },
