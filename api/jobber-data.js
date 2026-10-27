@@ -108,13 +108,25 @@ async function fetchVisits(start, end) {
   while (hasNext) {
     if (page++ > 0) await new Promise(r => setTimeout(r, 1500));
     const after = cursor ? `, after: "${cursor}"` : '';
-    const data = await jobberQuery(`{ visits(first: 25${after}, filter: { completedAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title completedAt startAt endAt job { id jobNumber jobType jobStatus total client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
+    const data = await jobberQuery(`{ visits(first: 25${after}, filter: { completedAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id title completedAt startAt endAt job { id jobNumber jobType jobStatus total billingType invoiceSchedule { billingFrequency scheduleSummary } visitSchedule { recurrenceSchedule { friendly } } client { firstName lastName } } } pageInfo { hasNextPage endCursor } } }`);
     allVisits.push(...(data.visits?.nodes || []));
     hasNext = data.visits?.pageInfo?.hasNextPage || false;
     cursor = data.visits?.pageInfo?.endCursor || null;
     if (allVisits.length > 500) break;
   }
   return allVisits.filter(v => { const d = (v.completedAt || v.startAt || '').split('T')[0]; return d >= start && d <= end; });
+}
+
+// How a job is billed, for the payroll page: fixed-price recurring jobs bill a set amount per
+// invoice period (e.g. monthly) no matter how many visits, so their per-visit value is less than the total.
+function billingOf(job) {
+  if (!job) return null;
+  return {
+    type: job.billingType || null,                                  // FIXED_PRICE | VISIT_BASED
+    frequency: job.invoiceSchedule?.billingFrequency || null,       // PERIODIC | PER_VISIT | ON_COMPLETION | NEVER
+    invoices: job.invoiceSchedule?.scheduleSummary || null,         // "Monthly on the 1st day of the month"
+    visits: job.visitSchedule?.recurrenceSchedule?.friendly || null, // "Every 2 weeks on Mondays"
+  };
 }
 
 async function fetchTimesheets(start, end) {
@@ -270,7 +282,7 @@ async function handleLaborData(req, res) {
 }
 
 async function loadLaborGrouped({ start, end, skipLineItems = true, skipJobExpenses = true, forceRefresh = false } = {}) {
-  const cacheKey = `${start}|${end}|${skipLineItems ? 'nopv' : 'full'}|${skipJobExpenses ? 'noje' : 'je'}`;
+  const cacheKey = `v3|${start}|${end}|${skipLineItems ? 'nopv' : 'full'}|${skipJobExpenses ? 'noje' : 'je'}`; // v2: one-off jobs split by hours; v3: billing type + schedules
   let cached = laborCache[cacheKey];
   if (!cached) cached = await loadPersistedLabor(cacheKey);
   if (cached && !forceRefresh && Date.now() - cached.time < LABOR_CACHE_TTL) {
@@ -356,7 +368,7 @@ async function loadLaborGrouped({ start, end, skipLineItems = true, skipJobExpen
       visitDuration = (new Date(visit.endAt) - new Date(visit.startAt)) / 3600000;
       if (visitDuration < 0) visitDuration = 0;
     }
-    const visitObj = { id: visit.id, title: visit.title, completedAt: visit.completedAt, startAt: visit.startAt, endAt: visit.endAt, visitDuration, jobId, jobNumber: visit.job?.jobNumber, jobType: visit.job?.jobType || null, jobStatus: visit.job?.jobStatus || null, jobTotal: rawTotal, visitTotal: rawTotal, client: visit.job?.client ? `${visit.job.client.firstName || ''} ${visit.job.client.lastName || ''}`.trim() : 'Unknown', labor: { totalHours: 0, totalCost: 0, byPerson: {} } };
+    const visitObj = { id: visit.id, title: visit.title, completedAt: visit.completedAt, startAt: visit.startAt, endAt: visit.endAt, visitDuration, jobId, jobNumber: visit.job?.jobNumber, jobType: visit.job?.jobType || null, jobStatus: visit.job?.jobStatus || null, billing: billingOf(visit.job), jobTotal: rawTotal, visitTotal: rawTotal, client: visit.job?.client ? `${visit.job.client.firstName || ''} ${visit.job.client.lastName || ''}`.trim() : 'Unknown', labor: { totalHours: 0, totalCost: 0, byPerson: {} } };
     grouped[dateStr].visits.push(visitObj);
     allVisitRefs.push({ dateStr, visitObj, jobId, rawTotal });
   }
@@ -498,6 +510,7 @@ async function loadLaborGrouped({ start, end, skipLineItems = true, skipJobExpen
     const title = refs.length > 0 ? refs[0].visitObj.title : info.title;
     const jobType = refs.length > 0 ? refs[0].visitObj.jobType : null;
     const jobStatus = refs.length > 0 ? refs[0].visitObj.jobStatus : null;
+    const billing = refs.length > 0 ? refs[0].visitObj.billing : null;
 
     // Get all timesheets and expenses for this job
     const jobTs = fullTsByJob[jobId] || [];
@@ -529,11 +542,12 @@ async function loadLaborGrouped({ start, end, skipLineItems = true, skipJobExpen
 
     const totalJobHours = Object.values(hoursByDate).reduce((s, h) => s + h, 0);
 
-    // Create a visit entry for each in-range date that has hours
-    // If job has multiple work days, it's likely recurring — each day gets full jobTotal
-    // If only 1 work day, it's a one-off — gets full jobTotal too
+    // Create a visit entry for each in-range date that has hours.
+    // Recurring jobs: every work day is its own visit at the full price.
+    // One-off jobs: the price is split across the days by hours worked.
+    // Trust Jobber's jobType; only guess (multiple days = recurring) when it's missing.
     const workDays = Object.keys(hoursByDate).length;
-    const isRecurring = workDays > 1; // multiple days = recurring visits, each gets full price
+    const isRecurring = jobType ? jobType === 'RECURRING' : workDays > 1;
 
     for (const [dateStr, dayHours] of Object.entries(hoursByDate)) {
       if (!grouped[dateStr]) continue;
@@ -550,6 +564,7 @@ async function loadLaborGrouped({ start, end, skipLineItems = true, skipJobExpen
         jobNumber,
         jobType,
         jobStatus,
+        billing,
         client: clientName,
         jobTotal: visitRevenue,
         rawJobTotal: jobTotal,

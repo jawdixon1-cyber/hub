@@ -11,7 +11,8 @@ const fmtDate = (iso) => { if (!iso) return '—'; const d = new Date(iso); retu
 
 const DEFAULT_RANGE = 30; // days
 
-export default function InsightsProfitability() {
+// `embedded` = shown as a tab inside Finance, so no back-to-Insights button.
+export default function InsightsProfitability({ embedded = false }) {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -154,9 +155,11 @@ export default function InsightsProfitability() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/insights')} className="p-2 rounded-lg hover:bg-surface-alt cursor-pointer">
-          <ChevronLeft size={18} className="text-muted" />
-        </button>
+        {!embedded && (
+          <button onClick={() => navigate('/insights')} className="p-2 rounded-lg hover:bg-surface-alt cursor-pointer">
+            <ChevronLeft size={18} className="text-muted" />
+          </button>
+        )}
         <div className="flex-1">
           <h1 className="text-2xl font-black text-primary">Profitability</h1>
           <p className="text-sm text-muted mt-0.5">One-off + recurring jobs · labor margin · contribution margin</p>

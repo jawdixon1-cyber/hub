@@ -83,8 +83,7 @@ const Commander = lazy(() => import('./pages/Commander'));
 const ServiceAgreement = lazy(() => import('./pages/ServiceAgreement'));
 const Territory = lazy(() => import('./pages/Dominate'));
 const Website = lazy(() => import('./pages/Website'));
-const PayrollBonus = lazy(() => import('./pages/PayrollBonus'));
-const PayrollApp = lazy(() => import('./pages/payroll/PayrollApp'));
+const FinanceHub = lazy(() => import('./pages/FinanceHub'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
 const MowingSchedule = lazy(() => import('./pages/MowingSchedule'));
 const Finance = lazy(() => import('./pages/Finance'));
@@ -136,19 +135,19 @@ const OPERATIONS_ITEMS = [
 ];
 
 const OWNER_TOOLS_PINNED = [
-  { id: 'sales', path: '/sales', label: 'Calculate Quote', icon: Calculator },
+  { id: 'sales', path: '/sales', label: 'Quoter', icon: Calculator },
   { id: 'website', path: '/website', label: 'Website', icon: Globe },
   { id: 'guides', path: '/playbooks', label: 'Playbooks', icon: BookOpen },
   { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
   { id: 'insights', path: '/insights', label: 'Insights', icon: BarChart3 },
   { id: 'eyeballs', path: '/eyeballs', label: 'Eyeballs', icon: Eye },
+  { id: 'payroll', path: '/payroll', label: 'Finance', icon: DollarSign },
 ];
 const OWNER_TOOLS_MORE = [
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
   { id: 'timesheets', path: '/timesheets', label: 'Timesheets', icon: Clock },
-  { id: 'payroll', path: '/payroll', label: 'Payroll', icon: DollarSign },
   { id: 'suppliers', path: '/suppliers', label: 'Suppliers', icon: Truck },
 ];
 const OWNER_TOOLS_ITEMS = [...OWNER_TOOLS_PINNED, ...OWNER_TOOLS_MORE];
@@ -1086,8 +1085,8 @@ function AppShell() {
                 <Route path="/timesheets" element={<Timesheets />} />
                 <Route path="/eyeballs" element={<Eyeballs />} />
                 <Route path="/website" element={<Website />} />
-                <Route path="/payroll/*" element={<PayrollApp />} />
-                <Route path="/payroll-legacy" element={<PayrollBonus />} />
+                <Route path="/payroll" element={<FinanceHub />} />
+                <Route path="/payroll/:weekEnding" element={<FinanceHub />} />
                 <Route path="/suppliers" element={<Suppliers />} />
                 <Route path="/print/hangers" element={<PrintHangers />} />
                 <Route path="/playbooks" element={<HowToGuides ownerMode={ownerMode} allowedPlaybooks={allowedPlaybooks} />} />
