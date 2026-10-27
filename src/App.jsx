@@ -131,14 +131,15 @@ const OPERATIONS_ITEMS = [
   { id: 'jobs', path: '/jobs', label: 'Jobs', icon: Briefcase },
   { id: 'invoices', path: '/invoices', label: 'Invoices', icon: FileText },
   { id: 'payments', path: '/payments', label: 'Payments', icon: DollarSign },
+  { id: 'insights', path: '/insights', label: 'Insights', icon: BarChart3 },
+  { id: 'eyeballs', path: '/eyeballs', label: 'Eyeballs', icon: Eye },
+  { id: 'hangers', path: '/print/hangers', label: 'Door Hangers', icon: DoorOpen },
 ];
 
 const OWNER_TOOLS_PINNED = [
   { id: 'sales', path: '/sales', label: 'Quoter', icon: Calculator },
   { id: 'guides', path: '/playbooks', label: 'Playbooks', icon: BookOpen },
   { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
-  { id: 'insights', path: '/insights', label: 'Insights', icon: BarChart3 },
-  { id: 'eyeballs', path: '/eyeballs', label: 'Eyeballs', icon: Eye },
   { id: 'payroll', path: '/payroll', label: 'Finance', icon: DollarSign },
 ];
 const OWNER_TOOLS_MORE = [
@@ -888,24 +889,6 @@ function AppShell() {
             );
           })}
 
-          {/* Print Marketing */}
-          <div className="h-px bg-border-subtle my-3 mx-2" />
-          {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted inline-flex items-center gap-1.5"><Printer size={11} /> Print Marketing</p>}
-          {[
-            { id: 'hangers', path: '/print/hangers', label: 'Door Hangers', icon: DoorOpen },
-          ].map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            return (
-              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
-                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-                }`}>
-                <Icon size={14} className="shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
-            );
-          })}
         </>
       )}
       </div>
