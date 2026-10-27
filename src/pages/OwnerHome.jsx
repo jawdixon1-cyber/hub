@@ -58,13 +58,14 @@ function dayInfo(iso, todayStr) {
   };
 }
 
+// Work week is Mon–Sat (nobody works Sundays). A Sunday anchor rolls forward to the upcoming week.
 function weekDatesFromIso(anchorIso, todayStr) {
   const dt = dateFromIso(anchorIso);
-  const sunday = new Date(dt);
-  sunday.setDate(dt.getDate() - dt.getDay());
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(sunday);
-    d.setDate(sunday.getDate() + i);
+  const monday = new Date(dt);
+  monday.setDate(dt.getDate() + (dt.getDay() === 0 ? 1 : 1 - dt.getDay()));
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
     return dayInfo(isoFromDate(d), todayStr);
   });
 }
@@ -294,7 +295,7 @@ function Planner({ todos, setTodos }) {
       return `${active.dayName} · ${active.monthShort} ${active.dayNum}`;
     }
     if (view === 'week') {
-      const first = week[0], last = week[6];
+      const first = week[0], last = week[week.length - 1];
       const containsToday = week.some((d) => d.isToday);
       if (containsToday) return 'This week';
       return `${first.monthShort} ${first.dayNum} – ${last.monthShort} ${last.dayNum}`;
@@ -433,7 +434,7 @@ function Planner({ todos, setTodos }) {
         </div>
       )}
 
-      {/* Week view: 7-column kanban with tasks visible per day. Drag tasks between columns. */}
+      {/* Week view: Mon–Sat kanban with tasks visible per day. Drag tasks between columns. */}
       {view === 'week' && (
         <div className="px-3 sm:px-4 pb-4 flex gap-2 overflow-x-auto no-scrollbar">
           {week.map((d) => {

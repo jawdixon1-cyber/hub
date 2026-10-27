@@ -12,9 +12,12 @@ import { genId, initialQuotingSettings } from '../data';
 import useAddressAutocomplete from '../components/PropertyMapper/useAddressAutocomplete';
 import { getNetSqft } from '../components/PropertyMapper/mapUtils';
 
+import { pricePlan, DEFAULT_LEAF_VISITS, DEFAULT_GROWING_LEAF_VISITS, EOW_MOW_MULTIPLIER, VISITS, bedWeedsPerVisit, DEFAULT_BED_RATE, DEFAULT_BED_MIN_PER_1K } from '../lib/planPricing';
+
 const MapView = lazy(() => import('../components/PropertyMapper/MapView'));
 const MeasurementList = lazy(() => import('../components/PropertyMapper/MeasurementList'));
 
+const SHOW_MEASUREMENTS_REF = false;
 const TAX_RATE = 0.07;
 const SQ_FT_PER_YD_AT_1IN = 324;
 const CREW_HOUR_RATE = 160;
@@ -25,16 +28,14 @@ const SERVICE_SECTIONS = [
   {
     label: 'MAINTENANCE',
     services: [
-      { id: 'lawn', label: 'Lawn Maintenance', icon: Sprout, color: 'green' },
+      { id: 'plan', label: 'Maintenance Plan', icon: CalendarDays, color: 'green' },
       { id: 'bushes', label: 'Bushes', icon: Shrub, color: 'green' },
-      { id: 'leafMaint', label: 'Leaf Maintenance', icon: Leaf, color: 'amber' },
     ],
   },
   {
     label: 'ONE-TIME / YEARLY',
     services: [
       { id: 'aeration', label: 'Aeration', icon: CircleDot, color: 'green' },
-      { id: 'overgrownLawn', label: 'Overgrown Lawn', icon: Fence, color: 'orange' },
       { id: 'leafCleanup', label: 'Leaf Cleanup', icon: Leaf, color: 'amber' },
     ],
   },
@@ -54,7 +55,11 @@ const SERVICE_SECTIONS = [
   },
 ];
 
-const SERVICE_OPTIONS = SERVICE_SECTIONS.flatMap((s) => s.services);
+// The Plan Quote tab is only the maintenance plan (weekly / EOW → monthly);
+// the One-Time Quote tab picks from every other calculator.
+const serviceOptionsFor = (mode) => SERVICE_SECTIONS
+  .flatMap((s) => s.services)
+  .filter((svc) => (svc.id === 'plan') === (mode === 'plan'));
 
 // ─── Utility ───
 
@@ -469,6 +474,292 @@ function ReadonlyField({ label, value, className = '' }) {
 
 // ─── Settings panel ───
 
+// ─── Plan calculator (the whole Plan tab) ───
+// Pick a plan, type per-visit prices, read off the monthly price for weekly
+// and every-other-week. EOW mowing (1.5×) and the 10-week leaf season come
+// from planPricing, so nothing here is a guess.
+
+const FREQS = [
+  { key: 'weekly', label: 'Weekly' },
+  { key: 'eow', label: 'Every other week' },
+];
+
+const PLAN_TYPES = [
+  { key: 'growing', label: 'Growing season', note: 'Lawn, sticks, leaves & beds · Mar–Nov · 9 payments' },
+  { key: 'yearRound', label: 'Year-round', note: 'Lawn, sticks, leaves & beds · 12 payments' },
+];
+
+function PlanCalculator({ plan, onChange, settings, onSettings }) {
+  const money = (n) => `$${(n || 0).toFixed(2)}`;
+  const yearRound = plan.type === 'yearRound';
+
+  // Rates that rarely change — saved to quoting settings, shared by every quote.
+  const bedRate = settings.bedRate ?? DEFAULT_BED_RATE;
+  const bedMinPer1k = settings.bedMinPer1k ?? DEFAULT_BED_MIN_PER_1K;
+  const leafMult = settings.planLeafMultiplier ?? 1;
+
+  // Square footage in, per-visit prices out. Mowing uses the same sqft tiers
+  // as the lawn calculator; an override wins for the odd property.
+  const autoLawn = calcLawn({ sqft: plan.lawnSqft, difficulty: plan.difficulty || 'easy' }, settings).weekly;
+  const lawn = num(plan.lawnOverride) || autoLawn;
+  const leaves = Math.round(lawn * num(leafMult));
+  const weeds = bedWeedsPerVisit(plan.bedSqft, { rate: bedRate, minPer1k: bedMinPer1k });
+  const hasPrice = lawn > 0;
+  const run = (frequency) => pricePlan({ plan: plan.type, frequency, lawn, leaves, weeds });
+
+  const small = 'w-full rounded-lg border border-border-strong bg-card px-2.5 py-1.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand';
+
+  return (
+    <div className="max-w-5xl mx-auto pt-6 grid gap-6 lg:grid-cols-[1fr_260px] items-start">
+      <div className="space-y-6 min-w-0">
+        {/* 1. Which plan */}
+        <div className="grid grid-cols-2 gap-3">
+          {PLAN_TYPES.map((t) => {
+            const active = plan.type === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={() => onChange('type', t.key)}
+                className={`text-left rounded-2xl border-2 px-4 py-3.5 transition-colors cursor-pointer ${
+                  active ? 'border-brand bg-brand-light/40' : 'border-border-subtle bg-card hover:border-border-strong'
+                }`}
+              >
+                <span className="block text-sm font-bold text-primary">{t.label}</span>
+                <span className="block text-xs text-muted mt-0.5">{t.note}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 2. How often — one price on screen, not two to compare */}
+        {plan.type && (
+          <div className="flex gap-1 bg-surface-alt rounded-xl p-1">
+            {FREQS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => onChange('frequency', f.key)}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                  plan.frequency === f.key ? 'bg-card text-primary shadow-sm' : 'text-secondary hover:text-primary'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!plan.type || !plan.frequency ? (
+          <p className="text-sm text-muted text-center py-8">{plan.type ? 'Pick weekly or every other week.' : 'Pick a plan to start.'}</p>
+        ) : (
+          <>
+            {/* 3. Square footage — the only thing typed per property */}
+            <div className="grid gap-4 grid-cols-2">
+              <InputField label="Lawn sq ft" value={plan.lawnSqft} onChange={(v) => onChange('lawnSqft', v)} placeholder="0" />
+              <InputField label="Bed sq ft" value={plan.bedSqft} onChange={(v) => onChange('bedSqft', v)} placeholder="0" />
+            </div>
+
+            {/* 4. Monthly price, with what it's made of */}
+            {(() => {
+              const v = run(plan.frequency);
+              const rows = [
+                { label: 'Mowing', n: v.mowVisits, total: v.parts.lawn },
+                { label: 'Leaves', n: v.leafVisits, total: v.parts.leaves },
+                { label: 'Beds', n: v.totalVisits, total: v.parts.weeds },
+              ].filter((r) => r.n > 0 && r.total > 0);
+              return (
+                <div className="bg-card rounded-2xl border border-border-subtle px-5 py-6">
+                  <div className="text-center">
+                    <div className={`text-4xl font-bold tabular-nums ${hasPrice ? 'text-primary' : 'text-muted'}`}>
+                      {money(v.monthly)}<span className="text-base font-semibold text-muted">/mo</span>
+                    </div>
+                  </div>
+                  {hasPrice && (
+                    <div className="mt-5 pt-4 border-t border-border-subtle space-y-1.5 text-sm tabular-nums max-w-sm mx-auto">
+                      {rows.map((r) => (
+                        <div key={r.label} className="flex justify-between gap-2">
+                          <span className="text-secondary">{r.label} <span className="text-muted">{r.n} × {money(r.total / r.n)}</span></span>
+                          <span className="text-primary">{money(r.total)}</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between gap-2">
+                        <span className="text-secondary">Sticks <span className="text-muted">every visit</span></span>
+                        <span className="text-muted">Included</span>
+                      </div>
+                      <div className="flex justify-between gap-2 pt-1.5 border-t border-border-subtle font-semibold">
+                        <span className="text-secondary">Year ÷ {v.months}</span>
+                        <span className="text-primary">{money(v.annual)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {yearRound && <SwitchPitch plan={plan} prices={{ lawn, leaves, weeds }} onChange={onChange} money={money} />}
+          </>
+        )}
+      </div>
+
+      {/* Settings — the odd stuff, out of the way */}
+      {plan.type && (
+        <aside className="bg-card rounded-2xl border border-border-subtle p-4 space-y-5 text-sm">
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-muted">This property</h3>
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1">Difficulty</label>
+              <div className="flex gap-1 bg-surface-alt rounded-lg p-1">
+                {['easy', 'moderate', 'hard'].map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => onChange('difficulty', d)}
+                    className={`flex-1 px-2 py-1 rounded-md text-xs font-medium capitalize transition-colors cursor-pointer ${
+                      (plan.difficulty || 'easy') === d ? 'bg-card text-primary shadow-sm' : 'text-secondary hover:text-primary'
+                    }`}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1">Mowing price override</label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm">$</span>
+                <input type="text" inputMode="decimal" value={plan.lawnOverride} onChange={(e) => onChange('lawnOverride', e.target.value)} placeholder={autoLawn ? String(autoLawn) : 'auto'} className={`${small} pl-6`} />
+              </div>
+              <p className="mt-1 text-[11px] text-muted">Blank uses the sq ft price ({money(autoLawn)}).</p>
+            </div>
+          </div>
+
+          <div className="space-y-3 pt-4 border-t border-border-subtle">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-muted">Rates (all quotes)</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">Beds $/man-hr</label>
+                <input type="text" inputMode="decimal" value={bedRate} onChange={(e) => onSettings({ bedRate: e.target.value })} className={small} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">Min / 1,000 sq ft</label>
+                <input type="text" inputMode="decimal" value={bedMinPer1k} onChange={(e) => onSettings({ bedMinPer1k: e.target.value })} className={small} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1">Leaf visit (× mowing)</label>
+              <input type="text" inputMode="decimal" value={leafMult} onChange={(e) => onSettings({ planLeafMultiplier: e.target.value })} className={small} />
+            </div>
+            <p className="text-[11px] text-muted leading-relaxed">
+              EOW mowing and beds are {EOW_MOW_MULTIPLIER}× a weekly visit. Leaf season is {DEFAULT_LEAF_VISITS.weekly} weeks ({DEFAULT_GROWING_LEAF_VISITS.weekly} of them before Nov 30).
+              Mowing sq ft tiers are in One-Time → settings.
+            </p>
+          </div>
+        </aside>
+      )}
+    </div>
+  );
+}
+
+// ─── Switch pitch (temporary) ───
+// Moving an existing per-visit customer onto Year-round: what they pay now,
+// in a mowing month, next to the new monthly price, plus a text to send.
+// "Now" assumes they're billed per visit over the growing season only, so a
+// month is the season's visits spread over its months (39 / 9 ≈ 4.33 weekly).
+
+// Read-only text with a Copy button — the switch text and the quote description.
+function CopyBox({ label, text, rows }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard blocked — the text is still selectable */ }
+  };
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-medium text-secondary">{label}</span>
+        <button onClick={copy} className="text-xs font-semibold text-brand-text hover:underline cursor-pointer">
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <textarea
+        readOnly
+        value={text}
+        rows={rows}
+        onFocus={(e) => e.target.select()}
+        className="w-full rounded-lg border border-border-strong bg-surface-alt px-3 py-2.5 text-sm text-primary leading-relaxed outline-none resize-none"
+      />
+    </div>
+  );
+}
+
+function SwitchPitch({ plan, prices, onChange, money }) {
+  const freq = plan.frequency === 'eow' ? 'eow' : 'weekly'; // same frequency as the plan being quoted
+  const price = Number(plan.curPrice) || 0;
+  const bushPrice = Number(plan.bushTrim) || 0;
+  const oldVisits = VISITS.growing[freq];
+  const oldAnnual = price * oldVisits;
+  const oldMonthly = oldAnnual / VISITS.growing.billingMonths;
+  const next = pricePlan({ plan: 'yearRound', frequency: freq, ...prices });
+  const diff = next.monthly - oldMonthly;
+  const ready = price > 0 && next.monthly > 0;
+  const round = (n) => `$${Math.round(n).toLocaleString('en-US')}`;
+
+  // For the Jobber quote description: what they paid, averaged out, then why
+  // the plan below is worth it. The line items under it list what's covered and
+  // the price, so this doesn't repeat them. Guarantee wording matches the site.
+  const message = [
+    price > 0 && `Right now you're paying ${money(price)} a visit for ${freq === 'weekly' ? 'weekly' : 'every-other-week'} mowing during the season, which averages out to about ${round(oldMonthly)} a month.`,
+    [
+      `The Year-Round plan below brings everything into one flat monthly payment. Here's why it's worth it:`,
+      `- Saves you money: we keep things managed so it never turns into a big, expensive cleanup`,
+      `- Looks good all year, not just in the summer`,
+      `- Predictable: the same payment every month, no surprise bills`,
+      `- 100% satisfaction guarantee: if we miss something included in your service, tell us and we'll fix it at no charge`,
+    ].join('\n'),
+    // Bushes aren't in the monthly — they're trimmed quarterly and billed per trim.
+    `Bush trimming is done quarterly and billed separately${bushPrice > 0 ? `, at ${money(bushPrice)} each time` : ''}.`,
+  ].filter(Boolean).join('\n\n');
+
+  return (
+    <div className="bg-card rounded-2xl border border-border-subtle p-5 space-y-4">
+      <div>
+        <h3 className="text-sm font-bold text-primary">Switch a current client</h3>
+        <p className="text-xs text-muted mt-0.5">What they pay now vs. Year-round at the prices above.</p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <InputField label="They pay now (per visit)" value={plan.curPrice} onChange={(v) => onChange('curPrice', v)} placeholder="0" prefix="$" />
+        <InputField label="Bush trim (per quarter)" value={plan.bushTrim} onChange={(v) => onChange('bushTrim', v)} placeholder="Optional" prefix="$" />
+      </div>
+
+      {ready ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 text-center">
+            <div className="rounded-xl bg-surface-alt px-3 py-4">
+              <div className="text-xs font-semibold text-muted">Now</div>
+              <div className="mt-1 text-2xl font-bold text-primary tabular-nums">{money(oldMonthly)}<span className="text-xs font-semibold text-muted">/mo</span></div>
+              <div className="mt-1 text-[11px] text-muted tabular-nums">{money(price)} × {oldVisits} visits = {money(oldAnnual)}/yr</div>
+            </div>
+            <div className="rounded-xl bg-brand-light/40 px-3 py-4">
+              <div className="text-xs font-semibold text-muted">Year-round</div>
+              <div className="mt-1 text-2xl font-bold text-primary tabular-nums">{money(next.monthly)}<span className="text-xs font-semibold text-muted">/mo</span></div>
+              <div className="mt-1 text-[11px] text-muted tabular-nums">
+                {diff >= 0 ? '+' : '−'}{money(Math.abs(diff))}/mo · {money(next.annual)}/yr
+              </div>
+            </div>
+          </div>
+
+        </>
+      ) : (
+        <p className="text-xs text-muted">Enter what they pay now, and the sq ft above, to see the comparison.</p>
+      )}
+
+      <CopyBox label="Quote description (Jobber)" text={message} rows={12} />
+    </div>
+  );
+}
+
 function PricingSettings({ settings, onUpdate, ownerMode }) {
   const [open, setOpen] = useState(false);
   if (!ownerMode) return null;
@@ -601,7 +892,8 @@ function PricingSettings({ settings, onUpdate, ownerMode }) {
 
 // ─── Main component ───
 
-export default function Quoting() {
+export default function Quoting({ mode = 'plan' }) {
+  const SERVICE_OPTIONS = serviceOptionsFor(mode);
   const { currentUser, ownerMode } = useAuth();
   const navigate = useNavigate();
   const quotes = useAppStore((s) => s.quotes);
@@ -615,6 +907,7 @@ export default function Quoting() {
   const defaultRockType = rockTypes[0] || { label: 'Pea Gravel', pricePerYd: 55 };
 
   const makeDefaults = () => ({
+    plan: { type: '', lawnSqft: '', bedSqft: '', difficulty: 'easy', lawnOverride: '', frequency: '', curPrice: '', bushTrim: '' },
     lawn: { sqft: '', difficulty: 'easy', override: false, overrideWeekly: '', overrideBiweekly: '', overrideDisplay: 'eow' },
     bushes: { small: '', medium: '', large: '', xl: '', override: false, overridePerVisit: '', modes: { trimming: true, overgrown: false, removal: false } },
     aeration: { sqft: '', override: false, overridePrice: '', includeOverseed: false, seedRate: '8', bagPrice: '190', ourBagCost: '84', overrideOverseed: false, overrideOverseedPrice: '' },
@@ -632,7 +925,7 @@ export default function Quoting() {
   // ─── Session persistence ───
   // A quote in progress survives a refresh. Without this, reloading anywhere in
   // the flow dumps you back to the start and loses everything typed so far.
-  const SESSION_KEY = 'quoting-session';
+  const SESSION_KEY = `quoting-session-${mode}`;
   const savedSession = (() => {
     try {
       const raw = localStorage.getItem(SESSION_KEY);
@@ -643,13 +936,15 @@ export default function Quoting() {
   })();
 
   // ─── Step state: 'list' | 'client' | 'measurements' | 'services' | 'calculator' ───
-  const [step, setStep] = useState(savedSession?.step || 'list');
-  const [quickMode, setQuickMode] = useState(savedSession?.quickMode || false);
-  const [clientName, setClientName] = useState(savedSession?.clientName || '');
+  // Plan Quote has no flow — it opens straight on the plan calculator.
+  // One-Time opens straight on its list of calculators.
+  const [step, setStep] = useState(mode === 'plan' ? 'calculator' : (savedSession?.step || (mode === 'one-time' ? 'services' : 'client')));
+  const [quickMode, setQuickMode] = useState(savedSession?.quickMode || mode === 'one-time');
+  const [clientName, setClientName] = useState(savedSession?.clientName || (mode === 'one-time' ? 'Quick Quote' : ''));
   const [clientAddress, setClientAddress] = useState(savedSession?.clientAddress || '');
   const [clientLatLng, setClientLatLng] = useState(savedSession?.clientLatLng || null);
   const [selectedServices, setSelectedServices] = useState(
-    () => new Set(savedSession?.selectedServices || [])
+    () => new Set(mode === 'plan' ? ['plan'] : (savedSession?.selectedServices || []))
   );
   // Merge over defaults rather than replacing: a saved session from before a new
   // field existed would otherwise leave that field undefined.
@@ -685,7 +980,7 @@ export default function Quoting() {
       }));
     } catch { /* private mode / quota — just don't persist */ }
   }, [step, quickMode, clientName, clientAddress, clientLatLng, clientSelected, addressOnly,
-      selectedServices, data, measurements]);
+      selectedServices, data, measurements, SESSION_KEY]);
   const savedClients = useAppStore((s) => s.clients) || [];
   const setSavedClients = useAppStore((s) => s.setClients);
   const agreements = useAppStore((s) => s.agreements) || [];
@@ -833,6 +1128,14 @@ export default function Quoting() {
       address: clientAddress,
       ...clientPricing,
     };
+    upsertClient(clientKey, clientData);
+
+    // One-Time has no landing page — saving drops you back on a fresh calculator list.
+    if (mode === 'one-time') startQuickQuote();
+    else setStep('list');
+  };
+
+  const upsertClient = (clientKey, clientData) => {
     const existing = savedClients.find((c) => c.name?.toLowerCase().trim() === clientKey);
     if (existing) {
       setSavedClients(savedClients.map((c) => c.name?.toLowerCase().trim() === clientKey
@@ -842,13 +1145,34 @@ export default function Quoting() {
     } else {
       setSavedClients([...savedClients, { id: genId(), name: clientName.trim(), ...clientData }]);
     }
+  };
 
-    setStep('list');
+  // Measurer tab: no quote, just keep the map on the client so a later quote
+  // for them picks it up as "Property already mapped".
+  const saveMeasurements = () => {
+    if (!clientName.trim()) return;
+    upsertClient(clientName.trim().toLowerCase(), {
+      measurements: measurements.measurements,
+      mapCenter: measurements.mapCenter || clientLatLng,
+      address: clientAddress,
+    });
+    startNewQuote(); // straight back to an empty client search for the next property
   };
 
   // ─── Render: List view ───
 
   const [showSettings, setShowSettings] = useState(false);
+
+  if (mode === 'plan') {
+    return (
+      <PlanCalculator
+        plan={data.plan}
+        onChange={(field, val) => update('plan', field, val)}
+        settings={settings}
+        onSettings={(patch) => setSettings({ ...settings, ...patch })}
+      />
+    );
+  }
 
   if (step === 'list') {
     return (
@@ -856,7 +1180,7 @@ export default function Quoting() {
         {/* Header */}
         <div className="flex items-end justify-between pt-8">
           <div>
-            <h1 className="text-3xl font-bold text-primary tracking-tight">Calculate Quote</h1>
+            <h1 className="text-3xl font-bold text-primary tracking-tight">{mode === 'plan' ? 'Plan' : mode === 'measure' ? 'Measurer' : 'One-Time'}</h1>
             <p className="text-sm text-muted mt-1">What do you want to do?</p>
           </div>
           <div className="flex items-center gap-1">
@@ -873,7 +1197,9 @@ export default function Quoting() {
         </div>
 
         {/* Two ways in: measure a property first, or go straight to the calculators. */}
-        <div className="grid gap-3 sm:grid-cols-2">
+        {/* Measuring lives only on the Measurer tab; the quote tabs go to the calculators. */}
+        <div className="grid gap-3">
+          {mode === 'measure' && (
           <button
             onClick={startNewQuote}
             className="group text-left bg-card rounded-2xl border border-border-subtle p-5 hover:border-brand hover:bg-surface-alt transition-colors cursor-pointer flex flex-col gap-3"
@@ -893,7 +1219,9 @@ export default function Quoting() {
               <ArrowRight size={14} />
             </span>
           </button>
+          )}
 
+          {mode !== 'measure' && (
           <button
             onClick={startQuickQuote}
             className="group text-left bg-card rounded-2xl border border-border-subtle p-5 hover:border-brand hover:bg-surface-alt transition-colors cursor-pointer flex flex-col gap-3"
@@ -902,10 +1230,11 @@ export default function Quoting() {
               <Calculator size={20} />
             </span>
             <span className="block">
-              <span className="block text-base font-bold text-primary">Use another calculator</span>
+              <span className="block text-base font-bold text-primary">Pick a calculator</span>
               <span className="block text-xs text-muted mt-1 leading-relaxed">
-                Skip the measuring and price services directly &mdash; mulch, bushes,
-                aeration, leaf cleanup and the rest.
+                {mode === 'plan'
+                  ? <>Price the plan &mdash; maintenance plan, lawn, bushes and leaves.</>
+                  : <>Price one-time jobs &mdash; mulch, rock, aeration, leaf cleanup and the rest.</>}
               </span>
             </span>
             <span className="mt-auto pt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-text group-hover:gap-2.5 transition-all">
@@ -913,6 +1242,7 @@ export default function Quoting() {
               <ArrowRight size={14} />
             </span>
           </button>
+          )}
         </div>
 
         {/* Expandable settings */}
@@ -1058,9 +1388,11 @@ export default function Quoting() {
       <div className="space-y-6 max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3">
-          <button onClick={() => setStep('list')} className="p-2 -ml-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
-            <ArrowLeft size={20} className="text-secondary" />
-          </button>
+          {mode !== 'measure' && (
+            <button onClick={() => setStep('list')} className="p-2 -ml-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
+              <ArrowLeft size={20} className="text-secondary" />
+            </button>
+          )}
           <div className="flex-1">
             <h1 className="text-2xl font-bold text-primary">Measure a property</h1>
           </div>
@@ -1215,7 +1547,7 @@ export default function Quoting() {
         )}
 
         <div className="flex gap-3">
-          {savedProperty && (
+          {savedProperty && mode !== 'measure' && (
             <button
               onClick={() => {
                 setMeasurements({ measurements: savedProperty.measurements, mapCenter: savedProperty.mapCenter, mapAddress: clientAddress });
@@ -1341,11 +1673,11 @@ export default function Quoting() {
         </div>
 
         <button
-          onClick={() => setStep('services')}
+          onClick={mode === 'measure' ? saveMeasurements : () => setStep('services')}
           className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-brand text-on-brand font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
         >
-          Next: Select Services
-          <ArrowRight size={16} />
+          {mode === 'measure' ? 'Save measurements' : 'Next: Select Services'}
+          {mode === 'measure' ? <CheckCircle size={16} /> : <ArrowRight size={16} />}
         </button>
       </div>
     );
@@ -1357,14 +1689,30 @@ export default function Quoting() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <button onClick={() => setStep(quickMode ? 'list' : 'measurements')} className="p-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
-            <ArrowLeft size={20} className="text-secondary" />
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-primary">Select Services</h1>
-            <p className="text-sm text-tertiary">Choose services</p>
+          {mode !== 'one-time' && (
+            <button onClick={() => setStep(quickMode ? 'list' : 'measurements')} className="p-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
+              <ArrowLeft size={20} className="text-secondary" />
+            </button>
+          )}
+          <div className="flex-1">
+            <h1 className="text-2xl font-bold text-primary">{mode === 'one-time' ? 'One-Time' : 'Select Services'}</h1>
+            <p className="text-sm text-tertiary">{mode === 'one-time' ? 'Pick a calculator' : 'Choose services'}</p>
           </div>
+          {/* Pricing settings used to sit on the landing page, which One-Time no longer has. */}
+          {mode === 'one-time' && ownerMode && (
+            <button
+              onClick={() => setShowSettings((v) => !v)}
+              className="p-2 rounded-lg text-muted hover:text-primary hover:bg-surface-alt transition-colors cursor-pointer"
+              title="Pricing settings"
+            >
+              <Settings size={16} />
+            </button>
+          )}
         </div>
+
+        {showSettings && ownerMode && mode === 'one-time' && (
+          <PricingSettings settings={settings} onUpdate={setSettings} ownerMode={ownerMode} />
+        )}
 
         {/* Search filters across every calculator; sections with no match drop
             out so the list stays short rather than showing empty headings. */}
@@ -1410,13 +1758,20 @@ export default function Quoting() {
               return (
                 <button
                   key={svc.id}
-                  onClick={() => toggleService(svc.id)}
+                  onClick={() => {
+                    // One-Time: tapping a calculator opens it — no separate Next step.
+                    if (mode === 'one-time') { setSelectedServices(new Set([svc.id])); setStep('calculator'); }
+                    else toggleService(svc.id);
+                  }}
                   className="w-full flex items-center gap-3.5 px-5 py-3.5 text-left border-t border-border-subtle/60 first:border-t-0 hover:bg-surface-alt transition-colors cursor-pointer"
                 >
                   <Icon size={18} className={`shrink-0 ${active ? 'text-brand-text-strong' : 'text-muted'}`} />
                   <span className={`flex-1 text-sm font-semibold ${active ? 'text-primary' : 'text-secondary'}`}>
                     {svc.label}
                   </span>
+                  {mode === 'one-time' ? (
+                    <ArrowRight size={16} className="text-muted shrink-0" />
+                  ) : (
                   <span
                     className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${
                       active ? 'bg-brand' : 'border border-border-strong'
@@ -1428,12 +1783,14 @@ export default function Quoting() {
                       </svg>
                     )}
                   </span>
+                  )}
                 </button>
               );
             });
           })()}
         </div>
 
+        {mode !== 'one-time' && (
         <button
           onClick={() => {
             // Auto-fill lawn sqft from measurements
@@ -1451,6 +1808,7 @@ export default function Quoting() {
           Next: Build Quote
           <ArrowRight size={16} />
         </button>
+        )}
       </div>
     );
   }
@@ -1460,11 +1818,13 @@ export default function Quoting() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <button onClick={() => setStep('services')} className="p-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
-          <ArrowLeft size={20} className="text-secondary" />
-        </button>
+        {mode !== 'plan' && (
+          <button onClick={() => setStep('services')} className="p-2 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
+            <ArrowLeft size={20} className="text-secondary" />
+          </button>
+        )}
         <div className="flex-1">
-          <h1 className="text-xl font-bold text-primary">{clientName}</h1>
+          <h1 className="text-xl font-bold text-primary">{mode === 'plan' ? 'Plan' : clientName}</h1>
           <p className="text-sm text-tertiary">Fill in the numbers</p>
         </div>
       </div>
@@ -1473,8 +1833,9 @@ export default function Quoting() {
         {/* Calculators */}
         <div className="space-y-6">
 
-          {/* Collapsible measurements reference panel */}
-          {measurements.measurements.length > 0 && (
+          {/* Collapsible measurements reference panel — hidden for now at Jude's
+              request; flip SHOW_MEASUREMENTS_REF back to true to bring it back. */}
+          {SHOW_MEASUREMENTS_REF && measurements.measurements.length > 0 && (
             <div className="bg-card rounded-2xl shadow-sm border border-border-subtle">
               <button
                 onClick={() => setMeasurementsOpen((v) => !v)}
@@ -1536,6 +1897,7 @@ export default function Quoting() {
           )}
 
           {/* ── Lawn Care ── */}
+
           {has('lawn') && (
             <div className="space-y-4 pb-8 border-b border-border-subtle">
               <div className="flex items-center justify-between">
@@ -2219,7 +2581,9 @@ export default function Quoting() {
           )}
         </div>
 
-        {/* Summary — last thing on the page, full width, no sticky column. */}
+        {/* Summary — last thing on the page, full width, no sticky column. The
+            plan calculator shows its own monthly prices, so Plan Quote skips it. */}
+        {mode !== 'plan' && (
         <div>
           <div className="space-y-4 border-t-2 border-border-subtle pt-6">
             {/* Rock type sits directly above the summary: tap one and the
@@ -2425,6 +2789,7 @@ export default function Quoting() {
 
           </div>
         </div>
+        )}
       </div>
     </div>
   );
