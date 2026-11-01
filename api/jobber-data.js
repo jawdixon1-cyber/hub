@@ -141,7 +141,7 @@ async function fetchTimesheets(start, end) {
   while (hasNext) {
     if (page++ > 0) await new Promise(r => setTimeout(r, 1500));
     const after = cursor ? `, after: "${cursor}"` : '';
-    const data = await jobberQuery(`{ timeSheetEntries(first: 25${after}, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id startAt endAt duration labourRate label user { id name { full } } job { id } } pageInfo { hasNextPage endCursor } } }`);
+    const data = await jobberQuery(`{ timeSheetEntries(first: 100${after}, filter: { startAt: { after: "${startISO}", before: "${endISO}" } }) { nodes { id startAt endAt duration labourRate label user { id name { full } } job { id } } pageInfo { hasNextPage endCursor } } }`);
     all.push(...(data.timeSheetEntries?.nodes || []));
     hasNext = data.timeSheetEntries?.pageInfo?.hasNextPage || false;
     cursor = data.timeSheetEntries?.pageInfo?.endCursor || null;
@@ -245,6 +245,40 @@ async function fetchJobExpenses(jobId) {
   }
 }
 
+// Batched fetchJobExpenses: fills jobExpensesCache for each job. On error, jobs keep
+// whatever was cached (or none), same as the single-job version.
+const JOB_EXPENSES_BATCH = 10; // ~400 requested cost each with first: 50; Jobber caps a query at 10,000
+async function fetchJobExpensesBatch(jobIds) {
+  try {
+    const body = jobIds.map((id, i) => `j${i}: job(id: "${id}") { expenses(first: 50) { nodes { id title total date description paidBy { name { full } } } } }`).join(' ');
+    const data = await jobberQuery(`{ ${body} }`);
+    jobIds.forEach((id, i) => jobExpensesCache.set(id, { items: data[`j${i}`]?.expenses?.nodes || [], time: Date.now() }));
+  } catch (err) {
+    console.error('[Labor] Batched job expenses failed:', err.message);
+  }
+}
+
+// Batched version: `{ v0: visit(id:…) { … } v1: … }`. Returns visitId -> total (null = no
+// per-visit line items). On error, falls back to whatever is cached for each visit.
+const VISIT_LINEITEMS_BATCH = 15;
+async function fetchVisitLineItemsTotals(visitIds) {
+  const out = {};
+  try {
+    const body = visitIds.map((id, i) => `v${i}: visit(id: "${id}") { lineItems { nodes { totalPrice } } }`).join(' ');
+    const data = await jobberQuery(`{ ${body} }`);
+    visitIds.forEach((id, i) => {
+      const nodes = data[`v${i}`]?.lineItems?.nodes || [];
+      const total = nodes.length ? nodes.reduce((s, li) => s + (parseFloat(li.totalPrice) || 0), 0) : null;
+      if (total !== null) visitLineItemsCache.set(id, { total, time: Date.now() });
+      out[id] = total;
+    });
+  } catch (err) {
+    console.error('[Labor] Batched line items failed:', err.message);
+    for (const id of visitIds) out[id] = visitLineItemsCache.get(id)?.total ?? null;
+  }
+  return out;
+}
+
 async function fetchVisitLineItemsTotal(visitId) {
   const cached = visitLineItemsCache.get(visitId);
   if (cached && Date.now() - cached.time < VISIT_LINEITEMS_TTL) return cached.total;
@@ -320,10 +354,18 @@ async function loadLaborGrouped({ start, end, skipLineItems = true, skipJobExpen
   // Skipped when caller only needs job-level totals (saves N API calls).
   const visitLineItemTotals = {};
   if (!skipLineItems) {
-    for (const v of visits) {
-      if (!v.id) continue;
-      visitLineItemTotals[v.id] = await fetchVisitLineItemsTotal(v.id);
-      await new Promise((r) => setTimeout(r, 350));
+    // One aliased query per batch of visits instead of one call each: a busy week has 30+
+    // visits, and one-by-one ran past Vercel's 30s limit.
+    const ids = visits.map((v) => v.id).filter(Boolean);
+    const todo = [];
+    for (const id of ids) {
+      const c = visitLineItemsCache.get(id);
+      if (c && Date.now() - c.time < VISIT_LINEITEMS_TTL) visitLineItemTotals[id] = c.total;
+      else todo.push(id);
+    }
+    for (let i = 0; i < todo.length; i += VISIT_LINEITEMS_BATCH) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 350));
+      Object.assign(visitLineItemTotals, await fetchVisitLineItemsTotals(todo.slice(i, i + VISIT_LINEITEMS_BATCH)));
     }
   }
 
@@ -333,8 +375,14 @@ async function loadLaborGrouped({ start, end, skipLineItems = true, skipJobExpen
   if (!skipJobExpenses) {
     const uniqueJobIdsForExpenses = [...new Set(visits.map(v => v.job?.id).filter(Boolean))];
     const seenExpenseIds = new Set(expenses.map(e => e.id));
+    // Same batching as line items: one call per job ran past Vercel's 30s limit.
+    const todoJobs = uniqueJobIdsForExpenses.filter((id) => { const c = jobExpensesCache.get(id); return !(c && Date.now() - c.time < JOB_EXPENSES_TTL); });
+    for (let i = 0; i < todoJobs.length; i += JOB_EXPENSES_BATCH) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 250));
+      await fetchJobExpensesBatch(todoJobs.slice(i, i + JOB_EXPENSES_BATCH));
+    }
     for (const jobId of uniqueJobIdsForExpenses) {
-      const jobExps = await fetchJobExpenses(jobId);
+      const jobExps = jobExpensesCache.get(jobId)?.items || [];
       for (const e of jobExps) {
         if (seenExpenseIds.has(e.id)) continue;
         const expDate = (e.date || '').split('T')[0];
@@ -347,7 +395,6 @@ async function loadLaborGrouped({ start, end, skipLineItems = true, skipJobExpen
         expenses.push({ ...e, date: anchorDate + 'T12:00:00', linkedJob: { id: jobId, jobNumber: visits.find(v => v.job?.id === jobId)?.job?.jobNumber || null } });
         seenExpenseIds.add(e.id);
       }
-      await new Promise((r) => setTimeout(r, 250));
     }
   }
 
