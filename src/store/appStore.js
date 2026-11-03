@@ -58,6 +58,9 @@ const STATE_KEYS = [
   { key: 'userXP',              supaKey: 'greenteam-userXP',              initial: {} },
   { key: 'vehicles',            supaKey: 'greenteam-vehicles',            initial: initialVehicles },
   { key: 'mileageLog',          supaKey: 'greenteam-mileageLog',          initial: initialMileageLog },
+  { key: 'planNotes',           supaKey: 'greenteam-planNotes',           initial: {} }, // Plans page: clientId -> { reason, note, dnc, updatedAt }
+  { key: 'planCampaigns',       supaKey: 'greenteam-planCampaigns',       initial: [] }, // Warm Leads outreach campaigns (see PlanCampaigns.jsx)
+  { key: 'planManual',          supaKey: 'greenteam-planManual',          initial: [] }, // Warm Leads people added by hand: [{ id, name, phone, note, createdAt }]
   { key: 'hangerTrips',         supaKey: 'greenteam-hangerTrips',         initial: [] },
   { key: 'hangerPeople',        supaKey: 'greenteam-hangerPeople',        initial: [] },
   { key: 'hangerAreas',         supaKey: 'greenteam-hangerAreas',         initial: [] },
@@ -136,7 +139,46 @@ function seedMissingGuides(guides, allInitialGuides) {
   return missing.length > 0 ? [...guides, ...missing] : guides;
 }
 
-export function createAppStore(cloudData, orgId) {
+// Keys saved by merging with the cloud copy instead of overwriting it, so two tabs/devices
+// editing different clients or campaign cards don't wipe each other's changes.
+const MERGE_KEYS = new Set(['greenteam-planNotes', 'greenteam-planCampaigns', 'greenteam-planManual']);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+const byId = (arr) => Array.isArray(arr) && arr.every((x) => isObj(x) && x.id != null);
+
+// 3-way merge: base = last cloud copy this tab saw, local = this tab, remote = cloud now.
+// Whichever side changed a field wins; if both changed it, this tab wins.
+function merge3(base, local, remote) {
+  if (same(local, base)) return remote;
+  if (same(remote, base) || same(local, remote)) return local;
+  if (isObj(local) && isObj(remote)) {
+    const b = isObj(base) ? base : {};
+    const out = {};
+    for (const k of new Set([...Object.keys(local), ...Object.keys(remote)])) {
+      const v = merge3(b[k], local[k], remote[k]);
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
+  }
+  if (byId(local) && byId(remote)) {
+    const b = new Map((byId(base) ? base : []).map((x) => [x.id, x]));
+    const r = new Map(remote.map((x) => [x.id, x]));
+    const out = [];
+    for (const x of local) {
+      if (r.has(x.id)) out.push(merge3(b.get(x.id), x, r.get(x.id)));
+      else if (!b.has(x.id)) out.push(x); // added here
+    }
+    const mine = new Set(local.map((x) => x.id));
+    for (const x of remote) if (!mine.has(x.id) && !b.has(x.id)) out.push(x); // added elsewhere
+    return out;
+  }
+  return local;
+}
+
+export function createAppStore(cloudData, initialOrgId) {
+  // The store outlives its first render, and the org can still be loading then. Saves read
+  // the current value (kept up to date by AppStoreProvider) so they're never sent without it.
+  let orgId = initialOrgId;
   const allInitialGuides = [...initialGuides, ...initialFieldOpsGuides, ...initialPMEGuides, ...initialGMGuides];
   const initialState = {};
   for (const { key, supaKey, initial } of STATE_KEYS) {
@@ -184,16 +226,40 @@ export function createAppStore(cloudData, orgId) {
   // Single debounced subscriber that persists changed keys
   let debounceTimer = null;
   let changedKeys = new Set();
+  let pulling = false;
+  let flushNow = null;
+  const cloudBase = {};
+  for (const sk of MERGE_KEYS) if (cloudData?.[sk] != null) cloudBase[sk] = cloudData[sk];
+  const setQuietly = (updates) => {
+    pulling = true;
+    try { store.setState(updates); } finally { pulling = false; }
+  };
+  const saveMerged = async (sk, entry) => {
+    const { data: row } = await supabase.from('app_state').select('value').eq('key', sk).maybeSingle();
+    let value = store.getState()[entry.key];
+    if (row?.value != null && sk in cloudBase) {
+      value = merge3(cloudBase[sk], value, row.value);
+      if (!same(value, store.getState()[entry.key])) setQuietly({ [entry.key]: value });
+    }
+    const payload = { key: sk, value };
+    if (orgId) payload.org_id = orgId;
+    const { error } = await supabase.from('app_state').upsert(payload, { onConflict: 'key' });
+    if (error) throw error;
+    cloudBase[sk] = value;
+  };
 
   for (const { key, supaKey } of STATE_KEYS) {
     store.subscribe(
       (state) => state[key],
       (value, prev) => {
-        if (value === prev) return;
+        if (value === prev || pulling) return;
         changedKeys.add(supaKey);
 
         if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
+        debounceTimer = setTimeout(flushNow = () => {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = null;
+          flushNow = null;
           const state = store.getState();
           const keysToSync = [...changedKeys];
           changedKeys = new Set();
@@ -224,7 +290,12 @@ export function createAppStore(cloudData, orgId) {
           // Persist to Supabase (retry once on failure)
           for (const sk of keysToSync) {
             const entry = STATE_KEYS.find((e) => e.supaKey === sk);
-            if (entry) {
+            if (entry && MERGE_KEYS.has(sk)) {
+              saveMerged(sk, entry).catch((err) => {
+                console.warn('[appStore] Supabase sync failed for', sk, '— retrying…', err?.message);
+                setTimeout(() => saveMerged(sk, entry).catch(() => {}), 2000);
+              });
+            } else if (entry) {
               const payload = { key: sk, value: state[entry.key] };
               if (orgId) payload.org_id = orgId;
               supabase
@@ -248,6 +319,31 @@ export function createAppStore(cloudData, orgId) {
     );
   }
 
+  store.setOrgId = (id) => { if (id) orgId = id; };
+
+  // Save pending edits right away (tab closing / hidden) instead of waiting for the debounce
+  store.flush = () => { if (flushNow) flushNow(); };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', () => store.flush());
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') store.flush(); });
+  }
+
+  // Re-read keys from Supabase so a tab/device that's been open a while picks up edits
+  // made elsewhere before it saves over them. Keys with unsaved local edits are left alone.
+  store.pullKeys = async (supaKeys) => {
+    if (changedKeys.size) return;
+    const { data, error } = await supabase.from('app_state').select('key, value').in('key', supaKeys);
+    if (error || !data || changedKeys.size) return;
+    const state = store.getState();
+    const updates = {};
+    for (const row of data) {
+      if (MERGE_KEYS.has(row.key) && row.value != null) cloudBase[row.key] = row.value;
+      const entry = STATE_KEYS.find((e) => e.supaKey === row.key);
+      if (entry && row.value != null && JSON.stringify(state[entry.key]) !== JSON.stringify(row.value)) updates[entry.key] = row.value;
+    }
+    if (Object.keys(updates).length) setQuietly(updates);
+  };
+
   // Hydrate from fresh cloud data (called when Supabase fetch completes)
   store.hydrateFromCloud = (cloudData) => {
     const state = store.getState();
@@ -256,6 +352,7 @@ export function createAppStore(cloudData, orgId) {
       // Skip keys the user has already modified locally — don't overwrite their edits
       if (dirtyKeys.has(key)) continue;
       let cloudValue = cloudData[supaKey];
+      if (MERGE_KEYS.has(supaKey) && cloudValue != null) cloudBase[supaKey] = cloudValue;
       if (cloudValue !== undefined && cloudValue !== null) {
         // Seed any new default guides into cloud data
         if (key === 'guides' && Array.isArray(cloudValue)) {

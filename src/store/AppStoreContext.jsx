@@ -11,6 +11,8 @@ export function AppStoreProvider({ cloudData, orgId, children }) {
     storeRef.current = createAppStore(cloudData, orgId);
   }
 
+  useEffect(() => { storeRef.current?.setOrgId?.(orgId); }, [orgId]);
+
   // When Supabase data arrives after initial cache-based load, hydrate the store
   useEffect(() => {
     if (!initializedRef.current) {

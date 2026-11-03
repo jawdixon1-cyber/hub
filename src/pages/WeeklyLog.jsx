@@ -207,13 +207,21 @@ export default function WeeklyLog() {
   // Fixed-price recurring jobs in this week, by Jobber visit id, looked up as soon as the week opens
   // so their lines are flagged without pulling. Only flags: nothing in the week changes.
   const [fixedJobs, setFixedJobs] = useState({});
+  // Jobber's job vs general clock time per day, from the same lookup. Shown under crew hours
+  // for reference only: it isn't saved and doesn't feed any number on the page.
+  const [dayTime, setDayTime] = useState({});
   useEffect(() => {
     let off = false; const wk = weekDays(week);
+    setDayTime({});
     fetch(`/api/jobber-data?action=labor&start=${wk[0]}&end=${wk[6]}`).then((r) => (r.ok ? r.json() : {})).then((data) => {
       if (off) return;
-      const m = {};
-      for (const d of Object.keys(data || {})) for (const v of data[d]?.visits || []) { const f = fixedOf(v); if (f) m[v.id] = f; }
-      setFixedJobs(m);
+      const m = {}, t = {};
+      for (const d of Object.keys(data || {})) {
+        for (const v of data[d]?.visits || []) { const f = fixedOf(v); if (f) m[v.id] = f; }
+        const l = data[d]?.labor;
+        if (l && (l.jobHours || l.generalHours)) t[d] = { job: Math.round((l.jobHours || 0) * 60), general: Math.round((l.generalHours || 0) * 60) };
+      }
+      setFixedJobs(m); setDayTime(t);
     }).catch(() => {});
     return () => { off = true; };
   }, [week]);
@@ -544,7 +552,8 @@ export default function WeeklyLog() {
                     {/* With job lines the day totals are their sums, so they're read-only here. */}
                     <td className="px-2 py-1.5"><input className={`${cell} ${fromJobs ? 'bg-slate-50 text-slate-600' : ''}`} inputMode="decimal" placeholder="—" value={e.revenue} readOnly={fromJobs} title={fromJobs ? 'Sum of the jobs below' : undefined} onChange={setDay(d, 'revenue')} /></td>
                     <td className="px-2 py-1.5"><input className={`${cell} ${fromJobs ? 'bg-slate-50 text-slate-600' : ''}`} inputMode="decimal" placeholder="—" value={e.cogs} readOnly={fromJobs} title={fromJobs ? 'Sum of the jobs below' : undefined} onChange={setDay(d, 'cogs')} /></td>
-                    <td className="px-2 py-1.5"><TimeCell value={e.hours || ''} onChange={setDay(d, 'hours')} /></td>
+                    <td className="px-2 py-1.5"><TimeCell value={e.hours || ''} onChange={setDay(d, 'hours')} />
+                      {dayTime[d] && <div className="mt-0.5 text-right text-[11px] text-slate-500 tabular-nums whitespace-nowrap" title="Jobber clock time, for reference only. Not used in any calculation.">Job {minutesToHMM(dayTime[d].job)} · General {minutesToHMM(dayTime[d].general)}</div>}</td>
                     {(() => { const m = parseTime(e.hours || ''); return <td className={`${th} text-sm font-semibold tabular-nums ${m > 0 && num(e.revenue) ? '' : 'text-slate-300'}`}>{m > 0 && num(e.revenue) ? fmt(num(e.revenue) / (m / 60)) : '—'}</td>; })()}</tr>,
                   open && (
                     <tr key={`${d}-jobs`} className="border-b bg-slate-50/60"><td colSpan={5} className="px-3 pb-3 pt-1">

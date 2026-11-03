@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import {
   Home as HomeIcon,
+  Repeat,
   BookOpen,
   Users,
   LogOut,
@@ -68,6 +69,7 @@ const ChecklistTrackerPage = lazy(() => import('./pages/ChecklistTrackerPage'));
 const Quoting = lazy(() => import('./pages/Quoting'));
 const DailyChecklist = lazy(() => import('./pages/DailyChecklist'));
 const OwnerHome = lazy(() => import('./pages/OwnerHome'));
+const Plans = lazy(() => import('./pages/Plans'));
 const ChecklistItem = lazy(() => import('./pages/ChecklistItem'));
 const ChecklistWorkflow = lazy(() => import('./pages/ChecklistWorkflow'));
 const Timesheets = lazy(() => import('./pages/Timesheets'));
@@ -109,7 +111,7 @@ const InsightsProfitability = lazy(() => import('./pages/InsightsProfitability')
 const InsightsDoorHangers = lazy(() => import('./pages/InsightsDoorHangers'));
 
 const NAV_ITEMS = [
-  { id: 'home', path: '/', label: 'Home', icon: HomeIcon },
+  { id: 'home', path: '/', label: 'Home', icon: HomeIcon, teamOnly: true },
 ];
 
 const TEAM_TOOLS_ITEMS = [
@@ -124,6 +126,7 @@ const TEAM_ITEMS = [
 ];
 
 const OPERATIONS_ITEMS = [
+  { id: 'home', path: '/home', label: 'Home', icon: HomeIcon },
   { id: 'schedule', path: '/schedule', label: 'Schedule', icon: CalendarDays },
   { id: 'clients', path: '/clients', label: 'Clients', icon: Users },
   { id: 'requests', path: '/requests', label: 'Requests', icon: Inbox },
@@ -138,14 +141,15 @@ const OPERATIONS_ITEMS = [
 
 const OWNER_TOOLS_PINNED = [
   { id: 'sales', path: '/sales', label: 'Quoter', icon: Calculator },
+  { id: 'plans', path: '/client-base', label: 'Client Base', icon: Repeat },
   { id: 'guides', path: '/playbooks', label: 'Playbooks', icon: BookOpen },
   { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
   { id: 'payroll', path: '/payroll', label: 'Finance', icon: DollarSign },
+  { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
 ];
 const OWNER_TOOLS_MORE = [
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
-  { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
   { id: 'timesheets', path: '/timesheets', label: 'Timesheets', icon: Clock },
   { id: 'suppliers', path: '/suppliers', label: 'Suppliers', icon: Truck },
 ];
@@ -159,6 +163,9 @@ const DATA_CACHE_KEY = 'greenteam-data-cache';
 // Critical keys — needed for the gate decision and first render.
 // Everything else loads in the background after the UI is interactive.
 const CRITICAL_KEYS = [
+  'greenteam-planNotes',      // Warm Leads reasons / do-not-contact: small, and stale counts show without it
+  'greenteam-planCampaigns',
+  'greenteam-planManual',
   'greenteam-permissions',
   'greenteam-agreementPdf',
   'greenteam-agreementConfig',
@@ -370,7 +377,7 @@ function App() {
 const CREATE_ITEMS = [
   { id: 'client', label: 'Client', icon: UserPlus, path: '/clients/new' },
   { id: 'request', label: 'Request', icon: ClipboardList, path: '/requests?new=1' },
-  { id: 'quote', label: 'Quote', icon: FileSignature, path: '/sales?new=1' },
+  { id: 'quote', label: 'Quote', icon: FileSignature, path: '/sales?tab=plan&new=1' },
   { id: 'job', label: 'Job', icon: Hammer, path: '/jobs?new=1' },
   { id: 'invoice', label: 'Invoice', icon: FileText, path: '/invoices?new=1' },
 ];
@@ -732,7 +739,7 @@ function AppShell() {
     <nav className="flex-1 overflow-y-auto">
       <div className="py-3 px-2 space-y-1">
       {NAV_ITEMS
-        .filter((item) => !item.ownerOnly || ownerMode)
+        .filter((item) => (!item.ownerOnly || ownerMode) && !(item.teamOnly && ownerMode))
         .map((item) => {
         const Icon = item.icon;
         const active = isActive(item.path);
@@ -825,32 +832,7 @@ function AppShell() {
 
       {ownerMode && (
         <>
-          {/* Building — CRM modules (Clients, Jobs, Quotes, Invoices, etc.).
-              Hidden entirely via Settings → Appearance. */}
-          {!hideBuilding && <div className="h-px bg-border-subtle my-2 mx-2" />}
-          {!hideBuilding && !collapsed && (
-            <button onClick={() => setBuildingOpen((o) => !o)}
-              className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
-              <span>Building</span>
-              <ChevronDown size={14} className={`transition-transform ${buildingOpen ? 'rotate-180' : ''}`} />
-            </button>
-          )}
-          {!hideBuilding && (buildingOpen || collapsed) && OPERATIONS_ITEMS.filter((item) => !(item.id === 'schedule' && hideSchedule)).map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            return (
-              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
-                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-                }`}>
-                <Icon size={14} className="shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
-            );
-          })}
-
-          {/* Tools — no longer a collapsible group; these sit flat in the bar
-              alongside Home and Schedule. "More" still holds the overflow. */}
+          {/* Tools — flat in the bar. "More" holds the overflow and the Building group. */}
           <div className="h-px bg-border-subtle my-3 mx-2" />
           {OWNER_TOOLS_PINNED.map((item) => {
             const Icon = item.icon;
@@ -881,6 +863,29 @@ function AppShell() {
             return (
               <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
                 className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
+                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                }`}>
+                <Icon size={14} className="shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </button>
+            );
+          })}
+
+          {/* Building — CRM modules (Clients, Jobs, Quotes, Invoices, etc.), tucked inside More.
+              Hidden entirely via Settings → Appearance. */}
+          {!hideBuilding && !collapsed && ownerMoreOpen && (
+            <button onClick={() => setBuildingOpen((o) => !o)}
+              className="w-full flex items-center justify-between px-3 pl-6 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
+              <span>Building</span>
+              <ChevronDown size={14} className={`transition-transform ${buildingOpen ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+          {!hideBuilding && ((ownerMoreOpen && buildingOpen) || collapsed) && OPERATIONS_ITEMS.filter((item) => !(item.id === 'schedule' && hideSchedule)).map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.path);
+            return (
+              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
+                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3 pl-9'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
                   active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
                 }`}>
                 <Icon size={14} className="shrink-0" />
@@ -1058,7 +1063,11 @@ function AppShell() {
             </div>
           }>
               <Routes>
-                <Route path="/" element={ownerMode ? <OwnerHome /> : <Home />} />
+                <Route path="/" element={ownerMode ? <Navigate to="/sales" replace /> : <Home />} />
+                <Route path="/home" element={ownerMode ? <OwnerHome /> : <Navigate to="/" replace />} />
+                <Route path="/client-base" element={ownerMode ? <Plans /> : <Navigate to="/" replace />} />
+                <Route path="/warm-leads" element={<Navigate to="/client-base" replace />} />
+                <Route path="/plans" element={<Navigate to="/client-base" replace />} />
                 <Route path="/checklist/:kind/:itemId" element={<ChecklistItem />} />
                 <Route path="/workflow/:kind" element={<ChecklistWorkflow />} />
                 <Route path="/workflow/:kind/:stepIndex" element={<ChecklistWorkflow />} />

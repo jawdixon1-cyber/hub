@@ -1647,6 +1647,98 @@ async function handleHubSync(req, res) {
 
 // ── Router ──
 
+// ── Plans: every client we've done a job for, read live from Jobber ──
+// One row per client. kind: 'plan' = has a recurring job not archived; 'ended' = had
+// recurring jobs, all archived (endedAt = latest close); 'one-time' = one-off jobs only.
+// Cancel reasons live in the Hub (app store key planNotes), not here.
+// Frequency + money for a recurring job. job.total also counts the quantity-0 helper lines
+// ("Real Amount", "Plan") used on fixed-price plans, so price comes from lines with quantity > 0.
+// Fixed price: that amount per invoice period → monthly; per visit = monthly ÷ visits a month.
+// Visit based: that amount per visit; monthly = per visit × visits a month (weekly 4.33, EOW 2.17).
+function planMoney(j) {
+  if (j.jobType !== 'RECURRING') return {};
+  const lines = (j.lineItems?.nodes || []).filter((l) => (l.quantity || 0) > 0);
+  const price = lines.length ? lines.reduce((n, l) => n + (parseFloat(l.totalPrice) || 0), 0) : parseFloat(j.total) || 0;
+  const vis = (j.visitSchedule?.recurrenceSchedule?.friendly || '').toLowerCase();
+  const inv = (j.invoiceSchedule?.scheduleSummary || '').toLowerCase();
+  const wk = vis.startsWith('weekly') ? 1 : +(vis.match(/every (\d+) weeks/)?.[1] || 0);
+  const mo = vis.startsWith('monthly') ? 1 : +(vis.match(/every (\d+) months/)?.[1] || 0);
+  const visitsPerMonth = wk ? 52 / wk / 12 : mo ? 1 / mo : 0;
+  const freq = wk === 1 ? 'Weekly' : wk === 2 ? 'EOW' : wk ? `Every ${wk} wks` : mo === 1 ? 'Monthly' : mo ? `Every ${mo} mos` : '';
+  const r2 = (n) => Math.round(n * 100) / 100;
+  let monthly = null, perVisit = null;
+  if (j.billingType === 'FIXED_PRICE') {
+    const months = inv.startsWith('monthly') ? 1 : inv.startsWith('yearly') ? 12 : +(inv.match(/every (\d+) months/)?.[1] || 0);
+    if (months && price) { monthly = r2(price / months); perVisit = visitsPerMonth ? r2(monthly / visitsPerMonth) : null; }
+  } else if (price) {
+    perVisit = r2(price);
+    monthly = visitsPerMonth ? r2(price * visitsPerMonth) : null;
+  }
+  return { freq, monthly, perVisit };
+}
+
+let plansCache = null; // { data, time }
+const PLANS_TTL = 10 * 60 * 1000;
+const fmtAddress = (a) => {
+  if (!a?.street1) return '';
+  const street = [a.street1, a.street2].filter(Boolean).join(' ');
+  return [street, a.city, [a.province, a.postalCode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+};
+
+async function handlePlans(req, res) {
+  if (plansCache && req.query.refresh !== '1' && Date.now() - plansCache.time < PLANS_TTL) return res.json(plansCache.data);
+  try {
+    const jobs = [];
+    let after = null;
+    do {
+      const data = await jobberQuery(`{ jobs(first: 50${after ? `, after: "${after}"` : ''}, ) { nodes { id jobNumber title jobType jobStatus startAt endAt completedAt total billingType lineItems(first: 10) { nodes { quantity totalPrice } } client { id name emails { address primary } phones { number primary } billingAddress { street1 street2 city province postalCode } } property { address { street1 street2 city province postalCode } } visitSchedule { recurrenceSchedule { friendly } } invoiceSchedule { scheduleSummary } } pageInfo { hasNextPage endCursor } } }`);
+      jobs.push(...(data.jobs?.nodes || []));
+      after = data.jobs?.pageInfo?.hasNextPage ? data.jobs.pageInfo.endCursor : null;
+      if (after) await new Promise((r) => setTimeout(r, 300));
+    } while (after && jobs.length < 2000);
+
+    const byClient = {};
+    for (const j of jobs) {
+      const c = j.client; if (!c?.id) continue;
+      const row = byClient[c.id] || (byClient[c.id] = {
+        clientId: c.id, name: c.name || 'Unknown',
+        phone: (c.phones?.find((p) => p.primary) || c.phones?.[0])?.number || '',
+        email: (c.emails?.find((e) => e.primary) || c.emails?.[0])?.address || '',
+        billing: fmtAddress(c.billingAddress),
+        jobs: [],
+      });
+      row.jobs.push({
+        id: j.id, jobNumber: j.jobNumber, title: j.title || '', recurring: j.jobType === 'RECURRING', status: j.jobStatus,
+        active: j.jobStatus !== 'archived', startAt: j.startAt, endAt: j.endAt, closedAt: j.jobStatus === 'archived' ? j.completedAt : null,
+        total: j.total, billingType: j.billingType, address: fmtAddress(j.property?.address),
+        visits: j.visitSchedule?.recurrenceSchedule?.friendly || '', invoices: j.invoiceSchedule?.scheduleSummary || '',
+        ...planMoney(j),
+      });
+    }
+    const clients = Object.values(byClient).map((r) => {
+      r.jobs.sort((a, b) => (b.startAt || '').localeCompare(a.startAt || ''));
+      // Service address from their latest job; billing address if no job has a property
+      r.address = r.jobs.find((j) => j.address)?.address || r.billing || '';
+      delete r.billing;
+      const rec = r.jobs.filter((j) => j.recurring);
+      r.kind = rec.some((j) => j.active) ? 'plan' : rec.length ? 'ended' : 'one-time';
+      r.endedAt = r.kind === 'ended' ? rec.map((j) => j.closedAt || j.endAt || '').sort().pop() || null : null;
+      // Last time we did anything for them: latest close, else latest scheduled end that's passed.
+      const now = new Date().toISOString();
+      r.lastService = r.jobs.map((j) => j.closedAt || (j.endAt && j.endAt < now ? j.endAt : '') || '').sort().pop() || null;
+      return r;
+    }).sort((a, b) => a.name.localeCompare(b.name));
+    const data = { clients, updatedAt: new Date().toISOString() };
+    plansCache = { data, time: Date.now() };
+    return res.json(data);
+  } catch (err) {
+    if (plansCache) return res.json(plansCache.data);
+    if (err.code === 'JOBBER_DISCONNECTED') return res.status(401).json({ error: err.message, code: 'JOBBER_DISCONNECTED' });
+    if (err.message?.includes('Throttled')) return res.status(429).json({ error: 'Jobber needs a moment — try again.', code: 'THROTTLED' });
+    return res.status(500).json({ error: err.message });
+  }
+}
+
 export default async function handler(req, res) {
   try {
     const action = req.query.action;
@@ -1673,6 +1765,7 @@ export default async function handler(req, res) {
     if (action === 'hub-sync') return handleHubSync(req, res);
     if (action === 'ytd-revenue') return handleYTDRevenue(req, res);
     if (action === 'recurring-summary') return handleRecurringSummary(req, res);
+    if (action === 'plans') return handlePlans(req, res);
     return res.status(400).json({ error: 'action param required: status | crew-status | clients | labor | ytd-revenue' });
   } catch (err) {
     console.error('[Jobber Data] Error:', err.message);
