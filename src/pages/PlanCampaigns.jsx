@@ -33,7 +33,8 @@ const SIMPLE_COLS = [
   { id: 'todo', label: 'To contact', bg: 'bg-slate-100' },
   { id: 'waiting', label: 'Waiting', bg: 'bg-sky-50' },
   { id: 'due', label: 'Follow up (due)', bg: 'bg-amber-50' },
-  { id: 'done', label: 'Interested / Booked', bg: 'bg-lime-50' },
+  { id: 'warm', label: 'Interested', bg: 'bg-amber-50' },
+  { id: 'done', label: 'Booked', bg: 'bg-lime-50' },
   { id: 'not', label: 'Not interested', bg: 'bg-red-50' },
   { id: 'unq', label: 'Unqualified', bg: 'bg-orange-50' },
 ];
@@ -576,7 +577,8 @@ function CampaignView({ campaign, clients, setCampaigns, setNote, audiences, pla
         const col = (r) => {
           if (r.status === 'unqualified') return 'unq';
           if (r.status === 'not' || r.status === 'dnc' || r.status === 'noresp') return 'not';
-          if (!OPEN(r.status) || r.status === 'interested') return 'done';
+          if (r.status === 'interested') return 'warm';
+          if (!OPEN(r.status)) return 'done';
           if (!(r.e.touches || []).length) return 'todo';
           return r.e.nextAt && r.e.nextAt > today() ? 'waiting' : 'due';
         };
@@ -603,7 +605,7 @@ function CampaignView({ campaign, clients, setCampaigns, setNote, audiences, pla
               <div key={cl.id} className={`w-60 shrink-0 rounded-xl ${cl.bg} p-2`}>
                 <p className="mb-2 flex items-center justify-between px-1 text-xs font-bold uppercase tracking-wide text-slate-600">{cl.label}<span className="tabular-nums">{cl.cards.length}</span></p>
                 <div className="max-h-[70vh] space-y-1.5 overflow-y-auto">
-                  {(cl.id === 'done' ? [...cl.cards].sort((a, b) => (a.status === 'interested' ? 0 : 1) - (b.status === 'interested' ? 0 : 1) || (a.e.nextAt || '').localeCompare(b.e.nextAt || '')) : cl.cards).map((r) => {
+                  {(cl.id === 'warm' ? [...cl.cards].sort((a, b) => (a.e.nextAt || '').localeCompare(b.e.nextAt || '')) : cl.cards).map((r) => {
                     const n = (r.e.touches || []).length;
                     const first = (r.c?.name || '').split(' ')[0];
                     const warm = r.status === 'interested';

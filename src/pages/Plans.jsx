@@ -101,7 +101,7 @@ export default function Plans() {
     const have = new Set(fromJobber.map((c) => c.clientId));
     return [
     ...fromJobber,
-    ...planManual.filter((m) => !have.has(m.id)).map((m) => ({ clientId: m.id, name: m.name, phone: m.phone || '', email: '', jobs: [], kind: 'added', addedAt: m.createdAt, addedNote: m.note || '' })),
+    ...planManual.filter((m) => !have.has(m.id)).map((m) => ({ clientId: m.id, name: m.name, phone: m.phone || '', email: '', jobs: [], kind: 'added', addedAt: m.createdAt, addedNote: m.note || '', address: m.address || '' })),
   ];
   }, [data, planManual]);
   // Hidden people (your own house, test clients…) are left out of everything; Settings lists them to bring back.
