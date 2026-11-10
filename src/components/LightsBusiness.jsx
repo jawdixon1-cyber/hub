@@ -106,6 +106,10 @@ function ColdLeads({ leads, setLeads }) {
   const [dragId, setDragId] = useState('');
   const [overId, setOverId] = useState('');
   const [openLead, setOpenLead] = useState('');
+  const [stage, setStage] = useState(''); // pipeline filter (list view)
+  const [mode, setMode] = useState(() => localStorage.getItem('cold-leads-view') || 'board');
+  const [overCol, setOverCol] = useState('');
+  useEffect(() => { localStorage.setItem('cold-leads-view', mode); }, [mode]);
   const [logFor, setLogFor] = useState(''); // lead id being logged
   const [logDraft, setLogDraft] = useState({ status: 'no_answer', note: '', how: 'Call' });
   const save = () => {
@@ -139,9 +143,32 @@ function ColdLeads({ leads, setLeads }) {
   return (
     <div className="rounded-xl border border-border-default bg-card">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-subtle">
-        <p className="text-sm font-semibold text-primary">Cold leads <span className="text-xs font-normal text-muted">· drag the number to reorder</span></p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm font-semibold text-primary">Cold leads</p>
+          <div className="flex rounded-lg bg-surface-alt p-0.5">
+            {[['board', 'Pipeline'], ['list', 'List']].map(([k, label]) => (
+              <button key={k} onClick={() => setMode(k)} className={`px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer ${mode === k ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-primary'}`}>{label}</button>
+            ))}
+          </div>
+        </div>
         <button onClick={() => setDraft({ ...BLANK_LEAD })} className="inline-flex items-center gap-1 text-sm font-medium text-brand-text hover:underline cursor-pointer"><Plus size={14} /> Add lead</button>
       </div>
+      {mode === 'list' && <div className="px-4 py-2.5 border-b border-border-subtle flex items-stretch gap-1.5 overflow-x-auto">
+        {OUTREACH.map(([k, label, cls]) => {
+          const n = (leads || []).filter((l) => (l.status || 'new') === k).length;
+          const on = stage === k;
+          return (
+            <button
+              key={k}
+              onClick={() => setStage(on ? '' : k)}
+              className={`shrink-0 min-w-[92px] rounded-lg px-2.5 py-1.5 text-left cursor-pointer border transition-colors ${on ? 'border-border-brand ring-2 ring-ring-brand' : 'border-transparent hover:border-border-strong'} ${cls}`}
+            >
+              <p className="text-lg font-bold leading-none">{n}</p>
+              <p className="text-[10px] font-semibold mt-0.5 whitespace-nowrap">{label}</p>
+            </button>
+          );
+        })}
+      </div>}
       {draft && (
         <div className="p-4 grid grid-cols-2 gap-3 border-b border-border-subtle bg-surface-alt/40">
           <p className="col-span-2 text-[11px] font-bold uppercase tracking-wide text-muted">Contact</p>
@@ -191,10 +218,55 @@ function ColdLeads({ leads, setLeads }) {
           </div>
         </div>
       )}
+      {mode === 'board' && (
+        <div className="p-3 flex gap-2 overflow-x-auto">
+          {OUTREACH.map(([k, label, cls]) => {
+            const col = (leads || []).filter((l) => (l.status || 'new') === k);
+            return (
+              <div
+                key={k}
+                onDragOver={(e) => { e.preventDefault(); setOverCol(k); }}
+                onDragLeave={() => setOverCol('')}
+                onDrop={() => {
+                  if (dragId) setLeads((list) => (list || []).map((x) => (x.id === dragId && (x.status || 'new') !== k
+                    ? { ...x, status: k, log: [{ at: new Date().toISOString(), status: k, how: 'Moved', note: '' }, ...(x.log || [])] } : x)));
+                  setDragId(''); setOverCol('');
+                }}
+                className={`shrink-0 w-56 rounded-xl p-2 space-y-2 transition-colors ${overCol === k ? 'bg-brand-light/40 ring-2 ring-ring-brand' : 'bg-surface-alt/50'}`}
+              >
+                <div className="flex items-center justify-between px-1">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${cls}`}>{label}</span>
+                  <span className="text-xs font-bold text-muted">{col.length}</span>
+                </div>
+                {col.map((l) => {
+                  const who = contactsOf(l)[pitchIdx(l)];
+                  return (
+                    <div
+                      key={l.id}
+                      draggable
+                      onDragStart={() => setDragId(l.id)}
+                      onDragEnd={() => { setDragId(''); setOverCol(''); }}
+                      onClick={() => { setMode('list'); setStage(''); setOpenLead(l.id); setTimeout(() => document.getElementById(`lead-${l.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50); }}
+                      className={`rounded-lg border border-border-default bg-card p-2.5 cursor-grab active:cursor-grabbing hover:border-border-strong ${dragId === l.id ? 'opacity-40' : ''}`}
+                    >
+                      <p className="text-sm font-semibold text-primary leading-tight">{l.name}</p>
+                      {who && <p className="text-[11px] text-secondary mt-0.5">🎯 {who.name || 'Contact'}{who.phone && <span className="text-muted"> · {who.phone}</span>}</p>}
+                      {l.log?.[0]?.note && <p className="text-[11px] text-muted mt-1 line-clamp-2">“{l.log[0].note}”</p>}
+                    </div>
+                  );
+                })}
+                {!col.length && <p className="px-1 py-2 text-[11px] text-muted">Drag here</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {mode === 'list' && (
       <div className="divide-y divide-border-subtle">
-        {(leads || []).map((l, i) => (
+        {(leads || []).map((l, i) => (stage && (l.status || 'new') !== stage ? null : (
           <div
             key={l.id}
+            id={`lead-${l.id}`}
             draggable
             onDragStart={() => setDragId(l.id)}
             onDragOver={(e) => { e.preventDefault(); setOverId(l.id); }}
@@ -301,9 +373,10 @@ function ColdLeads({ leads, setLeads }) {
               </span>
             </div>
           </div>
-        ))}
+        )))}
         {!(leads || []).length && !draft && <p className="px-4 py-3 text-sm text-muted">No cold leads yet. Add people you want to reach out to.</p>}
       </div>
+      )}
       <div className="px-4 py-3 border-t border-border-subtle bg-surface-alt/40">
         <p className="text-[10px] font-bold uppercase tracking-wide text-muted mb-1.5">📞 Phone pitch</p>
         <p className="text-[10px] font-semibold text-brand-text mt-2 mb-0.5">Gauge interest</p>
