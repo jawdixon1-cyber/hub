@@ -274,8 +274,8 @@ function ColdLeads({ leads, setLeads }) {
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Sales</p>
                   {l.angle && <p className="text-xs text-secondary">{l.angle}</p>}
-                  {openLead === l.id && l.notes && <p className="text-xs"><span className="text-muted">📝</span> <span className="text-secondary">{l.notes}</span></p>}
-                  {!l.angle && <p className="text-xs text-muted">Nothing yet</p>}
+                  {l.notes && <p className="text-xs"><span className="text-muted">📝</span> <span className="text-secondary">{l.notes}</span></p>}
+                  {!l.angle && !l.notes && <p className="text-xs text-muted">Nothing yet</p>}
                   {(l.log || []).length > 0 && (
                     <div className="mt-2 space-y-1">
                       <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Outreach · {l.log.length}</p>
