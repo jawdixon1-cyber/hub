@@ -211,6 +211,7 @@ function ColdLeads({ leads, setLeads }) {
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${outreachOf(l)[2]}`}>{outreachOf(l)[1]}</span>
                 <button onClick={(e) => { e.stopPropagation(); setLogFor(logFor === l.id ? '' : l.id); }} className="ml-auto px-2 py-0.5 rounded-md border border-border-default text-[11px] font-semibold text-secondary hover:text-primary hover:border-border-strong cursor-pointer">+ Log</button>
               </div>
+              {l.money && !/^idk$/i.test(l.money.trim()) && <p className="text-xs text-secondary mt-0.5">💰 {l.money}</p>}
               {l.address && (
                 <a href={`https://maps.apple.com/?q=${encodeURIComponent(l.address)}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="block text-xs text-muted hover:text-primary mt-0.5">📍 {l.address}</a>
               )}
@@ -268,7 +269,6 @@ function ColdLeads({ leads, setLeads }) {
                     </div>
                   ))}
                   {!contactsOf(l).length && <p className="text-xs text-muted">No contact yet</p>}
-                  {l.money && !/^idk$/i.test(l.money.trim()) && <p className="text-xs"><span className="text-muted">💰 Money</span> <span className="text-secondary">{l.money}</span></p>}
                 </div>
                 {/* Sales */}
                 <div className="space-y-1">
