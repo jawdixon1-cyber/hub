@@ -307,14 +307,21 @@ function ColdLeads({ leads, setLeads }) {
       </div>
       <div className="px-4 py-3 border-t border-border-subtle bg-surface-alt/40">
         <p className="text-[10px] font-bold uppercase tracking-wide text-muted mb-1.5">📞 Phone pitch</p>
-        <ol className="space-y-1 text-sm text-primary list-decimal list-inside marker:text-muted">
+        <p className="text-[10px] font-semibold text-brand-text mt-2 mb-0.5">Gauge interest</p>
+        <ol start={1} className="space-y-1 text-sm text-primary list-decimal list-inside marker:text-muted">
           <li>"Hey, this is Jude, <span className="text-brand-text font-semibold">[reason they know me — e.g. Cindy's son]</span>."</li>
           <li>"I'm reaching out because I'm doing Christmas lights and <span className="text-brand-text font-semibold">[Mom / Gene]</span> told me you might be interested."</li>
           <li>"Are you interested in hearing more?"</li>
+        </ol>
+        <p className="text-[10px] font-semibold text-brand-text mt-2 mb-0.5">The sale</p>
+        <ol start={4} className="space-y-1 text-sm text-primary list-decimal list-inside marker:text-muted">
           <li>"I'm really trying to get my name out there. I spent $5,000 on a course and I've already done a few jobs. You might've gotten one of my postcards, seen one of my yard signs, or seen one of my ads."</li>
           <li>"With our lights, everything's custom cut to your home, wires hidden, commercial grade, with plenty of designs to choose from. We do everything — trees, bushes, around windows, wreaths, rooflines, you name it. We design, install, maintain, take them down, and we store them."</li>
           <li><span className="text-muted">If they live in Meadow Lakes 2:</span> "We've already got one scheduled in your neighborhood."</li>
           <li>"I was wondering if this is something you'd be interested in?"</li>
+        </ol>
+        <p className="text-[10px] font-semibold text-brand-text mt-2 mb-0.5">The close</p>
+        <ol start={8} className="space-y-1 text-sm text-primary list-decimal list-inside marker:text-muted">
           <li><span className="text-muted">If interested:</span> "The next step would be to schedule a free design consult, where we meet, create a design for your home together, and I present you a quote."</li>
         </ol>
       </div>
