@@ -276,24 +276,24 @@ function ColdLeads({ leads, setLeads }) {
                   {l.angle && <p className="text-xs text-secondary">{l.angle}</p>}
                   {openLead === l.id && l.notes && <p className="text-xs"><span className="text-muted">📝</span> <span className="text-secondary">{l.notes}</span></p>}
                   {!l.angle && <p className="text-xs text-muted">Nothing yet</p>}
+                  {(l.log || []).length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Outreach · {l.log.length}</p>
+                      {(openLead === l.id ? l.log : l.log.slice(0, 1)).map((e, k) => {
+                        const o = OUTREACH.find((x) => x[0] === e.status) || OUTREACH[0];
+                        return (
+                          <p key={k} className="text-xs">
+                            <span className="text-muted">{new Date(e.at).toLocaleDateString([], { month: 'short', day: 'numeric' })} · {e.how}</span>{' '}
+                            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${o[2]}`}>{o[1]}</span>{' '}
+                            <span className="text-secondary">{e.note}</span>
+                          </p>
+                        );
+                      })}
+                      {openLead !== l.id && l.log.length > 1 && <p className="text-[10px] text-muted">Tap to see all {l.log.length}</p>}
+                    </div>
+                  )}
                 </div>
               </div>
-              {(l.log || []).length > 0 && (
-                <div className="mt-2 space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Outreach · {l.log.length}</p>
-                  {(openLead === l.id ? l.log : l.log.slice(0, 1)).map((e, k) => {
-                    const o = OUTREACH.find((x) => x[0] === e.status) || OUTREACH[0];
-                    return (
-                      <p key={k} className="text-xs">
-                        <span className="text-muted">{new Date(e.at).toLocaleDateString([], { month: 'short', day: 'numeric' })} · {e.how}</span>{' '}
-                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${o[2]}`}>{o[1]}</span>{' '}
-                        <span className="text-secondary">{e.note}</span>
-                      </p>
-                    );
-                  })}
-                  {openLead !== l.id && l.log.length > 1 && <p className="text-[10px] text-muted">Tap to see all {l.log.length}</p>}
-                </div>
-              )}
             </div>
             <div className="shrink-0 flex items-center gap-1.5">
               <span className={`flex items-center gap-1 ${openLead === l.id ? '' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
