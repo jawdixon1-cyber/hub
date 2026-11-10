@@ -184,7 +184,6 @@ function ColdLeads({ leads, setLeads }) {
           {f('money', 'Money — how they have it', true)}
           <p className="col-span-2 text-[11px] font-bold uppercase tracking-wide text-muted pt-2 border-t border-border-subtle">Sales</p>
           {f('angle', 'Angle — how you know them', true)}
-          {f('decider', 'Decision maker — who to pitch')}
           {f('notes', 'Notes', true)}
           <div className="col-span-2 flex items-center gap-3">
             <button onClick={save} disabled={!draft.name.trim()} className="px-3 py-1.5 rounded-md bg-brand text-on-brand text-xs font-semibold disabled:opacity-40 cursor-pointer">Save</button>
