@@ -79,7 +79,9 @@ function withDefaults(materials, items) {
 const defaultQty = (it) => (/plug/i.test(it?.name || '') ? '10' : /timer/i.test(it?.name || '') ? '1' : '');
 
 // Cold leads: people Jude wants to reach out to, in priority order (drag to reorder).
-const BLANK_LEAD = { name: '', address: '', phone: '', angle: '', decider: '', money: '', notes: '' };
+const BLANK_LEAD = { name: '', address: '', contacts: [{ name: '', phone: '' }, { name: '', phone: '' }], angle: '', decider: '', money: '', notes: '' };
+// Older leads had one phone on the lead itself.
+const contactsOf = (l) => (l.contacts?.length ? l.contacts : [{ name: '', phone: l.phone || '' }]).filter((c) => c.name || c.phone);
 function ColdLeads({ leads, setLeads }) {
   const [draft, setDraft] = useState(null);
   const [dragId, setDragId] = useState('');
@@ -116,8 +118,25 @@ function ColdLeads({ leads, setLeads }) {
       </div>
       {draft && (
         <div className="p-4 grid grid-cols-2 gap-3 border-b border-border-subtle bg-surface-alt/40">
-          {f('name', 'Name')}
-          {f('phone', 'Phone')}
+          {f('name', 'Family name (title)', true)}
+          {[0, 1].map((k) => (
+            <div key={k} className="col-span-2 grid grid-cols-2 gap-3">
+              {['name', 'phone'].map((fld) => (
+                <label key={fld} className="text-[11px] text-muted">{fld === 'name' ? `Person ${k + 1}` : 'Phone'}
+                  <input
+                    value={draft.contacts?.[k]?.[fld] || ''}
+                    onChange={(e) => setDraft((d) => {
+                      const cs = [...(d.contacts || [{}, {}])];
+                      while (cs.length < 2) cs.push({ name: '', phone: '' });
+                      cs[k] = { ...cs[k], [fld]: e.target.value };
+                      return { ...d, contacts: cs };
+                    })}
+                    className="block w-full mt-0.5 rounded-md border border-border-strong bg-card px-2 py-1.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand"
+                  />
+                </label>
+              ))}
+            </div>
+          ))}
           {f('address', 'Address', true)}
           {f('angle', 'Angle — how you know them', true)}
           {f('decider', 'Decision maker — who to pitch')}
@@ -153,18 +172,28 @@ function ColdLeads({ leads, setLeads }) {
                   {l.angle}
                 </p>
               )}
+              {contactsOf(l).length > 0 && (
+                <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1">
+                  {contactsOf(l).map((c, k) => (
+                    <span key={k} className="inline-flex items-center gap-1.5 text-xs" onClick={(e) => e.stopPropagation()}>
+                      <span className="text-primary font-medium">{c.name || 'Contact'}</span>
+                      {c.phone && <>
+                        <a href={`tel:${tel(c.phone)}`} className="w-6 h-6 rounded-full bg-brand text-on-brand flex items-center justify-center" title={`Call ${c.phone}`}><Phone size={11} /></a>
+                        <a href={`sms:${tel(c.phone)}`} className="w-6 h-6 rounded-full border border-border-default text-secondary hover:text-primary flex items-center justify-center" title={`Text ${c.phone}`}><MessageSquare size={11} /></a>
+                        <span className="text-muted">{c.phone}</span>
+                      </>}
+                    </span>
+                  ))}
+                </div>
+              )}
               {l.address && (
                 <a href={`https://maps.apple.com/?q=${encodeURIComponent(l.address)}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[11px] text-muted hover:text-primary">📍 {l.address}</a>
               )}
               {openLead === l.id && l.notes && <p className="text-[11px] text-muted mt-0.5">{l.notes}</p>}
             </div>
             <div className="shrink-0 flex items-center gap-1.5">
-              {l.phone && <>
-                <a href={`tel:${tel(l.phone)}`} className="w-8 h-8 rounded-full bg-brand text-on-brand flex items-center justify-center" title={`Call ${l.phone}`}><Phone size={14} /></a>
-                <a href={`sms:${tel(l.phone)}`} className="w-8 h-8 rounded-full border border-border-default text-secondary hover:text-primary flex items-center justify-center" title={`Text ${l.phone}`}><MessageSquare size={14} /></a>
-              </>}
               <span className={`flex items-center gap-1 ${openLead === l.id ? '' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
-                <button onClick={() => setDraft({ ...BLANK_LEAD, ...l })} className="p-1.5 text-muted hover:text-primary cursor-pointer" title="Edit"><Pencil size={13} /></button>
+                <button onClick={() => setDraft({ ...BLANK_LEAD, ...l, contacts: [...contactsOf(l), { name: '', phone: '' }, { name: '', phone: '' }].slice(0, 2) })} className="p-1.5 text-muted hover:text-primary cursor-pointer" title="Edit"><Pencil size={13} /></button>
                 <button onClick={() => setLeads((list) => (list || []).filter((x) => x.id !== l.id))} className="p-1.5 text-muted hover:text-red-500 cursor-pointer" title="Remove"><Trash2 size={13} /></button>
               </span>
             </div>
