@@ -1176,7 +1176,7 @@ export default function LightsBusiness({ view, onNew }) {
       const waiting = coldLeads.filter((l) => ['no_answer', 'pending'].includes(l.status)).length;
       return `${left} to reach out${waiting ? ` · ${waiting} waiting` : ''}`;
     })(), 'cold'],
-    ['Warm leads', String(toBook.length), lightsReq.loading ? 'loading…' : 'reached out to you · book an assessment', 'needs'],
+    ['Warm leads', String(toBook.length), lightsReq.loading ? 'loading…' : toBook.length ? 'came in through Jobber · reach them ASAP' : 'nobody waiting on you', 'needs'],
     ['Upcoming assessments', String(booked.length), nextBooked ? `next ${when(nextBooked.assessmentAt)}` : 'none coming up', 'booked'],
     ['Quotes waiting', money(sumQ(jSent)), `${jSent.length} quote${jSent.length === 1 ? '' : 's'}`, 'sent'],
     ['Upcoming schedule', schedule.loading ? '…' : String(lightsJobs.length), schedule.error ? 'Jobber busy — try later' : wonNotScheduled.length ? `${wonNotScheduled.length} won not booked` : 'lights installs booked', 'scheduled'],
@@ -1264,23 +1264,37 @@ export default function LightsBusiness({ view, onNew }) {
           </button>
         </div>
       </div>
-      <p className="text-[11px] font-bold uppercase tracking-wide text-muted -mb-2">Pipeline</p>
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        {cards.map(([label, big, sub, key]) => {
+      {(() => {
+        const card = ([label, big, sub, key]) => {
           const on = filter === key;
+          const hot = key === 'needs' && toBook.length > 0;
           return (
             <button
               key={label}
               onClick={() => setFilter((f) => (f === key ? '' : key))}
-              className={`text-left rounded-xl border bg-card px-3 py-3 transition-colors cursor-pointer hover:border-border-strong ${on ? 'border-border-brand ring-2 ring-ring-brand' : 'border-border-default'}`}
+              className={`text-left rounded-xl border px-3 py-3 transition-colors cursor-pointer hover:border-border-strong ${hot ? 'bg-red-500/10' : 'bg-card'} ${on ? 'border-border-brand ring-2 ring-ring-brand' : hot ? 'border-red-500/50' : 'border-border-default'}`}
             >
-              <p className={`text-[11px] leading-tight ${on ? 'text-brand-text font-semibold' : 'text-muted'}`}>{label}</p>
+              <p className={`text-[11px] leading-tight ${on ? 'text-brand-text font-semibold' : hot ? 'text-red-400 font-semibold' : 'text-muted'}`}>{hot && '🔥 '}{label}</p>
               <p className="text-xl font-bold text-primary mt-1">{big}</p>
-              <p className="text-[10px] text-muted leading-tight">{sub}</p>
+              <p className={`text-[10px] leading-tight ${hot ? 'text-red-300' : 'text-muted'}`}>{sub}</p>
             </button>
           );
-        })}
-      </div>
+        };
+        return (
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,4fr)]">
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-muted">My list</p>
+              {cards.filter((c) => c[3] === 'cold').map(card)}
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-muted">Jobber pipeline</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {cards.filter((c) => c[3] !== 'cold').map(card)}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {filter === 'cold' && <ColdLeads leads={coldLeads} setLeads={setColdLeads} />}
       {reqFilter && panel(cardTitle, <>{reqFilter.length} · {showAll}</>, (() => {
