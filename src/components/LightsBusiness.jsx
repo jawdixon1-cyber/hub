@@ -308,7 +308,7 @@ function ColdLeads({ leads, setLeads }) {
       <div className="px-4 py-3 border-t border-border-subtle bg-surface-alt/40">
         <p className="text-[10px] font-bold uppercase tracking-wide text-muted mb-1.5">📞 Phone pitch</p>
         <ol className="space-y-1 text-sm text-primary list-decimal list-inside marker:text-muted">
-          <li>"Hey, this is Jude."</li>
+          <li>"Hey, this is Jude, <span className="text-brand-text font-semibold">[reason they know me — e.g. Cindy's son]</span>."</li>
           <li>"I'm reaching out because <span className="text-brand-text font-semibold">[their angle — e.g. your mom told me]</span>…"</li>
           <li>"I'm doing Christmas lights and <span className="text-brand-text font-semibold">[she]</span> told me you might be interested."</li>
           <li>"You might've gotten one of my postcards, or seen my ads or my yard signs."</li>
