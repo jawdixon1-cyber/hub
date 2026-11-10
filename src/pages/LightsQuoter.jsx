@@ -104,6 +104,7 @@ export default function LightsQuoter() {
   const [angles, setAngles] = useState([EMPTY_SIDE]);
   const [previews, setPreviews] = useState([]); // finished show photos for the client
   const [quoted, setQuoted] = useState(''); // what Jude actually quoted / sold it for
+  const [qStage, setQStage] = useState(''); // 'sent' | 'unqualified' (mocked up just to qualify)
   const [style, setStyle] = useState(() => localStorage.getItem('lights-mockup-design') || 'warm'); // light color for this quote
   const [savedId, setSavedId] = useState(null); // which saved client quote this is
   const [clientInfo, setClientInfo] = useState(null); // Jobber client picked from search
@@ -116,7 +117,7 @@ export default function LightsQuoter() {
   const autosaveTimer = useRef(null);
   const [lastSaved, setLastSaved] = useState(null);
 
-  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, style, savedId });
+  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, savedId });
   const apply = (d) => {
     setClient(d.client || '');
     setClientInfo(d.clientInfo || null);
@@ -126,6 +127,7 @@ export default function LightsQuoter() {
     setAngles(d.angles?.length ? d.angles.map((a) => ({ ...EMPTY_SIDE, ...a })) : [EMPTY_SIDE]);
     setPreviews(d.previews || []);
     setQuoted(d.quoted || '');
+    setQStage(d.qStage || '');
     if (d.style) setStyle(d.style);
     setSavedId(d.savedId ?? (d.id && d.id !== DRAFT_ID ? d.id : null));
   };
@@ -191,7 +193,7 @@ export default function LightsQuoter() {
       }
     }, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, style, savedId]);
+  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, savedId]);
 
   useEffect(() => {
     localStorage.setItem(PRICES_KEY, JSON.stringify(prices));
@@ -201,7 +203,7 @@ export default function LightsQuoter() {
   const q = calcLightsQuote({ feet, strands, ...prices });
   const setLevelFeet = (k) => (v) => setFeet((f) => ({ ...f, [k]: v }));
 
-  const reset = () => { setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); };
+  const reset = () => { setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); };
   const say = (msg) => { setFlash(msg); setTimeout(() => setFlash(''), 2500); };
 
   const openQuote = async (id) => {
@@ -324,6 +326,11 @@ export default function LightsQuoter() {
                   className="relative block w-full text-left cursor-pointer"
                 >
                   {opening === sq.id && <span className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center text-white text-sm font-semibold">Opening…</span>}
+                  {sq.qStage && (
+                    <span className={`absolute top-2 left-2 z-[1] px-2 py-0.5 rounded-md text-[10px] font-bold ${sq.qStage === 'sent' ? 'bg-brand text-on-brand' : 'bg-black/60 text-white'}`}>
+                      {sq.qStage === 'sent' ? 'Sent' : 'Unqualified'}
+                    </span>
+                  )}
                   {photo
                     ? <img src={photo} alt={sq.client} className="w-full aspect-[4/3] object-cover" />
                     : <div className="w-full aspect-[4/3] bg-surface-alt flex items-center justify-center text-muted"><Lightbulb size={28} /></div>}
@@ -521,6 +528,18 @@ export default function LightsQuoter() {
               ? `${num(quoted) < q.total ? `${money(q.total - num(quoted))} under` : num(quoted) > q.total ? `${money(num(quoted) - q.total)} over` : 'Same as'} the calculator · ${q.roofFt > 0 ? `${money(num(quoted) / q.roofFt)}/ft` : ''}`
               : 'What you actually quoted or sold it for'}
           </p>
+        </div>
+        <div className="flex rounded-lg bg-surface-alt p-0.5">
+          {[['sent', 'Sent'], ['unqualified', 'Unqualified']].map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setQStage((v) => (v === k ? '' : k))}
+              title={k === 'unqualified' ? 'Mocked up just to qualify them — not a real quote' : 'Quote sent to them'}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer ${qStage === k ? (k === 'sent' ? 'bg-brand text-on-brand' : 'bg-card text-primary shadow-sm') : 'text-muted hover:text-primary'}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
         <div className="relative w-40">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
