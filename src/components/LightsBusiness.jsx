@@ -83,8 +83,7 @@ const BLANK_LEAD = { name: '', address: '', contacts: [{ name: '', phone: '' }],
 // Outreach status, set by the latest log entry.
 const OUTREACH = [
   ['new', 'Not reached out', 'bg-surface-alt text-secondary'],
-  ['no_answer', 'No answer', 'bg-yellow-500/15 text-yellow-400'],
-  ['pending', 'Pending', 'bg-blue-500/15 text-blue-400'],
+  ['no_answer', "Haven't reached", 'bg-yellow-500/15 text-yellow-400'],
   ['interested', 'Interested', 'bg-brand-light text-brand-text-strong'],
   ['booked', 'Booked', 'bg-emerald-500/15 text-emerald-400'],
   ['not_interested', 'Not interested', 'bg-red-500/15 text-red-400'],
