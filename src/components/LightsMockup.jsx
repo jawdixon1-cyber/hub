@@ -250,6 +250,7 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
       await save(URL.createObjectURL(new Blob([prompt()], { type: 'text/plain' })), 'prompt.txt');
       try { window.focus(); await navigator.clipboard.writeText(prompt()); } catch { /* Copy prompt button covers it */ }
       setStatus(`done:${where}`);
+      setTimeout(() => setStatus((st) => (st.startsWith('done:') ? '' : st)), 8000);
     } catch (e) {
       setStatus(`error:${e.message}`);
     }
@@ -324,8 +325,10 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
               {withPhoto.map(({ a, i }) => <ShowCard key={i} side={a} index={i} onPatch={patch(i)} />)}
             </div>
             <div className="flex items-center gap-3 flex-wrap">
-              <button onClick={() => prep(false)} disabled={status === 'Saving…'} className="inline-flex items-center gap-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold px-4 py-2 hover:bg-brand-hover disabled:opacity-50 cursor-pointer">
-                <FolderDown size={15} /> Prep for ChatGPT{picked.length ? ` (${picked.length})` : ''}
+              <button onClick={() => prep(false)} disabled={status === 'Saving…'} className={`inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold px-4 py-2 disabled:opacity-50 cursor-pointer transition-colors ${status.startsWith('done:') ? 'bg-emerald-500 text-white' : 'bg-brand text-on-brand hover:bg-brand-hover'}`}>
+                {status === 'Saving…' ? <>Saving…</>
+                  : status.startsWith('done:') ? <><Check size={15} /> Saved + prompt copied</>
+                  : <><FolderDown size={15} /> Prep for ChatGPT{picked.length ? ` (${picked.length})` : ''}</>}
               </button>
               <button onClick={copyPrompt} className="inline-flex items-center gap-1.5 rounded-lg border border-border-default text-sm font-medium text-secondary hover:text-primary px-3 py-2 cursor-pointer">
                 {copied ? <><Check size={14} className="text-brand-text" /> Copied</> : <><Copy size={14} /> Copy prompt</>}
