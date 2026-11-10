@@ -88,7 +88,11 @@ const OUTREACH = [
   ['booked', 'Booked', 'bg-emerald-500/15 text-emerald-400'],
   ['not_interested', 'Not interested', 'bg-red-500/15 text-red-400'],
 ];
-const outreachOf = (l) => OUTREACH.find((o) => o[0] === (l.status || 'new')) || OUTREACH[0];
+const outreachOf = (l, inJobber) => OUTREACH.find((o) => o[0] === stageOf(l, inJobber)) || OUTREACH[0];
+// Booked in Jobber (request / assessment / quote / job for them) → counts as Booked automatically.
+const stageOf = (l, inJobber) => (inJobber?.[l.id] ? 'booked' : (l.status || 'new'));
+// "703 Land Fall Drive" and "703 Landfall Dr" → "703landfa"
+const addrKey = (a) => { const m = String(a || '').toLowerCase().replace(/[^a-z0-9]/g, '').match(/^(\d+)([a-z]{1,6})/); return m ? m[1] + m[2] : ''; };
 // Who to talk to: the contact marked pitch, else the one named in "who to pitch", else the first.
 const pitchIdx = (l) => {
   const cs = contactsOf(l);
@@ -100,7 +104,7 @@ const pitchIdx = (l) => {
 };
 // Older leads had one phone on the lead itself.
 const contactsOf = (l) => (l.contacts?.length ? l.contacts : [{ name: '', phone: l.phone || '' }]).filter((c) => c.name || c.phone);
-function ColdLeads({ leads, setLeads }) {
+function ColdLeads({ leads, setLeads, inJobber = {} }) {
   const [draft, setDraft] = useState(null);
   const [dragId, setDragId] = useState('');
   const [overId, setOverId] = useState('');
@@ -154,7 +158,7 @@ function ColdLeads({ leads, setLeads }) {
       </div>
       {mode === 'list' && <div className="px-4 py-2.5 border-b border-border-subtle flex items-stretch gap-1.5 overflow-x-auto">
         {OUTREACH.map(([k, label, cls]) => {
-          const n = (leads || []).filter((l) => (l.status || 'new') === k).length;
+          const n = (leads || []).filter((l) => stageOf(l, inJobber) === k).length;
           const on = stage === k;
           return (
             <button
@@ -220,7 +224,7 @@ function ColdLeads({ leads, setLeads }) {
       {mode === 'board' && (
         <div className="p-3 flex gap-2 overflow-x-auto">
           {OUTREACH.map(([k, label, cls]) => {
-            const col = (leads || []).filter((l) => (l.status || 'new') === k);
+            const col = (leads || []).filter((l) => stageOf(l, inJobber) === k);
             return (
               <div
                 key={k}
@@ -249,6 +253,7 @@ function ColdLeads({ leads, setLeads }) {
                       className={`rounded-lg border border-border-default bg-card p-2.5 cursor-grab active:cursor-grabbing hover:border-border-strong ${dragId === l.id ? 'opacity-40' : ''}`}
                     >
                       <p className="text-sm font-semibold text-primary leading-tight">{l.name}</p>
+                      {inJobber[l.id] && <p className="text-[10px] font-semibold text-blue-400 mt-0.5">📅 In Jobber · {inJobber[l.id]}</p>}
                       {who && <p className="text-[11px] text-secondary mt-0.5">🎯 {who.name || 'Contact'}{who.phone && <span className="text-muted"> · {who.phone}</span>}</p>}
                       {l.log?.[0]?.note && <p className="text-[11px] text-muted mt-1 line-clamp-2">“{l.log[0].note}”</p>}
                     </div>
@@ -262,7 +267,7 @@ function ColdLeads({ leads, setLeads }) {
       )}
       {mode === 'list' && (
       <div className="divide-y divide-border-subtle">
-        {(leads || []).map((l, i) => (stage && (l.status || 'new') !== stage ? null : (
+        {(leads || []).map((l, i) => (stage && stageOf(l, inJobber) !== stage ? null : (
           <div
             key={l.id}
             id={`lead-${l.id}`}
@@ -278,7 +283,8 @@ function ColdLeads({ leads, setLeads }) {
             <div className="flex-1 min-w-0" onClick={() => setOpenLead(openLead === l.id ? '' : l.id)}>
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-sm font-semibold text-primary">{l.name}</p>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${outreachOf(l)[2]}`}>{outreachOf(l)[1]}</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${outreachOf(l, inJobber)[2]}`}>{outreachOf(l, inJobber)[1]}</span>
+                {inJobber[l.id] && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-400">📅 In Jobber · {inJobber[l.id]}</span>}
                 <button onClick={(e) => { e.stopPropagation(); setLogFor(logFor === l.id ? '' : l.id); }} className="ml-auto px-2 py-0.5 rounded-md border border-border-default text-[11px] font-semibold text-secondary hover:text-primary hover:border-border-strong cursor-pointer">+ Log</button>
               </div>
               {l.money && !/^idk$/i.test(l.money.trim()) && <p className="text-xs text-secondary mt-0.5">💰 {l.money}</p>}
@@ -1169,11 +1175,25 @@ export default function LightsBusiness({ view, onNew }) {
   const nextBooked = [...booked].sort((a, b) => new Date(a.assessmentAt) - new Date(b.assessmentAt))[0];
   const sumQ = (list) => list.reduce((t, q) => t + n(q.total), 0);
 
+  // Cold leads that are now in Jobber (matched by address or a contact's full name)
+  const inJobber = {};
+  for (const l of coldLeads) {
+    const ak = addrKey(l.address);
+    const names = contactsOf(l).map((c) => nameKey(`${c.name} ${l.name}`)).concat(contactsOf(l).map((c) => nameKey(c.name)));
+    const hit = (x) => (ak && addrKey(x.address) === ak) || names.includes(nameKey(x.clientName));
+    const r = rq.find(hit);
+    const qq = jq.find((x) => names.includes(nameKey(x.clientName)));
+    const jb = schedule.jobs.find(hit);
+    if (r) inJobber[l.id] = r.assessmentAt ? `assessment ${when(r.assessmentAt)}` : 'request';
+    else if (qq) inJobber[l.id] = 'quote';
+    else if (jb) inJobber[l.id] = 'job';
+  }
   const cards = [
-    ['Cold leads', String(coldLeads.length), (() => {
+    ['Cold leads', String(coldLeads.filter((l) => !inJobber[l.id]).length), (() => {
       if (!coldLeads.length) return "people you haven't reached out to";
-      const left = coldLeads.filter((l) => !l.status || l.status === 'new').length;
-      const waiting = coldLeads.filter((l) => ['no_answer', 'pending'].includes(l.status)).length;
+      const mine = coldLeads.filter((l) => !inJobber[l.id]);
+      const left = mine.filter((l) => !l.status || l.status === 'new').length;
+      const waiting = mine.filter((l) => ['no_answer', 'pending'].includes(l.status)).length;
       return `${left} to reach out${waiting ? ` · ${waiting} waiting` : ''}`;
     })(), 'cold'],
     ['Warm leads', String(toBook.length), lightsReq.loading ? 'loading…' : toBook.length ? 'came in through Jobber · reach them ASAP' : 'nobody waiting on you', 'needs'],
@@ -1296,7 +1316,7 @@ export default function LightsBusiness({ view, onNew }) {
         );
       })()}
 
-      {filter === 'cold' && <ColdLeads leads={coldLeads} setLeads={setColdLeads} />}
+      {filter === 'cold' && <ColdLeads leads={coldLeads} setLeads={setColdLeads} inJobber={inJobber} />}
       {reqFilter && panel(cardTitle, <>{reqFilter.length} · {showAll}</>, (() => {
         if (filter !== 'booked') return reqFilter.map(reqRow);
         const isToday = (r) => new Date(r.assessmentAt).toDateString() === new Date().toDateString();
