@@ -80,6 +80,16 @@ const defaultQty = (it) => (/plug/i.test(it?.name || '') ? '10' : /timer/i.test(
 
 // Cold leads: people Jude wants to reach out to, in priority order (drag to reorder).
 const BLANK_LEAD = { name: '', address: '', contacts: [{ name: '', phone: '' }], angle: '', decider: '', money: '', notes: '' };
+// Outreach status, set by the latest log entry.
+const OUTREACH = [
+  ['new', 'Not reached out', 'bg-surface-alt text-secondary'],
+  ['no_answer', 'No answer', 'bg-yellow-500/15 text-yellow-400'],
+  ['pending', 'Pending', 'bg-blue-500/15 text-blue-400'],
+  ['interested', 'Interested', 'bg-brand-light text-brand-text-strong'],
+  ['booked', 'Booked', 'bg-emerald-500/15 text-emerald-400'],
+  ['not_interested', 'Not interested', 'bg-red-500/15 text-red-400'],
+];
+const outreachOf = (l) => OUTREACH.find((o) => o[0] === (l.status || 'new')) || OUTREACH[0];
 // Older leads had one phone on the lead itself.
 const contactsOf = (l) => (l.contacts?.length ? l.contacts : [{ name: '', phone: l.phone || '' }]).filter((c) => c.name || c.phone);
 function ColdLeads({ leads, setLeads }) {
@@ -87,11 +97,19 @@ function ColdLeads({ leads, setLeads }) {
   const [dragId, setDragId] = useState('');
   const [overId, setOverId] = useState('');
   const [openLead, setOpenLead] = useState('');
+  const [logFor, setLogFor] = useState(''); // lead id being logged
+  const [logDraft, setLogDraft] = useState({ status: 'no_answer', note: '', how: 'Call' });
   const save = () => {
     if (!draft?.name.trim()) return;
     const lead = { ...draft, id: draft.id || `cl-${Date.now()}` };
     setLeads((list) => (draft.id ? (list || []).map((x) => (x.id === lead.id ? lead : x)) : [...(list || []), lead]));
     setDraft(null);
+  };
+  const saveLog = (l) => {
+    const entry = { at: new Date().toISOString(), status: logDraft.status, how: logDraft.how, note: logDraft.note.trim() };
+    setLeads((list) => (list || []).map((x) => (x.id === l.id ? { ...x, status: entry.status, log: [entry, ...(x.log || [])] } : x)));
+    setLogFor('');
+    setLogDraft({ status: 'no_answer', note: '', how: 'Call' });
   };
   const drop = (targetId) => {
     if (!dragId || dragId === targetId) return;
@@ -168,7 +186,36 @@ function ColdLeads({ leads, setLeads }) {
           >
             <span className="w-6 h-6 shrink-0 rounded-full bg-surface-alt text-[11px] font-bold text-secondary flex items-center justify-center cursor-grab select-none" title="Drag to reorder">{i + 1}</span>
             <div className="flex-1 min-w-0" onClick={() => setOpenLead(openLead === l.id ? '' : l.id)}>
-              <p className="text-sm font-semibold text-primary">{l.name}</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-semibold text-primary">{l.name}</p>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${outreachOf(l)[2]}`}>{outreachOf(l)[1]}</span>
+                <button onClick={(e) => { e.stopPropagation(); setLogFor(logFor === l.id ? '' : l.id); }} className="ml-auto px-2 py-0.5 rounded-md border border-border-default text-[11px] font-semibold text-secondary hover:text-primary hover:border-border-strong cursor-pointer">+ Log</button>
+              </div>
+              {logFor === l.id && (
+                <div className="mt-2 rounded-lg border border-border-brand bg-surface-alt/40 p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {['Call', 'Text', 'In person'].map((h) => (
+                      <button key={h} onClick={() => setLogDraft((d) => ({ ...d, how: h }))} className={`px-2 py-0.5 rounded-md text-[11px] font-semibold cursor-pointer ${logDraft.how === h ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-primary'}`}>{h}</button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {OUTREACH.filter((o) => o[0] !== 'new').map(([k, label, cls]) => (
+                      <button key={k} onClick={() => setLogDraft((d) => ({ ...d, status: k }))} className={`px-2 py-1 rounded-full text-[11px] font-semibold cursor-pointer ${logDraft.status === k ? `${cls} ring-2 ring-ring-brand` : 'bg-surface-alt text-muted hover:text-primary'}`}>{label}</button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={logDraft.note}
+                    onChange={(e) => setLogDraft((d) => ({ ...d, note: e.target.value }))}
+                    placeholder="What they said…"
+                    rows={2}
+                    className="w-full rounded-md border border-border-strong bg-card px-2 py-1.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand"
+                  />
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => saveLog(l)} className="px-3 py-1.5 rounded-md bg-brand text-on-brand text-xs font-semibold cursor-pointer">Save</button>
+                    <button onClick={() => setLogFor('')} className="text-xs text-muted hover:text-primary cursor-pointer">Cancel</button>
+                  </div>
+                </div>
+              )}
               <div className="mt-1.5 grid gap-x-6 gap-y-2 sm:grid-cols-2">
                 {/* Contact */}
                 <div className="space-y-1">
@@ -198,6 +245,22 @@ function ColdLeads({ leads, setLeads }) {
                   {!l.decider && !l.angle && !l.money && !l.notes && <p className="text-xs text-muted">Nothing yet</p>}
                 </div>
               </div>
+              {(l.log || []).length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Outreach · {l.log.length}</p>
+                  {(openLead === l.id ? l.log : l.log.slice(0, 1)).map((e, k) => {
+                    const o = OUTREACH.find((x) => x[0] === e.status) || OUTREACH[0];
+                    return (
+                      <p key={k} className="text-xs">
+                        <span className="text-muted">{new Date(e.at).toLocaleDateString([], { month: 'short', day: 'numeric' })} · {e.how}</span>{' '}
+                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${o[2]}`}>{o[1]}</span>{' '}
+                        <span className="text-secondary">{e.note}</span>
+                      </p>
+                    );
+                  })}
+                  {openLead !== l.id && l.log.length > 1 && <p className="text-[10px] text-muted">Tap to see all {l.log.length}</p>}
+                </div>
+              )}
             </div>
             <div className="shrink-0 flex items-center gap-1.5">
               <span className={`flex items-center gap-1 ${openLead === l.id ? '' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
@@ -975,7 +1038,12 @@ export default function LightsBusiness({ view }) {
   const sumQ = (list) => list.reduce((t, q) => t + n(q.total), 0);
 
   const cards = [
-    ['Cold leads', String(coldLeads.length), coldLeads.length ? `haven't reached out · next: ${coldLeads[0].name}` : "people you haven't reached out to", 'cold'],
+    ['Cold leads', String(coldLeads.length), (() => {
+      if (!coldLeads.length) return "people you haven't reached out to";
+      const left = coldLeads.filter((l) => !l.status || l.status === 'new').length;
+      const waiting = coldLeads.filter((l) => ['no_answer', 'pending'].includes(l.status)).length;
+      return `${left} to reach out${waiting ? ` · ${waiting} waiting` : ''}`;
+    })(), 'cold'],
     ['Warm leads', String(toBook.length), lightsReq.loading ? 'loading…' : 'reached out to you · book an assessment', 'needs'],
     ['Upcoming assessments', String(booked.length), nextBooked ? `next ${when(nextBooked.assessmentAt)}` : 'none coming up', 'booked'],
     ['Sent, waiting', money(sumQ(jSent)), `${jSent.length} quote${jSent.length === 1 ? '' : 's'}`, 'sent'],
