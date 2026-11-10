@@ -310,7 +310,7 @@ function ColdLeads({ leads, setLeads }) {
         <ol className="space-y-1 text-sm text-primary list-decimal list-inside marker:text-muted">
           <li>"Hey, this is Jude, <span className="text-brand-text font-semibold">[reason they know me — e.g. Cindy's son]</span>."</li>
           <li>"I'm reaching out because I'm doing Christmas lights and <span className="text-brand-text font-semibold">[Mom / Gene]</span> told me you might be interested."</li>
-          <li>"I'm really trying to get my name out there. I spent $5,000 on a course and I've already done a few jobs. You might've gotten one of my postcards, or seen my ads or my yard signs."</li>
+          <li>"I'm really trying to get my name out there. I spent $5,000 on a course and I've already done a few jobs. You might've gotten one of my postcards, seen one of my yard signs, or seen one of my ads."</li>
           <li>"Everything's fully customized — commercial grade, custom cut. Trees, bushes, around the windows, rooflines — you name it, we do it all."</li>
           <li>"I was wondering if this is something you'd be interested in?"</li>
         </ol>
