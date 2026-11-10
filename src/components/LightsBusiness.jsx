@@ -79,7 +79,7 @@ function withDefaults(materials, items) {
 const defaultQty = (it) => (/plug/i.test(it?.name || '') ? '10' : /timer/i.test(it?.name || '') ? '1' : '');
 
 // Cold leads: people Jude wants to reach out to, in priority order (drag to reorder).
-const BLANK_LEAD = { name: '', address: '', contacts: [{ name: '', phone: '' }, { name: '', phone: '' }], angle: '', decider: '', money: '', notes: '' };
+const BLANK_LEAD = { name: '', address: '', contacts: [{ name: '', phone: '' }], angle: '', decider: '', money: '', notes: '' };
 // Older leads had one phone on the lead itself.
 const contactsOf = (l) => (l.contacts?.length ? l.contacts : [{ name: '', phone: l.phone || '' }]).filter((c) => c.name || c.phone);
 function ColdLeads({ leads, setLeads }) {
@@ -119,15 +119,14 @@ function ColdLeads({ leads, setLeads }) {
       {draft && (
         <div className="p-4 grid grid-cols-2 gap-3 border-b border-border-subtle bg-surface-alt/40">
           {f('name', 'Family name (title)', true)}
-          {[0, 1].map((k) => (
+          {(draft.contacts?.length ? draft.contacts : [{}]).slice(0, 2).map((_, k) => (
             <div key={k} className="col-span-2 grid grid-cols-2 gap-3">
               {['name', 'phone'].map((fld) => (
                 <label key={fld} className="text-[11px] text-muted">{fld === 'name' ? `Person ${k + 1}` : 'Phone'}
                   <input
                     value={draft.contacts?.[k]?.[fld] || ''}
                     onChange={(e) => setDraft((d) => {
-                      const cs = [...(d.contacts || [{}, {}])];
-                      while (cs.length < 2) cs.push({ name: '', phone: '' });
+                      const cs = [...(d.contacts?.length ? d.contacts : [{ name: '', phone: '' }])];
                       cs[k] = { ...cs[k], [fld]: e.target.value };
                       return { ...d, contacts: cs };
                     })}
@@ -137,6 +136,11 @@ function ColdLeads({ leads, setLeads }) {
               ))}
             </div>
           ))}
+          {(draft.contacts?.length || 1) < 2 && (
+            <button onClick={() => setDraft((d) => ({ ...d, contacts: [...(d.contacts?.length ? d.contacts : [{ name: '', phone: '' }]), { name: '', phone: '' }] }))} className="col-span-2 justify-self-start inline-flex items-center gap-1 text-xs font-medium text-brand-text hover:underline cursor-pointer">
+              <Plus size={12} /> Add person 2
+            </button>
+          )}
           {f('address', 'Address', true)}
           {f('angle', 'Angle — how you know them', true)}
           {f('decider', 'Decision maker — who to pitch')}
@@ -193,7 +197,7 @@ function ColdLeads({ leads, setLeads }) {
             </div>
             <div className="shrink-0 flex items-center gap-1.5">
               <span className={`flex items-center gap-1 ${openLead === l.id ? '' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
-                <button onClick={() => setDraft({ ...BLANK_LEAD, ...l, contacts: [...contactsOf(l), { name: '', phone: '' }, { name: '', phone: '' }].slice(0, 2) })} className="p-1.5 text-muted hover:text-primary cursor-pointer" title="Edit"><Pencil size={13} /></button>
+                <button onClick={() => setDraft({ ...BLANK_LEAD, ...l, contacts: contactsOf(l).length ? contactsOf(l).slice(0, 2) : [{ name: '', phone: '' }] })} className="p-1.5 text-muted hover:text-primary cursor-pointer" title="Edit"><Pencil size={13} /></button>
                 <button onClick={() => setLeads((list) => (list || []).filter((x) => x.id !== l.id))} className="p-1.5 text-muted hover:text-red-500 cursor-pointer" title="Remove"><Trash2 size={13} /></button>
               </span>
             </div>
