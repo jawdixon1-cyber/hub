@@ -300,10 +300,10 @@ export default function LightsMarkup({ photo, initialLines = [], initialScale = 
       </div>
 
       {/* Photo + lines */}
-      <div className="flex-1 min-h-0 flex items-center justify-center p-4">
+      <div className="flex-1 min-h-0 overflow-hidden flex items-center justify-center p-4">
         {size ? (
           <div className="relative inline-block">
-            <img src={photo} alt="House" className="block max-w-full max-h-[calc(100vh-140px)] select-none pointer-events-none" draggable={false} />
+            <img src={photo} alt="House" className={`block max-w-full select-none pointer-events-none ${(cur && pitchOpen) || ruler ? 'max-h-[calc(100vh-260px)]' : 'max-h-[calc(100vh-140px)]'}`} draggable={false} />
             <svg
               ref={svgRef}
               viewBox={`0 0 ${size.w} ${size.h}`}
