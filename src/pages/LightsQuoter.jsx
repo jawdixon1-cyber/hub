@@ -81,7 +81,8 @@ export default function LightsQuoter() {
   const [opening, setOpening] = useState(''); // quote being loaded from the account
   const [galleryStage, setGalleryStage] = useState(''); // gallery filter
   const jobberQuotes = useJobberList('lights-quotes', 'quotes', true).quotes;
-  const stageOf = (sq) => quoteStage(sq, jobberQuotes);
+  const jobberRequests = useJobberList('lights-requests', 'requests', true).requests;
+  const stageOf = (sq) => quoteStage(sq, jobberQuotes, jobberRequests);
   const [syncing, setSyncing] = useState(false);
   useEffect(() => { if (orgId) localOnlyQuotes().then(setUnsynced).catch(() => {}); }, [orgId]);
   // Rescue: any full quote still held in this page's memory (photos included) gets
@@ -310,7 +311,7 @@ export default function LightsQuoter() {
       {/* Quotes tab: gallery of saved quotes */}
       {view === 'quote' && !editing && (
         <div className="flex gap-1.5 flex-wrap">
-          {[['', 'All'], ['notsent', 'Not in Jobber yet'], ['follow', 'Follow up'], ['sent', 'Sent'], ['sold', 'Sold'], ['unqualified', 'Unqualified'], ['lost', 'Lost']].map(([k, label]) => {
+          {[['', 'All'], ['notsent', 'Not in Jobber yet'], ['follow', 'Follow up'], ['sent', 'Sent'], ['sold', 'Sold'], ['unqualified', 'Unqualified']].map(([k, label]) => {
             const n = k === '' ? saved.length : saved.filter((sq) => stageOf(sq).key === k).length;
             if (k && !n) return null;
             return (

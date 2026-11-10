@@ -40,7 +40,8 @@ export function useJobberList(action, field, enabled, tick = 0) {
 // What a Hub quote's stage is, read from Jobber (by client name).
 // Only "unqualified" is set by hand.
 export const FOLLOW_UP_DAYS = 3;
-export function quoteStage(sq, jobberQuotes) {
+// Archived in Jobber (quote or request) = Unqualified — that's why Jude archives people.
+export function quoteStage(sq, jobberQuotes, jobberRequests = []) {
   const names = [sq.clientInfo?.name, sq.client].filter(Boolean).map(nameKey);
   const mine = (jobberQuotes || []).filter((q) => names.includes(nameKey(q.clientName)))
     .sort((a, b) => new Date(b.sentAt || b.createdAt || 0) - new Date(a.sentAt || a.createdAt || 0));
@@ -52,7 +53,9 @@ export function quoteStage(sq, jobberQuotes) {
     const days = open.sentAt ? Math.floor((Date.now() - new Date(open.sentAt)) / 864e5) : 0;
     return { key: days >= FOLLOW_UP_DAYS ? 'follow' : 'sent', jq: open, days };
   }
-  if (mine.find((q) => q.status === 'archived') && !mine.find((q) => q.status === 'draft')) return { key: 'lost', jq: mine[0] };
+  if (mine.find((q) => q.status === 'archived') && !mine.find((q) => q.status === 'draft')) return { key: 'unqualified', jq: mine[0] };
+  const reqs = (jobberRequests || []).filter((r) => names.includes(nameKey(r.clientName)));
+  if (!mine.length && reqs.length && reqs.every((r) => r.status === 'archived')) return { key: 'unqualified' };
   return { key: 'notsent' };
 }
 export const STAGE_LABEL = {
@@ -61,5 +64,4 @@ export const STAGE_LABEL = {
   follow: ['Follow up', 'bg-red-500 text-white'],
   sold: ['Sold', 'bg-emerald-500 text-white'],
   unqualified: ['Unqualified', 'bg-black/60 text-white'],
-  lost: ['Lost', 'bg-neutral-600 text-white'],
 };
