@@ -78,6 +78,7 @@ export default function LightsQuoter() {
   // Quotes saved on this computer before quotes synced to the account.
   const [unsynced, setUnsynced] = useState([]);
   const [opening, setOpening] = useState(''); // quote being loaded from the account
+  const [galleryStage, setGalleryStage] = useState(''); // gallery filter
   const [syncing, setSyncing] = useState(false);
   useEffect(() => { if (orgId) localOnlyQuotes().then(setUnsynced).catch(() => {}); }, [orgId]);
   // Rescue: any full quote still held in this page's memory (photos included) gets
@@ -305,6 +306,19 @@ export default function LightsQuoter() {
 
       {/* Quotes tab: gallery of saved quotes */}
       {view === 'quote' && !editing && (
+        <div className="flex gap-1.5 flex-wrap">
+          {[['', 'All'], ['unqualified', 'Unqualified'], ['sent', 'Quote sent'], ['sold', 'Sold'], ['none', 'Not marked']].map(([k, label]) => {
+            const n = k === '' ? saved.length : saved.filter((sq) => (sq.qStage || 'none') === k).length;
+            if (k === 'none' && !n) return null;
+            return (
+              <button key={k} onClick={() => setGalleryStage(k)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${galleryStage === k ? 'bg-brand text-on-brand' : 'bg-surface-alt text-secondary hover:text-primary'}`}>
+                {label} <span className="opacity-70">{n}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {view === 'quote' && !editing && (
         <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
           <button
             onClick={() => { reset(); setEditing(true); }}
@@ -312,7 +326,7 @@ export default function LightsQuoter() {
           >
             <Plus size={22} /> <span className="text-sm font-semibold">New quote</span>
           </button>
-          {saved.map((sq) => {
+          {saved.filter((sq) => !galleryStage || (sq.qStage || 'none') === galleryStage).map((sq) => {
             // Show photo first: a finished mockup from Client preview, then a ticked show photo, then any photo
             const sides = sq.angles || [];
             const photo = sq.cover || sq.previews?.[0]?.image || sides.find((a) => a.ai?.image)?.ai.image
@@ -327,8 +341,8 @@ export default function LightsQuoter() {
                 >
                   {opening === sq.id && <span className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center text-white text-sm font-semibold">Opening…</span>}
                   {sq.qStage && (
-                    <span className={`absolute top-2 left-2 z-[1] px-2 py-0.5 rounded-md text-[10px] font-bold ${sq.qStage === 'sent' ? 'bg-brand text-on-brand' : 'bg-black/60 text-white'}`}>
-                      {sq.qStage === 'sent' ? 'Sent' : 'Unqualified'}
+                    <span className={`absolute top-2 left-2 z-[1] px-2 py-0.5 rounded-md text-[10px] font-bold ${sq.qStage === 'sold' ? 'bg-emerald-500 text-white' : sq.qStage === 'sent' ? 'bg-brand text-on-brand' : 'bg-black/60 text-white'}`}>
+                      {{ sold: 'Sold', sent: 'Quote sent', unqualified: 'Unqualified' }[sq.qStage] || sq.qStage}
                     </span>
                   )}
                   {photo
@@ -530,12 +544,12 @@ export default function LightsQuoter() {
           </p>
         </div>
         <div className="flex rounded-lg bg-surface-alt p-0.5">
-          {[['sent', 'Sent'], ['unqualified', 'Unqualified']].map(([k, label]) => (
+          {[['unqualified', 'Unqualified'], ['sent', 'Sent'], ['sold', 'Sold']].map(([k, label]) => (
             <button
               key={k}
               onClick={() => setQStage((v) => (v === k ? '' : k))}
               title={k === 'unqualified' ? 'Mocked up just to qualify them — not a real quote' : 'Quote sent to them'}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer ${qStage === k ? (k === 'sent' ? 'bg-brand text-on-brand' : 'bg-card text-primary shadow-sm') : 'text-muted hover:text-primary'}`}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer ${qStage === k ? (k === 'sold' ? 'bg-emerald-500 text-white' : k === 'sent' ? 'bg-brand text-on-brand' : 'bg-card text-primary shadow-sm') : 'text-muted hover:text-primary'}`}
             >
               {label}
             </button>
