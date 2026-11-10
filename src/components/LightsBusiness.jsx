@@ -312,7 +312,7 @@ function ColdLeads({ leads, setLeads }) {
           <li>"I'm reaching out because I'm doing Christmas lights and <span className="text-brand-text font-semibold">[Mom / Gene]</span> told me you might be interested."</li>
           <li>"I'm really trying to get my name out there. I spent $5,000 on a course and I've already done a few jobs. You might've gotten one of my postcards, seen one of my yard signs, or seen one of my ads."</li>
           <li>"Are you interested in hearing more?"</li>
-          <li>"With our lights, everything's custom fit to your home, commercial grade, with plenty of designs to choose from. We do everything — trees, bushes, around windows, wreaths, rooflines, you name it."</li>
+          <li>"With our lights, everything's custom fit to your home, commercial grade, with plenty of designs to choose from. We do everything — trees, bushes, around windows, wreaths, rooflines, you name it. We design, install, maintain, and take them down — and we'll even store them if you want to do an agreement for a few years at a discount."</li>
           <li>"I was wondering if this is something you'd be interested in?"</li>
           <li><span className="text-muted">If interested:</span> "The next step would be to schedule a free design consult, where we meet, create a design for your home together, and I present you a quote."</li>
         </ol>
