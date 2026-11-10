@@ -77,6 +77,7 @@ export default function LightsQuoter() {
   setLightsOrg(orgId);
   // Quotes saved on this computer before quotes synced to the account.
   const [unsynced, setUnsynced] = useState([]);
+  const [opening, setOpening] = useState(''); // quote being loaded from the account
   const [syncing, setSyncing] = useState(false);
   useEffect(() => { if (orgId) localOnlyQuotes().then(setUnsynced).catch(() => {}); }, [orgId]);
   // Rescue: any full quote still held in this page's memory (photos included) gets
@@ -322,7 +323,12 @@ export default function LightsQuoter() {
             const ft = ['easy', 'medium', 'hard'].reduce((t, k) => t + num(sq.feet?.[k]), 0);
             return (
               <div key={sq.id} className="group relative rounded-xl border border-border-default bg-card overflow-hidden hover:border-border-strong transition-colors">
-                <button onClick={async () => { await openQuote(sq.id); setEditing(true); }} className="block w-full text-left cursor-pointer">
+                <button
+                  onClick={async () => { setOpening(sq.id); try { await openQuote(sq.id); setEditing(true); } finally { setOpening(''); } }}
+                  disabled={!!opening}
+                  className="relative block w-full text-left cursor-pointer"
+                >
+                  {opening === sq.id && <span className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center text-white text-sm font-semibold">Opening…</span>}
                   {photo
                     ? <img src={photo} alt={sq.client} className="w-full aspect-[4/3] object-cover" />
                     : <div className="w-full aspect-[4/3] bg-surface-alt flex items-center justify-center text-muted"><Lightbulb size={28} /></div>}
