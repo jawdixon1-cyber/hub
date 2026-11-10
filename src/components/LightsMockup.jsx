@@ -217,6 +217,11 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
         }
         if (!root) {
           root = await window.showDirectoryPicker({ id: 'lights-prep', mode: 'readwrite', startIn: 'downloads' });
+          // Always keep client folders inside "Lights Mockups" (made if you picked Downloads, etc.)
+          if (root.name !== 'Lights Mockups') root = await root.getDirectoryHandle('Lights Mockups', { create: true });
+          await setPrepFolder(root).catch(() => {});
+        } else if (root.name !== 'Lights Mockups') {
+          root = await root.getDirectoryHandle('Lights Mockups', { create: true });
           await setPrepFolder(root).catch(() => {});
         }
         folder = await root.getDirectoryHandle(sub, { create: true });
@@ -226,6 +231,7 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
         where = `${root.name}/${sub}`;
       } catch (e) {
         if (e.name === 'AbortError') { setStatus(''); return; } // closed the picker
+        console.warn('[prep] folder failed', e);
         folder = null; // fall back to plain downloads
         where = `Downloads (folder didn't work: ${e.message})`;
       }
