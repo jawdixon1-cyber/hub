@@ -205,7 +205,7 @@ function MaterialPicker({ items, onPick }) {
               ))}
             </div>
           ))}
-          {!items.length && <p className="px-3 py-2 text-xs text-muted">No more supplies to add.</p>}
+          {!items.length && <p className="px-3 py-2 text-xs text-muted">No more material to add.</p>}
         </div>
       )}
     </div>
@@ -405,7 +405,7 @@ export default function LightsBusiness({ view }) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <p className="text-[11px] text-muted">Lights jobs from Jobber. Enter what each job takes — it's held as Committed in Supplies until you mark it installed.</p>
+          <p className="text-[11px] text-muted">Lights jobs from Jobber. Enter what each job takes — it's held as Committed in Material until you mark it installed.</p>
           <button onClick={() => setTick((t) => t + 1)} disabled={schedule.loading} className="text-xs text-muted hover:text-primary disabled:opacity-50 cursor-pointer">{schedule.loading ? 'Updating…' : '↻ Refresh from Jobber'}</button>
         </div>
         {schedule.loading && !list.length && <p className="text-sm text-muted">Loading jobs from Jobber…</p>}
@@ -470,7 +470,7 @@ export default function LightsBusiness({ view }) {
                     : confirmed
                       ? <><span className="px-2 py-1 rounded-md text-[11px] font-semibold bg-brand-light text-brand-text-strong">✓ Confirmed {j.saved.confirmedAt ? fmtDate(j.saved.confirmedAt) : ''}</span>
                         <button onClick={() => patchJob(j, { confirmed: false, confirmedAt: null })} className="text-[11px] text-muted hover:text-primary underline cursor-pointer">Change</button>
-                        <button onClick={() => install(j, true)} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer" title="Takes these materials out of Supplies">Mark installed</button></>
+                        <button onClick={() => install(j, true)} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer" title="Takes these materials out of Material">Mark installed</button></>
                       : <button onClick={() => patchJob(j, { materials: j.saved.materials, confirmed: true, confirmedAt: new Date().toISOString() })} disabled={missing.length > 0} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold disabled:opacity-40 cursor-pointer" title={missing.length ? `Still need: ${missing.map((c) => c.label).join(', ')}` : 'This is what the job needs'}>Confirm materials</button>}
                 </div>
               </div>
@@ -563,11 +563,11 @@ export default function LightsBusiness({ view }) {
       return { x, com, avail, low: n(x.lowAt) > 0 && avail <= n(x.lowAt), need, plan: packPlan(x, need) };
     });
 
-    if (notLoaded) return <p className="text-sm text-muted p-4">Loading supplies…</p>;
+    if (notLoaded) return <p className="text-sm text-muted p-4">Loading material…</p>;
     if (empty) {
       return (
         <div className="rounded-xl border border-border-default bg-card p-6 text-center space-y-3">
-          <p className="text-sm text-secondary">No supplies yet.</p>
+          <p className="text-sm text-secondary">No material yet.</p>
           <button onClick={() => setItems(STARTER_SUPPLIES)} className="rounded-lg bg-brand text-on-brand text-sm font-semibold px-4 py-2 cursor-pointer">Use Todd's starter list (21 items with pack sizes)</button>
           <button onClick={() => setItems([{ id: `item-${Date.now()}`, name: 'New item', unit: 'ea', onHand: 0, lowAt: 0, cost: 0, used: 0, packs: [] }])} className="block mx-auto text-xs text-muted hover:text-primary cursor-pointer">or start blank</button>
         </div>

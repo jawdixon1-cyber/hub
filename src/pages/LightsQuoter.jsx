@@ -226,7 +226,7 @@ export default function LightsQuoter() {
           <Lightbulb size={24} className="text-brand" /> Lights
         </h1>
         <div className="flex gap-1 bg-surface-alt rounded-lg p-1">
-          {[['quotes', 'Dashboard'], ['quote', 'Quotes'], ['jobs', 'Jobs'], ['supplies', 'Supplies']].map(([id, label]) => (
+          {[['quotes', 'Dashboard'], ['quote', 'Quotes'], ['jobs', 'Jobs'], ['supplies', 'Material']].map(([id, label]) => (
             <button
               key={id}
               onClick={() => { setView(id); if (id === 'quote') setEditing(false); }}
