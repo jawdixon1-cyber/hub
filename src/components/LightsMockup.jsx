@@ -187,7 +187,9 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
   const lineName = (i) => `${slug(client)}-side${i + 1}-lines.jpg`;
   const galleryItems = withLines.filter(({ i }) => lineUrls[i]).map(({ i }) => ({ url: lineUrls[i], label: `Side ${i + 1}`, name: lineName(i) }));
   const withPhoto = angles.map((a, i) => ({ a, i })).filter(({ a }) => a.plain);
-  const picked = withPhoto.filter(({ a }) => a.show);
+  // Ticked show photos — or every photo if none are ticked, so Prep always does something.
+  const ticked = withPhoto.filter(({ a }) => a.show);
+  const picked = ticked.length ? ticked : withPhoto;
   const patch = (i) => (p) => setAngles((as) => as.map((a, j) => (j === i ? { ...a, ...p } : a)));
   const guides = picked.some(({ a }) => a.lines.length);
   const prompt = () => buildShowPrompt(design.id, designId === 'custom' ? custom : '', picked.length, guides);
@@ -204,7 +206,7 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
   // <chosen folder>/<client>-lights/ and copies the prompt. If the folder can't
   // be used for any reason, falls back to plain downloads so it never does nothing.
   const prep = async (forceNew = false) => {
-    if (!picked.length) { setStatus('Tick at least one show photo first'); return; }
+    if (!picked.length) { setStatus('error:add a house photo in section 1 first'); return; }
     setStatus('Saving…');
     const sub = `${slug(client)}-lights`;
     let folder = null;
