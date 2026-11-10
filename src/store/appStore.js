@@ -381,9 +381,8 @@ export function createAppStore(cloudData, initialOrgId) {
         }
       }
     }
-    if (Object.keys(updates).length > 0) {
-      store.setState(updates);
-    }
+    // Quietly: this is what's already in the cloud — don't save it back.
+    if (Object.keys(updates).length > 0) setQuietly(updates);
   };
 
   return store;
