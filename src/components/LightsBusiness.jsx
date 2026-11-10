@@ -118,6 +118,7 @@ function ColdLeads({ leads, setLeads }) {
       </div>
       {draft && (
         <div className="p-4 grid grid-cols-2 gap-3 border-b border-border-subtle bg-surface-alt/40">
+          <p className="col-span-2 text-[11px] font-bold uppercase tracking-wide text-muted">Contact</p>
           {f('name', 'Family name (title)', true)}
           {(draft.contacts?.length ? draft.contacts : [{}]).slice(0, 2).map((_, k) => (
             <div key={k} className="col-span-2 grid grid-cols-2 gap-3">
@@ -142,6 +143,7 @@ function ColdLeads({ leads, setLeads }) {
             </button>
           )}
           {f('address', 'Address', true)}
+          <p className="col-span-2 text-[11px] font-bold uppercase tracking-wide text-muted pt-2 border-t border-border-subtle">Sales</p>
           {f('angle', 'Angle — how you know them', true)}
           {f('decider', 'Decision maker — who to pitch')}
           {f('money', 'Money — how they have it')}
@@ -162,38 +164,40 @@ function ColdLeads({ leads, setLeads }) {
             onDragLeave={() => setOverId('')}
             onDrop={(e) => { e.preventDefault(); drop(l.id); setDragId(''); setOverId(''); }}
             onDragEnd={() => { setDragId(''); setOverId(''); }}
-            className={`group px-4 py-3 flex items-center gap-3 ${overId === l.id && dragId !== l.id ? 'border-t-2 border-t-brand' : ''} ${dragId === l.id ? 'opacity-40' : ''}`}
+            className={`group px-4 py-3 flex items-start gap-3 ${overId === l.id && dragId !== l.id ? 'border-t-2 border-t-brand' : ''} ${dragId === l.id ? 'opacity-40' : ''}`}
           >
             <span className="w-6 h-6 shrink-0 rounded-full bg-surface-alt text-[11px] font-bold text-secondary flex items-center justify-center cursor-grab select-none" title="Drag to reorder">{i + 1}</span>
             <div className="flex-1 min-w-0" onClick={() => setOpenLead(openLead === l.id ? '' : l.id)}>
-              <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-sm font-semibold text-primary">{l.name}</p>
-                {l.money && !/^idk$/i.test(l.money.trim()) && <span className="px-1.5 py-0.5 rounded-md bg-brand-light text-brand-text-strong text-[10px] font-semibold">💰 {l.money}</span>}
-              </div>
-              {(l.decider || l.angle) && (
-                <p className="text-xs text-secondary mt-0.5 truncate">
-                  {l.decider && <><span className="font-semibold text-primary">🎯 {l.decider}</span>{l.angle && <span className="text-muted"> · </span>}</>}
-                  {l.angle}
-                </p>
-              )}
-              {contactsOf(l).length > 0 && (
-                <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1">
+              <p className="text-sm font-semibold text-primary">{l.name}</p>
+              <div className="mt-1.5 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                {/* Contact */}
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Contact</p>
                   {contactsOf(l).map((c, k) => (
-                    <span key={k} className="inline-flex items-center gap-1.5 text-xs" onClick={(e) => e.stopPropagation()}>
+                    <div key={k} className="flex items-center gap-1.5 text-xs" onClick={(e) => e.stopPropagation()}>
                       <span className="text-primary font-medium">{c.name || 'Contact'}</span>
-                      {c.phone && <>
+                      {c.phone ? <>
+                        <span className="text-muted">{c.phone}</span>
                         <a href={`tel:${tel(c.phone)}`} className="w-6 h-6 rounded-full bg-brand text-on-brand flex items-center justify-center" title={`Call ${c.phone}`}><Phone size={11} /></a>
                         <a href={`sms:${tel(c.phone)}`} className="w-6 h-6 rounded-full border border-border-default text-secondary hover:text-primary flex items-center justify-center" title={`Text ${c.phone}`}><MessageSquare size={11} /></a>
-                        <span className="text-muted">{c.phone}</span>
-                      </>}
-                    </span>
+                      </> : <span className="text-muted">no number</span>}
+                    </div>
                   ))}
+                  {!contactsOf(l).length && <p className="text-xs text-muted">No contact yet</p>}
+                  {l.address && (
+                    <a href={`https://maps.apple.com/?q=${encodeURIComponent(l.address)}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="block text-xs text-muted hover:text-primary">📍 {l.address}</a>
+                  )}
                 </div>
-              )}
-              {l.address && (
-                <a href={`https://maps.apple.com/?q=${encodeURIComponent(l.address)}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[11px] text-muted hover:text-primary">📍 {l.address}</a>
-              )}
-              {openLead === l.id && l.notes && <p className="text-[11px] text-muted mt-0.5">{l.notes}</p>}
+                {/* Sales */}
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Sales</p>
+                  {l.decider && <p className="text-xs"><span className="text-muted">🎯 Pitch</span> <span className="font-semibold text-primary">{l.decider}</span></p>}
+                  {l.angle && <p className="text-xs"><span className="text-muted">🤝 Angle</span> <span className="text-secondary">{l.angle}</span></p>}
+                  {l.money && !/^idk$/i.test(l.money.trim()) && <p className="text-xs"><span className="text-muted">💰 Money</span> <span className="text-secondary">{l.money}</span></p>}
+                  {l.notes && <p className="text-xs"><span className="text-muted">📝</span> <span className="text-secondary">{l.notes}</span></p>}
+                  {!l.decider && !l.angle && !l.money && !l.notes && <p className="text-xs text-muted">Nothing yet</p>}
+                </div>
+              </div>
             </div>
             <div className="shrink-0 flex items-center gap-1.5">
               <span className={`flex items-center gap-1 ${openLead === l.id ? '' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
