@@ -3,6 +3,7 @@ import { Plus, Trash2, ShoppingCart, ImagePlus, ExternalLink, Phone, MessageSqua
 import { useAppStore } from '../store/AppStoreContext';
 import { STARTER_SUPPLIES, STYLE_LABEL, quoteMaterials, quoteFeet, packPlan } from '../lib/lightsMaterials';
 import { listQuotes } from '../lib/lightsStore';
+import { useJobberList, nameKey } from '../lib/jobberLights';
 
 // The business side of Christmas lights, shown inside the Lights page:
 //  - "quotes": every saved lights quote — sent / won / installed / lost,
@@ -519,38 +520,6 @@ const isLightsTitle = (t) => /\b(lights?|lites?|lighting)\b|christmas/i.test(t |
 
 // Jobber data for the Lights page. Shows the last copy instantly (saved in this
 // browser), then refreshes in the background, so the page never sits empty.
-function useJobberList(action, field, enabled, tick = 0) {
-  const key = `lights-jobber-${action}`;
-  const [state, setState] = useState(() => {
-    try {
-      const cached = JSON.parse(localStorage.getItem(key) || 'null');
-      if (cached) return { [field]: cached, error: '', loading: false, cached: true };
-    } catch { /* ignore */ }
-    return { [field]: [], error: '', loading: false };
-  });
-  useEffect(() => {
-    if (!enabled) return undefined;
-    let alive = true;
-    const t = setTimeout(() => {
-      setState((st) => ({ ...st, loading: true }));
-      fetch(`/api/jobber-data?action=${action}${tick ? '&fresh=1' : ''}`)
-        .then((r) => r.json())
-        .then((d) => {
-          if (!alive) return;
-          if (d[field]) {
-            try { localStorage.setItem(key, JSON.stringify(d[field])); } catch { /* full */ }
-            setState({ [field]: d[field], error: '', loading: false });
-          } else {
-            // keep showing the last good copy if Jobber is busy
-            setState((st) => ({ ...st, error: d.error || 'Jobber unavailable', loading: false }));
-          }
-        })
-        .catch((e) => { if (alive) setState((st) => ({ ...st, error: e.message, loading: false })); });
-    }, 0);
-    return () => { alive = false; clearTimeout(t); };
-  }, [enabled, tick, action, field, key]);
-  return state;
-}
 const useLightsSchedule = (enabled, tick) => useJobberList('recent-jobs', 'jobs', enabled, tick);
 const useJobberLightsQuotes = (enabled, tick) => useJobberList('lights-quotes', 'quotes', enabled, tick);
 const useLightsRequests = (enabled, tick) => useJobberList('lights-requests', 'requests', enabled, tick);
@@ -564,7 +533,6 @@ const JOBBER_STATUS = {
   archived: ['Archived', 'bg-red-500/15 text-red-400'],
 };
 
-const nameKey = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
 
 export default function LightsBusiness({ view, onNew }) {
   const [tick, setTick] = useState(0); // ↻ Refresh: pull fresh from Jobber

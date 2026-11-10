@@ -7,6 +7,7 @@ import JobberClientPicker from '../components/JobberClientPicker';
 import LightsBusiness from '../components/LightsBusiness';
 import { DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, getLocalQuote, setLightsOrg, localOnlyQuotes } from '../lib/lightsStore';
 import { useAuth } from '../contexts/AuthContext';
+import { useJobberList, quoteStage, STAGE_LABEL } from '../lib/jobberLights';
 
 // Christmas lights quoter: roofline per foot + strands each, with one minimum
 // for the whole lights job. Prices are remembered in this browser.
@@ -79,6 +80,8 @@ export default function LightsQuoter() {
   const [unsynced, setUnsynced] = useState([]);
   const [opening, setOpening] = useState(''); // quote being loaded from the account
   const [galleryStage, setGalleryStage] = useState(''); // gallery filter
+  const jobberQuotes = useJobberList('lights-quotes', 'quotes', true).quotes;
+  const stageOf = (sq) => quoteStage(sq, jobberQuotes);
   const [syncing, setSyncing] = useState(false);
   useEffect(() => { if (orgId) localOnlyQuotes().then(setUnsynced).catch(() => {}); }, [orgId]);
   // Rescue: any full quote still held in this page's memory (photos included) gets
@@ -105,7 +108,7 @@ export default function LightsQuoter() {
   const [angles, setAngles] = useState([EMPTY_SIDE]);
   const [previews, setPreviews] = useState([]); // finished show photos for the client
   const [quoted, setQuoted] = useState(''); // what Jude actually quoted / sold it for
-  const [qStage, setQStage] = useState(''); // 'sent' | 'unqualified' (mocked up just to qualify)
+  const [qStage, setQStage] = useState(''); // only 'unqualified' — Sent / Sold come from Jobber
   const [style, setStyle] = useState(() => localStorage.getItem('lights-mockup-design') || 'warm'); // light color for this quote
   const [savedId, setSavedId] = useState(null); // which saved client quote this is
   const [clientInfo, setClientInfo] = useState(null); // Jobber client picked from search
@@ -307,9 +310,9 @@ export default function LightsQuoter() {
       {/* Quotes tab: gallery of saved quotes */}
       {view === 'quote' && !editing && (
         <div className="flex gap-1.5 flex-wrap">
-          {[['', 'All'], ['unqualified', 'Unqualified'], ['sent', 'Quote sent'], ['sold', 'Sold'], ['none', 'Not marked']].map(([k, label]) => {
-            const n = k === '' ? saved.length : saved.filter((sq) => (sq.qStage || 'none') === k).length;
-            if (k === 'none' && !n) return null;
+          {[['', 'All'], ['notsent', 'Not in Jobber yet'], ['follow', 'Follow up'], ['sent', 'Sent'], ['sold', 'Sold'], ['unqualified', 'Unqualified'], ['lost', 'Lost']].map(([k, label]) => {
+            const n = k === '' ? saved.length : saved.filter((sq) => stageOf(sq).key === k).length;
+            if (k && !n) return null;
             return (
               <button key={k} onClick={() => setGalleryStage(k)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${galleryStage === k ? 'bg-brand text-on-brand' : 'bg-surface-alt text-secondary hover:text-primary'}`}>
                 {label} <span className="opacity-70">{n}</span>
@@ -326,7 +329,8 @@ export default function LightsQuoter() {
           >
             <Plus size={22} /> <span className="text-sm font-semibold">New quote</span>
           </button>
-          {saved.filter((sq) => !galleryStage || (sq.qStage || 'none') === galleryStage).map((sq) => {
+          {saved.filter((sq) => !galleryStage || stageOf(sq).key === galleryStage).map((sq) => {
+            const st = stageOf(sq);
             // Show photo first: a finished mockup from Client preview, then a ticked show photo, then any photo
             const sides = sq.angles || [];
             const photo = sq.cover || sq.previews?.[0]?.image || sides.find((a) => a.ai?.image)?.ai.image
@@ -340,11 +344,9 @@ export default function LightsQuoter() {
                   className="relative block w-full text-left cursor-pointer"
                 >
                   {opening === sq.id && <span className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center text-white text-sm font-semibold">Opening…</span>}
-                  {sq.qStage && (
-                    <span className={`absolute top-2 left-2 z-[1] px-2 py-0.5 rounded-md text-[10px] font-bold ${sq.qStage === 'sold' ? 'bg-emerald-500 text-white' : sq.qStage === 'sent' ? 'bg-brand text-on-brand' : 'bg-black/60 text-white'}`}>
-                      {{ sold: 'Sold', sent: 'Quote sent', unqualified: 'Unqualified' }[sq.qStage] || sq.qStage}
-                    </span>
-                  )}
+                  <span className={`absolute top-2 left-2 z-[1] px-2 py-0.5 rounded-md text-[10px] font-bold ${STAGE_LABEL[st.key][1]}`}>
+                    {STAGE_LABEL[st.key][0]}{st.key === 'follow' && ` · ${st.days}d`}
+                  </span>
                   {photo
                     ? <img src={photo} alt={sq.client} className="w-full aspect-[4/3] object-cover" />
                     : <div className="w-full aspect-[4/3] bg-surface-alt flex items-center justify-center text-muted"><Lightbulb size={28} /></div>}
@@ -543,18 +545,22 @@ export default function LightsQuoter() {
               : 'What you actually quoted or sold it for'}
           </p>
         </div>
-        <div className="flex rounded-lg bg-surface-alt p-0.5">
-          {[['unqualified', 'Unqualified'], ['sent', 'Sent'], ['sold', 'Sold']].map(([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setQStage((v) => (v === k ? '' : k))}
-              title={k === 'unqualified' ? 'Mocked up just to qualify them — not a real quote' : 'Quote sent to them'}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer ${qStage === k ? (k === 'sold' ? 'bg-emerald-500 text-white' : k === 'sent' ? 'bg-brand text-on-brand' : 'bg-card text-primary shadow-sm') : 'text-muted hover:text-primary'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {(() => {
+          const st = stageOf({ client, clientInfo, qStage });
+          return (
+            <div className="flex items-center gap-2">
+              <span className={`px-2 py-1 rounded-md text-[11px] font-bold ${STAGE_LABEL[st.key][1]}`} title="Read from Jobber">
+                {STAGE_LABEL[st.key][0]}{st.jq ? ` · Jobber #${st.jq.quoteNumber}` : ''}
+              </span>
+              {st.key !== 'sold' && (
+                <label className="flex items-center gap-1.5 text-xs text-secondary cursor-pointer" title="Mocked up just to qualify them — not a real quote">
+                  <input type="checkbox" checked={qStage === 'unqualified'} onChange={(e) => setQStage(e.target.checked ? 'unqualified' : '')} className="w-4 h-4" />
+                  Unqualified
+                </label>
+              )}
+            </div>
+          );
+        })()}
         <div className="relative w-40">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
           <input
