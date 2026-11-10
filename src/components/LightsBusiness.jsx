@@ -252,7 +252,19 @@ function ColdLeads({ leads, setLeads }) {
                       >
                         {pitchIdx(l) === k && '🎯 '}{c.name || 'Contact'}
                       </button>
-                      <span className="text-secondary">{c.phone || 'no number'}</span>
+                      {c.phone ? (
+                        <button
+                          onClick={(e) => {
+                            navigator.clipboard?.writeText(c.phone);
+                            const b = e.currentTarget; const t = b.textContent;
+                            b.textContent = 'Copied ✓'; setTimeout(() => { b.textContent = t; }, 1200);
+                          }}
+                          className="text-secondary hover:text-primary underline decoration-dotted underline-offset-2 cursor-pointer"
+                          title="Copy number"
+                        >
+                          {c.phone}
+                        </button>
+                      ) : <span className="text-muted">no number</span>}
                     </div>
                   ))}
                   {!contactsOf(l).length && <p className="text-xs text-muted">No contact yet</p>}
