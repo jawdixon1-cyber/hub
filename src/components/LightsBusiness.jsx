@@ -1178,7 +1178,7 @@ export default function LightsBusiness({ view, onNew }) {
     })(), 'cold'],
     ['Warm leads', String(toBook.length), lightsReq.loading ? 'loading…' : 'reached out to you · book an assessment', 'needs'],
     ['Upcoming assessments', String(booked.length), nextBooked ? `next ${when(nextBooked.assessmentAt)}` : 'none coming up', 'booked'],
-    ['Sent, waiting', money(sumQ(jSent)), `${jSent.length} quote${jSent.length === 1 ? '' : 's'}`, 'sent'],
+    ['Quotes waiting', money(sumQ(jSent)), `${jSent.length} quote${jSent.length === 1 ? '' : 's'}`, 'sent'],
     ['Upcoming schedule', schedule.loading ? '…' : String(lightsJobs.length), schedule.error ? 'Jobber busy — try later' : wonNotScheduled.length ? `${wonNotScheduled.length} won not booked` : 'lights installs booked', 'scheduled'],
   ];
   // Results row (separate from the pipeline above)
