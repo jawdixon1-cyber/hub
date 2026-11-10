@@ -161,10 +161,10 @@ function ColdLeads({ leads, setLeads }) {
             </button>
           )}
           {f('address', 'Address', true)}
+          {f('money', 'Money — how they have it', true)}
           <p className="col-span-2 text-[11px] font-bold uppercase tracking-wide text-muted pt-2 border-t border-border-subtle">Sales</p>
           {f('angle', 'Angle — how you know them', true)}
           {f('decider', 'Decision maker — who to pitch')}
-          {f('money', 'Money — how they have it')}
           {f('notes', 'Notes', true)}
           <div className="col-span-2 flex items-center gap-3">
             <button onClick={save} disabled={!draft.name.trim()} className="px-3 py-1.5 rounded-md bg-brand text-on-brand text-xs font-semibold disabled:opacity-40 cursor-pointer">Save</button>
@@ -231,6 +231,7 @@ function ColdLeads({ leads, setLeads }) {
                     </div>
                   ))}
                   {!contactsOf(l).length && <p className="text-xs text-muted">No contact yet</p>}
+                  {l.money && !/^idk$/i.test(l.money.trim()) && <p className="text-xs"><span className="text-muted">💰 Money</span> <span className="text-secondary">{l.money}</span></p>}
                   {l.address && (
                     <a href={`https://maps.apple.com/?q=${encodeURIComponent(l.address)}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="block text-xs text-muted hover:text-primary">📍 {l.address}</a>
                   )}
@@ -240,9 +241,8 @@ function ColdLeads({ leads, setLeads }) {
                   <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Sales</p>
                   {l.decider && <p className="text-xs"><span className="text-muted">🎯 Pitch</span> <span className="font-semibold text-primary">{l.decider}</span></p>}
                   {l.angle && <p className="text-xs"><span className="text-muted">🤝 Angle</span> <span className="text-secondary">{l.angle}</span></p>}
-                  {l.money && !/^idk$/i.test(l.money.trim()) && <p className="text-xs"><span className="text-muted">💰 Money</span> <span className="text-secondary">{l.money}</span></p>}
                   {l.notes && <p className="text-xs"><span className="text-muted">📝</span> <span className="text-secondary">{l.notes}</span></p>}
-                  {!l.decider && !l.angle && !l.money && !l.notes && <p className="text-xs text-muted">Nothing yet</p>}
+                  {!l.decider && !l.angle && !l.notes && <p className="text-xs text-muted">Nothing yet</p>}
                 </div>
               </div>
               {(l.log || []).length > 0 && (
