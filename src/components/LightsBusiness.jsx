@@ -938,8 +938,8 @@ export default function LightsBusiness({ view }) {
   const sumQ = (list) => list.reduce((t, q) => t + n(q.total), 0);
 
   const cards = [
-    ['Cold leads', String(coldLeads.length), coldLeads.length ? `next: ${coldLeads[0].name}` : 'people to reach out to', 'cold'],
-    ['Leads', String(toBook.length), lightsReq.loading ? 'loading…' : 'reached out · book an assessment', 'needs'],
+    ['Cold leads', String(coldLeads.length), coldLeads.length ? `haven't reached out · next: ${coldLeads[0].name}` : "people you haven't reached out to", 'cold'],
+    ['Warm leads', String(toBook.length), lightsReq.loading ? 'loading…' : 'reached out to you · book an assessment', 'needs'],
     ['Upcoming assessments', String(booked.length), nextBooked ? `next ${when(nextBooked.assessmentAt)}` : 'none coming up', 'booked'],
     ['Sent, waiting', money(sumQ(jSent)), `${jSent.length} quote${jSent.length === 1 ? '' : 's'}`, 'sent'],
     ['Upcoming schedule', schedule.loading ? '…' : String(lightsJobs.length), schedule.error ? 'Jobber busy — try later' : wonNotScheduled.length ? `${wonNotScheduled.length} won not booked` : 'lights installs booked', 'scheduled'],
