@@ -161,10 +161,17 @@ const OWNER_TOOLS_ITEMS = [...OWNER_TOOLS_PINNED, ...OWNER_TOOLS_MORE];
 /* ─── App (outer) — auth gate + data loading ─── */
 
 const DATA_CACHE_KEY = 'greenteam-data-cache';
+// Big, photo-heavy data: loaded last and kept out of the local cache (it would
+// overflow the browser's ~5 MB storage and freeze the page on phones).
+const HEAVY_KEYS = ['greenteam-receiptLog', 'greenteam-applications', 'greenteam-trainingConfig'];
 
 // Critical keys — needed for the gate decision and first render.
 // Everything else loads in the background after the UI is interactive.
 const CRITICAL_KEYS = [
+  'greenteam-lightsSupplies', // Lights page: Material, Jobs, Dashboard need these right away
+  'greenteam-lightsJobs',
+  'greenteam-lightsColdLeads',
+  'greenteam-lightsOrders',
   'greenteam-planNotes',      // Warm Leads reasons / do-not-contact: small, and stale counts show without it
   'greenteam-planCampaigns',
   'greenteam-planManual',
@@ -220,15 +227,19 @@ function App() {
       setCloudData((prev) => {
         const next = { ...(prev || {}) };
         for (const row of rows) next[row.key] = row.value;
-        try { localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(next)); } catch {}
+        // Cache everything except the heavy keys, after the page has painted.
+        const light = {};
+        for (const k of Object.keys(next)) if (!HEAVY_KEYS.includes(k)) light[k] = next[k];
+        setTimeout(() => { try { localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(light)); } catch { /* full */ } }, 0);
         return next;
       });
     };
 
-    const fetchKeys = async (keys = null) => {
+    const fetchKeys = async (keys = null, skip = null) => {
       let query = supabase.from('app_state').select('key, value');
       if (orgId) query = query.eq('org_id', orgId);
       if (keys) query = query.in('key', keys);
+      if (skip) query = query.not('key', 'in', `(${skip.map((k) => `"${k}"`).join(',')})`);
       const { data, error } = await query;
       if (error) throw error;
       return data || [];
@@ -253,12 +264,11 @@ function App() {
       mergeIntoCloud(critical);
       setRefreshing(false);
 
-      // Phase 2: everything else, in the background
-      withRetry(() => fetchKeys()).then((rows) => {
-        // Merge — but exclude keys that came in critical to avoid stomping fresher data
-        const criticalSet = new Set(CRITICAL_KEYS);
-        const remaining = rows.filter((r) => !criticalSet.has(r.key));
-        mergeIntoCloud(remaining);
+      // Phase 2: everything else except the heavy keys, in the background
+      withRetry(() => fetchKeys(null, [...CRITICAL_KEYS, ...HEAVY_KEYS])).then((rows) => {
+        mergeIntoCloud(rows);
+        // Phase 3: the big photo-heavy keys last
+        return withRetry(() => fetchKeys(HEAVY_KEYS)).then(mergeIntoCloud);
       }).catch((err) => {
         // Background failure is non-fatal — keep using critical + cached data
         console.warn('[loadData] background fetch failed:', err.message);
