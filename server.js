@@ -24,12 +24,14 @@ import stripeListCards from './api/stripe-list-cards.js';
 import stripeDeleteCard from './api/stripe-delete-card.js';
 import stripeSetDefaultCard from './api/stripe-set-default-card.js';
 import stripeChargeCard from './api/stripe-charge-card.js';
+import lightsMeasure from './api/lights-measure.js';
+import lightsMockup from './api/lights-mockup.js';
 
 config({ path: '.env.local' });
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '15mb' }));
 
 // Commander routes
 app.post('/api/commander/ghlWebhook', ghlWebhookHandler);
@@ -52,6 +54,8 @@ app.all('/api/qb-data', qbData);
 
 // Jobber data (clients search + labor data + refresh)
 app.all('/api/jobber-data', jobberDataHandler);
+app.post('/api/lights-measure', lightsMeasure);
+app.post('/api/lights-mockup', lightsMockup);
 
 // Messaging + storage uploads (PDF agreement, attachments, etc.)
 app.all('/api/messaging', messagingHandler);

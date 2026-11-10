@@ -97,3 +97,96 @@ test('computeWeek: pay matches ADP on the Oct 17 week (hours rounded to 2 decima
   assert.equal(c.people.find((p) => p.id === 'e').wages, 988.31); // ADP: 1,028.43 − 40.12 bonus
   assert.equal(c.people.find((p) => p.id === 'b').wages, 708.84); // ADP: 723.95 − 15.11 bonus
 });
+
+/* ─── Christmas lights ─── */
+import { lightsTier, isLightsJob, isLightsInstall, computeLights } from '../src/lib/weeklyBonus.js';
+
+test('lights: job titles and tiers', () => {
+  assert.ok(isLightsJob('Christmas Lights'));
+  assert.ok(isLightsJob('Jane Doe - Lites'));
+  assert.ok(!isLightsJob('Jane Doe - Lawn'));
+  assert.ok(!isLightsInstall('Christmas Lights Removal'));
+  assert.ok(isLightsInstall('Christmas Lights'));
+  assert.equal(lightsTier(1999.99), 0);
+  assert.equal(lightsTier(2000), 0.01);
+  assert.equal(lightsTier(4999), 0.03);
+  assert.equal(lightsTier(5000), 0.05);
+});
+
+test('lights: the plan example — $5,000 day, equal hours', () => {
+  const [d] = computeLights({ '2026-11-10': { jobs: [{ name: 'Christmas Lights', revenue: 5000 }], lights_minutes: { e: 600, i: 600 } } }, 'e');
+  assert.equal(d.pool, 250);
+  assert.deepEqual(d.shares, { e: 125, i: 125 });
+  assert.equal(d.lead, 50);
+});
+
+test('lights: lead 1% even under $2,000; removal lines are not install value', () => {
+  const [d] = computeLights({ '2026-11-10': { jobs: [{ name: 'Christmas Lights', revenue: 1200 }, { name: 'Lights takedown', revenue: 300 }], lights_minutes: { e: 300 } } }, 'e');
+  assert.equal(d.install, 1200);
+  assert.equal(d.revenue, 1500);
+  assert.equal(d.pool, 0);
+  assert.equal(d.lead, 12);
+});
+
+test('computeWeek: lights stay out of the lawn pool and are paid at the normal rate + bonuses', () => {
+  const ppl = [{ id: 'e', name: 'Ethan', hourly_rate: 18, active: true }, { id: 'i', name: 'Ian', hourly_rate: 16, active: true }];
+  const row = {
+    days: {
+      '2026-11-09': { revenue: 1000, cogs: 0, jobs: [{ name: 'Smith - Lawn', revenue: 1000 }] },
+      '2026-11-10': { revenue: 5000, cogs: 100, jobs: [{ name: 'Christmas Lights', revenue: 5000, cogs: 100 }], lights_minutes: { e: 600, i: 600 } },
+    },
+    people: { e: { prod_minutes: 600, np_minutes: 0, lights_minutes: 600, rate: 18 }, i: { prod_minutes: 600, np_minutes: 0, lights_minutes: 600, rate: 16 } },
+  };
+  const c = computeWeek({ weekEnding: '2026-11-14', row, weeks: {}, people: ppl, jobs: [], targetPct: 30 });
+  // Lawn: $1,000 margin × 30% = $300 allowed − (10h×18 + 10h×16 = $340) → no pool. Lights revenue never enters it.
+  assert.equal(c.week.revenue, 1000);
+  assert.equal(c.week.pool, 0);
+  const e = c.people.find((p) => p.id === 'e'), i = c.people.find((p) => p.id === 'i');
+  assert.equal(e.lights_pay, 180);
+  assert.equal(e.lights_bonus, 125);
+  assert.equal(e.lead_bonus, 50);
+  assert.equal(i.lead_bonus, 0);
+  assert.equal(e.wages, 360); // 20h × 18, no OT
+  assert.equal(e.total_pay, 535);
+  assert.equal(c.revenue, 6000); // all-in revenue still recorded
+});
+
+test('computeWeek: lights + overtime: normal OT, plus the lights bonus raises the OT rate', () => {
+  const ppl = [{ id: 'i', name: 'Ian', hourly_rate: 16, active: true }];
+  const row = {
+    days: { '2026-11-10': { revenue: 3000, jobs: [{ name: 'Christmas Lights', revenue: 3000 }], lights_minutes: { i: 600 } } },
+    people: { i: { prod_minutes: 2400, np_minutes: 0, lights_minutes: 600, rate: 16 } }, // 40h lawn + 10h lights = 50h
+  };
+  const c = computeWeek({ weekEnding: '2026-11-14', row, weeks: {}, people: ppl, jobs: [], targetPct: 30 });
+  const i = c.people[0];
+  // 40h × 16 = 640 + 10h × 24 = 240; lights pool 3000×2% = 60 (all to Ian) → OT top-up 10 × ½ × 60/50 = 6
+  assert.equal(i.lights_bonus, 60);
+  assert.equal(i.reg_pay, 640);
+  assert.equal(i.ot_pay, 240);
+  assert.equal(i.bonus_ot, 6);
+  assert.equal(i.wages, 886);
+});
+
+test('computeWeek: weeks before the lights plan keep their original math', () => {
+  const ppl = [{ id: 'i', name: 'Ian', hourly_rate: 16, active: true }];
+  const row = { days: { '2026-10-28': { revenue: 1200, jobs: [{ name: 'Christmas Lights', revenue: 1200 }] } }, people: { i: { prod_minutes: 600, np_minutes: 0, rate: 16 } } };
+  const c = computeWeek({ weekEnding: '2026-10-31', row, weeks: {}, people: ppl, jobs: [], targetPct: 30 });
+  assert.equal(c.week.revenue, 1200);
+  assert.equal(c.lights.days.length, 0);
+});
+
+test('computeWeek: lights labor is split into install days and removal days', () => {
+  const ppl = [{ id: 'e', name: 'Ethan', hourly_rate: 23, active: true }, { id: 'b', name: 'Bo', hourly_rate: 18, active: true }];
+  const row = {
+    days: {
+      '2026-11-09': { revenue: 2000, jobs: [{ name: 'Christmas Lights', revenue: 2000 }], lights_minutes: { e: 240, b: 240 } },
+      '2026-11-10': { revenue: 0, jobs: [{ name: 'Christmas Lights Removal', revenue: 0 }], lights_minutes: { b: 120 } },
+    },
+    people: { e: { prod_minutes: 0, np_minutes: 0, lights_minutes: 240, rate: 23 }, b: { prod_minutes: 0, np_minutes: 0, lights_minutes: 360, rate: 18 } },
+  };
+  const c = computeWeek({ weekEnding: '2026-11-14', row, weeks: {}, people: ppl, jobs: [], targetPct: 30 });
+  // install day: 4h×23 + 4h×18 = 164 + pool 20 + lead 20 = 204; removal day: 2h×18 = 36
+  assert.equal(c.totals.lights_install, 2000);
+  assert.equal(c.totals.lights_install_labor, 204);
+  assert.equal(c.totals.lights_removal_labor, 36);
+});

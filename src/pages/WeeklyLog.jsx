@@ -9,7 +9,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, External
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { parseTime, minutesToHMM, minutesToDecimal } from '../lib/weeklyTime';
-import { computeWeek, OT_AFTER_MINUTES } from '../lib/weeklyBonus';
+import { computeWeek, OT_AFTER_MINUTES, LIGHTS_LEAD_PCT, LIGHTS_TIERS, LIGHTS_INSTALL_TARGET, LIGHTS_REMOVAL_TARGET, LIGHTS_PLAN_FROM, isLightsJob, isLightsInstall } from '../lib/weeklyBonus';
 import { useTeamMembers } from '../hooks/useTeamMembers';
 
 const T = { log: 'weekly_log', jobs: 'weekly_log_jobs', settings: 'weekly_log_settings' };
@@ -41,8 +41,7 @@ const fmtWeek = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('en-US',
 const fmt = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(n) || 0);
 const pctOf = (num, den) => (den > 0 ? `${((num / den) * 100).toFixed(1)}%` : '—');
 // What the business kept from a week after all the math (same as "We made" in the week summary), before overhead.
-const madeOf = (h) => h.revenue - h.cogs - h.wages - h.bonus - h.taxes;
-const madeCell = (h) => { const m = madeOf(h); return <><span className={m >= 0 ? 'text-[#4d7c0f]' : 'text-red-600'}>{fmt(m)}</span>{h.revenue > 0 && <span className="ml-1 text-[11px] font-normal text-slate-400">{((m / h.revenue) * 100).toFixed(0)}%</span>}</>; };
+const madeOf = (h) => (h.allRevenue ?? h.revenue) - (h.allCogs ?? h.cogs) - h.wages - h.bonus - h.taxes;
 const pctFmt = (p) => (p == null ? '—' : `${(p * 100).toFixed(1)}%`);
 // Typed or pasted amounts can carry commas, a $ or spaces ("$1,620.00"); read them as the number.
 const num = (v) => Math.round((Number(String(v ?? '').replace(/[$,\s]/g, '')) || 0) * 100) / 100;
@@ -59,9 +58,23 @@ const PAID_BY_DRAW = new Set(['jawdixon1@gmail.com']);
 const ADP_PAYROLL_URL = 'https://runpayrollmain.adp.com/@836d254c-789b-41b8-8052-d48a639e95d8/v2/';
 const REVIEW_PAY = { leader: 10, helper: 5 };
 const reviewReason = (role, client) => `5-star review (${role})${client?.trim() ? ` — ${client.trim()}` : ''}`;
-const EMPTY_DAY = { revenue: '', cogs: '', hours: '', jobs: [], np: {} };
+const EMPTY_DAY = { revenue: '', cogs: '', hours: '', jobs: [], np: {}, lights: {} };
 const RANGES = [['4', '4 wks'], ['13', '13 wks'], ['52', '52 wks'], ['all', 'All']];
 const th = 'px-3 py-2 text-right';
+const GOAL_KEY = 'payroll-revhr-goal';
+const LABOR_GOAL_KEY = 'payroll-labor-goal';
+const DEFAULT_LABOR_GOAL = 30;
+const fmt0 = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(n) || 0);
+// Rev/hr vs the goal: at/above = on target, within 20% = close, further = low. Each tone has a word too, so it's never color alone.
+const TONES = {
+  good: { box: 'border-emerald-200 bg-emerald-50', text: 'text-emerald-700', bar: 'bg-emerald-500', pill: 'bg-emerald-600 text-white', label: 'On target' },
+  ok: { box: 'border-amber-200 bg-amber-50', text: 'text-amber-700', bar: 'bg-amber-400', pill: 'bg-amber-400 text-amber-950', label: 'Close' },
+  bad: { box: 'border-red-200 bg-red-50', text: 'text-red-600', bar: 'bg-red-500', pill: 'bg-red-600 text-white', label: 'Low' },
+  none: { box: 'border-slate-200 bg-slate-50', text: 'text-slate-400', bar: 'bg-slate-300', pill: 'bg-slate-200 text-slate-600', label: 'No data' },
+};
+const toneOf = (rph, goal) => (rph == null || !goal ? 'none' : rph >= goal ? 'good' : rph >= goal * 0.8 ? 'ok' : 'bad');
+const weekdayOf = (iso, style = 'long') => new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: style });
+const monthDayOf = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
 // Arrow keys move between boxes like a spreadsheet: up/down to the nearest box above/below
 // in the same column, left/right to the next box in the row once the cursor is at the text's edge.
@@ -94,7 +107,7 @@ function arrowNav(e) {
 /* ─── draft ⇄ db ─── */
 function draftFromRow(row, week, people) {
   return {
-    days: Object.fromEntries(weekDays(week).map((d) => { const e = row?.days?.[d]; return [d, { revenue: e?.revenue ? String(e.revenue) : '', cogs: e?.cogs ? String(e.cogs) : '', hours: e?.prod_minutes ? minutesToHMM(e.prod_minutes) : '', np: Object.fromEntries(Object.entries(e?.np_minutes || {}).map(([pid, m]) => [pid, minutesToHMM(m)])), jobs: (e?.jobs || []).map((j) => ({ name: j.name || '', revenue: j.revenue ? String(j.revenue) : '', cogs: j.cogs ? String(j.cogs) : '', ...(j.jobberId ? { jobberId: j.jobberId } : {}), ...(j.split ? { split: j.split } : {}), ...(j.fixed ? { fixed: j.fixed } : {}) })) }]; })),
+    days: Object.fromEntries(weekDays(week).map((d) => { const e = row?.days?.[d]; return [d, { revenue: e?.revenue ? String(e.revenue) : '', cogs: e?.cogs ? String(e.cogs) : '', hours: e?.prod_minutes ? minutesToHMM(e.prod_minutes) : '', np: Object.fromEntries(Object.entries(e?.np_minutes || {}).map(([pid, m]) => [pid, minutesToHMM(m)])), lights: Object.fromEntries(Object.entries(e?.lights_minutes || {}).map(([pid, m]) => [pid, minutesToHMM(m)])), jobs: (e?.jobs || []).map((j) => ({ name: j.name || '', revenue: j.revenue ? String(j.revenue) : '', cogs: j.cogs ? String(j.cogs) : '', ...(j.jobberId ? { jobberId: j.jobberId } : {}), ...(j.split ? { split: j.split } : {}), ...(j.fixed ? { fixed: j.fixed } : {}) })) }]; })),
     hours: Object.fromEntries(people.map((p) => { const e = row?.people?.[p.id]; const total = e?.total_minutes ?? ((e?.prod_minutes || 0) + (e?.np_minutes || 0)); return [p.id, { total: total ? minutesToHMM(total) : '', np: e?.np_minutes ? minutesToHMM(e.np_minutes) : '' }]; })),
     extras: Object.entries(row?.people || {}).flatMap(([pid, e]) => (e.extras || []).filter((x) => !x.review).map((x) => ({ pid, reason: x.reason || '', amount: x.amount ? String(x.amount) : '' }))),
     reviews: Object.values(Object.entries(row?.people || {}).reduce((acc, [pid, e]) => {
@@ -140,6 +153,7 @@ const periodOf = (f) => (/^yearly/i.test(f.invoices) ? 'yr' : /^monthly/i.test(f
 function rowFromDraft(draft, people, week, crew, orgId, jobMinutes = {}) {
   const days = {};
   const dailyNp = {}; // pid -> minutes, summed over the days
+  const dailyLights = {}; // pid -> Christmas lights minutes, summed over the days
   for (const [d, e] of Object.entries(draft.days)) {
     const r = num(e.revenue), c = num(e.cogs), m = parseTime(e.hours || '');
     if (m == null) throw new Error(`${fmtDay(d)}: crew hours should look like 16:30.`);
@@ -150,23 +164,32 @@ function rowFromDraft(draft, people, week, crew, orgId, jobMinutes = {}) {
       if (nm == null) throw new Error(`${fmtDay(d)}: non-prod hours should look like 1:30.`);
       if (nm) { np[pid] = nm; dailyNp[pid] = (dailyNp[pid] || 0) + nm; }
     }
+    const lights = {};
+    for (const [pid, v] of Object.entries(e.lights || {})) {
+      if (!v) continue;
+      const lm = parseTime(v);
+      if (lm == null) throw new Error(`${fmtDay(d)}: lights hours should look like 4:30.`);
+      if (lm) { lights[pid] = lm; dailyLights[pid] = (dailyLights[pid] || 0) + lm; }
+    }
     // Per-job lines are kept so the day's totals can be traced back; the day's
     // revenue/COGS are already their sums (see setDayJobs).
     const jobs = (e.jobs || []).filter((j) => j.name?.trim() || num(j.revenue) || num(j.cogs)).map((j) => ({ name: j.name.trim(), revenue: num(j.revenue), cogs: num(j.cogs), ...(j.jobberId ? { jobberId: j.jobberId } : {}), ...(j.split ? { split: j.split } : {}), ...(j.fixed ? { fixed: j.fixed } : {}) }));
-    if (r || c || m || jobs.length || Object.keys(np).length) days[d] = { revenue: r, cogs: c, prod_minutes: m, ...(jobs.length ? { jobs } : {}), ...(Object.keys(np).length ? { np_minutes: np } : {}) }; // per-day crew hours (all clocked time) are for the day breakdown only
+    if (r || c || m || jobs.length || Object.keys(np).length || Object.keys(lights).length) days[d] = { revenue: r, cogs: c, prod_minutes: m, ...(jobs.length ? { jobs } : {}), ...(Object.keys(np).length ? { np_minutes: np } : {}), ...(Object.keys(lights).length ? { lights_minutes: lights } : {}) }; // per-day crew hours (all clocked time) are for the day breakdown only
   }
   const ppl = {};
   for (const p of people) {
     const h = draft.hours[p.id] || {}; const total = parseTime(h.total), np = p.id in dailyNp ? dailyNp[p.id] : parseTime(h.np);
     if (total == null || np == null) throw new Error(`${p.name}: hours should look like 7:30 (h:mm) or 7.5.`);
-    const onJobs = jobMinutes[p.id] || 0;
-    if (total && np + onJobs > total) throw new Error(`${p.name}: non-prod (${minutesToHMM(np)}) + on jobs (${minutesToHMM(onJobs)}) is more than total (${minutesToHMM(total)}).`);
-    const prod = Math.max(0, total - np - onJobs);
+    const onJobs = jobMinutes[p.id] || 0, lights = dailyLights[p.id] || 0;
+    if (lights && !total) throw new Error(`${p.name}: has lights hours but no total hours. Total should include the lights hours.`);
+    if (total && np + onJobs + lights > total) throw new Error(`${p.name}: non-prod (${minutesToHMM(np)}) + on jobs (${minutesToHMM(onJobs)}) + lights (${minutesToHMM(lights)}) is more than total (${minutesToHMM(total)}).`);
+    // Lawn production = total − non-prod − unfinished-job hours − Christmas lights hours (lights are paid on their own plan).
+    const prod = Math.max(0, total - np - onJobs - lights);
     const extras = [
       ...(draft.extras || []).filter((x) => x.pid === p.id && (num(x.amount) || x.reason?.trim())).map((x) => ({ reason: x.reason.trim(), amount: num(x.amount) })),
       ...(draft.reviews || []).flatMap((r) => ['leader', 'helper'].filter((role) => r[role] === p.id).map((role) => ({ reason: reviewReason(role, r.client), amount: REVIEW_PAY[role], review: { id: r.id, role, client: r.client.trim() } }))),
     ];
-    if (total || np || p.active || extras.length) ppl[p.id] = { total_minutes: total, prod_minutes: prod, np_minutes: np, rate: Number(p.hourly_rate) || 0, name: p.name, ...(extras.length ? { extras } : {}) };
+    if (total || np || p.active || extras.length) ppl[p.id] = { total_minutes: total, prod_minutes: prod, np_minutes: np, ...(lights ? { lights_minutes: lights } : {}), rate: Number(p.hourly_rate) || 0, name: p.name, ...(extras.length ? { extras } : {}) };
   }
   return { org_id: orgId, week_ending: week, crew, days, people: ppl, employer_taxes: num(draft.taxes), notes: draft.notes?.trim() || null };
 }
@@ -198,6 +221,7 @@ export default function WeeklyLog() {
   const [crew, setCrew] = useState(DEFAULT_CREW);
   const [extraCrews, setExtraCrews] = useState([]);
   const [range, setRange] = useState('13');
+  const [histMore, setHistMore] = useState(false);
   const [draft, setDraft] = useState(null);
   const [jobDrafts, setJobDrafts] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -368,7 +392,10 @@ export default function WeeklyLog() {
       const r = await fetch(`/api/jobber-data?action=labor&start=${wk[0]}&end=${wk[6]}`);
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.error || `Jobber returned ${r.status}`);
-      let added = 0, hoursFilled = 0;
+      let added = 0, hoursFilled = 0, lightsFilled = 0;
+      // Match a Jobber name to the team (full name, then first name).
+      const norm = (x) => (x || '').trim().toLowerCase();
+      const personFor = (n) => people.find((x) => norm(x.name) === norm(n)) || people.find((x) => norm(x.name).split(' ')[0] === norm(n).split(' ')[0]);
       const kept = [];
       const opened = [];
       for (const d of only ? [only] : wk) {
@@ -376,6 +403,14 @@ export default function WeeklyLog() {
         if (crewMin && !draft.days[d]?.hours) { setDay(d, 'hours')({ target: { value: minutesToHMM(crewMin) } }); hoursFilled++; }
         const visits = data[d]?.visits || [];
         if (!visits.length) continue;
+        // A lights-only day: everyone's whole clocked time that day (job + general: loading, driving,
+        // cleanup) is lights time. Mixed lawn + lights days are typed by hand — Jobber can't split them.
+        if (visits.every((v) => isLightsJob(v.title))) {
+          for (const [n, v] of Object.entries(data[d]?.labor?.byPerson || {})) {
+            const p = personFor(n), m = Math.round((v.hours || 0) * 60);
+            if (p && m && !draft.days[d]?.lights?.[p.id]) { setDayLights(d, p.id)({ target: { value: minutesToHMM(m) } }); lightsFilled++; }
+          }
+        }
         // Typed totals with no job lines: adding lines would replace them with the lines' sum.
         const cur = draft.days[d] || EMPTY_DAY;
         if (!cur.jobs?.length && (cur.revenue || cur.cogs)) { kept.push(fmtDay(d)); continue; }
@@ -417,9 +452,8 @@ export default function WeeklyLog() {
       if (!only) {
         const byName = {};
         for (const d of wk) for (const [n, v] of Object.entries(data[d]?.labor?.byPerson || {})) byName[n] = (byName[n] || 0) + (v.hours || 0);
-        const norm = (x) => (x || '').trim().toLowerCase();
         for (const [n, hrs] of Object.entries(byName)) {
-          const p = people.find((x) => norm(x.name) === norm(n)) || people.find((x) => norm(x.name).split(' ')[0] === norm(n).split(' ')[0]);
+          const p = personFor(n);
           const m = Math.round(hrs * 60);
           if (!p) { if (m) unmatched.push(n); continue; }
           if (m && !draft.hours[p.id]?.total) { setHours(p.id, 'total')({ target: { value: minutesToHMM(m) } }); peopleFilled++; }
@@ -429,6 +463,7 @@ export default function WeeklyLog() {
       const got = [
         added && `${added} visit${added === 1 ? '' : 's'}`,
         hoursFilled && `crew hours for ${hoursFilled} day${hoursFilled === 1 ? '' : 's'}`,
+        lightsFilled && `Christmas lights hours (${lightsFilled})`,
         peopleFilled && `total hours for ${peopleFilled} ${peopleFilled === 1 ? 'person' : 'people'}`,
       ].filter(Boolean);
       const what = only ? fmtDay(only) : 'this week';
@@ -440,6 +475,7 @@ export default function WeeklyLog() {
     }
   };
   const toggleDay = (d) => setOpenDays((s) => { const n = new Set(s); if (n.has(d)) n.delete(d); else n.add(d); return n; });
+  const setDayLights = (d, pid) => (e) => { touch(); setDraft((f) => ({ ...f, days: { ...f.days, [d]: { ...EMPTY_DAY, ...f.days[d], lights: { ...(f.days[d]?.lights || {}), [pid]: e.target.value } } } })); };
   const setDayNp = (d, pid) => (e) => { touch(); setDraft((f) => ({ ...f, days: { ...f.days, [d]: { ...EMPTY_DAY, ...f.days[d], np: { ...(f.days[d]?.np || {}), [pid]: e.target.value } } } })); };
   const setReviews = (fn) => { touch(); setDraft((f) => ({ ...f, reviews: fn(f.reviews || []) })); };
   const setExtras = (fn) => { touch(); setDraft((f) => ({ ...f, extras: fn(f.extras || []) })); };
@@ -461,16 +497,70 @@ export default function WeeklyLog() {
       const calcs = crewsHere.map((c) => computeWeek({ weekEnding: w, row: db.rows.find((r) => r.week_ending === w && r.crew === c) || null,
         weeks: Object.fromEntries(db.rows.filter((r) => r.crew === c).map((r) => [r.week_ending, r])), people, jobs: db.jobs.filter((j) => j.crew === c), targetPct, feePct: feeOf(db.rows.find((r) => r.week_ending === w && r.crew === c)) }));
       const s = (f) => calcs.reduce((a, c) => a + f(c), 0);
-      const revenue = s((c) => c.totals.revenue), cogs = s((c) => c.totals.cogs), prodWages = s((c) => c.totals.all_prod_wages);
+      // Lawn columns leave Christmas lights out, so labor % stays comparable to the target and to past weeks.
+      const revenue = s((c) => c.totals.lawn_revenue), cogs = s((c) => c.totals.lawn_cogs), prodWages = s((c) => c.totals.lawn_prod_wages);
+      const lightsRevenue = s((c) => c.totals.lights_revenue), lightsLabor = s((c) => c.totals.lights_labor);
       const rowsHere = byWeek[w] || [];
-      return { week_ending: w, crews: crewsHere.length, closed: rowsHere.length > 0 && rowsHere.every((r) => r.closed_at), revenue, cogs, margin: revenue - cogs, prodWages, laborPct: revenue - cogs > 0 ? prodWages / (revenue - cogs) : null,
+      // Lawn %: lawn production wages + lawn bonus (weekly + finished jobs) ÷ lawn adjusted revenue (money in − COGS),
+      // the same base the lawn bonus uses. Non-prod, lights and review/extra bonuses left out.
+      const lawnIn = s((c) => c.totals.lawn_revenue - c.totals.lawn_cogs), lawnCrewPay = s((c) => c.totals.lawn_prod_wages + c.totals.week_bonus + c.totals.job_bonus);
+      const lawnWages = s((c) => c.totals.lawn_prod_wages);
+      return { lawnCrew: lawnIn > 0 ? lawnCrewPay / lawnIn : null, lawnBefore: lawnIn > 0 ? lawnWages / lawnIn : null, lawnWages, lawnBonus: s((c) => c.totals.week_bonus + c.totals.job_bonus), otherBonus: s((c) => c.totals.extra_bonus), lightsBonus: s((c) => c.totals.lights_bonus + c.totals.lead_bonus), week_ending: w, crews: crewsHere.length, closed: rowsHere.length > 0 && rowsHere.every((r) => r.closed_at), revenue, cogs, margin: revenue - cogs, prodWages, laborPct: revenue - cogs > 0 ? prodWages / (revenue - cogs) : null,
+        allRevenue: s((c) => c.totals.revenue), allCogs: s((c) => c.totals.cogs), lightsRevenue, lightsLabor,
+        // Lawn labor % the crew controls: all wages + bonuses, minus non-prod (work you assign) and minus everything
+        // lights (its own % in the lights column), ÷ lawn money in.
+        lawnCrewPay: s((c) => c.totals.lawn_prod_wages + c.totals.week_bonus + c.totals.job_bonus),
+        lawnIn: s((c) => c.totals.lawn_revenue - c.totals.lawn_cogs),
+        npWages: s((c) => c.totals.np_wages),
+        allMin: s((c) => c.totals.total_minutes), prodAll: s((c) => c.totals.prod_minutes + c.totals.lights_minutes),
+        lightsInstall: s((c) => c.totals.lights_install), lightsInstallLabor: s((c) => c.totals.lights_install_labor), lightsRemovalLabor: s((c) => c.totals.lights_removal_labor),
         wages: s((c) => c.totals.wages), taxes: s((c) => c.totals.employer_taxes), bonus: s((c) => c.totals.bonus), prod: s((c) => c.totals.prod_minutes), np: s((c) => c.totals.np_minutes), jobMin: s((c) => c.totals.job_minutes) };
     });
   }, [db, range, thisWeek, people, targetPct, feeOf]);
   const hTotals = useMemo(() => {
-    const t = history.reduce((a, h) => ({ revenue: a.revenue + h.revenue, cogs: a.cogs + h.cogs, prodWages: a.prodWages + h.prodWages, wages: a.wages + h.wages, taxes: a.taxes + h.taxes, bonus: a.bonus + h.bonus, prod: a.prod + h.prod, np: a.np + h.np, jobMin: a.jobMin + h.jobMin }), { revenue: 0, cogs: 0, prodWages: 0, wages: 0, taxes: 0, bonus: 0, prod: 0, np: 0, jobMin: 0 });
-    return { ...t, margin: t.revenue - t.cogs, laborPct: t.revenue - t.cogs > 0 ? t.prodWages / (t.revenue - t.cogs) : null };
+    const keys = ['revenue', 'cogs', 'prodWages', 'wages', 'taxes', 'bonus', 'prod', 'np', 'jobMin', 'allRevenue', 'allCogs', 'lightsRevenue', 'lightsLabor', 'lightsInstall', 'lightsInstallLabor', 'lightsRemovalLabor', 'allMin', 'prodAll', 'npWages', 'lawnCrewPay', 'lawnIn', 'lawnWages', 'lawnBonus', 'lightsBonus', 'otherBonus'];
+    const t = history.reduce((a, h) => Object.fromEntries(keys.map((k) => [k, a[k] + (h[k] || 0)])), Object.fromEntries(keys.map((k) => [k, 0])));
+    return { ...t, lawnCrew: t.lawnIn > 0 ? t.lawnCrewPay / t.lawnIn : null, lawnBefore: t.lawnIn > 0 ? t.lawnWages / t.lawnIn : null, margin: t.revenue - t.cogs, laborPct: t.revenue - t.cogs > 0 ? t.prodWages / (t.revenue - t.cogs) : null };
   }, [history]);
+
+  // Christmas lights season: Jul 1 → Jun 30, every crew, whatever range the table shows.
+  // Install labor % = install-day pay ÷ install value; removal % = removal pay ÷ the season's install value.
+  const lightsSeason = useMemo(() => {
+    if (!db) return null;
+    const y = Number(thisWeek.slice(0, 4)), start = Number(thisWeek.slice(5, 7)) >= 7 ? `${y}-07-01` : `${y - 1}-07-01`;
+    const rows = db.rows.filter((r) => r.week_ending >= start && r.week_ending >= LIGHTS_PLAN_FROM);
+    let install = 0, installLabor = 0, removalLabor = 0;
+    for (const r of rows) {
+      const c = computeWeek({ weekEnding: r.week_ending, row: r, weeks: Object.fromEntries(db.rows.filter((x) => x.crew === r.crew).map((x) => [x.week_ending, x])), people, jobs: [], targetPct, feePct: feeOf(r) });
+      install += c.totals.lights_install; installLabor += c.totals.lights_install_labor; removalLabor += c.totals.lights_removal_labor;
+    }
+    return install || installLabor || removalLabor ? { install, installLabor, removalLabor } : null;
+  }, [db, thisWeek, people, targetPct, feeOf]);
+  const rphOf = (h) => (h.prodAll > 0 && h.allRevenue ? h.allRevenue / (h.prodAll / 60) : null);
+  const showLights = !!lightsSeason || history.some((h) => h.lightsRevenue > 0);
+  const pctTag = (pct, target) => <span className={`font-semibold ${pct <= target ? 'text-[#4d7c0f]' : 'text-amber-700'}`}>{(pct * 100).toFixed(0)}%</span>;
+
+  // Rev/hr goal: typed (kept on this device), else average crew pay ÷ labor target, rounded to $5.
+  const [goalIn, setGoalIn] = useState(() => localStorage.getItem(GOAL_KEY) || '');
+  const crewRates = people.filter((p) => !PAID_BY_DRAW.has(p.id) && Number(p.hourly_rate) > 0).map((p) => Number(p.hourly_rate));
+  const autoGoal = crewRates.length && targetPct > 0 ? Math.round(crewRates.reduce((a, r) => a + r, 0) / crewRates.length / (targetPct / 100) / 5) * 5 : 0;
+  const goal = num(goalIn) || autoGoal || 0;
+  // Labor goal for the grade: crew pay (all wages + all bonuses, lights included) as a % of money in. This device only.
+  const [laborGoalIn, setLaborGoalIn] = useState(() => localStorage.getItem(LABOR_GOAL_KEY) || '');
+  const laborGoal = num(laborGoalIn) || DEFAULT_LABOR_GOAL;
+  // "Are we doing good?" — two goals you set: labor % (all crew pay ÷ money in) at/under the labor goal, and rev per production hour at/over the goal.
+  // Both = Good, one = Okay, neither = Rough.
+  const gradeOf = (laborPct, rph) => {
+    const checks = [
+      { ok: laborPct != null && laborPct <= laborGoal / 100 + 0.0005, text: `lawn labor ${pctFmt(laborPct)} (goal ${laborGoal}% or less)`, known: laborPct != null },
+      { ok: rph != null && goal > 0 && rph >= goal, text: `${rph == null ? '—' : fmt0(rph)}/man-hr (goal ${fmt0(goal)})`, known: rph != null && goal > 0 },
+    ].filter((c) => c.known);
+    if (!checks.length) return null;
+    const n = checks.filter((c) => c.ok).length;
+    const level = n === checks.length ? 'good' : n === 0 ? 'bad' : 'ok';
+    return { level, checks, label: level === 'good' ? 'Good' : level === 'bad' ? 'Rough' : 'Okay' };
+  };
+  const GRADE_STYLE = { good: 'bg-emerald-100 text-emerald-800', ok: 'bg-amber-100 text-amber-800', bad: 'bg-red-100 text-red-700' };
 
   if (error) return <div className="p-6 text-red-700">Weekly log failed to load: {error}. Have migrations 009–015 been applied?</div>;
   if (!db || !draft) return <div className="flex items-center gap-2 p-6 text-slate-500"><Loader2 className="animate-spin" size={18} /> Loading…</div>;
@@ -495,6 +585,8 @@ export default function WeeklyLog() {
         <div className="flex flex-col items-end gap-1.5">
           <label className="text-xs text-slate-500">Labor target <input className="ml-1 w-16 rounded-md border border-slate-300 px-2 py-1 text-right text-sm tabular-nums" defaultValue={targetPct} onBlur={(e) => saveTarget(e.target.value)} />%</label>
           <label className="text-xs text-slate-500" title={hasFeeCol ? 'Card/processing fees, as a % of finished revenue. Counted in COGS so margin and the bonus pool leave them out. Closed weeks keep the rate they were saved with.' : 'Needs the database update (supabase/migrations/017_weekly_log_processing_fee.sql) before it can be saved.'}>Processing fees <input key={defaultFee} disabled={!hasFeeCol} className="ml-1 w-16 rounded-md border border-slate-300 px-2 py-1 text-right text-sm tabular-nums disabled:bg-slate-100" inputMode="decimal" defaultValue={defaultFee} onBlur={(e) => saveFee(e.target.value)} />%</label>
+          <label className="text-xs text-slate-500" title="Lawn labor % = lawn wages + lawn bonuses ÷ lawn money in. Non-prod, Christmas lights and employer taxes left out (lights have their own 14% goal). Grades each week Good/Okay/Rough with the rev/hr goal. Saved on this device only.">Lawn labor goal <input className="ml-1 w-16 rounded-md border border-slate-300 px-2 py-1 text-right text-sm tabular-nums" inputMode="decimal" placeholder={String(DEFAULT_LABOR_GOAL)} value={laborGoalIn} onChange={(e) => { setLaborGoalIn(e.target.value); localStorage.setItem(LABOR_GOAL_KEY, e.target.value); }} />%</label>
+          <label className="text-xs text-slate-500" title={`Colors each day's rev/hr: green at or above the goal, amber within 20%, red below that. Leave blank to use average crew pay ÷ labor target${autoGoal ? ` (${fmt0(autoGoal)}/hr)` : ''}. Saved on this device only.`}>Rev/man-hr goal <span className="ml-1">$</span><input className="w-16 rounded-md border border-slate-300 px-2 py-1 text-right text-sm tabular-nums" inputMode="decimal" placeholder={autoGoal ? String(autoGoal) : '—'} value={goalIn} onChange={(e) => { setGoalIn(e.target.value); localStorage.setItem(GOAL_KEY, e.target.value); }} />/hr</label>
         </div>
       </div>
 
@@ -536,40 +628,97 @@ export default function WeeklyLog() {
           </header>
           {/* Days and people stack at every width: side by side, both tables were too wide for their half and got cut off. */}
           <div>
-            <div className="overflow-x-auto border-b">
-              <table className="w-full min-w-[620px]">
-                <thead><tr className="border-b bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500"><th className="px-3 py-2 text-left">Day</th><th className={`${th} w-32`}>Revenue</th><th className={`${th} w-32`}>COGS</th><th className={`${th} w-40`}>Crew hrs</th><th className={`${th} w-28`}>Rev / hr</th></tr></thead>
-                <tbody>{days.map((d) => { const e = draft.days[d] || EMPTY_DAY; const jobs = e.jobs || []; const open = closed ? jobs.length > 0 : openDays.has(d); const fromJobs = jobs.length > 0; return [
-                  <tr key={d} className={open ? '' : 'border-b'}><td className="px-3 py-1.5 text-sm font-semibold whitespace-nowrap">
-                      {fmtDay(d)}
-                      <button onClick={() => toggleDay(d)} className="ml-2 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-semibold text-[#4d7c0f] hover:bg-slate-100">
-                        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}{jobs.length ? `${jobs.length} job${jobs.length === 1 ? '' : 's'}` : 'Jobs'}
-                      </button>
-                      <button onClick={() => pullFromJobber(d)} disabled={!!pulling} title={`Pull ${fmtDay(d)} from Jobber`} className="ml-1 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50">
-                        {pulling === d ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}Pull
-                      </button>
-                    </td>
-                    {/* With job lines the day totals are their sums, so they're read-only here. */}
-                    <td className="px-2 py-1.5"><input className={`${cell} ${fromJobs ? 'bg-slate-50 text-slate-600' : ''}`} inputMode="decimal" placeholder="—" value={e.revenue} readOnly={fromJobs} title={fromJobs ? 'Sum of the jobs below' : undefined} onChange={setDay(d, 'revenue')} /></td>
-                    <td className="px-2 py-1.5"><input className={`${cell} ${fromJobs ? 'bg-slate-50 text-slate-600' : ''}`} inputMode="decimal" placeholder="—" value={e.cogs} readOnly={fromJobs} title={fromJobs ? 'Sum of the jobs below' : undefined} onChange={setDay(d, 'cogs')} /></td>
-                    <td className="px-2 py-1.5"><TimeCell value={e.hours || ''} onChange={setDay(d, 'hours')} />
-                      {dayTime[d] && <div className="mt-0.5 text-right text-[11px] text-slate-500 tabular-nums whitespace-nowrap" title="Jobber clock time, for reference only. Not used in any calculation.">Job {minutesToHMM(dayTime[d].job)} · General {minutesToHMM(dayTime[d].general)}</div>}</td>
-                    {(() => { const m = parseTime(e.hours || ''); return <td className={`${th} text-sm font-semibold tabular-nums ${m > 0 && num(e.revenue) ? '' : 'text-slate-300'}`}>{m > 0 && num(e.revenue) ? fmt(num(e.revenue) / (m / 60)) : '—'}</td>; })()}</tr>,
-                  open && (
-                    <tr key={`${d}-jobs`} className="border-b bg-slate-50/60"><td colSpan={5} className="px-3 pb-3 pt-1">
+            {(() => {
+              const today = todayISO();
+              // Rev/hr is on production hours: the day's crew hours minus that day's non-prod (shop, errands, Jude's house).
+              const stats = days.map((d) => { const e = draft.days[d] || EMPTY_DAY; const rev = num(e.revenue), cg = num(e.cogs), min = parseTime(e.hours || '') || 0;
+                const np = Math.min(min, Object.values(e.np || {}).reduce((x, v) => x + (parseTime(v || '') || 0), 0)), prod = min - np;
+                return { d, e, rev, cogs: cg, min, np, prod, rph: prod > 0 && rev ? rev / (prod / 60) : null, jobs: e.jobs || [] }; });
+              const wkMin = stats.reduce((x, y) => x + y.min, 0), wkNp = stats.reduce((x, y) => x + y.np, 0), wkProd = wkMin - wkNp, wkRev = calc?.revenue ?? stats.reduce((x, y) => x + y.rev, 0), wkCogs = calc?.cogs ?? stats.reduce((x, y) => x + y.cogs, 0);
+              const wkRph = wkProd > 0 && wkRev ? wkRev / (wkProd / 60) : null, wkTone = TONES[toneOf(wkRph, goal)];
+              const jump = (d) => (ev) => { ev.preventDefault(); document.getElementById(`day-${d}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+              return (
+                <div className="border-b">
+                  {/* the week at a glance: one tile per day, colored by rev/hr — click to jump to that day */}
+                  <div className="grid grid-cols-3 gap-2 p-4 sm:grid-cols-4 lg:grid-cols-7">
+                    {stats.map((x) => { const tn = TONES[toneOf(x.rph, goal)]; return (
+                      <a key={x.d} href={`#day-${x.d}`} onClick={jump(x.d)} className={`rounded-lg border p-2.5 transition hover:-translate-y-0.5 hover:shadow-md ${tn.box} ${x.d === today ? 'ring-2 ring-[#B0FF03]' : ''}`}>
+                        <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wide text-slate-500">{weekdayOf(x.d, 'short')}<span className={`h-2 w-2 rounded-full ${tn.bar}`} /></div>
+                        <div className={`mt-0.5 text-lg font-black tabular-nums ${tn.text}`}>{x.rph == null ? '—' : fmt0(x.rph)}<span className="text-[10px] font-semibold text-slate-400">{x.rph == null ? '' : '/hr'}</span></div>
+                        <div className="truncate text-[11px] tabular-nums text-slate-500">{x.rev ? fmt0(x.rev) : 'no work'}{x.prod ? ` · ${minutesToDecimal(x.prod)}h` : ''}</div>
+                      </a>
+                    ); })}
+                    <div className="rounded-lg bg-slate-900 p-2.5 text-white">
+                      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wide text-slate-400">Week<span className={`h-2 w-2 rounded-full ${wkTone.bar}`} /></div>
+                      <div className="mt-0.5 text-lg font-black tabular-nums">{wkRph == null ? '—' : fmt0(wkRph)}<span className="text-[10px] font-semibold text-slate-400">{wkRph == null ? '' : '/hr'}</span></div>
+                      <div className="truncate text-[11px] tabular-nums text-slate-400">{fmt0(wkRev)} · {wkProd ? `${minutesToDecimal(wkProd)}h` : '0h'}</div>
+                      <div className="text-[11px] font-semibold text-slate-300">{wkTone.label}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-3 text-[11px] text-slate-500">
+                    <span title="Rev/hr = revenue ÷ production hours (non-prod left out). Green at or above the goal, amber within 20%, red more than 20% under.">Goal <b className="tabular-nums text-slate-700">{goal ? `${fmt0(goal)}/hr` : 'not set'}</b></span>
+                    {['good', 'ok', 'bad'].map((k) => <span key={k} className="inline-flex items-center gap-1"><span className={`h-2 w-2 rounded-full ${TONES[k].bar}`} />{TONES[k].label}</span>)}
+                  </div>
+
+                  {/* one card per day: entries on the left, the end-of-day score on the right */}
+                  <div className="space-y-3 px-4 pb-4">
+                    {stats.map(({ d, e, rev, min, np, prod, rph, jobs }) => {
+                      const open = openDays.has(d); const fromJobs = jobs.length > 0; const tn = TONES[toneOf(rph, goal)];
+                      return (
+                        <div key={d} id={`day-${d}`} className={`scroll-mt-24 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${d === today ? 'ring-2 ring-[#B0FF03]' : ''}`}>
+                          <div className={`h-1 ${tn.bar}`} />
+                          <div className="flex flex-col gap-3 p-3 md:flex-row md:items-stretch">
+                            <div className="shrink-0 md:w-40">
+                              <div className="flex items-baseline gap-2"><span className="text-lg font-black">{weekdayOf(d)}</span><span className="text-sm text-slate-500">{monthDayOf(d)}</span></div>
+                              {d === today && <span className="mt-0.5 inline-block rounded-full bg-[#B0FF03] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-900">Today</span>}
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {/* A span, not a button: a closed week's fieldset disables buttons, and you should still be able to see its jobs. */}
+                                <span role="button" tabIndex={0} aria-expanded={open} onClick={() => toggleDay(d)} onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleDay(d); } }} className="inline-flex cursor-pointer select-none items-center gap-0.5 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-[#4d7c0f] hover:bg-slate-50">
+                                  {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}{jobs.length ? `${jobs.length} job${jobs.length === 1 ? '' : 's'}` : 'Jobs'}
+                                </span>
+                                <button onClick={() => pullFromJobber(d)} disabled={!!pulling} title={`Pull ${fmtDay(d)} from Jobber`} className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50">
+                                  {pulling === d ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}Pull
+                                </button>
+                              </div>
+                            </div>
+                            {/* With job lines the day totals are their sums, so they're read-only here. */}
+                            <div className="grid flex-1 grid-cols-1 content-start gap-2 sm:grid-cols-3">
+                              <div><div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">Revenue</div><input className={`${cell} ${fromJobs ? 'bg-slate-50 text-slate-600' : ''}`} inputMode="decimal" placeholder="—" value={e.revenue} readOnly={fromJobs} title={fromJobs ? 'Sum of the jobs below' : undefined} onChange={setDay(d, 'revenue')} /></div>
+                              <div><div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">COGS</div><input className={`${cell} ${fromJobs ? 'bg-slate-50 text-slate-600' : ''}`} inputMode="decimal" placeholder="—" value={e.cogs} readOnly={fromJobs} title={fromJobs ? 'Sum of the jobs below' : undefined} onChange={setDay(d, 'cogs')} /></div>
+                              <div title={dayTime[d] ? `Jobber clock: job ${minutesToHMM(dayTime[d].job)} · general ${minutesToHMM(dayTime[d].general)} (reference only)` : undefined}><div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">Crew hrs</div><TimeCell value={e.hours || ''} onChange={setDay(d, 'hours')} /></div>
+                              {min > 0 && <div className="text-xs text-slate-500 sm:col-span-3">
+                                {/* Non-prod is typed per person in the day's details; click to open them. */}
+                                <span role="button" tabIndex={0} onClick={() => { if (!open) toggleDay(d); }} onKeyDown={(ev) => { if ((ev.key === 'Enter' || ev.key === ' ') && !open) { ev.preventDefault(); toggleDay(d); } }} className={`cursor-pointer hover:underline ${np ? 'font-semibold text-amber-700' : ''}`}>Non-prod {minutesToHMM(np)}</span>
+                                <span className="mx-1.5 text-slate-300">·</span>Production <b className="text-[#4d7c0f]">{minutesToHMM(prod)}</b>
+                              </div>}
+                            </div>
+                            <EndOfDay rph={rph} rev={rev} min={min} goal={goal} />
+                          </div>
+                          {(() => { const L = calc?.lights?.days.find((x) => x.date === d); if (!L) return null;
+                            return (
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-red-200 bg-red-50/70 px-3 py-2 text-xs text-slate-700">
+                                <span className="font-bold text-[#B3121F]">🎄 Lights</span>
+                                <span>{fmt(L.install)} installed ·</span>
+                                <span>{L.pool > 0 ? <>crew bonus <b>{fmt(L.pool)}</b> ({(L.pct * 100).toFixed(0)}%)</> : 'no crew bonus (under $2,000)'}</span>
+                                {L.lead > 0 && <span>· Ethan <b>+{fmt(L.lead)}</b></span>}
+                                {L.warnings.map((w) => <span key={w} className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-900">{w}</span>)}
+                              </div>
+                            ); })()}
+                          {open && (
+                            <div className="border-t border-slate-200 bg-slate-50/60 px-3 pb-3 pt-2">
                       <div className="space-y-1.5">
                         {jobs.map((j, i) => (
                           <div key={i} className="grid grid-cols-[minmax(0,1fr)_8rem_8rem_10rem_7rem] items-center">
                             <div className="relative ml-auto w-full max-w-md pr-2">
                               <input className={`${cell.replace('text-right', 'text-left')} ${j.split ? 'pr-36' : ''}`} placeholder="Job / client" value={j.name} onChange={(ev) => setDayJobs(d, (js) => js.map((x, k) => (k === i ? { ...x, name: ev.target.value } : x)))} />
-                              {j.split && <span title={`One-off job worked over more than one day. Its ${fmt(j.split.of)} price is split across those days by hours; this day's share is the revenue here.`} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">split · of {fmt(j.split.of)}</span>}
+                              {j.split && <span title={`One-off job worked over more than one day. Its ${fmt(j.split.of)} price is split across those days by hours; this day's share is the revenue here.`} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">part of {fmt0(j.split.of)}</span>}
                             </div>
                             <div className="px-2"><input className={`${cell} ${j.split ? 'border-amber-300 bg-amber-50' : (j.fixed || fixedJobs[j.jobberId]) ? (num(j.revenue) === (j.fixed || fixedJobs[j.jobberId]).of ? 'border-red-400 bg-red-50' : 'border-sky-300 bg-sky-50') : ''}`} inputMode="decimal" placeholder="Revenue" value={j.revenue} onChange={(ev) => setDayJobs(d, (js) => js.map((x, k) => (k === i ? { ...x, revenue: ev.target.value } : x)))} /></div>
                             <div className="px-2"><input className={cell} inputMode="decimal" placeholder="COGS" value={j.cogs} onChange={(ev) => setDayJobs(d, (js) => js.map((x, k) => (k === i ? { ...x, cogs: ev.target.value } : x)))} /></div>
                             {/* Trash, then the fixed-price flag in the empty space to the right. */}
                             <div className="col-span-2 flex items-center gap-2">
                               <button onClick={() => setDayJobs(d, (js) => js.filter((_, k) => k !== i))} className="rounded p-1 text-slate-400 hover:text-red-600" aria-label="Remove job"><Trash2 size={14} /></button
->                              {(() => { const fx = j.fixed || fixedJobs[j.jobberId]; if (!fx) return null; const full = fx.per && num(j.revenue) === fx.of;
+>                              {isLightsJob(j.name) && <span title={isLightsInstall(j.name) ? 'Christmas lights install: left out of the lawn bonus, counts toward the daily lights bonus.' : 'Christmas lights takedown/service: left out of the lawn bonus, paid hourly only (no lights bonus).'} className="whitespace-nowrap rounded-full bg-[#B3121F] px-2 py-0.5 text-[11px] font-semibold text-white">{isLightsInstall(j.name) ? '🎄 lights' : '🎄 hourly only'}</span>}                              {(() => { const fx = j.fixed || fixedJobs[j.jobberId]; if (!fx) return null; const full = fx.per && num(j.revenue) === fx.of;
                                 return <span title={fx.per ? `Fixed price: ${fmt(fx.of)} billed ${fx.invoices.toLowerCase()}, visits ${fx.visits.toLowerCase()}. That's about ${fx.per} visits per bill, so each visit is worth ${fmt(fx.of / fx.per)}.${full ? ' This line still has the full price: change it to the per-visit amount.' : ''} Type over it if this client's real visit count is different.` : `Fixed price: ${fmt(fx.of)} per bill, but the visit schedule couldn't be read. Divide by the visits it covers and type the per-visit amount.`}
                                   className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${!fx.per || full ? 'bg-red-100 text-red-700' : 'bg-sky-100 text-sky-800'}`}>
                                   {!fx.per ? `fixed ${fmt(fx.of)} · divide me` : `fixed ${fmt(fx.of)}/${periodOf(fx)} ÷ ${fx.per} = ${fmt(fx.of / fx.per)}`}</span>; })()}
@@ -578,9 +727,19 @@ export default function WeeklyLog() {
                         ))}
                         <button onClick={() => setDayJobs(d, (js) => [...js, { name: '', revenue: '', cogs: '' }])} className="inline-flex items-center gap-1 text-xs font-semibold text-[#4d7c0f] hover:underline"><Plus size={13} /> Add job</button>
                       </div>
+                      {activePeople.length > 0 && (jobs.some((j) => isLightsJob(j.name)) || Object.values(e.lights || {}).some(Boolean)) && (
+                        <div className="mt-3 rounded-lg border border-red-200 bg-red-50/60 p-2">
+                          <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#B3121F]" title="Each person's lights time this day (also inside their total). Pull fills it on a lights-only day; type it on a lawn + lights day.">🎄 Lights hours</div>
+                          <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                            {activePeople.map((p) => (
+                              <div key={p.id} className="flex items-center gap-2"><span className="w-28 shrink-0 truncate text-sm">{p.name}</span><div className="w-36"><TimeCell value={e.lights?.[p.id] || ''} onChange={setDayLights(d, p.id)} /></div></div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {activePeople.length > 0 && (
                         <div className="mt-3 border-t pt-2">
-                          <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">Non-prod <span className="font-normal normal-case">maintenance, Jude's house, shop, errands (drive time between jobs is production)</span></div>
+                          <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500" title="Maintenance, Jude's house, shop, errands. Drive time between jobs is production.">Non-prod hours</div>
                           <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
                             {activePeople.map((p) => (
                               <div key={p.id} className="flex items-center gap-2"><span className="w-28 shrink-0 truncate text-sm">{p.name}</span><div className="w-36"><TimeCell value={e.np?.[p.id] || ''} onChange={setDayNp(d, p.id)} /></div></div>
@@ -588,19 +747,28 @@ export default function WeeklyLog() {
                           </div>
                         </div>
                       )}
-                    </td></tr>
-                  ),
-                ]; })}</tbody>
-                <tfoot><tr className="bg-slate-50 text-sm font-bold tabular-nums"><td className="px-3 py-2">Week</td><td className={th}>{fmt(calc?.revenue)}</td><td className={th}>{fmt(calc?.cogs)}</td>{(() => { const dm = Object.values(draft.days).reduce((a, e) => a + (parseTime(e.hours || '') || 0), 0); return <><td className={th}>{hmm(dm)}</td><td className={th}>{dm && calc?.revenue ? fmt(calc.revenue / (dm / 60)) : '—'}</td></>; })()}</tr></tfoot>
-              </table>
-            </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* week totals */}
+                  <div className="grid grid-cols-2 gap-px border-t border-slate-200 bg-slate-200 text-sm sm:grid-cols-4">
+                    {[['Week revenue', fmt(wkRev)], ['Week COGS', fmt(wkCogs)], ['Prod hrs', `${hmm(wkProd)}${wkNp ? ` of ${hmm(wkMin)}` : ''}`]].map(([k, v]) => <div key={k} className="bg-slate-50 px-4 py-2.5"><div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{k}</div><div className="font-bold tabular-nums">{v}</div></div>)}
+                    <div className={`px-4 py-2.5 ${wkTone.box}`}><div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Week rev / hr</div><div className={`font-black tabular-nums ${wkTone.text}`}>{wkRph == null ? '—' : fmt(wkRph)} <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${wkTone.pill}`}>{wkTone.label}</span></div></div>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="overflow-x-auto">
               <table className="w-full min-w-[960px]">
                 <thead><tr className="border-b bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                  <th className="px-3 py-2 text-left">Person</th><th className={`${th} w-20`}>Rate</th><th className={`${th} w-40`}>Total hrs</th><th className={`${th} w-20`}>Reg</th><th className={`${th} w-20`}>OT</th><th className={`${th} w-40`}>Non-prod</th><th className={`${th} w-20`}>On jobs</th><th className={`${th} w-20`}>Prod</th><th className={`${th} w-24`}>Wages</th><th className={`${th} w-20`}>Bonus</th><th className={`${th} w-24`}>Pay</th><th className="w-8" />
+                  <th className="px-3 py-2 text-left">Person</th><th className={`${th} w-20`}>Rate</th><th className={`${th} w-40`}>Total hrs</th><th className={`${th} w-20`}>Reg</th><th className={`${th} w-20`}>OT</th><th className={`${th} w-40`}>Non-prod</th><th className={`${th} w-20`} title="Christmas lights hours, from each day's details. Paid at the normal rate, not lawn production.">Lights</th><th className={`${th} w-20`}>On jobs</th><th className={`${th} w-20`}>Prod</th><th className={`${th} w-24`}>Wages</th><th className={`${th} w-20`}>Bonus</th><th className={`${th} w-24`}>Pay</th><th className="w-8" />
                 </tr></thead>
                 <tbody>
-                  {activePeople.length === 0 && <tr><td colSpan={12} className="px-3 py-6 text-center text-sm text-slate-400">No team members yet — add them on the <Link to="/team" className="underline">Team page</Link>.</td></tr>}
+                  {activePeople.length === 0 && <tr><td colSpan={13} className="px-3 py-6 text-center text-sm text-slate-400">No team members yet — add them on the <Link to="/team" className="underline">Team page</Link>.</td></tr>}
                   {activePeople.map((p) => { const c = calc?.people.find((x) => x.id === p.id); return (
                     <tr key={p.id} className="border-b">
                       <td className="px-3 py-1.5 text-sm font-semibold">{p.name}{p.isTrial && <span className="ml-1 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800">trial</span>}</td>
@@ -610,16 +778,17 @@ export default function WeeklyLog() {
                       <td className={`${th} text-sm tabular-nums ${otOf(c?.total_minutes) ? 'font-semibold text-amber-700' : 'text-slate-300'}`}>{hmm(otOf(c?.total_minutes))}</td>
                       <td className="px-2 py-1.5">{(() => { const dm = Object.values(draft.days).reduce((a, e) => a + (parseTime(e.np?.[p.id] || '') || 0), 0); const any = Object.values(draft.days).some((e) => e.np?.[p.id]);
                         return any ? <div className={`${cell} bg-slate-50 text-slate-600`} title="Sum of this person's non-prod on each day">{minutesToHMM(dm)}</div> : <TimeCell value={draft.hours[p.id]?.np || ''} onChange={setHours(p.id, 'np')} />; })()}</td>
+                      <td className={`${th} text-sm tabular-nums ${c?.lights_minutes ? 'font-semibold text-[#B3121F]' : 'text-slate-300'}`}>{hmm(c?.lights_minutes)}</td>
                       <td className={`${th} text-sm tabular-nums text-slate-500`}>{hmm(c?.job_minutes)}</td>
                       <td className={`${th} text-sm font-semibold tabular-nums text-[#4d7c0f]`}>{hmm(c?.prod_minutes)}</td>
                       <td className={`${th} text-sm tabular-nums`}>{fmt(c?.wages)}</td>
-                      <td className={`${th} text-sm tabular-nums ${c?.bonus > 0 ? 'text-[#4d7c0f]' : 'text-slate-400'}`} title={c ? `Week bonus ${fmt(c.week_bonus)} + job bonus ${fmt(c.job_bonus)} + extra ${fmt(c.extra_bonus)}` : undefined}>{fmt(c?.bonus)}</td>
+                      <td className={`${th} text-sm tabular-nums ${c?.bonus > 0 ? 'text-[#4d7c0f]' : 'text-slate-400'}`} title={c ? `Week bonus ${fmt(c.week_bonus)} + job bonus ${fmt(c.job_bonus)} + extra ${fmt(c.extra_bonus)}${c.lights_bonus || c.lead_bonus ? ` + lights ${fmt(c.lights_bonus)} + lights lead ${fmt(c.lead_bonus)}` : ''}` : undefined}>{fmt(c?.bonus)}</td>
                       <td className={`${th} text-sm font-bold tabular-nums`} title={c?.total_minutes > 0 ? `${fmt(c.total_pay / (c.total_minutes / 60))} earned per hour` : undefined}>{fmt(c?.total_pay)}</td>
                       <td className="px-1" />
                     </tr>
                   ); })}
                 </tbody>
-                {t && activePeople.length > 0 && <tfoot><tr className="bg-slate-50 text-sm font-bold tabular-nums"><td className="px-3 py-2" colSpan={2}>Crew</td><td className={th}>{hmm(t.total_minutes)}</td><td className={th}>{hmm(calc.people.reduce((a, x) => a + regOf(x.total_minutes), 0))}</td><td className={`${th} text-amber-700`}>{hmm(calc.people.reduce((a, x) => a + otOf(x.total_minutes), 0))}</td><td className={th}>{hmm(t.np_minutes)}</td><td className={th}>{hmm(t.job_minutes)}</td><td className={`${th} text-[#4d7c0f]`}>{hmm(t.prod_minutes)}</td><td className={th}>{fmt(t.wages)}</td><td className={`${th} text-[#4d7c0f]`}>{fmt(t.bonus)}</td><td className={th}>{fmt(t.total_pay)}</td><td /></tr></tfoot>}
+                {t && activePeople.length > 0 && <tfoot><tr className="bg-slate-50 text-sm font-bold tabular-nums"><td className="px-3 py-2" colSpan={2}>Crew</td><td className={th}>{hmm(t.total_minutes)}</td><td className={th}>{hmm(calc.people.reduce((a, x) => a + regOf(x.total_minutes), 0))}</td><td className={`${th} text-amber-700`}>{hmm(calc.people.reduce((a, x) => a + otOf(x.total_minutes), 0))}</td><td className={th}>{hmm(t.np_minutes)}</td><td className={`${th} text-[#B3121F]`}>{hmm(t.lights_minutes)}</td><td className={th}>{hmm(t.job_minutes)}</td><td className={`${th} text-[#4d7c0f]`}>{hmm(t.prod_minutes)}</td><td className={th}>{fmt(t.wages)}</td><td className={`${th} text-[#4d7c0f]`}>{fmt(t.bonus)}</td><td className={th}>{fmt(t.total_pay)}</td><td /></tr></tfoot>}
               </table>
             </div>
           </div>
@@ -631,12 +800,29 @@ export default function WeeklyLog() {
               const allowed = calc.week.margin * targetPct / 100;
               const left = allowed - calc.week.prodWages;
               const line = mathLine;
+              const pool = calc.week.pool;
+              const step = (n, label, value, sub, tone) => (
+                <div className={`rounded-lg border p-3 ${tone === 'good' ? 'border-emerald-200 bg-emerald-50' : tone === 'bad' ? 'border-slate-200 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500"><span className="mr-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-800 text-[10px] text-white">{n}</span>{label}</div>
+                  <div className={`mt-1 text-2xl font-black tabular-nums ${tone === 'good' ? 'text-emerald-700' : ''}`}>{value}</div>
+                  <div className="mt-0.5 text-xs text-slate-500">{sub}</div>
+                </div>
+              );
               return (
-                <div className="border-b px-4 py-3 text-sm">
-                  <div className="max-w-md">
-                    {line('', 'Revenue (finished work)', fmt(calc.week.revenue))}
-                    {line('−', 'COGS', fmt(calc.week.cogs - (calc.fees || 0)))}
-                    {calc.fees > 0 && line('−', 'Processing fees', fmt(calc.fees), { sub: `${calc.feePct}% of revenue` })}
+                <div className="border-b px-4 py-4 text-sm">
+                  <div className="mb-2 font-bold">Lawn bonus this week</div>
+                  <div className="grid gap-2 md:grid-cols-3">
+                    {step(1, 'Lawn work made', fmt(calc.week.margin), `after materials and card fees${calc.lights.revenue ? ` · ${fmt0(calc.lights.revenue)} of lights not counted` : ''}`)}
+                    {step(2, `${targetPct}% can go to the crew`, fmt(allowed), `their lawn hours cost ${fmt(calc.week.prodWages)}`)}
+                    {step(3, 'Left over = bonus', fmt(pool), calc.week.laborPct == null ? 'no lawn work yet' : pool > 0 ? 'split by production hours' : `crew cost ${fmt(-left)} more than ${targetPct}%, so no bonus`, pool > 0 ? 'good' : 'bad')}
+                  </div>
+                  {calc.doneJobs.length > 0 && <div className="mt-2 text-xs text-slate-600">Plus finished job bonus: <b>{fmt(t.job_bonus)}</b> ({calc.doneJobs.map((j) => j.name).join(', ')})</div>}
+                  <details className="mt-3">
+                  <summary className="cursor-pointer text-xs font-semibold text-slate-500 hover:text-slate-800">Show the full math</summary>
+                  <div className="mt-2 max-w-md">
+                    {line('', 'Lawn revenue (finished work)', fmt(calc.week.revenue), { sub: calc.lights.revenue ? `${fmt(calc.lights.revenue)} lights not counted` : undefined })}
+                    {line('−', 'COGS', fmt(calc.week.cogs - (calc.lawnFees || 0)))}
+                    {calc.lawnFees > 0 && line('−', 'Processing fees', fmt(calc.lawnFees), { sub: `${calc.feePct}% of revenue` })}
                     {line('=', 'Margin', fmt(calc.week.margin), { bold: true, rule: true })}
                     {line('×', `Labor target`, `${targetPct}%`)}
                     {line('=', 'Allowed for labor', fmt(allowed), { bold: true, rule: true })}
@@ -654,14 +840,49 @@ export default function WeeklyLog() {
                       {calc.people.some((p) => p.np_minutes > 0) && (
                         <div className="flex justify-between gap-3 py-0.5"><span>Non-prod hours — paid, not counted</span><span className="tabular-nums">{fmt(0)}</span></div>
                       )}
+                      {calc.people.some((p) => p.lights_minutes > 0) && (
+                        <div className="flex justify-between gap-3 py-0.5 text-[#B3121F]"><span>Christmas lights hours — paid, not counted (lights have their own bonus)</span><span className="tabular-nums">{fmt(0)}</span></div>
+                      )}
                     </div>
                     {line('=', 'Weekly bonus pool', fmt(calc.week.pool), { bold: true, rule: true, tone: calc.week.pool > 0 ? 'good' : undefined,
                       sub: calc.week.laborPct == null ? 'no margin yet' : left < 0 ? `${fmt(-left)} over — no bonus` : 'under target' })}
                     {calc.doneJobs.length > 0 && line('+', `Finished job bonus (${calc.doneJobs.map((j) => j.name).join(', ')})`, fmt(t.job_bonus), { bold: true, tone: t.job_bonus > 0 ? 'good' : undefined })}
                   </div>
+                  </details>
                 </div>
               );
             })()}
+            {/* Christmas lights: their own pay plan, figured per day */}
+            {calc.lights.days.length > 0 && (
+              <div className="border-b px-4 py-3 text-sm">
+                <div className="mb-1 font-bold">🎄 Lights bonus this week: <span className="tabular-nums text-[#4d7c0f]">{fmt(t.lights_bonus + t.lead_bonus)}</span></div>
+                <div className="text-sm text-slate-600">
+                  {t.lights_bonus > 0 ? <>Crew bonus <b>{fmt(t.lights_bonus)}</b> from {calc.lights.days.filter((x) => x.pool > 0).map((x) => fmtDay(x.date)).join(', ')}</> : <>No crew bonus: no day reached $2,000 installed</>}
+                  {t.lead_bonus > 0 && <> · Ethan's {LIGHTS_LEAD_PCT * 100}% lead bonus <b>{fmt(t.lead_bonus)}</b></>}.
+                  {' '}Lights hours are paid at their normal rate.
+                </div>
+                {calc.lights.days.some((x) => x.warnings.length) && <div className="mt-1 text-xs font-semibold text-amber-800">{[...new Set(calc.lights.days.flatMap((x) => x.warnings.map((w) => `${fmtDay(x.date)}: ${w}`)))].join(' ')}</div>}
+                <details className="mt-2">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-500 hover:text-slate-800">Show each day</summary>
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full min-w-[640px]">
+                    <thead><tr className="border-b text-[11px] font-bold uppercase tracking-wide text-slate-500"><th className="px-2 py-1.5 text-left">Day</th><th className="px-2 text-right">Install value</th><th className="px-2 text-right">Tier</th><th className="px-2 text-right">Crew pool</th><th className="px-2 text-left">Split by lights hrs</th><th className="px-2 text-right">Ethan +1%</th></tr></thead>
+                    <tbody>{calc.lights.days.map((L) => (
+                      <tr key={L.date} className="border-b align-top">
+                        <td className="whitespace-nowrap px-2 py-1.5 font-semibold">{fmtDay(L.date)}{L.warnings.map((w) => <div key={w} className="whitespace-normal text-[11px] font-normal text-amber-800">{w}</div>)}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{fmt(L.install)}{L.revenue > L.install && <div className="text-[11px] text-slate-400">+{fmt(L.revenue - L.install)} hourly-only</div>}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{(L.pct * 100).toFixed(0)}%</td>
+                        <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{fmt(L.pool)}</td>
+                        <td className="px-2 py-1.5 text-xs text-slate-600">{Object.keys(L.byPerson).length ? Object.entries(L.byPerson).map(([pid, m]) => <div key={pid}>{calc.people.find((x) => x.id === pid)?.name || pid} · {hmm(m)} → {fmt(L.shares[pid] || 0)}</div>) : '—'}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{fmt(L.lead)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+                <div className="mt-2 text-xs text-slate-500">Tiers on the whole day's install value: under {fmt0(LIGHTS_TIERS[LIGHTS_TIERS.length - 1][0])} 0% · {[...LIGHTS_TIERS].reverse().map(([min, pct]) => `${fmt0(min)}+ ${pct * 100}%`).join(' · ')}. Each day resets. Lights hours this week: {hmm(calc.lights.minutes)}, paid at each person's normal rate ({fmt(t.lights_pay)}).</div>
+                </details>
+              </div>
+            )}
             {/* extra bonuses: reviews and anything else, added by hand */}
             <div className="border-b px-4 py-3">
               <div className="mb-2 flex items-center justify-between">
@@ -732,7 +953,11 @@ export default function WeeklyLog() {
                           <div className="mb-1.5 flex items-baseline justify-between"><span className="font-bold">{p.name}</span><span className="font-black tabular-nums">{fmt(p.total_pay)}</span></div>
                           {item(`Regular ${p.reg_hours.toFixed(2)} h × ${fmt(p.rate)}`, fmt(p.reg_pay))}
                           {ot > 0 && item(`Overtime ${p.ot_hours.toFixed(2)} h × ${fmt(p.rate * 1.5)}`, fmt(p.ot_pay), 'text-amber-800')}
+                          {p.lights_hours > 0 && <div className="pl-3 text-[11px] text-slate-500">incl. {p.lights_hours.toFixed(2)} h Christmas lights</div>}
+                          {p.bonus_ot > 0 && item('OT on lights bonus', fmt(p.bonus_ot), 'text-amber-800')}
                           {p.week_bonus > 0 && item('Weekly bonus (share of pool)', fmt(p.week_bonus), 'text-[#4d7c0f]')}
+                          {p.lights_bonus > 0 && item('Christmas lights crew bonus', fmt(p.lights_bonus), 'text-[#4d7c0f]')}
+                          {p.lead_bonus > 0 && item('Christmas lights lead bonus (1%)', fmt(p.lead_bonus), 'text-[#4d7c0f]')}
                           {p.job_bonus > 0 && item('Finished job bonus', fmt(p.job_bonus), 'text-[#4d7c0f]')}
                           {p.extras.map((x, i) => <div key={i}>{item(x.reason || 'Extra bonus', fmt(x.amount), 'text-[#4d7c0f]')}</div>)}
                           {p.bonus === 0 && item('Bonuses', fmt(0), 'text-slate-400')}
@@ -741,8 +966,9 @@ export default function WeeklyLog() {
                           <div className="mt-2 grid grid-cols-3 gap-1.5">
                             <CopyChip label="Regular hrs" value={p.reg_hours.toFixed(2)} />
                             <CopyChip label="OT hrs" value={p.ot_hours.toFixed(2)} />
-                            <CopyChip label="Bonuses" value={p.bonus.toFixed(2)} prefix="$" />
+                            <CopyChip label="Bonuses" value={(p.bonus + (p.bonus_ot || 0)).toFixed(2)} prefix="$" />
                           </div>
+                          {p.bonus_ot > 0 && <div className="mt-1.5 text-[11px] text-slate-500">Bonuses include {fmt(p.bonus_ot)} OT on the lights bonus (a promised bonus raises the overtime rate).</div>}
                         </div>
                       );
                     })}
@@ -779,14 +1005,85 @@ export default function WeeklyLog() {
             const gp = calc.week.margin; // finished work: revenue − COGS
             return (
               <div className="border-t">
-                <header className="border-b bg-slate-50 px-4 py-3"><h3 className="font-bold">Week summary</h3><p className="text-xs text-slate-500">Finished work only.</p></header>
+                <header className="border-b bg-slate-50 px-4 py-3"><h3 className="font-bold">Week summary</h3></header>
+                {/* The simple version: a verdict, then money in → costs → what you kept. */}
+                {(() => {
+                  const made = t.revenue - t.cogs - t.wages - t.bonus - t.employer_taxes;
+                  const pct = t.revenue > 0 ? made / t.revenue : null;
+                  const others = history.filter((h) => h.week_ending !== week && h.revenue > 0);
+                  const avg = others.length ? others.reduce((a, h) => a + madeOf(h), 0) / others.length : null;
+                  const vsAvg = avg == null ? null : made - avg;
+                  const grade = t.revenue > 0 ? gradeOf(t.lawn_revenue - t.lawn_cogs > 0 ? (t.lawn_prod_wages + t.week_bonus + t.job_bonus) / (t.lawn_revenue - t.lawn_cogs) : null, (t.total_minutes - t.np_minutes) > 0 ? t.revenue / ((t.total_minutes - t.np_minutes) / 60) : null) : null;
+                  const verdict = grade?.level || null;
+                  // Wages split: non-prod = each person's non-prod hours at their rate; production = everything else
+                  // (lawn + lights hours, drive time between jobs, and any overtime extra), so the two add up to wages.
+                  const npWages = Math.round(calc.people.reduce((a, p) => a + (p.np_minutes / 60) * p.rate, 0) * 100) / 100;
+                  const prodWagesAll = t.wages - npWages;
+                  const otExtra = calc.people.reduce((a, p) => a + (p.ot_premium || 0) + (p.bonus_ot || 0), 0);
+                  const share = (n) => (t.revenue > 0 ? `${((n / t.revenue) * 100).toFixed(0)}%` : null);
+                  const box = (op, label, value, sub, cls = '', pctOfIn = null) => (
+                    <div className="flex items-stretch gap-2">
+                      {op && <div className="flex items-center text-xl font-black text-slate-300">{op}</div>}
+                      <div className="flex-1 rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+                        <div className={`mt-1 text-2xl font-black tabular-nums ${cls}`}>{value}{pctOfIn && <span className="ml-2 text-base font-bold text-slate-400">{pctOfIn}</span>}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">{sub}</div>
+                      </div>
+                    </div>
+                  );
+                  return (
+                    <div className="space-y-3 px-4 py-4 text-sm">
+                      {verdict && (
+                        <div className={`rounded-lg px-3 py-2 ${verdict === 'good' ? 'bg-[#B0FF03]/20' : verdict === 'bad' ? 'bg-red-50' : 'bg-amber-50'}`}>
+                          <span className={`font-black ${verdict === 'good' ? 'text-[#3f6212]' : verdict === 'bad' ? 'text-red-700' : 'text-amber-800'}`}>{verdict === 'good' ? 'Good week' : verdict === 'bad' ? 'Rough week' : 'Okay week'}</span>
+                          <span className="text-slate-700">{grade.checks.map((c) => <span key={c.text}> · {c.ok ? '✓' : '✗'} {c.text}</span>)}{t.lights_install > 0 && (() => { const lp = t.lights_install_labor / t.lights_install; return <span> · {lp <= LIGHTS_INSTALL_TARGET ? '✓' : '✗'} lights {(lp * 100).toFixed(0)}% (goal {Math.round(LIGHTS_INSTALL_TARGET * 100)}%)</span>; })()}{vsAvg != null ? <span className="text-slate-500"> · kept {fmt0(Math.abs(vsAvg))} {vsAvg >= 0 ? 'more' : 'less'} than your average week</span> : ''}</span>
+                        </div>
+                      )}
+                      <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-4">
+                        {box('', 'Money in', fmt(t.revenue), 'finished work, lawn + lights')}
+                        {box('−', 'Materials & fees', fmt(t.cogs), 'COGS + card fees', '', share(t.cogs))}
+                        {box('−', 'Production wages', fmt(prodWagesAll), `${minutesToHMM(t.total_minutes - t.np_minutes)} hrs: lawn${t.lights_minutes ? ' + lights' : ''} + drive time${otExtra > 0 ? ` · incl. ${fmt0(otExtra)} OT extra` : ''}`, '', share(prodWagesAll))}
+                        {box('−', 'Non-prod wages', fmt(npWages), t.np_minutes ? `${minutesToHMM(t.np_minutes)} hrs: shop, errands, your house` : 'no non-prod hours', npWages ? 'text-amber-700' : '', share(npWages))}
+                        {box('−', 'Bonuses', fmt(t.bonus), [t.week_bonus && `lawn ${fmt0(t.week_bonus)}`, (t.lights_bonus + t.lead_bonus) > 0 && `lights ${fmt0(t.lights_bonus + t.lead_bonus)}`, t.job_bonus && `jobs ${fmt0(t.job_bonus)}`, t.extra_bonus && `extras ${fmt0(t.extra_bonus)}`].filter(Boolean).join(' · ') || 'none this week', '', share(t.bonus))}
+                        {box('−', 'Employer taxes', t.employer_taxes ? fmt(t.employer_taxes) : '—', t.employer_taxes ? 'from ADP' : 'not entered yet: add it after ADP runs', t.employer_taxes ? '' : 'text-slate-300', t.employer_taxes ? share(t.employer_taxes) : null)}
+                        {box('=', 'You kept', fmt(made), 'of money in · before overhead', made >= 0 ? 'text-emerald-700' : 'text-red-600', pct == null ? null : `${(pct * 100).toFixed(0)}%`)}
+                      </div>
+                      {(() => {
+                        // Fully loaded labor: every dollar the crew costs (all wages incl. non-prod and OT, bonuses, employer taxes).
+                        const loaded = t.wages + t.bonus + t.employer_taxes, gp = t.revenue - t.cogs;
+                        // What you control: production wages (non-prod left out) + commission bonuses (lawn weekly + finished jobs + lights).
+                        const comm = t.wages - t.np_wages + t.week_bonus + t.job_bonus + t.lights_bonus + t.lead_bonus;
+                        const ofIn = t.revenue > 0 ? loaded / t.revenue : null, ofGp = gp > 0 ? loaded / gp : null;
+                        return (
+                          <>
+                          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border-2 border-[#0F2236] bg-white px-3 py-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-700">Labor + commission</span>
+                            <span className="text-2xl font-black tabular-nums">{gp > 0 ? `${((comm / gp) * 100).toFixed(1)}%` : '—'}</span>
+                            <span className="tabular-nums text-slate-600">of adjusted revenue · {fmt(comm)} ÷ {fmt(gp)}</span>
+                            <span className="text-xs text-slate-500">production wages + weekly lawn bonus + lights bonus · non-prod, reviews/extras and taxes left out · goal 30%</span>
+                          </div>
+                          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Fully loaded labor</span>
+                            <span className="text-lg font-black tabular-nums">{fmt(loaded)}</span>
+                            <span className="tabular-nums"><b>{ofIn == null ? '—' : `${(ofIn * 100).toFixed(1)}%`}</b> of money in</span>
+                            <span className="tabular-nums text-slate-500">· <b className="text-slate-700">{ofGp == null ? '—' : `${(ofGp * 100).toFixed(1)}%`}</b> of gross profit</span>
+                            <span className="text-xs text-slate-500">all wages + bonuses + employer taxes{t.employer_taxes ? '' : ' (taxes not entered yet, so this will go up)'}</span>
+                          </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  );
+                })()}
+                <details className="border-t">
+                <summary className="cursor-pointer px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800">Show the details</summary>
                 {(() => {
                   // What the week made, every cost taken out, then: is it good? Judged by the labor
                   // target and against your own recent weeks (the range picked under Past weeks).
                   const made = t.revenue - t.cogs - t.wages - t.bonus - t.employer_taxes;
                   const pct = t.revenue > 0 ? made / t.revenue : null;
                   const others = history.filter((h) => h.week_ending !== week && h.revenue > 0);
-                  const avg = others.length ? others.reduce((a, h) => a + (h.revenue - h.cogs - h.wages - h.bonus - h.taxes), 0) / others.length : null;
+                  const avg = others.length ? others.reduce((a, h) => a + madeOf(h), 0) / others.length : null;
                   const vsAvg = avg == null ? null : made - avg;
                   const laborOk = calc.week.laborPct != null && calc.week.under;
                   const verdict = t.revenue <= 0 ? null : laborOk && (vsAvg == null || vsAvg >= 0) ? 'good' : !laborOk && vsAvg != null && vsAvg < 0 ? 'bad' : 'ok';
@@ -837,6 +1134,7 @@ export default function WeeklyLog() {
                   <Tile label="Profit after labor" value={fmt(t.revenue - t.cogs - t.total_pay - t.employer_taxes)} sub={`GP − all wages ${fmt(t.wages)} − bonus ${fmt(t.bonus)} − emp. taxes ${fmt(t.employer_taxes)} · before overhead`} tone={t.revenue - t.cogs - t.total_pay - t.employer_taxes < 0 ? 'bad' : 'good'} big />
                   <Tile label="Bonus pool" value={fmt(t.bonus)} sub={t.job_bonus ? `incl. ${fmt(t.job_bonus)} job bonus` : `${minutesToHMM(t.np_minutes)} non-prod · ${minutesToHMM(t.total_minutes)} total hrs`} tone={t.bonus > 0 ? 'good' : undefined} />
                 </div>
+                </details>
               </div>
             );
           })()}
@@ -856,37 +1154,117 @@ export default function WeeklyLog() {
         {/* history — same numbers as the summary, one line per week */}
         <section className="rounded-xl border bg-white">
           <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
-            <h3 className="font-bold">Past weeks <span className="text-xs font-normal text-slate-500">all crews · finished work</span></h3>
+            <h3 className="font-bold">Past weeks</h3>
             <div className="flex gap-1 text-xs">{RANGES.map(([id, label]) => <button key={id} onClick={() => setRange(id)} className={`rounded-full px-2.5 py-1 font-semibold ${range === id ? 'bg-[#4d7c0f] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{label}</button>)}</div>
           </header>
+          {lightsSeason && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-red-50/60 px-4 py-2 text-xs text-slate-700">
+              <span className="font-bold text-[#B3121F]">🎄 Lights season</span>
+              <span>Installed <b className="tabular-nums">{fmt0(lightsSeason.install)}</b></span>
+              <span>Install pay <b className="tabular-nums">{fmt0(lightsSeason.installLabor)}</b> = {lightsSeason.install ? pctTag(lightsSeason.installLabor / lightsSeason.install, LIGHTS_INSTALL_TARGET) : '—'} <span className="text-slate-500">(goal {Math.round(LIGHTS_INSTALL_TARGET * 100)}%)</span></span>
+              <span>Removal pay <b className="tabular-nums">{fmt0(lightsSeason.removalLabor)}</b> = {lightsSeason.install ? pctTag(lightsSeason.removalLabor / lightsSeason.install, LIGHTS_REMOVAL_TARGET) : '—'} <span className="text-slate-500">(goal {Math.round(LIGHTS_REMOVAL_TARGET * 100)}% of installed)</span></span>
+            </div>
+          )}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead><tr className="border-b bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-2 text-left">Week ending</th><th className={th}>Revenue</th><th className={th}>COGS</th><th className={th}>Gross profit</th><th className={th}>Prod labor</th><th className={th}>Labor %</th><th className={th}>Prod hrs</th><th className={th}>GP / prod hr</th><th className={th}>Bonus</th><th className={th} title="Revenue − COGS − wages − bonuses − employer taxes. Before overhead (insurance, fuel, software, etc).">We made</th>
-              </tr></thead>
-              <tbody>
-                {history.length === 0 && <tr><td colSpan={10} className="px-3 py-6 text-center text-slate-400">Nothing logged yet.</td></tr>}
-                {history.map((h) => (
-                  <tr key={h.week_ending} className={`border-b last:border-0 tabular-nums ${h.week_ending === week ? 'bg-[#B0FF03]/10' : ''}`}>
-                    <td className="px-3 py-2"><Link to={`/payroll/${h.week_ending}`} className="font-semibold hover:underline">{fmtWeek(h.week_ending)}</Link>{h.crews > 1 && <span className="ml-1 text-xs text-slate-400">· {h.crews} crews</span>}
-                      {h.closed ? <span className="ml-2 rounded-full bg-[#B0FF03]/30 px-1.5 text-[10px] font-semibold text-[#3f6212]">Closed</span> : h.week_ending < thisWeek && <span className="ml-2 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800">Open</span>}</td>
-                    <td className={th}>{fmt(h.revenue)}</td><td className={th}>{fmt(h.cogs)}</td><td className={`${th} font-semibold`}>{fmt(h.margin)}</td><td className={th}>{fmt(h.prodWages)}</td>
-                    <td className={`${th} font-semibold ${h.laborPct == null ? '' : h.laborPct <= targetPct / 100 ? 'text-[#4d7c0f]' : 'text-red-600'}`}>{pctFmt(h.laborPct)}</td>
-                    <td className={th}>{hmm(h.prod)}</td><td className={`${th} font-semibold`}>{h.prod > 0 ? fmt(h.margin / (h.prod / 60)) : '—'}</td>
-                    <td className={`${th} ${h.bonus > 0 ? 'text-[#4d7c0f] font-semibold' : 'text-slate-400'}`}>{fmt(h.bonus)}</td>
-                    <td className={`${th} font-bold`}>{madeCell(h)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              {history.length > 0 && <tfoot><tr className="border-t-2 bg-slate-50 font-bold tabular-nums">
-                <td className="px-3 py-2">Total · {history.length} wks</td><td className={th}>{fmt(hTotals.revenue)}</td><td className={th}>{fmt(hTotals.cogs)}</td><td className={th}>{fmt(hTotals.margin)}</td><td className={th}>{fmt(hTotals.prodWages)}</td>
-                <td className={`${th} ${hTotals.laborPct == null ? '' : hTotals.laborPct <= targetPct / 100 ? 'text-[#4d7c0f]' : 'text-red-600'}`}>{pctFmt(hTotals.laborPct)}</td>
-                <td className={th}>{hmm(hTotals.prod)}</td><td className={th}>{hTotals.prod > 0 ? fmt(hTotals.margin / (hTotals.prod / 60)) : '—'}</td><td className={th}>{fmt(hTotals.bonus)}</td><td className={th}>{madeCell(hTotals)}</td>
-              </tr></tfoot>}
-            </table>
+            {(() => {
+              // Simple by default: the five numbers that matter. "More columns" shows the rest.
+              const gpOf = (h) => h.allRevenue - h.allCogs;
+              const M = 'money', P = 'perf', L = 'labor', B = 'bonus', K = 'kept';
+              const dot = (ok) => <span className={`h-2 w-2 rounded-full ${ok ? 'bg-emerald-500' : 'bg-red-500'}`} />;
+              const scored = (v, ok, text) => <span className={`inline-flex items-center gap-1 font-semibold ${ok ? 'text-[#4d7c0f]' : 'text-red-600'}`}>{dot(ok)}{text}</span>;
+              const pctIn = (n, d) => (d > 0 ? `${((n / d) * 100).toFixed(1)}%` : '—');
+              const cols = [
+                // 1. Money: what came in, materials, and what's left to work with
+                { k: 'in', g: M, label: 'Money in', title: 'All finished work, lawn + lights.', cell: (h) => fmt0(h.allRevenue) },
+                { k: 'cogs', g: M, label: 'COGS', title: 'Materials + card fees, and the % of money in.', cell: (h) => <>{fmt0(h.allCogs)}<div className="text-[10px] text-slate-400">{pctIn(h.allCogs, h.allRevenue)}</div></> },
+                { k: 'adj', g: M, label: 'Adjusted rev', title: 'Money in − COGS (gross profit).', cell: (h) => <span className="font-semibold">{fmt0(gpOf(h))}</span> },
+                // 2. Team performance: is the crew doing good?
+                { k: 'lawnbefore', g: P, label: 'Lawn % crew got', title: `How the crew actually did: lawn production wages ÷ lawn adjusted revenue, BEFORE the bonus. Under ${laborGoal}% = they beat the budget, and the gap is their bonus.`, cell: (h) => h.lawnBefore == null ? '—' : <>{scored(h.lawnBefore, h.lawnBefore <= laborGoal / 100 + 0.0005, pctFmt(h.lawnBefore))}{h.lawnBonus >= 0.5 && <div className="text-[10px] text-slate-400">earned {fmt0(h.lawnBonus)}</div>}</> },
+                { k: 'labor', g: P, label: 'Lawn % after bonus', title: `Lawn labor after paying the bonus: lawn production wages + lawn bonus ÷ lawn adjusted revenue (exactly the lawn bonus math: straight-time production hours, so the OT extra-half isn't in it). Non-prod, lights and review bonuses left out. When the bonus pays, this lands right at ${laborGoal}%.`, cell: (h) => h.lawnCrew == null ? '—' : scored(h.lawnCrew, h.lawnCrew <= laborGoal / 100 + 0.0005, pctFmt(h.lawnCrew)) },
+                ...(showLights ? [{ k: 'lights', g: P, label: '🎄 Lights %', title: `Lights labor: install pay ÷ install value. Goal ${Math.round(LIGHTS_INSTALL_TARGET * 100)}% or less.`, cell: (h) => { if (!h.lightsInstall) return h.lightsRemovalLabor > 0 ? <span className="text-[11px] text-slate-500">removal {fmt0(h.lightsRemovalLabor)}</span> : <span className="text-slate-300">—</span>; const lp = h.lightsInstallLabor / h.lightsInstall; return scored(lp, lp <= LIGHTS_INSTALL_TARGET, `${(lp * 100).toFixed(1)}%`); } }] : []),
+                { k: 'total', g: P, label: 'Total %', title: 'All wages, lawn + lights (every hour: mowing, drive, non-prod, lights, OT) ÷ money in. No bonuses, no taxes.', cell: (h) => h.allRevenue > 0 ? <span className="font-semibold">{((h.wages / h.allRevenue) * 100).toFixed(1)}%</span> : '—' },
+                { k: 'perhr', g: P, label: '$ / man-hr', title: `Rev per man-hour: money in ÷ production man-hours. Goal ${fmt0(goal)} or more.`, cell: (h) => { const r = rphOf(h); return r == null ? '—' : scored(r, goal && r >= goal, fmt0(r)); } },
+                // 3. Labor: all wages, and how much of that was non-prod
+                { k: 'np', g: L, label: '% of money in', title: 'Non-prod wages (shop, errands, your house: work you assign) ÷ money in. Part of Total %.', cell: (h) => h.npWages > 0 && h.allRevenue > 0 ? <span className="text-amber-700">{((h.npWages / h.allRevenue) * 100).toFixed(1)}%</span> : <span className="text-slate-300">—</span> },
+                // 4. Bonuses paid, one column with the split under it
+                { k: 'bonus', g: B, label: 'Bonuses', title: 'All bonuses paid: lawn pool + jobs, Christmas lights, and other (reviews, extras).', cell: (h) => { const parts = [h.lawnBonus >= 0.5 && `lawn ${fmt0(h.lawnBonus)}`, h.lightsBonus >= 0.5 && `🎄 ${fmt0(h.lightsBonus)}`, h.otherBonus >= 0.5 && `other ${fmt0(h.otherBonus)}`].filter(Boolean);
+                  return h.bonus > 0 ? <><span className="font-semibold text-[#4d7c0f]">{fmt0(h.bonus)}</span>{parts.length > 1 && <div className="text-[10px] leading-tight text-slate-400">{parts.map((x) => <div key={x}>{x}</div>)}</div>}</> : <span className="text-slate-300">$0</span>; } },
+                ...(histMore ? [
+                  { g: B, k: 'hrs', label: 'Crew hours', cell: (h) => hmm(h.allMin) },
+                  { g: B, k: 'prod', label: 'Prod hrs', title: 'Crew hours − non-prod', cell: (h) => hmm(h.prodAll) },
+                  { g: B, k: 'lawnlabor', label: 'Lawn bonus labor', title: `Lawn production wages ÷ lawn gross profit — what the lawn bonus uses (target ${targetPct}%).`, cell: (h) => pctFmt(h.laborPct) },
+                ] : []),
+                // 5. Bottom line
+                { k: 'kept', g: K, label: 'You kept', title: 'Money in − COGS − all wages − bonuses − employer taxes. Before overhead.', cell: (h) => { const m = madeOf(h); return <><span className={`font-bold ${m >= 0 ? 'text-[#4d7c0f]' : 'text-red-600'}`}>{fmt0(m)}</span>{h.allRevenue > 0 && <div className="text-[10px] text-slate-400">{((m / h.allRevenue) * 100).toFixed(0)}%</div>}</>; } },
+              ];
+              const GROUPS = { [M]: ['Money', 'bg-slate-100 text-slate-600'], [P]: ['Team performance', 'bg-emerald-50 text-emerald-800'], [L]: ['Non-prod (your call)', 'bg-amber-50 text-amber-800'], [B]: ['Paid out', 'bg-lime-50 text-[#3f6212]'], [K]: ['Bottom line', 'bg-[#0F2236] text-white'] };
+              const spans = cols.reduce((acc, c) => { const last = acc[acc.length - 1]; if (last && last.g === c.g) last.n++; else acc.push({ g: c.g, n: 1 }); return acc; }, []);
+              const tint = (g) => (g === P ? 'bg-emerald-50/50' : g === L ? 'bg-amber-50/30' : g === B ? 'bg-lime-50/30' : g === K ? 'bg-slate-50' : '');
+              return (
+                <>
+                {(() => { const gs = history.map((h) => gradeOf(h.lawnCrew, rphOf(h))?.level).filter(Boolean); if (!gs.length) return null; const c = (l) => gs.filter((x) => x === l).length;
+                  return <div className="border-b px-4 py-2 text-sm">Last {gs.length} weeks: <b className="text-emerald-700">{c('good')} good</b> · <b className="text-amber-700">{c('ok')} okay</b> · <b className="text-red-600">{c('bad')} rough</b></div>; })()}
+                <table className="w-full text-sm [&_td]:!px-2 [&_th]:!px-2 [&_td:first-child]:!pl-3 [&_th:first-child]:!pl-3">
+                  <thead>
+                    <tr className="text-[11px] font-black uppercase tracking-wide">
+                      <th className="bg-white" />{spans.map((sp) => <th key={sp.g} colSpan={sp.n} className={`border-x border-white px-3 py-1.5 text-center ${GROUPS[sp.g][1]}`}>{GROUPS[sp.g][0]}</th>)}
+                    </tr>
+                    <tr className="border-b bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                      <th className="px-3 py-2 text-left">Week</th>{cols.map((c) => <th key={c.k} className={`${th} ${tint(c.g)}`} title={c.title}>{c.label}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.length === 0 && <tr><td colSpan={cols.length + 1} className="px-3 py-6 text-center text-slate-400">Nothing logged yet.</td></tr>}
+                    {history.map((h) => (
+                      <tr key={h.week_ending} className={`border-b last:border-0 tabular-nums ${h.week_ending === week ? 'bg-[#B0FF03]/10' : ''}`}>
+                        <td className="whitespace-nowrap px-3 py-2"><Link to={`/payroll/${h.week_ending}`} className="font-semibold hover:underline">{new Date(h.week_ending + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Link>{h.crews > 1 && <span className="ml-1 text-xs text-slate-400">· {h.crews} crews</span>}
+                          {!h.closed && h.week_ending < thisWeek && <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800">Open</span>}
+                          {(() => { const g = gradeOf(h.lawnCrew, rphOf(h)); return g ? <div><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${GRADE_STYLE[g.level]}`}>{g.label}</span></div> : null; })()}</td>
+                        {cols.map((c) => <td key={c.k} className={`${th} ${tint(c.g)}`}>{c.cell(h)}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                  {history.length > 1 && <tfoot><tr className="border-t-2 bg-slate-50 font-bold tabular-nums">
+                    <td className="px-3 py-2">{history.length} weeks{(() => { const g = gradeOf(hTotals.lawnCrew, rphOf(hTotals)); return g ? <div><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${GRADE_STYLE[g.level]}`}>{g.label}</span></div> : null; })()}</td>{cols.map((c) => <td key={c.k} className={`${th} ${tint(c.g)}`}>{c.cell(hTotals)}</td>)}
+                  </tr></tfoot>}
+                </table>
+                </>
+              );
+            })()}
+          </div>
+          <div className="border-t px-4 py-2 text-xs"><button onClick={() => setHistMore((v) => !v)} className="font-semibold text-slate-500 hover:text-slate-800">{histMore ? '− Fewer columns' : '+ More columns'}</button></div>
+          {/* plain-English key for every number in the table */}
+          <div className="border-t bg-slate-50 px-4 py-3 text-xs leading-relaxed text-slate-600">
+            <div className="mb-1 font-bold text-slate-700">What these numbers mean</div>
+            <div className="grid gap-x-6 gap-y-1 md:grid-cols-2">
+              <div><b>Adjusted rev</b> = money in − COGS (materials + card fees).</div>
+              <div><b>Lawn % crew got</b> = lawn production wages ÷ lawn adjusted rev, before the bonus: how the crew actually did. Under {laborGoal}% earns a bonus. <b>Lawn % after bonus</b> = lawn production wages + lawn bonus ÷ lawn adjusted rev. Non-prod, lights and reviews left out. The bonus tops it up to {laborGoal}%, so <b>{laborGoal}% = on budget</b>, over = crew ran over.</div>
+              <div><b>🎄 Lights %</b> = lights hours pay + lights bonus ÷ lights installed. Goal {Math.round(LIGHTS_INSTALL_TARGET * 100)}% or less.</div>
+              <div><b>Total %</b> = all wages (every hour: lawn, lights, drive time, non-prod, OT) ÷ money in. <b>No bonuses, no taxes.</b></div>
+              <div><b>$ / man-hr</b> = money in ÷ everyone's production hours added together. Goal {fmt0(goal)} or more.</div>
+              <div><b>Non-prod</b> = shop, errands, your house (work you assign) ÷ money in. Already inside Total %.</div>
+              <div><b>Bonuses</b> = lawn weekly + finished jobs, 🎄 lights, and other (reviews, extras).</div>
+              <div><b>You kept</b> = money in − COGS − all wages − all bonuses − employer taxes. Before overhead.</div>
+            </div>
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+// The score at the end of each day: rev/hr, how it compares to the goal, and what's left after COGS.
+function EndOfDay({ rph, rev, min, goal }) {
+  const tone = toneOf(rph, goal), tn = TONES[tone];
+  const pct = rph != null && goal ? Math.min(100, (rph / goal) * 100) : 0;
+  const note = rph == null ? (rev ? (min ? 'All hours are non-prod' : 'Add crew hours to score the day') : min ? 'Add revenue to score the day' : 'No work logged')
+    : goal ? `${fmt0(Math.abs(rph - goal))}/hr ${rph >= goal ? 'over' : 'under'} the ${fmt0(goal)} goal` : 'Set a rev/hr goal at the top';
+  return (
+    <div className={`shrink-0 rounded-lg border p-3 md:w-60 ${tn.box}`}>
+      <div className="flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">End of day</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${tn.pill}`}>{tn.label}</span></div>
+      <div className={`mt-1 text-3xl font-black tabular-nums leading-tight ${tn.text}`}>{rph == null ? '—' : fmt0(rph)}<span className="ml-1 text-xs font-semibold text-slate-500">{rph == null ? '' : 'rev / man-hr'}</span></div>
+      {goal > 0 && <div className="relative mt-2 h-2 rounded-full bg-white/80 ring-1 ring-black/5"><div className={`h-full rounded-full transition-all ${tn.bar}`} style={{ width: `${pct}%` }} /></div>}
+      <div className="mt-1.5 text-[11px] text-slate-600 tabular-nums">{note}</div>
     </div>
   );
 }

@@ -785,6 +785,101 @@ const REQUESTS_HISTORY_TTL = 5 * 60 * 1000;
 const QUOTES_HISTORY_TTL = 5 * 60 * 1000;
 const BOOKED_HISTORY_TTL = 5 * 60 * 1000;
 
+// Christmas-lights quotes in Jobber (any status): title or a line item mentions
+// lights / Christmas / C9. Cached 10 min so it doesn't eat the API budget.
+let lightsQuotesCache = null; // { data, time }
+const LIGHTS_QUOTES_TTL = 2 * 60 * 1000;
+const LIGHTS_RE = /\b(lights?|lites?|lighting)\b|christmas|holiday|\bc9\b/i;
+async function handleLightsQuotes(req, res) {
+  if (lightsQuotesCache && Date.now() - lightsQuotesCache.time < LIGHTS_QUOTES_TTL && !req.query.fresh) {
+    return res.json({ quotes: lightsQuotesCache.data, cached: true });
+  }
+  // Older copy? Answer with it now and refresh in the background, so the page is instant.
+  if (lightsQuotesCache && !req.query.fresh && !req.query._bg) {
+    res.json({ quotes: lightsQuotesCache.data, cached: true, refreshing: true });
+    handleLightsQuotes({ query: { _bg: 1 } }, { json: () => {}, status: () => ({ json: () => {} }) }).catch(() => {});
+    return undefined;
+  }
+  try {
+    const data = await jobberQuery(`{
+      quotes(first: 100) {
+        nodes {
+          id quoteNumber quoteStatus title
+          amounts { total }
+          createdAt updatedAt sentAt
+          client { firstName lastName companyName }
+          lineItems(first: 15) { nodes { name } }
+        }
+      }
+    }`);
+    const quotes = (data.quotes?.nodes || [])
+      .filter((q) => LIGHTS_RE.test(q.title || '') || (q.lineItems?.nodes || []).some((li) => LIGHTS_RE.test(li.name || '')))
+      .map((q) => ({
+        id: q.id,
+        quoteNumber: q.quoteNumber,
+        title: q.title || '',
+        status: String(q.quoteStatus || '').toLowerCase(),
+        total: q.amounts?.total || 0,
+        sentAt: q.sentAt,
+        createdAt: q.createdAt,
+        updatedAt: q.updatedAt,
+        // person's name first; business name only when there's no person
+        clientName: `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim() || q.client?.companyName || 'Unknown',
+        companyName: q.client?.companyName || '',
+      }))
+      .sort((a, b) => new Date(b.sentAt || b.createdAt || 0) - new Date(a.sentAt || a.createdAt || 0));
+    lightsQuotesCache = { data: quotes, time: Date.now() };
+    return res.json({ quotes, cached: false });
+  } catch (err) {
+    console.error('[lights-quotes]', err.message);
+    if (lightsQuotesCache) return res.json({ quotes: lightsQuotesCache.data, cached: true, stale: true, error: err.message });
+    return res.status(err.code === 'JOBBER_DISCONNECTED' ? 401 : 500).json({ error: err.message });
+  }
+}
+
+// Recent jobs with their first visit date — light enough not to get throttled.
+// The Lights dashboard decides which are lights jobs (title or client of a lights quote).
+let recentJobsCache = null; // { data, time }
+async function handleRecentJobs(req, res) {
+  if (recentJobsCache && Date.now() - recentJobsCache.time < 2 * 60 * 1000 && !req.query.fresh) {
+    return res.json({ jobs: recentJobsCache.data, cached: true });
+  }
+  // Older copy? Answer with it now and refresh in the background, so the page is instant.
+  if (recentJobsCache && !req.query.fresh && !req.query._bg) {
+    res.json({ jobs: recentJobsCache.data, cached: true, refreshing: true });
+    handleRecentJobs({ query: { _bg: 1 } }, { json: () => {}, status: () => ({ json: () => {} }) }).catch(() => {});
+    return undefined;
+  }
+  try {
+    const data = await jobberQuery(`{
+      jobs(first: 40, sort: [{key: CREATED_AT, direction: DESCENDING}]) {
+        nodes {
+          id jobNumber title jobStatus createdAt total
+          client { firstName lastName companyName }
+          visits(first: 2) { nodes { startAt completedAt } }
+        }
+      }
+    }`);
+    const jobs = (data.jobs?.nodes || []).map((j) => ({
+      id: j.id,
+      jobNumber: j.jobNumber,
+      title: j.title || '',
+      status: String(j.jobStatus || '').toLowerCase(),
+      total: j.total || 0,
+      createdAt: j.createdAt,
+      clientName: `${j.client?.firstName || ''} ${j.client?.lastName || ''}`.trim() || j.client?.companyName || 'Unknown',
+      visitAt: j.visits?.nodes?.[0]?.startAt || null,
+      visitDone: !!j.visits?.nodes?.[0]?.completedAt,
+    }));
+    recentJobsCache = { data: jobs, time: Date.now() };
+    return res.json({ jobs, cached: false });
+  } catch (err) {
+    console.error('[recent-jobs]', err.message);
+    if (recentJobsCache) return res.json({ jobs: recentJobsCache.data, cached: true, stale: true, error: err.message });
+    return res.status(500).json({ error: err.message });
+  }
+}
+
 async function handleOpenQuotes(req, res) {
   if (openQuotesCache && Date.now() - openQuotesCache.time < OPEN_QUOTES_TTL) {
     return res.json({ quotes: openQuotesCache.data, cached: true });
@@ -822,6 +917,52 @@ async function handleOpenQuotes(req, res) {
     if (openQuotesCache) return res.json({ quotes: openQuotesCache.data, cached: true, stale: true });
     if (err.code === 'JOBBER_DISCONNECTED') return res.status(401).json({ error: err.message, code: 'JOBBER_DISCONNECTED' });
     return res.status(500).json({ error: err.message });
+  }
+}
+
+// Christmas-lights requests in Jobber: title mentions "lights". Includes the
+// assessment visit so the dashboard can show what's on the schedule.
+let lightsRequestsCache = null; // { data, time }
+async function handleLightsRequests(req, res) {
+  if (lightsRequestsCache && Date.now() - lightsRequestsCache.time < 2 * 60 * 1000 && !req.query.fresh) {
+    return res.json({ requests: lightsRequestsCache.data, cached: true });
+  }
+  // Older copy? Answer with it now and refresh in the background, so the page is instant.
+  if (lightsRequestsCache && !req.query.fresh && !req.query._bg) {
+    res.json({ requests: lightsRequestsCache.data, cached: true, refreshing: true });
+    handleLightsRequests({ query: { _bg: 1 } }, { json: () => {}, status: () => ({ json: () => {} }) }).catch(() => {});
+    return undefined;
+  }
+  try {
+    const data = await jobberQuery(`{
+      requests(first: 100) {
+        nodes {
+          id title requestStatus createdAt
+          client { firstName lastName companyName }
+          property { address { street city } }
+          assessment { startAt endAt completedAt }
+        }
+      }
+    }`);
+    const requests = (data.requests?.nodes || [])
+      .filter((r) => /\b(lights?|lites?|lighting)\b/i.test(r.title || ''))
+      .map((r) => ({
+        id: r.id,
+        title: r.title || '',
+        status: String(r.requestStatus || '').toLowerCase(),
+        createdAt: r.createdAt,
+        clientName: `${r.client?.firstName || ''} ${r.client?.lastName || ''}`.trim() || r.client?.companyName || 'Unknown',
+        address: [r.property?.address?.street, r.property?.address?.city].filter(Boolean).join(', '),
+        assessmentAt: r.assessment?.startAt || null,
+        assessmentDone: !!r.assessment?.completedAt,
+      }))
+      .sort((a, b) => new Date(a.assessmentAt || '2999-01-01') - new Date(b.assessmentAt || '2999-01-01'));
+    lightsRequestsCache = { data: requests, time: Date.now() };
+    return res.json({ requests, cached: false });
+  } catch (err) {
+    console.error('[lights-requests]', err.message);
+    if (lightsRequestsCache) return res.json({ requests: lightsRequestsCache.data, cached: true, stale: true, error: err.message });
+    return res.status(err.code === 'JOBBER_DISCONNECTED' ? 401 : 500).json({ error: err.message });
   }
 }
 
@@ -1756,7 +1897,10 @@ export default async function handler(req, res) {
     if (action === 'labor') return handleLaborData(req, res);
     if (action === 'today-visits') return handleTodayVisits(req, res);
     if (action === 'open-quotes') return handleOpenQuotes(req, res);
+    if (action === 'lights-quotes') return handleLightsQuotes(req, res);
     if (action === 'new-requests') return handleNewRequests(req, res);
+    if (action === 'lights-requests') return handleLightsRequests(req, res);
+    if (action === 'recent-jobs') return handleRecentJobs(req, res);
     if (action === 'requests-history') return handleRequestsHistory(req, res);
     if (action === 'quotes-history') return handleQuotesHistory(req, res);
     if (action === 'booked-history') return handleBookedHistory(req, res);

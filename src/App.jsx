@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { useTheme } from './contexts/ThemeContext';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import {
   Home as HomeIcon,
@@ -9,6 +10,7 @@ import {
   RefreshCw,
   Wrench,
   Calculator,
+  Lightbulb,
   Menu,
   X,
   ChevronLeft,
@@ -42,9 +44,7 @@ import {
   Printer,
   DoorOpen,
   Bell,
-  Search as SearchIcon,
   HelpCircle,
-  Sparkles,
   Truck,
 } from 'lucide-react';
 
@@ -67,6 +67,7 @@ const TeamMemberDetail = lazy(() => import('./pages/TeamMemberDetail'));
 const MileageLog = lazy(() => import('./pages/MileageLog'));
 const ChecklistTrackerPage = lazy(() => import('./pages/ChecklistTrackerPage'));
 const Quoting = lazy(() => import('./pages/Quoting'));
+const LightsQuoter = lazy(() => import('./pages/LightsQuoter'));
 const DailyChecklist = lazy(() => import('./pages/DailyChecklist'));
 const OwnerHome = lazy(() => import('./pages/OwnerHome'));
 const Plans = lazy(() => import('./pages/Plans'));
@@ -141,6 +142,7 @@ const OPERATIONS_ITEMS = [
 
 const OWNER_TOOLS_PINNED = [
   { id: 'sales', path: '/sales', label: 'Quoter', icon: Calculator },
+  { id: 'lights', path: '/lights-quoter', label: 'Lights', icon: Lightbulb },
   { id: 'plans', path: '/client-base', label: 'Client Base', icon: Repeat },
   { id: 'guides', path: '/playbooks', label: 'Playbooks', icon: BookOpen },
   { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
@@ -432,6 +434,7 @@ function CreateButton({ collapsed, onNav }) {
 /* ─── Owner Settings Menu (Jobber-style dropdown) ─── */
 
 function OwnerSettingsMenu({ collapsed, currentUser, userEmail, onNav, onSignOut, isActivePath }) {
+  const { theme, toggleTheme } = useTheme();
   const [open, setOpen] = useState(false);
   const btnRef = useRef(null);
   const popRef = useRef(null);
@@ -505,6 +508,9 @@ function OwnerSettingsMenu({ collapsed, currentUser, userEmail, onNav, onSignOut
             </button>
           </div>
           <div className="border-t border-border-subtle py-1">
+            <button onClick={() => { setOpen(false); toggleTheme(); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              {theme === 'dark' ? '☀️ Light mode' : '🌙 Dark mode'}
+            </button>
             <button onClick={() => { setOpen(false); onSignOut(); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
               Log Out
             </button>
@@ -517,6 +523,7 @@ function OwnerSettingsMenu({ collapsed, currentUser, userEmail, onNav, onSignOut
 
 /* ─── Topbar settings menu — gear icon dropdown in the app top bar ─── */
 function TopbarSettingsMenu({ currentUser, userEmail, onNav, onSignOut }) {
+  const { theme, toggleTheme } = useTheme();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -556,6 +563,9 @@ function TopbarSettingsMenu({ currentUser, userEmail, onNav, onSignOut }) {
             </button>
           </div>
           <div className="border-t border-border-subtle py-1">
+            <button onClick={() => { setOpen(false); toggleTheme(); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              {theme === 'dark' ? '☀️ Light mode' : '🌙 Dark mode'}
+            </button>
             <button onClick={() => { setOpen(false); onSignOut(); }} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-surface-alt cursor-pointer">
               Log Out
             </button>
@@ -964,7 +974,14 @@ function AppShell() {
           <button onClick={() => setMobileSidebarOpen(true)} className="p-1.5 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
             <Menu size={22} className="text-secondary" />
           </button>
-          <span className="font-bold text-primary text-sm">Hub</span>
+          <span className="font-bold text-primary text-sm">Hey Jude's</span>
+          <div className="flex items-center gap-2">
+          <TopbarSettingsMenu
+            currentUser={currentUser}
+            userEmail={user?.email}
+            onNav={navigate}
+            onSignOut={signOut}
+          />
           <button
             onClick={() => navigate('/profile')}
             className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
@@ -975,6 +992,7 @@ function AppShell() {
           >
             {getInitials(currentUser)}
           </button>
+          </div>
         </div>
       </nav>
 
@@ -1020,23 +1038,11 @@ function AppShell() {
       {/* ─── Main Content ─── */}
       <main className={`${sidebarCollapsed ? 'lg:ml-14' : 'lg:ml-52'} transition-all duration-200`}>
         {/* Top app bar — biz name · search · icons (Jobber-style) */}
-        <div className="sticky top-0 z-30 bg-card border-b border-border-subtle">
+        <div className="hidden lg:block sticky top-0 z-30 bg-card border-b border-border-subtle">
           <div className="flex items-center gap-4 px-4 py-2.5">
-            <p className="text-sm font-medium text-muted truncate">Hey Jude's Lawn Care</p>
+            <p className="text-sm font-medium text-muted truncate">Hey Jude's</p>
             <div className="ml-auto flex items-center gap-2">
-              <div className="relative w-64">
-                <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                <input
-                  type="text"
-                  placeholder="Search"
-                  className="w-full pl-9 pr-8 py-1.5 rounded-full bg-surface-alt border border-border-subtle text-xs text-primary placeholder:text-muted focus:outline-none focus:border-brand/50"
-                />
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted bg-card border border-border-subtle rounded px-1.5 py-0.5">/</span>
-              </div>
             <div className="flex items-center gap-1">
-              <button title="AI" className="p-1.5 rounded-lg text-muted hover:bg-surface-alt hover:text-primary cursor-pointer">
-                <Sparkles size={16} />
-              </button>
               <button onClick={() => navigate('/messages')} title="Messages" className="p-1.5 rounded-lg text-muted hover:bg-surface-alt hover:text-primary cursor-pointer">
                 <MessageSquare size={16} />
               </button>
@@ -1087,6 +1093,8 @@ function AppShell() {
                 <Route path="/agreement" element={<TeamAgreement />} />
                 <Route path="/mowing" element={<MowingSchedule />} />
                 <Route path="/sales" element={<Sales />} />
+                <Route path="/lights-quoter" element={ownerMode ? <LightsQuoter /> : <Navigate to="/" replace />} />
+                <Route path="/lights-supplies" element={<Navigate to="/lights-quoter?view=supplies" replace />} />
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/clients/new" element={<NewClient />} />
                 <Route path="/clients/:clientNumber" element={<Clients />} />

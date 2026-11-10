@@ -74,6 +74,10 @@ const STATE_KEYS = [
   { key: 'payrollWeeks', supaKey: 'greenteam-payroll-weeks', initial: {} },
   { key: 'quotes',              supaKey: 'greenteam-quotes',              initial: initialQuotes },
   { key: 'quotingSettings',     supaKey: 'greenteam-quotingSettings',     initial: initialQuotingSettings },
+  { key: 'lightsSupplies',      supaKey: 'greenteam-lightsSupplies',      initial: null }, // Christmas lights supplies tracker (seeded on first open)
+  { key: 'lightsColdLeads',     supaKey: 'greenteam-lightsColdLeads',     initial: [] }, // Christmas lights: people Jude wants to reach out to (ordered by priority)
+  { key: 'lightsOrders',        supaKey: 'greenteam-lightsOrders',        initial: [] }, // Christmas lights: real supply receipts (record only)
+  { key: 'lightsJobs',          supaKey: 'greenteam-lightsJobs',          initial: {} }, // Christmas lights jobs: materials per Jobber job, installed or not
   { key: 'receiptLog',          supaKey: 'greenteam-receiptLog',          initial: initialReceiptLog },
   { key: 'ownerNotes',          supaKey: 'greenteam-ownerNotes',          initial: '' },
   { key: 'ownerSchedule',       supaKey: 'greenteam-ownerSchedule',       initial: { sales: { start: '07:00', end: '09:00' }, build: { start: '09:00', end: '11:00' }, delegate: { start: '11:00', end: '12:00' } } },
