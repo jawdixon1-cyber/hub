@@ -309,7 +309,7 @@ function ColdLeads({ leads, setLeads }) {
         <p className="text-[10px] font-bold uppercase tracking-wide text-muted mb-1.5">📞 Phone pitch</p>
         <ol className="space-y-1 text-sm text-primary list-decimal list-inside marker:text-muted">
           <li>"Hey, this is Jude."</li>
-          <li>Why they know you: <span className="text-muted">"I'm reaching out because <span className="text-brand-text font-semibold">[their angle — e.g. your mom told me]</span>…"</span></li>
+          <li>"I'm reaching out because <span className="text-brand-text font-semibold">[their angle — e.g. your mom told me]</span>…"</li>
           <li>"I'm doing Christmas lights and <span className="text-brand-text font-semibold">[she]</span> told me you might be interested."</li>
           <li>"You might've gotten one of my postcards, or seen my ads or my yard signs."</li>
           <li>"I'm really trying to get my name out there. I spent $5,000 on a course and I've already done a few jobs."</li>
