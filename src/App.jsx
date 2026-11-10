@@ -240,6 +240,8 @@ function App() {
       if (orgId) query = query.eq('org_id', orgId);
       if (keys) query = query.in('key', keys);
       if (skip) query = query.not('key', 'in', `(${skip.map((k) => `"${k}"`).join(',')})`);
+      // Lights quotes are their own rows (with photos) and load on the Lights page only
+      if (!keys) query = query.not('key', 'like', 'lq-%');
       const { data, error } = await query;
       if (error) throw error;
       return data || [];

@@ -5,7 +5,8 @@ import LightsMeasurePhotos from '../components/LightsMeasurePhotos';
 import LightsMockup from '../components/LightsMockup';
 import JobberClientPicker from '../components/JobberClientPicker';
 import LightsBusiness from '../components/LightsBusiness';
-import { DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes } from '../lib/lightsStore';
+import { DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, getLocalQuote, setLightsOrg, localOnlyQuotes } from '../lib/lightsStore';
+import { useAuth } from '../contexts/AuthContext';
 
 // Christmas lights quoter: roofline per foot + strands each, with one minimum
 // for the whole lights job. Prices are remembered in this browser.
@@ -72,6 +73,15 @@ function calcLightsQuote({ feet, strands, perStrand, minimum, ...prices }) {
 }
 
 export default function LightsQuoter() {
+  const { orgId } = useAuth();
+  setLightsOrg(orgId);
+  // Quotes saved on this computer before quotes synced to the account.
+  const [unsynced, setUnsynced] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  useEffect(() => { if (orgId) localOnlyQuotes().then(setUnsynced).catch(() => {}); }, [orgId]);
+  // Rescue: any full quote still held in this page's memory (photos included) gets
+  // saved to the account. Upload only — never deletes or replaces anything.
+  const rescued = useRef(new Set());
   const [prices, setPrices] = useState(() => {
     try {
       return { ...DEFAULT_PRICES, ...JSON.parse(localStorage.getItem(PRICES_KEY) || '{}') };
@@ -119,6 +129,19 @@ export default function LightsQuoter() {
     setSavedId(d.savedId ?? (d.id && d.id !== DRAFT_ID ? d.id : null));
   };
   const refreshList = () => listQuotes().then(setSaved).catch(() => {});
+  useEffect(() => {
+    if (!orgId) return;
+    (saved || []).forEach((q) => {
+      if (!q?.id || rescued.current.has(q.id) || !Array.isArray(q.angles) || !q.angles.some((a) => a.plain)) return;
+      rescued.current.add(q.id);
+      putQuote(q).catch(() => rescued.current.delete(q.id));
+    });
+    if (savedId && angles.some((a) => a.plain) && client && !rescued.current.has(`open-${savedId}`)) {
+      rescued.current.add(`open-${savedId}`);
+      putQuote({ id: savedId, ...snapshot(), savedId, total: num(quoted) || q.total, calcTotal: q.total, savedAt: new Date().toISOString() }).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved, orgId]);
 
   // Restore the quote in progress, so a refresh never loses work.
   useEffect(() => {
@@ -156,7 +179,7 @@ export default function LightsQuoter() {
         await putQuote({ id: DRAFT_ID, ...snapshot(), savedId: id, savedAt: now });
         if (id) {
           // keep tracker fields (status, sent date, light style) set on the Supplies page
-          const prev = await getQuote(id).catch(() => null);
+          const prev = await getLocalQuote(id).catch(() => null);
           await putQuote({ ...(prev || {}), id, ...snapshot(), savedId: id, total: num(quoted) || q.total, calcTotal: q.total, savedAt: now });
           if (id !== savedId) setSavedId(id);
           setLastSaved(now);
@@ -268,6 +291,20 @@ export default function LightsQuoter() {
         </>
       )}
 
+      {view === 'quote' && !editing && unsynced.length > 0 && (
+        <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 flex items-center gap-3 flex-wrap">
+          <p className="text-sm text-yellow-200 flex-1">{unsynced.length} quote{unsynced.length > 1 ? 's are' : ' is'} only on this computer: {unsynced.map((q) => q.client || 'No name').join(', ')}.</p>
+          <button
+            disabled={syncing}
+            onClick={async () => {
+              setSyncing(true);
+              try { for (const q of unsynced) await putQuote(q); setUnsynced([]); refreshList(); } finally { setSyncing(false); }
+            }}
+            className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold disabled:opacity-50 cursor-pointer"
+          >{syncing ? 'Uploading…' : 'Put them on my phone too'}</button>
+        </div>
+      )}
+
       {/* Quotes tab: gallery of saved quotes */}
       {view === 'quote' && !editing && (
         <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -280,7 +317,7 @@ export default function LightsQuoter() {
           {saved.map((sq) => {
             // Show photo first: a finished mockup from Client preview, then a ticked show photo, then any photo
             const sides = sq.angles || [];
-            const photo = sq.previews?.[0]?.image || sides.find((a) => a.ai?.image)?.ai.image
+            const photo = sq.cover || sq.previews?.[0]?.image || sides.find((a) => a.ai?.image)?.ai.image
               || sides.find((a) => a.show && a.plain)?.plain || sides.find((a) => a.plain)?.plain;
             const ft = ['easy', 'medium', 'hard'].reduce((t, k) => t + num(sq.feet?.[k]), 0);
             return (
