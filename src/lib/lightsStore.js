@@ -77,12 +77,14 @@ async function upsert(rows) {
   if (error) throw error;
 }
 
-// Photos only upload when they change; everything else saves every time (small).
+// The photos row uploads when anything in it changes (photos, lines, show flags);
+// photos are fingerprinted so big images aren't compared in full.
 const lastPhotos = new Map();
-const photoSig = (q) => {
-  const parts = [...(q.angles || []).flatMap((a) => [a.plain, a.marked, a.ai?.image]), ...(q.previews || []).map((p) => p.image)];
-  return parts.map((x) => (x ? `${x.length}:${x.slice(-24)}` : '-')).join('|');
-};
+const fp = (x) => (x ? `${x.length}:${x.slice(-24)}` : '-');
+const photoSig = (q) => JSON.stringify([
+  (q.angles || []).map(({ plain, marked, ai, ...rest }) => [fp(plain), fp(marked), fp(ai?.image), rest]),
+  (q.previews || []).map((p) => [p.id, fp(p.image)]),
+]);
 
 export async function putQuote(q) {
   await localPut(q);
