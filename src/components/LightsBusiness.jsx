@@ -480,7 +480,7 @@ const JOBBER_STATUS = {
 
 const nameKey = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
 
-export default function LightsBusiness({ view }) {
+export default function LightsBusiness({ view, onNew }) {
   const [tick, setTick] = useState(0); // ↻ Refresh: pull fresh from Jobber
   const needsJobber = view === 'quotes' || view === 'jobs';
   const schedule = useLightsSchedule(needsJobber, tick);
@@ -1149,15 +1149,32 @@ export default function LightsBusiness({ view }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end -mb-2">
-        <button
-          onClick={() => setTick((t) => t + 1)}
-          disabled={schedule.loading || jobber.loading || lightsReq.loading}
-          className="text-xs text-muted hover:text-primary disabled:opacity-50 cursor-pointer"
-          title="Pull the latest from Jobber"
-        >
-          {schedule.loading || jobber.loading || lightsReq.loading ? 'Updating from Jobber…' : '↻ Refresh from Jobber'}
-        </button>
+      <div className="flex items-center gap-2 flex-wrap">
+        {onNew && (
+          <button onClick={onNew} className="inline-flex items-center gap-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold px-4 py-2 hover:bg-brand-hover cursor-pointer">
+            <Plus size={15} /> New quote
+          </button>
+        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {results.map(([label, big, sub, key]) => (
+            <button
+              key={label}
+              onClick={() => setFilter((f) => (f === key ? '' : key))}
+              title={sub}
+              className={`rounded-md border px-2 py-1 text-[11px] cursor-pointer ${filter === key ? 'border-border-brand ring-1 ring-ring-brand' : 'border-border-default hover:border-border-strong'}`}
+            >
+              <span className="text-muted">{label}</span> <span className="font-bold text-primary">{big}</span>
+            </button>
+          ))}
+          <button
+            onClick={() => setTick((t) => t + 1)}
+            disabled={schedule.loading || jobber.loading || lightsReq.loading}
+            className="ml-1 text-xs text-muted hover:text-primary disabled:opacity-50 cursor-pointer"
+            title="Pull the latest from Jobber"
+          >
+            {schedule.loading || jobber.loading || lightsReq.loading ? 'Updating…' : '↻'}
+          </button>
+        </div>
       </div>
       <p className="text-[11px] font-bold uppercase tracking-wide text-muted -mb-2">Pipeline</p>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -1172,24 +1189,6 @@ export default function LightsBusiness({ view }) {
               <p className={`text-[11px] leading-tight ${on ? 'text-brand-text font-semibold' : 'text-muted'}`}>{label}</p>
               <p className="text-xl font-bold text-primary mt-1">{big}</p>
               <p className="text-[10px] text-muted leading-tight">{sub}</p>
-            </button>
-          );
-        })}
-      </div>
-
-      <p className="text-[11px] font-bold uppercase tracking-wide text-muted -mb-2 pt-1">Results</p>
-      <div className="grid grid-cols-2 gap-2">
-        {results.map(([label, big, sub, key]) => {
-          const on = filter === key;
-          return (
-            <button
-              key={label}
-              onClick={() => setFilter((f) => (f === key ? '' : key))}
-              className={`text-left rounded-xl border px-4 py-3 transition-colors cursor-pointer bg-brand-light ${on ? 'border-border-brand ring-2 ring-ring-brand' : 'border-border-brand/40 hover:border-border-brand'}`}
-            >
-              <p className="text-[11px] font-semibold text-brand-text-strong">{label}</p>
-              <p className="text-2xl font-bold text-brand-text mt-0.5">{big}</p>
-              <p className="text-[10px] text-secondary">{sub}</p>
             </button>
           );
         })}

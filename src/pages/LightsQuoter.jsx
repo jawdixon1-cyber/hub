@@ -283,12 +283,7 @@ export default function LightsQuoter() {
 
       {view !== 'quote' && (
         <>
-          {view === 'quotes' && (
-            <button onClick={() => { reset(); setView('quote'); setEditing(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold px-4 py-2 hover:bg-brand-hover cursor-pointer">
-              <Plus size={15} /> New quote
-            </button>
-          )}
-          <LightsBusiness view={view} onOpen={async (id) => { await openQuote(id); setView('quote'); setEditing(true); }} />
+          <LightsBusiness view={view} onNew={view === 'quotes' ? () => { reset(); setView('quote'); setEditing(true); } : null} onOpen={async (id) => { await openQuote(id); setView('quote'); setEditing(true); }} />
         </>
       )}
 
