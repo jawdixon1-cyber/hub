@@ -213,7 +213,7 @@ function ColdLeads({ leads, setLeads }) {
               </div>
               {l.money && !/^idk$/i.test(l.money.trim()) && <p className="text-xs text-secondary mt-0.5">💰 {l.money}</p>}
               {l.address && (
-                <a href={`https://maps.apple.com/?q=${encodeURIComponent(l.address)}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="block text-xs text-muted hover:text-primary mt-0.5">📍 {l.address}</a>
+                <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(l.address)}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="block text-xs text-muted hover:text-primary mt-0.5">📍 {l.address}</a>
               )}
               {logFor === l.id && (
                 <div className="mt-2 rounded-lg border border-border-brand bg-surface-alt/40 p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
