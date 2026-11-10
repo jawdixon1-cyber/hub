@@ -136,7 +136,6 @@ function ColdLeads({ leads, setLeads }) {
       <input value={draft[key]} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))} className="block w-full mt-0.5 rounded-md border border-border-strong bg-card px-2 py-1.5 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand" />
     </label>
   );
-  const tel = (p) => String(p || '').replace(/[^0-9+]/g, '');
   return (
     <div className="rounded-xl border border-border-default bg-card">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-subtle">
@@ -250,11 +249,7 @@ function ColdLeads({ leads, setLeads }) {
                       >
                         {pitchIdx(l) === k && '🎯 '}{c.name || 'Contact'}
                       </button>
-                      {c.phone ? <>
-                        <span className="text-muted">{c.phone}</span>
-                        <a href={`tel:${tel(c.phone)}`} className="w-6 h-6 rounded-full bg-brand text-on-brand flex items-center justify-center" title={`Call ${c.phone}`}><Phone size={11} /></a>
-                        <a href={`sms:${tel(c.phone)}`} className="w-6 h-6 rounded-full border border-border-default text-secondary hover:text-primary flex items-center justify-center" title={`Text ${c.phone}`}><MessageSquare size={11} /></a>
-                      </> : <span className="text-muted">no number</span>}
+                      <span className="text-secondary">{c.phone || 'no number'}</span>
                     </div>
                   ))}
                   {!contactsOf(l).length && <p className="text-xs text-muted">No contact yet</p>}
