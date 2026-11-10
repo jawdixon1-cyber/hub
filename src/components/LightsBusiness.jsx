@@ -1122,7 +1122,15 @@ export default function LightsBusiness({ view, onNew }) {
 
   // ---------------- Dashboard ----------------
   const shortDate = (iso) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
-  const when = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const when = (iso) => {
+    const d = new Date(iso);
+    const days = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
+    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (days === 0) return `Today, ${time}`;
+    if (days === 1) return `Tomorrow, ${time}`;
+    if (days === -1) return `Yesterday, ${time}`;
+    return d.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  };
 
   // Requests (Jobber)
   const rq = lightsReq.requests;
