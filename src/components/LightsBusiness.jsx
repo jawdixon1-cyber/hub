@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, ShoppingCart, ImagePlus, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, ShoppingCart, ImagePlus, ExternalLink, Phone, MessageSquare, Pencil } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
 import { STARTER_SUPPLIES, STYLE_LABEL, quoteMaterials, quoteFeet, packPlan } from '../lib/lightsMaterials';
 import { listQuotes } from '../lib/lightsStore';
@@ -84,6 +84,7 @@ function ColdLeads({ leads, setLeads }) {
   const [draft, setDraft] = useState(null);
   const [dragId, setDragId] = useState('');
   const [overId, setOverId] = useState('');
+  const [openLead, setOpenLead] = useState('');
   const save = () => {
     if (!draft?.name.trim()) return;
     const lead = { ...draft, id: draft.id || `cl-${Date.now()}` };
@@ -110,7 +111,7 @@ function ColdLeads({ leads, setLeads }) {
   return (
     <div className="rounded-xl border border-border-default bg-card">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-subtle">
-        <p className="text-sm font-semibold text-primary">Cold leads <span className="text-xs font-normal text-muted">· drag to set priority</span></p>
+        <p className="text-sm font-semibold text-primary">Cold leads <span className="text-xs font-normal text-muted">· drag the number to reorder</span></p>
         <button onClick={() => setDraft({ ...BLANK_LEAD })} className="inline-flex items-center gap-1 text-sm font-medium text-brand-text hover:underline cursor-pointer"><Plus size={14} /> Add lead</button>
       </div>
       {draft && (
@@ -138,24 +139,34 @@ function ColdLeads({ leads, setLeads }) {
             onDragLeave={() => setOverId('')}
             onDrop={(e) => { e.preventDefault(); drop(l.id); setDragId(''); setOverId(''); }}
             onDragEnd={() => { setDragId(''); setOverId(''); }}
-            className={`px-4 py-3 flex items-start gap-3 ${overId === l.id && dragId !== l.id ? 'border-t-2 border-t-brand' : ''} ${dragId === l.id ? 'opacity-40' : ''}`}
+            className={`group px-4 py-3 flex items-center gap-3 ${overId === l.id && dragId !== l.id ? 'border-t-2 border-t-brand' : ''} ${dragId === l.id ? 'opacity-40' : ''}`}
           >
-            <span className="mt-0.5 cursor-grab text-muted select-none" title="Drag to reorder">⋮⋮</span>
-            <span className="mt-0.5 w-5 text-xs font-bold text-muted">{i + 1}</span>
-            <div className="flex-1 min-w-0 space-y-0.5">
-              <p className="text-sm font-semibold text-primary">{l.name}{l.address && <span className="font-normal text-xs text-muted"> · {l.address}</span>}</p>
-              {l.angle && <p className="text-xs text-secondary"><span className="text-muted">Angle:</span> {l.angle}</p>}
-              {l.decider && <p className="text-xs text-secondary"><span className="text-muted">Pitch:</span> {l.decider}</p>}
-              {l.money && <p className="text-xs text-secondary"><span className="text-muted">Money:</span> {l.money}</p>}
-              {l.notes && <p className="text-[11px] text-muted">{l.notes}</p>}
+            <span className="w-6 h-6 shrink-0 rounded-full bg-surface-alt text-[11px] font-bold text-secondary flex items-center justify-center cursor-grab select-none" title="Drag to reorder">{i + 1}</span>
+            <div className="flex-1 min-w-0" onClick={() => setOpenLead(openLead === l.id ? '' : l.id)}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-semibold text-primary">{l.name}</p>
+                {l.money && !/^idk$/i.test(l.money.trim()) && <span className="px-1.5 py-0.5 rounded-md bg-brand-light text-brand-text-strong text-[10px] font-semibold">💰 {l.money}</span>}
+              </div>
+              {(l.decider || l.angle) && (
+                <p className="text-xs text-secondary mt-0.5 truncate">
+                  {l.decider && <><span className="font-semibold text-primary">🎯 {l.decider}</span>{l.angle && <span className="text-muted"> · </span>}</>}
+                  {l.angle}
+                </p>
+              )}
+              {l.address && (
+                <a href={`https://maps.apple.com/?q=${encodeURIComponent(l.address)}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[11px] text-muted hover:text-primary">📍 {l.address}</a>
+              )}
+              {openLead === l.id && l.notes && <p className="text-[11px] text-muted mt-0.5">{l.notes}</p>}
             </div>
-            <div className="shrink-0 flex items-center gap-2">
+            <div className="shrink-0 flex items-center gap-1.5">
               {l.phone && <>
-                <a href={`tel:${tel(l.phone)}`} className="px-2 py-1 rounded-md bg-brand text-on-brand text-[11px] font-semibold">Call</a>
-                <a href={`sms:${tel(l.phone)}`} className="px-2 py-1 rounded-md border border-border-default text-[11px] font-semibold text-secondary hover:text-primary">Text</a>
+                <a href={`tel:${tel(l.phone)}`} className="w-8 h-8 rounded-full bg-brand text-on-brand flex items-center justify-center" title={`Call ${l.phone}`}><Phone size={14} /></a>
+                <a href={`sms:${tel(l.phone)}`} className="w-8 h-8 rounded-full border border-border-default text-secondary hover:text-primary flex items-center justify-center" title={`Text ${l.phone}`}><MessageSquare size={14} /></a>
               </>}
-              <button onClick={() => setDraft({ ...BLANK_LEAD, ...l })} className="text-xs text-muted hover:text-primary cursor-pointer">Edit</button>
-              <button onClick={() => setLeads((list) => (list || []).filter((x) => x.id !== l.id))} className="p-1 text-muted hover:text-red-500 cursor-pointer" title="Remove"><Trash2 size={13} /></button>
+              <span className={`flex items-center gap-1 ${openLead === l.id ? '' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
+                <button onClick={() => setDraft({ ...BLANK_LEAD, ...l })} className="p-1.5 text-muted hover:text-primary cursor-pointer" title="Edit"><Pencil size={13} /></button>
+                <button onClick={() => setLeads((list) => (list || []).filter((x) => x.id !== l.id))} className="p-1.5 text-muted hover:text-red-500 cursor-pointer" title="Remove"><Trash2 size={13} /></button>
+              </span>
             </div>
           </div>
         ))}
@@ -928,7 +939,7 @@ export default function LightsBusiness({ view }) {
 
   const cards = [
     ['Cold leads', String(coldLeads.length), coldLeads.length ? `next: ${coldLeads[0].name}` : 'people to reach out to', 'cold'],
-    ['Leads', String(toBook.length), lightsReq.loading ? 'loading…' : 'need an assessment booked', 'needs'],
+    ['Leads', String(toBook.length), lightsReq.loading ? 'loading…' : 'reached out · book an assessment', 'needs'],
     ['Upcoming assessments', String(booked.length), nextBooked ? `next ${when(nextBooked.assessmentAt)}` : 'none coming up', 'booked'],
     ['Sent, waiting', money(sumQ(jSent)), `${jSent.length} quote${jSent.length === 1 ? '' : 's'}`, 'sent'],
     ['Upcoming schedule', schedule.loading ? '…' : String(lightsJobs.length), schedule.error ? 'Jobber busy — try later' : wonNotScheduled.length ? `${wonNotScheduled.length} won not booked` : 'lights installs booked', 'scheduled'],
