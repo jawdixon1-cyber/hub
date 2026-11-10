@@ -431,6 +431,11 @@ export default function LightsQuoter() {
               <span className="text-right">
                 <span className="block text-[11px] font-medium text-brand-text-strong">Roof quote</span>
                 <span className="text-2xl font-bold text-brand-text">{money(q.roof)}</span>
+                {q.roof > 0 && (
+                  <span className="block text-xs text-secondary mt-0.5" title="20% under and over, rounded to $50">
+                    Tell them <b className="text-primary">{money(Math.round((q.roof * 0.8) / 50) * 50)} – {money(Math.round((q.roof * 1.2) / 50) * 50)}</b>
+                  </span>
+                )}
               </span>
             </div>
           </div>
