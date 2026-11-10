@@ -1282,6 +1282,36 @@ export default function LightsBusiness({ view, onNew }) {
         })}
       </div>
 
+      {(() => {
+        const isToday = (iso) => iso && new Date(iso).toDateString() === new Date().toDateString();
+        const items = [
+          ...rq.filter((r) => isToday(r.assessmentAt) && r.status !== 'archived').map((r) => ({ at: r.assessmentAt, kind: 'Assessment', name: r.clientName, sub: r.address, done: r.assessmentDone })),
+          ...schedule.jobs.filter((j) => isToday(j.visitAt) && j.status !== 'archived' && (isLightsTitle(j.title) || (!j.title.trim() && lightsClients.has(nameKey(j.clientName)))))
+            .map((j) => ({ at: j.visitAt, kind: 'Install', name: j.clientName, sub: `Job #${j.jobNumber}`, done: j.visitDone })),
+        ].sort((a, b) => new Date(a.at) - new Date(b.at));
+        if (!items.length) return null;
+        return (
+          <div className="rounded-xl border border-border-brand bg-card">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-subtle">
+              <p className="text-sm font-semibold text-primary">Today</p>
+              <span className="text-[11px] text-muted">{new Date().toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+            </div>
+            <div className="divide-y divide-border-subtle">
+              {items.map((it, i) => (
+                <div key={i} className={`px-4 py-2.5 flex items-center gap-3 ${it.done ? 'opacity-50' : ''}`}>
+                  <span className="w-20 text-sm font-bold text-brand-text">{new Date(it.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-primary truncate">{it.name}</p>
+                    <p className="text-[11px] text-muted truncate">{it.sub}</p>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${it.kind === 'Install' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-blue-500/15 text-blue-400'}`}>{it.done ? 'Done' : it.kind}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {filter === 'cold' && <ColdLeads leads={coldLeads} setLeads={setColdLeads} />}
       {reqFilter && panel(cardTitle, <>{reqFilter.length} · {showAll}</>, reqFilter.map(reqRow), 'Nothing here.')}
       {filter === 'scheduled' && panel(cardTitle, <>{lightsJobs.length} · {showAll}</>,
