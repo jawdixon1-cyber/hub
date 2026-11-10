@@ -90,6 +90,15 @@ const OUTREACH = [
   ['not_interested', 'Not interested', 'bg-red-500/15 text-red-400'],
 ];
 const outreachOf = (l) => OUTREACH.find((o) => o[0] === (l.status || 'new')) || OUTREACH[0];
+// Who to talk to: the contact marked pitch, else the one named in "who to pitch", else the first.
+const pitchIdx = (l) => {
+  const cs = contactsOf(l);
+  const marked = cs.findIndex((c) => c.pitch);
+  if (marked >= 0) return marked;
+  const d = String(l.decider || '').toLowerCase();
+  const byName = cs.findIndex((c) => c.name && d.includes(c.name.toLowerCase()));
+  return byName >= 0 ? byName : 0;
+};
 // Older leads had one phone on the lead itself.
 const contactsOf = (l) => (l.contacts?.length ? l.contacts : [{ name: '', phone: l.phone || '' }]).filter((c) => c.name || c.phone);
 function ColdLeads({ leads, setLeads }) {
@@ -139,7 +148,7 @@ function ColdLeads({ leads, setLeads }) {
           <p className="col-span-2 text-[11px] font-bold uppercase tracking-wide text-muted">Contact</p>
           {f('name', 'Family name (title)', true)}
           {(draft.contacts?.length ? draft.contacts : [{}]).slice(0, 2).map((_, k) => (
-            <div key={k} className="col-span-2 grid grid-cols-2 gap-3">
+            <div key={k} className="col-span-2 grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
               {['name', 'phone'].map((fld) => (
                 <label key={fld} className="text-[11px] text-muted">{fld === 'name' ? `Person ${k + 1}` : 'Phone'}
                   <input
@@ -153,6 +162,18 @@ function ColdLeads({ leads, setLeads }) {
                   />
                 </label>
               ))}
+              <label className="flex items-center gap-1.5 pb-2 text-xs font-semibold text-primary cursor-pointer whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={(draft.contacts || []).some((c) => c.pitch) ? !!draft.contacts?.[k]?.pitch : k === 0}
+                  onChange={(e) => setDraft((d) => {
+                    const cs = [...(d.contacts?.length ? d.contacts : [{ name: '', phone: '' }])];
+                    return { ...d, contacts: cs.map((c, x) => ({ ...c, pitch: e.target.checked ? x === k : false })) };
+                  })}
+                  className="w-4 h-4 accent-[var(--color-brand)]"
+                />
+                🎯 Talk to
+              </label>
             </div>
           ))}
           {(draft.contacts?.length || 1) < 2 && (
@@ -221,8 +242,14 @@ function ColdLeads({ leads, setLeads }) {
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Contact</p>
                   {contactsOf(l).map((c, k) => (
-                    <div key={k} className="flex items-center gap-1.5 text-xs" onClick={(e) => e.stopPropagation()}>
-                      <span className="text-primary font-medium">{c.name || 'Contact'}</span>
+                    <div key={k} className={`flex items-center gap-1.5 text-xs rounded-lg px-2 py-1 -mx-2 ${pitchIdx(l) === k ? 'bg-brand-light ring-1 ring-border-brand' : 'opacity-60'}`} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => setLeads((list) => (list || []).map((x) => (x.id === l.id ? { ...x, contacts: contactsOf(x).map((cc, ci) => ({ ...cc, pitch: ci === k })) } : x)))}
+                        className="text-primary font-semibold cursor-pointer"
+                        title="Talk to this person"
+                      >
+                        {pitchIdx(l) === k && '🎯 '}{c.name || 'Contact'}
+                      </button>
                       {c.phone ? <>
                         <span className="text-muted">{c.phone}</span>
                         <a href={`tel:${tel(c.phone)}`} className="w-6 h-6 rounded-full bg-brand text-on-brand flex items-center justify-center" title={`Call ${c.phone}`}><Phone size={11} /></a>
