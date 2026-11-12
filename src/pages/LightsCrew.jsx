@@ -100,9 +100,7 @@ export default function LightsCrew() {
           )}
           <div className="flex flex-wrap gap-2 text-sm">
             <span className="rounded-lg bg-white/10 px-3 py-1.5">🎄 Install <b>{day(job.installDate)}</b></span>
-            <span className="rounded-lg bg-white/10 px-3 py-1.5">📦 Takedown <b>{day(job.takedownDate)}</b></span>
-            {design && <span className="rounded-lg bg-white/10 px-3 py-1.5">💡 <b>{design.label}</b></span>}
-            {job.gutterGuard && <span className="rounded-lg bg-white/10 px-3 py-1.5">Gutter guards: <b>{job.gutterGuard === 'yes' ? 'Yes' : 'No'}</b></span>}
+            {design && <span className="rounded-lg bg-white/10 px-3 py-1.5">💡 <b>{job.style === 'custom' ? `Custom: ${job.customColor || 'ask Jude'}` : design.label}</b></span>}
           </div>
           {(job.power || job.powerPhoto) && (
             <div className="flex items-center gap-3 rounded-xl border border-yellow-400/40 bg-yellow-400/10 p-3">
@@ -113,17 +111,23 @@ export default function LightsCrew() {
         </header>
 
         {/* Plan */}
-        {side && (
-          <section className="space-y-3">
-            <h2 className="text-xl font-extrabold">The plan</h2>
-            {nav}
-            <button onClick={() => setFull(true)} className="block w-full overflow-hidden rounded-2xl border border-white/10 cursor-zoom-in">
-              <PlanPhoto side={side} />
-            </button>
-            <p className="text-xs text-white/50 text-center">Tap the photo for full screen</p>
-            <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-white/70">
-              <span>━ Lights (wire color)</span><span>••• Zip line</span><span>🔌 Power</span><span>⚡ Inline</span>
+        {sides.length > 0 && (
+          <section className="space-y-4">
+            <div className="space-y-1">
+              <h2 className="text-xl font-extrabold">The plan</h2>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/70">
+                <span>━ Lights (wire color)</span><span>••• Zip line</span><span>🔌 Power</span><span>⚡ Inline</span>
+              </div>
             </div>
+            {/* Every section top to bottom, in order — just scroll. Tap one for full screen. */}
+            {sides.map((sd, i) => (
+              <div key={i} className="space-y-1.5">
+                <p className="text-base font-bold">Section {i + 1}{sides.length > 1 ? <span className="text-white/50 font-normal"> of {sides.length}</span> : null}</p>
+                <button onClick={() => { setAt(i); setFull(true); }} className="block w-full overflow-hidden rounded-2xl border border-white/10 cursor-zoom-in">
+                  <PlanPhoto side={sd} />
+                </button>
+              </div>
+            ))}
           </section>
         )}
 

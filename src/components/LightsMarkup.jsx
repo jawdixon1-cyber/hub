@@ -494,7 +494,7 @@ export default function LightsMarkup({ photo, initialLines = [], initialScale = 
       const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '');
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); return; }
       if (e.key === 'Escape') { setSel(-1); setSelJump(-1); }
-      if (!typing && nav && sel < 0 && selJump < 0 && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); goSection(e.key === 'ArrowLeft' ? -1 : 1); return; }
+      if (!typing && nav && !dragPlug && !grab && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); goSection(e.key === 'ArrowLeft' ? -1 : 1); return; }
       if ((e.key === 'Backspace' || e.key === 'Delete') && sel >= 0 && document.activeElement !== feetRef.current) remove();
       if ((e.key === 'Backspace' || e.key === 'Delete') && selJump >= 0 && !typing) { snap(); setJumps((js) => js.filter((_, k) => k !== selJump)); setSelJump(-1); }
     };
@@ -626,13 +626,13 @@ export default function LightsMarkup({ photo, initialLines = [], initialScale = 
             >
               <Triangle size={13} /> Pitch
             </button>}
-            {!measuring && <span className="text-neutral-400">Clips:</span>}
-            {!measuring && ZIP_COLORS.map(([k, label, hex]) => (
-              <Swatch key={`c${k}`} hex={hex} label={label} on={clipOf(cur) === k} onClick={() => { snap(); edit({ clip: k }); }} />
-            ))}
             {!measuring && <span className="text-neutral-400">Wire:</span>}
             {!measuring && ZIP_COLORS.map(([k, label, hex]) => (
               <Swatch key={k} hex={hex} label={label} on={(cur.color || 'white') === k} onClick={() => { snap(); edit({ color: k }); setNewColor(k); }} />
+            ))}
+            {!measuring && <span className="text-neutral-400">Clips:</span>}
+            {!measuring && ZIP_COLORS.map(([k, label, hex]) => (
+              <Swatch key={`c${k}`} hex={hex} label={label} on={clipOf(cur) === k} onClick={() => { snap(); edit({ clip: k }); }} />
             ))}
             {drawing && <button onClick={remove} className="p-1.5 text-neutral-400 hover:text-red-500 cursor-pointer" title="Delete line"><Trash2 size={16} /></button>}
             <button onClick={() => { setSel(-1); setPitchOpen(false); }} className="px-3 h-8 rounded-md bg-[#B0FF03] text-black text-xs font-bold cursor-pointer">OK</button>

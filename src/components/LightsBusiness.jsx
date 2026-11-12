@@ -964,7 +964,7 @@ const ROLE_OF = (name = '') => (/plug/i.test(name) ? (/female/i.test(name) ? 'fe
   : /socket\s*wire/i.test(name) ? 'socket' : /zip/i.test(name) ? 'zip' : /shingle tab/i.test(name) ? 'tab' : '');
 const colorRe = (c) => new RegExp(`\\b${c}\\b`, 'i');
 
-export function QuoteMaterialsCard({ value, onChange, quote, notes, onNotes, wire, onWire, photos = [], power, onPower, powerPhoto = '', onPowerPhoto = null, part = 'all', designs = [], design, onDesign, start = 1, only = null, before = null, quoteId = null, groups = null }) {
+export function QuoteMaterialsCard({ value, onChange, quote, notes, onNotes, wire, onWire, photos = [], power, onPower, powerPhoto = '', onPowerPhoto = null, part = 'all', designs = [], design, onDesign, start = 1, only = null, before = null, quoteId = null, groups = null, customColor = '', onCustomColor = null }) {
   const [bigPhoto, setBigPhoto] = useState('');
   const [items] = useLightsSupplies();
   const list = items || [];
@@ -1071,7 +1071,11 @@ export function QuoteMaterialsCard({ value, onChange, quote, notes, onNotes, wir
             {shown.includes('design') && q(nDesign, 'What color do they want?', designs.map((d) => opt(design === d.id, () => onDesign(d.id), <>
               {d.colors.length > 0 && <span className="flex -space-x-1">{d.colors.map((c) => <span key={c} className="w-4 h-4 rounded-full border border-black/30" style={{ background: c }} />)}</span>}
               {d.label}
-            </>, d.id)), 'grid-cols-3')}
+            </>, d.id)), 'grid-cols-3', design === 'custom' && onCustomColor ? (
+              <input value={customColor} onChange={(e) => onCustomColor(e.target.value)} autoFocus={!customColor}
+                placeholder="Type the custom colors — e.g. alternating blue and cool white"
+                className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:border-brand" />
+            ) : null)}
             {shown.includes('power') && q(nPower, "Where's the power?", POWER.map((p) => opt(power?.startsWith(p), () => onPower(power?.startsWith(p) ? '' : p), p, p)), 'grid-cols-4',
               <input value={powerSpot ? power.slice(powerSpot.length).replace(/^\s*—\s*/, '') : (power || '')}
                 onChange={(e) => onPower(powerSpot ? (e.target.value ? `${powerSpot} — ${e.target.value}` : powerSpot) : e.target.value)}

@@ -179,6 +179,7 @@ export default function LightsQuoter() {
   const [matOk, setMatOk] = useState('');
   const [linesOk, setLinesOk] = useState(''); // plan as it was when you confirmed where the lights go
   const [stepsOk, setStepsOk] = useState({});
+  const [customColor, setCustomColor] = useState(''); // what 'Custom' means, typed in Discovery
   const [crewToken, setCrewToken] = useState(''); // secret for the no-login Crew view link
   const [crewCopied, setCrewCopied] = useState(false);
   const [extras, setExtras] = useState([]); // columns, railings, trees, bushes… [{ id, side, x, y, type, run, around, wraps, width, strands, label }] // { stepNumber: true } — confirmed steps (6 + 7 use matOk / linesOk so changes un-confirm)
@@ -192,7 +193,7 @@ export default function LightsQuoter() {
   const autosaveTimer = useRef(null);
   const [lastSaved, setLastSaved] = useState(null);
 
-  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, savedId });
+  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, customColor, savedId });
   // The cloud version this device is working from — if another device saves after it,
   // this device's copy is stale and must not overwrite (that's how removed photos came back).
   const baseSaved = useRef('');
@@ -222,6 +223,7 @@ export default function LightsQuoter() {
     setStepsOk(d.stepsV === 2 ? d.stepsOk || {} : Object.fromEntries(Object.entries(d.stepsOk || {}).map(([k, v]) => [Number(k) >= 6 ? Number(k) + 1 : Number(k), v])));
     setExtras(d.extras || []);
     setCrewToken(d.crewToken || '');
+    setCustomColor(d.customColor || '');
     if (d.style) setStyle(d.style);
     setSavedId(d.savedId ?? (d.id && d.id !== DRAFT_ID ? d.id : null));
   };
@@ -269,7 +271,7 @@ export default function LightsQuoter() {
   // Only save when something actually changed. The fingerprint skips the big photo
   // data (length only), so it's cheap; opening a quote just records its fingerprint.
   const lastSig = useRef('');
-  const sigNow = () => JSON.stringify([client, clientInfo?.id, feet, strands, count, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto?.length || 0, nightPhoto?.length || 0, disc, installDate, takedownDate, matOk, linesOk.length, stepsOk, extras, crewToken, savedId,
+  const sigNow = () => JSON.stringify([client, clientInfo?.id, feet, strands, count, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto?.length || 0, nightPhoto?.length || 0, disc, installDate, takedownDate, matOk, linesOk.length, stepsOk, extras, crewToken, customColor, savedId,
     angles.map(({ plain, marked, ai, ...rest }) => [plain?.length || 0, marked?.length || 0, ai?.image?.length || 0, rest]),
     previews.map((x) => [x.id, x.image?.length || 0])]);
   useEffect(() => {
@@ -308,7 +310,7 @@ export default function LightsQuoter() {
       }
     }, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, savedId]);
+  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, customColor, savedId]);
 
   useEffect(() => {
     localStorage.setItem(PRICES_KEY, JSON.stringify(prices));
@@ -366,7 +368,7 @@ export default function LightsQuoter() {
     setCrewCopied(url);
     setTimeout(() => setCrewCopied(false), 6000);
   };
-  const reset = () => { setWstep(1); setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); setMaterials({}); setMatNotes({}); setWire('white'); setPower(''); setPowerPhoto(''); setNightPhoto(''); setDisc({}); setInstallDate(''); setTakedownDate(''); setMatOk(''); setLinesOk(''); setStepsOk({}); setExtras([]); setCrewToken(''); };
+  const reset = () => { setWstep(1); setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); setMaterials({}); setMatNotes({}); setWire('white'); setPower(''); setPowerPhoto(''); setNightPhoto(''); setDisc({}); setInstallDate(''); setTakedownDate(''); setMatOk(''); setLinesOk(''); setStepsOk({}); setExtras([]); setCrewToken(''); setCustomColor(''); };
   const say = (msg) => { setFlash(msg); setTimeout(() => setFlash(''), 2500); };
 
   const openQuote = async (id) => {
@@ -471,7 +473,7 @@ export default function LightsQuoter() {
         const open = async (id) => { setOpening(id); try { await openQuote(id); setEditing(true); } finally { setOpening(''); } };
         return (
           <div className="rounded-xl border border-border-default bg-card overflow-hidden">
-            <div className="grid grid-cols-[minmax(0,2fr)_70px_100px_80px_80px_70px_36px] gap-3 px-4 py-2 border-b border-border-subtle text-[10px] font-bold uppercase tracking-wide text-muted">
+            <div className="hidden sm:grid grid-cols-[minmax(0,2fr)_70px_100px_80px_80px_70px_36px] gap-3 px-4 py-2 border-b border-border-subtle text-[10px] font-bold uppercase tracking-wide text-muted">
               <span>Client</span><span className="text-right">Feet</span><span className="text-right">Price</span><span className="text-right">$/ft</span><span>Status</span><span>Date</span><span />
             </div>
             <button onClick={() => { reset(); setEditing(true); }} className="w-full flex items-center gap-2 px-4 py-2.5 border-b border-border-subtle text-sm font-semibold text-brand-text hover:bg-surface-alt cursor-pointer"><Plus size={14} /> New quote</button>
@@ -480,16 +482,20 @@ export default function LightsQuoter() {
               const ft = ['easy', 'medium', 'hard'].reduce((t, k) => t + num(sq.feet?.[k]), 0);
               return (
                 <div key={sq.id} onClick={() => !opening && open(sq.id)}
-                  className={`group grid grid-cols-[minmax(0,2fr)_70px_100px_80px_80px_70px_36px] gap-3 items-center px-4 py-2.5 border-b border-border-subtle last:border-b-0 hover:bg-surface-alt cursor-pointer ${sold ? 'opacity-75' : ''}`}>
-                  <span className="text-sm font-semibold text-primary truncate">{opening === sq.id ? 'Opening…' : sq.client || 'No name'}</span>
-                  <span className="text-sm text-secondary text-right tabular-nums">{ft || '—'}</span>
+                  className={`group grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,2fr)_70px_100px_80px_80px_70px_36px] gap-3 items-center px-4 py-2.5 border-b border-border-subtle last:border-b-0 hover:bg-surface-alt cursor-pointer ${sold ? 'opacity-75' : ''}`}>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-primary truncate">{opening === sq.id ? 'Opening…' : sq.client || 'No name'}</span>
+                    {/* Phone: the details under the name */}
+                    <span className="sm:hidden block text-xs text-muted truncate">{ft ? `${ft} ft` : 'No feet yet'}{ft > 0 && num(sq.total) > 0 ? ` · ${money(num(sq.total) / ft)}/ft` : ''} · {sold ? 'Sold' : 'Pending'} · {new Date(sq.savedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                  </span>
+                  <span className="hidden sm:block text-sm text-secondary text-right tabular-nums">{ft || '—'}</span>
                   <span className="text-sm font-bold text-brand-text text-right tabular-nums">{money(sq.total || 0)}</span>
-                  <span className="text-sm text-secondary text-right tabular-nums">{ft > 0 && num(sq.total) > 0 ? money(num(sq.total) / ft) : '—'}</span>
-                  <span>{sold
+                  <span className="hidden sm:block text-sm text-secondary text-right tabular-nums">{ft > 0 && num(sq.total) > 0 ? money(num(sq.total) / ft) : '—'}</span>
+                  <span className="hidden sm:block">{sold
                     ? <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500 text-white">Sold</span>
                     : <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-yellow-500/15 text-yellow-400">Pending</span>}</span>
-                  <span className="text-xs text-muted">{new Date(sq.savedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
-                  <span className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+                  <span className="hidden sm:block text-xs text-muted">{new Date(sq.savedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                  <span className="hidden sm:flex justify-end" onClick={(e) => e.stopPropagation()}>
                     {confirmDel === sq.id
                       ? <button onClick={() => removeQuote(sq.id)} className="text-[10px] font-semibold text-red-500 whitespace-nowrap cursor-pointer">Delete?</button>
                       : <button onClick={() => setConfirmDel(sq.id)} className="p-1 text-muted opacity-0 group-hover:opacity-100 hover:text-red-500 cursor-pointer" title="Delete"><Trash2 size={13} /></button>}
@@ -651,7 +657,7 @@ export default function LightsQuoter() {
           <div className={`rounded-xl border border-border-default bg-card p-4 space-y-3`}>
             <StepHead n={2} title="Questionnaire" sub="Their answers, then your picks." />
             <div className="space-y-3">
-              <QuoteMaterialsCard part="questions" start={1} only={['power', 'design']} value={materials} onChange={setMaterials} notes={matNotes} onNotes={setMatNotes} wire={wire} onWire={setWire} power={power} onPower={setPower} powerPhoto={powerPhoto} onPowerPhoto={setPowerPhoto} quote={{ feet, style, count, strands: strandCount, materials, wire, mountFt, runs: runsOf(angles, wire), zips: zipsOf(angles), peaks: angles.reduce((t, x) => t + (x.peaks || []).length, 0) }} designs={DESIGNS} design={style} onDesign={setStyle} />
+              <QuoteMaterialsCard part="questions" start={1} only={['power', 'design']} value={materials} onChange={setMaterials} notes={matNotes} onNotes={setMatNotes} wire={wire} onWire={setWire} power={power} onPower={setPower} powerPhoto={powerPhoto} onPowerPhoto={setPowerPhoto} quote={{ feet, style, count, strands: strandCount, materials, wire, mountFt, runs: runsOf(angles, wire), zips: zipsOf(angles), peaks: angles.reduce((t, x) => t + (x.peaks || []).length, 0) }} designs={DESIGNS} design={style} onDesign={setStyle} customColor={customColor} onCustomColor={setCustomColor} />
               <div className="rounded-xl border border-border-default bg-surface-alt/30 p-4 space-y-3">
                 <p className="flex items-center gap-2.5 text-base font-semibold text-primary">
                   <span className="w-6 h-6 shrink-0 rounded-full bg-surface-alt text-xs font-bold text-secondary flex items-center justify-center">3</span>
@@ -842,7 +848,7 @@ export default function LightsQuoter() {
       </div>
       <div className={wstep === 9 ? 'space-y-5' : 'hidden'}>
       {/* Mockup: where the lights go, show photos for ChatGPT, client preview */}
-      <LightsMockup part="mockup" angles={angles} setAngles={setAngles} client={client} previews={previews} setPreviews={setPreviews} designId={style} nightPhoto={nightPhoto} setNightPhoto={setNightPhoto} extras={extras} />
+      <LightsMockup part="mockup" angles={angles} setAngles={setAngles} client={client} previews={previews} setPreviews={setPreviews} designId={style} nightPhoto={nightPhoto} setNightPhoto={setNightPhoto} extras={extras} customColor={customColor} />
         {nav(9)}
       </div>
       <div className={wstep === 10 ? 'space-y-5' : 'hidden'}>

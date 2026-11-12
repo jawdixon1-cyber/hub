@@ -282,13 +282,14 @@ function ShowCard({ side, index, onPatch }) {
 }
 
 // part 'lines' = Where the lights go (confirm the plan photos) · part 'mockup' = make the ChatGPT mockup, step by step.
-export default function LightsMockup({ angles, setAngles, client, previews = [], setPreviews, designId: designProp, part = 'mockup', nightPhoto = '', setNightPhoto, extras = [] }) {
+export default function LightsMockup({ angles, setAngles, client, previews = [], setPreviews, designId: designProp, part = 'mockup', nightPhoto = '', setNightPhoto, extras = [], customColor = null }) {
   // Extras on each photo, numbered the same as the Extras step.
   const extrasOn = (i) => extras.map((e, k) => ({ ...e, n: k + 1 })).filter((e) => e.side === i);
   const [designLocal] = useState(() => localStorage.getItem('lights-mockup-design') || 'warm');
   // The quote owns its color when the page passes it in.
   const designId = designProp || designLocal;
-  const [custom, setCustom] = useState(() => localStorage.getItem('lights-mockup-custom') || '');
+  const [customLocal, setCustom] = useState(() => localStorage.getItem('lights-mockup-custom') || '');
+  const custom = customColor ?? customLocal; // the quote's custom colors (typed in Discovery)
   const [status, setStatus] = useState('');
   const [copied, setCopied] = useState(false);
   const design = DESIGNS.find((d) => d.id === designId) || DESIGNS[0];

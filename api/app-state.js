@@ -216,6 +216,7 @@ async function handleLightsCrew(req, res) {
     powerPhoto: photoRow?.value?.powerPhoto || '',
     gutterGuard: q.disc?.gutterGuard || '',
     style: q.style || '',
+    customColor: q.customColor || '',
     extras: q.extras || [],
     materials,
     sides,

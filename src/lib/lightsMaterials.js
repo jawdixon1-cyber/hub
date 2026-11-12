@@ -72,7 +72,7 @@ const findItem = (items, re, kind) => items.find((it) => (!kind || kindOf(it) ==
 export function quoteMaterials(q, items) {
   const out = {};
   const add = (it, qty) => { if (it && qty > 0) out[it.id] = (out[it.id] || 0) + Math.ceil(qty); };
-  const ft = n(q?.feet?.easy) + n(q?.feet?.medium) + n(q?.feet?.hard);
+  const ft = quoteFeet(q); // every measured line counts, rated in Difficulty or not
   if (ft > 0 && !q?.returning) {
     const pattern = (STYLE_PATTERN[q?.style] || STYLE_PATTERN.warm)
       .map(([re, cnt]) => ({ it: findItem(items, re, 'bulb'), n: cnt }))
@@ -153,7 +153,12 @@ export function quoteMaterials(q, items) {
   return out;
 }
 
-export const quoteFeet = (q) => n(q?.feet?.easy) + n(q?.feet?.medium) + n(q?.feet?.hard);
+// Lights feet: the measured lines (Measure step), or the Easy/Medium/Hard totals on older quotes.
+export function quoteFeet(q) {
+  const rated = n(q?.feet?.easy) + n(q?.feet?.medium) + n(q?.feet?.hard);
+  const measured = (q?.runs || []).reduce((t, r) => t + n(r.ft), 0);
+  return Math.max(rated, measured);
+}
 
 // Cost of a set of materials at each item's cost.
 export function materialCost(needs, items) {
