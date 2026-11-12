@@ -311,6 +311,14 @@ export default function LightsQuoter() {
   };
   const unconfirm = (n) => { if (n === 7) setMatOk(''); else if (n === 8) setLinesOk(''); else setStepsOk((o) => { const c = { ...o }; delete c[n]; return c; }); };
   const nav = (n) => <StepNav step={n} onGo={goStep} ok={isOk(n)} changed={(n === 7 && !!matOk) || (n === 8 && !!linesOk)} onConfirm={() => confirmStep(n)} onUndo={() => unconfirm(n)} />;
+  // Reorder photos; Extras markers follow their photo.
+  const moveSide = (from, to) => {
+    const order = angles.map((_, i) => i);
+    const [x] = order.splice(from, 1);
+    order.splice(to, 0, x);
+    setAngles(order.map((i) => angles[i]));
+    setExtras((xs) => xs.map((e) => ({ ...e, side: order.indexOf(e.side) })));
+  };
   const reset = () => { setWstep(1); setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); setMaterials({}); setMatNotes({}); setWire('white'); setPower(''); setPowerPhoto(''); setNightPhoto(''); setDisc({}); setInstallDate(''); setTakedownDate(''); setMatOk(''); setLinesOk(''); setStepsOk({}); setExtras([]); };
   const say = (msg) => { setFlash(msg); setTimeout(() => setFlash(''), 2500); };
 
@@ -626,7 +634,7 @@ export default function LightsQuoter() {
       </div>
       <div className={wstep === 2 ? 'space-y-5' : 'hidden'}>
       {/* Photos (upload, like on the phone) */}
-      <div id="step-4" className="scroll-mt-32"><LightsMeasurePhotos mode="photos" angles={angles} setAngles={setAngles} onApply={() => {}} /></div>
+      <div id="step-4" className="scroll-mt-32"><LightsMeasurePhotos mode="photos" angles={angles} setAngles={setAngles} onApply={() => {}} onMove={moveSide} /></div>
 
         {nav(2)}
       </div>

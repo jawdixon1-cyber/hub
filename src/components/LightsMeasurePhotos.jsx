@@ -64,7 +64,10 @@ const emptyAngle = () => ({ plain: '', marked: '', lines: [], w: 0, h: 0 });
 
 // mode 'photos' = step 2 (just upload a photo of every section); mode 'lines' = step 3 (draw + measure).
 // mode 'photos' = upload; 'lines' = Mark up (plan); 'measure' = feet per line; 'rate' = Easy / Medium / Hard.
-export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLinesSaved, children, mode = 'lines' }) {
+export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLinesSaved, children, mode = 'lines', onMove = null }) {
+  // Reorder photos (lines go with their photo). onMove also renumbers anything tied to a photo (Extras).
+  const move = onMove || ((from, to) => setAngles((as) => { const a = [...as]; const [x] = a.splice(from, 1); a.splice(to, 0, x); return a; }));
+  const [dragFrom, setDragFrom] = useState(-1);
   const measure = mode === 'measure' || mode === 'rate'; // after the plan: same photos, feet tags shown
   const rate = mode === 'rate';
   const [error, setError] = useState('');
@@ -126,26 +129,42 @@ export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLine
       >
         <div>
           <p className="text-lg font-bold text-primary">Upload photos</p>
-          <p className="text-xs text-muted mt-0.5">Upload a photo of every section the lights are going on.</p>
+          <p className="text-xs text-muted mt-0.5">Upload a photo of every section the lights are going on. Drag photos (or tap ↑ ↓) to put them in order.</p>
         </div>
         {/* Phone: one big button — opens the camera or your photo library */}
         <label className="sm:hidden flex items-center justify-center gap-2 rounded-xl bg-brand text-on-brand text-lg font-bold py-4 cursor-pointer active:brightness-95">
           <Camera size={22} /> Take or add photos
           <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addMany(e.target.files); e.target.value = ''; }} />
         </label>
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+        {/* One photo per row, top to bottom — drag or ↑ ↓ to reorder */}
+        <div className="space-y-2">
           {angles.map((a, i) => (a.plain ? (
-            <div key={i} className="relative">
-              <img src={a.plain} alt={`Section ${i + 1}`} className="w-full aspect-[4/3] object-cover rounded-lg border border-border-default" />
-              <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 text-[10px] font-semibold text-white">Section {i + 1}</span>
-              <button onClick={() => setAngles((x) => (x.length > 1 ? x.filter((_, j) => j !== i) : [emptyAngle()]))} title="Remove photo" className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white hover:bg-red-600 cursor-pointer"><X size={12} /></button>
-              <button onClick={() => setAngles((x) => [...x.slice(0, i + 1), { ...emptyAngle(), plain: a.plain, w: a.w, h: a.h, scale: a.scale || 0 }, ...x.slice(i + 1)])} title="Copy this photo as a new section with no lines" className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md bg-black/60 text-[11px] font-semibold text-white hover:bg-black cursor-pointer">Duplicate</button>
+            <div key={i} draggable
+              onDragStart={(e) => { setDragFrom(i); e.dataTransfer.setData('text/x-hub-photo', String(i)); e.dataTransfer.effectAllowed = 'move'; }}
+              onDragEnd={() => setDragFrom(-1)}
+              onDragOver={(e) => { if (dragFrom >= 0) { e.preventDefault(); e.stopPropagation(); } }}
+              onDrop={(e) => { if (dragFrom < 0) return; e.preventDefault(); e.stopPropagation(); if (dragFrom !== i) move(dragFrom, i); setDragFrom(-1); setBoxOver(false); }}
+              className={`flex items-center gap-3 rounded-xl border border-border-default bg-surface-alt/30 p-2 cursor-grab ${dragFrom === i ? 'opacity-40' : ''}`}>
+              <span className="text-muted text-lg select-none px-1" title="Drag to reorder">⠿</span>
+              <img src={a.plain} alt={`Section ${i + 1}`} draggable={false} className="w-32 sm:w-40 aspect-[4/3] object-cover rounded-lg border border-border-default" />
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-bold text-primary">Section {i + 1}</p>
+                {a.lines.length > 0 && <p className="text-xs text-muted">{a.lines.length} line{a.lines.length === 1 ? '' : 's'}</p>}
+              </div>
+              <div className="flex flex-col gap-1">
+                <button onClick={() => move(i, i - 1)} disabled={i === 0} title="Move up" className="w-9 h-8 rounded-md border border-border-strong text-primary font-bold disabled:opacity-25 hover:bg-surface-alt cursor-pointer">↑</button>
+                <button onClick={() => move(i, i + 1)} disabled={i >= angles.filter((x) => x.plain).length - 1} title="Move down" className="w-9 h-8 rounded-md border border-border-strong text-primary font-bold disabled:opacity-25 hover:bg-surface-alt cursor-pointer">↓</button>
+              </div>
+              <div className="flex flex-col gap-1">
+                <button onClick={() => setAngles((x) => [...x.slice(0, i + 1), { ...emptyAngle(), plain: a.plain, w: a.w, h: a.h, scale: a.scale || 0 }, ...x.slice(i + 1)])} title="Copy this photo as a new section with no lines" className="px-2.5 h-8 rounded-md border border-border-strong text-xs font-semibold text-secondary hover:text-primary cursor-pointer">Duplicate</button>
+                <button onClick={() => setAngles((x) => (x.length > 1 ? x.filter((_, j) => j !== i) : [emptyAngle()]))} title="Remove photo" className="px-2.5 h-8 rounded-md border border-border-strong text-xs font-semibold text-secondary hover:text-red-500 cursor-pointer">Remove</button>
+              </div>
             </div>
           ) : null))}
-          <label className={`aspect-[4/3] rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer ${boxOver ? 'border-border-brand bg-brand-light text-brand-text' : 'border-border-strong text-muted hover:text-primary hover:border-border-brand'}`}>
+          <label className={`flex items-center justify-center gap-2 rounded-xl border-2 border-dashed py-5 cursor-pointer ${boxOver ? 'border-border-brand bg-brand-light text-brand-text' : 'border-border-strong text-muted hover:text-primary hover:border-border-brand'}`}>
             <Camera size={20} />
-            <span className="text-xs font-semibold">{have.length ? 'Add more' : 'Add photos'}</span>
-            <span className="text-[10px]">drag here or click</span>
+            <span className="text-sm font-semibold">{have.length ? 'Add more' : 'Add photos'}</span>
+            <span className="text-xs">· drag here or click</span>
             <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addMany(e.target.files); e.target.value = ''; }} />
           </label>
         </div>
@@ -172,7 +191,7 @@ export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLine
           🔌 Mark where the power is — open the photo with the outlet and tap <b>🔌 Power</b>, then tap the spot.
         </div>
       )}
-      <div className={`grid gap-4 ${!measure || angles.filter((x) => x.plain).length > 1 ? 'md:grid-cols-2' : ''}`}>
+      <div className="grid gap-4">{/* top to bottom, same order as step 2 Photos */}
       {angles.map((a, i) => (!a.plain ? null : (
         <div key={i} className="rounded-xl border border-border-default bg-surface-alt/30 overflow-hidden">
           {/* Big photo with the lines on it — click to draw */}
