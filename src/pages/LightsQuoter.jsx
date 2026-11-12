@@ -9,7 +9,7 @@ import { DESIGNS } from '../lib/lightsDesigns';
 import { kindOf } from '../lib/lightsMaterials';
 import JobberClientPicker from '../components/JobberClientPicker';
 import LightsBusiness, { QuoteMaterialsCard } from '../components/LightsBusiness';
-import { DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, getLocalQuote, setLightsOrg, cloudHas, warmQuotes } from '../lib/lightsStore';
+import { DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt } from '../lib/lightsStore';
 import { useAuth } from '../contexts/AuthContext';
 import { useJobberList, quoteStage, STAGE_LABEL } from '../lib/jobberLights';
 
@@ -191,7 +191,11 @@ export default function LightsQuoter() {
   const [lastSaved, setLastSaved] = useState(null);
 
   const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, savedId });
+  // The cloud version this device is working from — if another device saves after it,
+  // this device's copy is stale and must not overwrite (that's how removed photos came back).
+  const baseSaved = useRef('');
   const apply = (d) => {
+    baseSaved.current = d.savedAt || '';
     setClient(d.client || '');
     setClientInfo(d.clientInfo || null);
     setFeet({ ...EMPTY_FEET, ...(d.feet || {}) });
@@ -276,8 +280,18 @@ export default function LightsQuoter() {
       const now = new Date().toISOString();
       const id = client.trim() ? (savedId || (clientInfo ? `jobber-${clientInfo.id}` : `lq-${Date.now()}`)) : null;
       try {
+        // Another device saved this quote since we loaded it? Don't overwrite it with our old copy —
+        // load theirs instead.
+        if (id && savedId === id) {
+          const cloudAt = await cloudSavedAt(id);
+          if (cloudAt && baseSaved.current && cloudAt > baseSaved.current) {
+            const fresh = await getQuote(id).catch(() => null);
+            if (fresh) { skipFirstSave.current = true; apply({ ...fresh, savedId: id }); say('Updated from your other device'); return; }
+          }
+        }
         await putQuote({ id: DRAFT_ID, ...snapshot(), savedId: id, savedAt: now });
         if (id) {
+          baseSaved.current = now;
           // keep tracker fields (status, sent date, light style) set on the Supplies page
           const prev = await getLocalQuote(id).catch(() => null);
           await putQuote({ ...(prev || {}), id, ...snapshot(), savedId: id, total: num(quoted) || q.total, calcTotal: q.total, savedAt: now });
@@ -285,8 +299,9 @@ export default function LightsQuoter() {
           setLastSaved(now);
           refreshList();
         }
-      } catch {
-        say('Could not save — browser storage may be full');
+      } catch (e) {
+        console.error('[lights] save failed', e);
+        say(`Could not save to the cloud — ${e?.message || 'check your connection'}. Your work is kept on this device.`);
       }
     }, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -295,6 +310,20 @@ export default function LightsQuoter() {
   useEffect(() => {
     localStorage.setItem(PRICES_KEY, JSON.stringify(prices));
   }, [prices]);
+
+  // Coming back to Hub (app reopened / tab clicked): pick up a newer version saved on another device.
+  useEffect(() => {
+    const check = async () => {
+      if (document.visibilityState !== 'visible' || !savedId) return;
+      const cloudAt = await cloudSavedAt(savedId);
+      if (!cloudAt || !baseSaved.current || cloudAt <= baseSaved.current) return;
+      const fresh = await getQuote(savedId).catch(() => null);
+      if (fresh) { clearTimeout(autosaveTimer.current); skipFirstSave.current = true; apply({ ...fresh, savedId }); say('Updated from your other device'); }
+    };
+    document.addEventListener('visibilitychange', check);
+    window.addEventListener('focus', check);
+    return () => { document.removeEventListener('visibilitychange', check); window.removeEventListener('focus', check); };
+  }, [savedId]);
 
   const setPrice = (k) => (v) => setPrices((p) => ({ ...p, [k]: v }));
   // Strands come from the Extras step (old quotes: the typed strand count).
@@ -756,7 +785,7 @@ export default function LightsQuoter() {
         const r1 = (x) => Math.round(x * 10) / 10;
         const lightsFt = sum(runs, () => true);
         const zipFt = sum(zips, () => true);
-        const byColor = (arr, key, test = () => true) => ['white', 'black'].map((c) => [c, sum(arr, (r) => test(r) && (r[key] || 'white') === c)]).filter(([, f]) => f > 0);
+        const byColor = (arr, key, test = () => true) => ['white', 'black', 'green'].map((c) => [c, sum(arr, (r) => test(r) && (r[key] || 'white') === c)]).filter(([, f]) => f > 0);
         const colors = (pairs, unit = '') => pairs.map(([c, f]) => `${Math.ceil(f)}${unit} ${c}`).join(' · ');
         const isFlex = (r) => r.mount === 'gutter' || r.mount === 'guard';
         const nm = (re) => (it) => re.test(it?.name || '');

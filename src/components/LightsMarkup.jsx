@@ -50,7 +50,7 @@ const normalize = (l) => ({ feet: l.feet, level: l.level, mount: l.mount || 'gut
 const clipOf = (l) => l.clip || ((l.mount || 'gutter') === 'gutter' || l.mount === 'guard' ? 'white' : l.color || 'white');
 
 // Plan colors (Mark up step): wire color of each roof line and each zip (jump) line — white or black.
-const ZIP_COLORS = [['white', 'White', '#FFFFFF'], ['black', 'Black', '#111111']];
+const ZIP_COLORS = [['white', 'White', '#FFFFFF'], ['black', 'Black', '#111111'], ['green', 'Green', '#1F7A35']];
 const zipHex = (k) => ZIP_COLORS.find((c) => c[0] === k)?.[2] || '#FFFFFF';
 function Swatch({ hex, on, label, onClick }) {
   return (

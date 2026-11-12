@@ -116,6 +116,12 @@ export async function getQuote(id) {
     ]);
     if (error) throw error;
     const meta = metaRow?.value;
+    // This device saved newer work that never made it to the cloud (a failed upload):
+    // keep it and push it up — never let the older cloud copy overwrite it.
+    if (meta && local?.savedAt && Array.isArray(local.angles) && String(local.savedAt) > String(meta.savedAt || '')) {
+      putQuote(local).catch((e) => console.error('[lights] re-upload of newer local copy failed', e));
+      return local;
+    }
     const photos = sameVersion(local, meta) ? { angles: local.angles, previews: local.previews, powerPhoto: local.powerPhoto, nightPhoto: local.nightPhoto } : meta ? await fetchPhotos(id) : {};
     if (meta) {
       const { cover, sides, ...rest } = meta; // eslint-disable-line no-unused-vars
@@ -145,6 +151,16 @@ export async function warmQuotes(metas) {
 }
 
 // true / false, or null when offline (can't tell).
+// When this quote was last saved in the cloud (by any device), or null when offline / not there.
+export async function cloudSavedAt(id) {
+  if (!isCloud(id)) return null;
+  try {
+    const { data, error } = await supabase.from('app_state').select('savedAt:value->>savedAt').eq('key', META + id).maybeSingle();
+    if (error) throw error;
+    return data?.savedAt || null;
+  } catch { return null; }
+}
+
 export async function cloudHas(id) {
   if (!isCloud(id)) return null;
   try {

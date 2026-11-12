@@ -89,13 +89,14 @@ export function quoteMaterials(q, items) {
       const acc = {};
       const put = (it, qty) => { if (it) acc[it.id] = (acc[it.id] || 0) + qty; };
       const clips = items.filter((it) => kindOf(it) === 'clip');
-      const colorRe = (c) => (c === 'black' ? /black/i : /white/i);
+      const colorRe = (c) => (c === 'black' ? /black/i : c === 'green' ? /green/i : /white/i);
+      const tone = (c) => (c === 'black' || c === 'green' ? c : 'white');
       const pick = (re, c) => clips.find((it) => re.test(it.name) && colorRe(c).test(it.name)) || clips.find((it) => re.test(it.name));
       runs.forEach((r) => {
-        const c = r.wire === 'black' ? 'black' : 'white';
+        const c = tone(r.wire);
         put(findItem(items, colorRe(c), 'wire') || items.find((it) => kindOf(it) === 'wire'), n(r.ft) * k);
         // Clips can differ from the wire (black wire on a white gutter → white clips).
-        const cc = (r.clip || r.wire) === 'black' ? 'black' : 'white';
+        const cc = tone(r.clip || r.wire);
         const clip = r.mount === 'magnet' ? pick(/magnet/i, cc)
           : r.mount === 'shingle' ? pick(/shingle tab/i, cc)
           : pick(/flex/i, cc); // gutter + gutter guard
@@ -123,21 +124,21 @@ export function quoteMaterials(q, items) {
     // Peaks marked on the photos → one O clip each.
     // O clips in the clip color used most (by feet); falls back to any O clip, then flex.
     if (n(q?.peaks) > 0) {
-      const ftBy = { white: 0, black: 0 };
-      (q?.runs || []).forEach((r) => { ftBy[(r.clip || r.wire) === 'black' ? 'black' : 'white'] += n(r.ft); });
-      const pc = (q?.runs || []).length ? (ftBy.black > ftBy.white ? 'black' : 'white') : (q?.wire === 'black' ? 'black' : 'white');
+      const ftBy = { white: 0, black: 0, green: 0 };
+      (q?.runs || []).forEach((r) => { const k = r.clip || r.wire; ftBy[k === 'black' || k === 'green' ? k : 'white'] += n(r.ft); });
+      const pc = (q?.runs || []).length ? Object.entries(ftBy).sort((a, b) => b[1] - a[1])[0][0] : (q?.wire === 'black' ? 'black' : 'white');
       const oClips = items.filter((it) => kindOf(it) === 'clip' && /\bo\s*clips?\b/i.test(it.name));
-      add(oClips.find((it) => (pc === 'black' ? /black/i : /white/i).test(it.name)) || oClips[0] || items.find((it) => kindOf(it) === 'clip' && /flex/i.test(it.name)) || allInOne, n(q.peaks));
+      add(oClips.find((it) => (pc === 'black' ? /black/i : pc === 'green' ? /green/i : /white/i).test(it.name)) || oClips[0] || items.find((it) => kindOf(it) === 'clip' && /flex/i.test(it.name)) || allInOne, n(q.peaks));
     }
     add(items.find((it) => kindOf(it) === 'timer'), 1);
     // 50 ft of zip cord per install to get power to the roofline (default — edit on the job)
     // Zip cord matches the wire color (white or black), not green.
     // Zip lines measured in Measure → that many feet of zip in each line's color; none measured → 50 ft default.
-    const zipOf = (c) => items.find((it) => /zip/i.test(it.name) && (c === 'black' ? /black/i : /white/i).test(it.name)) || items.find((it) => /zip/i.test(it.name));
+    const zipOf = (c) => items.find((it) => /zip/i.test(it.name) && (c === 'black' ? /black/i : c === 'green' ? /green/i : /white/i).test(it.name)) || items.find((it) => /zip/i.test(it.name));
     const zips = (q?.zips || []).filter((z) => n(z.ft) > 0);
     if (zips.length) {
       const byColor = {};
-      zips.forEach((z) => { const c = z.color === 'black' ? 'black' : 'white'; byColor[c] = (byColor[c] || 0) + n(z.ft); });
+      zips.forEach((z) => { const c = z.color === 'black' || z.color === 'green' ? z.color : 'white'; byColor[c] = (byColor[c] || 0) + n(z.ft); });
       Object.entries(byColor).forEach(([c, f]) => add(zipOf(c), f));
     } else {
       add(zipOf(q?.wire), 50);
