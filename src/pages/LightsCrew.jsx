@@ -8,7 +8,6 @@ import { typeOf, extraMath } from '../lib/lightsExtras';
 // Crew view — opened from a secret link, no login. The plan (with feet) + materials to load. No prices.
 
 const GREEN = '#00DF00';
-const day = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '—');
 
 function PlanPhoto({ side, big = false }) {
   const w = side.w || 1600;
@@ -87,26 +86,25 @@ export default function LightsCrew() {
 
   return (
     <div className="min-h-screen bg-[#0b0b0d] text-white">
-      <div className="mx-auto max-w-3xl px-4 py-5 space-y-6">
+      <div className="mx-auto max-w-3xl px-4 pt-4 pb-10 space-y-6">
         {/* Job */}
         <header className="space-y-3">
           <div className="flex items-center justify-between">
             <img src="/holiday-logo.png" alt="Hey Jude's" className="h-9 w-auto" />
             <span className="rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide text-black" style={{ background: GREEN }}>Crew view</span>
           </div>
-          <h1 className="text-3xl font-extrabold leading-tight">{job.client}</h1>
+          <h1 className="text-2xl sm:text-3xl font-extrabold leading-tight break-words capitalize">{job.client}</h1>
           {job.address && (
             <a href={`https://maps.apple.com/?q=${encodeURIComponent(job.address)}`} className="block text-base text-white/80 underline underline-offset-4">📍 {job.address}</a>
           )}
-          <div className="flex flex-wrap gap-2 text-sm">
-            <span className="rounded-lg bg-white/10 px-3 py-1.5">🎄 Install <b>{day(job.installDate)}</b></span>
-            {design && <span className="rounded-lg bg-white/10 px-3 py-1.5">💡 <b>{job.style === 'custom' ? `Custom: ${job.customColor || 'ask Jude'}` : design.label}</b></span>}
-          </div>
           {(job.power || job.powerPhoto) && (
             <div className="flex items-center gap-3 rounded-xl border border-yellow-400/40 bg-yellow-400/10 p-3">
               {job.powerPhoto && <img src={job.powerPhoto} alt="Outlet" onClick={() => setBigImg(job.powerPhoto)} className="h-16 w-16 rounded-lg object-cover cursor-zoom-in" />}
               <p className="text-base"><span className="font-bold text-yellow-300">🔌 Power:</span> {job.power || 'see photo'}</p>
             </div>
+          )}
+          {design && (
+            <div className="rounded-xl bg-white/10 px-3 py-2.5 text-base">💡 <span className="font-bold">Bulbs:</span> {job.style === 'custom' ? `Custom: ${job.customColor || 'ask Jude'}` : design.label}</div>
           )}
         </header>
 
@@ -115,15 +113,23 @@ export default function LightsCrew() {
           <section className="space-y-4">
             <div className="space-y-1">
               <h2 className="text-xl font-extrabold">The plan</h2>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/70">
-                <span>━ Lights (wire color)</span><span>••• Zip line</span><span>🔌 Power</span><span>⚡ Inline</span>
+              <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 space-y-2 text-sm">
+                <p className="font-bold">Cheat sheet</p>
+                <p className="text-white/80"><b className="text-white">Colors are real.</b> Whatever color a line is on the plan, that's the color you use. White line = white wire. Black line = black wire. Green line = green wire. Same for zip lines.</p>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-white/80">
+                  <li><b className="text-white">━ Solid line</b> = lights (in that wire color)</li>
+                  <li><b className="text-white">••• Dotted line</b> = zip line (in that cord color)</li>
+                  <li><b className="text-white">🔌</b> = where it plugs in</li>
+                  <li><b className="text-white">⚡</b> = inline connection</li>
+                  <li><b className="text-white">30 ft</b> tag = length of that run</li>
+                </ul>
               </div>
             </div>
             {/* Every section top to bottom, in order — just scroll. Tap one for full screen. */}
             {sides.map((sd, i) => (
               <div key={i} className="space-y-1.5">
                 <p className="text-base font-bold">Section {i + 1}{sides.length > 1 ? <span className="text-white/50 font-normal"> of {sides.length}</span> : null}</p>
-                <button onClick={() => { setAt(i); setFull(true); }} className="block w-full overflow-hidden rounded-2xl border border-white/10 cursor-zoom-in">
+                <button onClick={() => { setAt(i); setFull(true); }} className="block -mx-4 w-[calc(100%+2rem)] sm:mx-0 sm:w-full overflow-hidden sm:rounded-2xl border-y sm:border border-white/10 cursor-zoom-in">
                   <PlanPhoto side={sd} />
                 </button>
               </div>
@@ -145,7 +151,7 @@ export default function LightsCrew() {
                     <p className="font-bold">{x.label?.trim() || t.label} <span className="text-white/50 font-normal">· section {x.side + 1}</span></p>
                     <p className="text-sm text-white/60">{m.math || t.label}{x.wraps ? ` · ${x.wraps} wraps` : ''}</p>
                   </div>
-                  <span className="font-bold">{m.strands} strand{m.strands === 1 ? '' : 's'}</span>
+                  <span className="shrink-0 font-bold">{m.strands} strand{m.strands === 1 ? '' : 's'}</span>
                 </div>
               );
             })}
@@ -167,7 +173,7 @@ export default function LightsCrew() {
                     <input type="checkbox" checked={!!checked[m.id]} onChange={(e) => setChecked((c) => ({ ...c, [m.id]: e.target.checked }))} className="w-6 h-6 accent-[#00DF00]" />
                     {m.image ? <img src={m.image} alt="" className="w-11 h-11 rounded-lg object-cover bg-white shrink-0" /> : <span className="w-11 h-11 rounded-lg bg-white/10 shrink-0" />}
                     <span className={`flex-1 font-semibold leading-tight ${checked[m.id] ? 'line-through' : ''}`}>{m.name}{m.note && <span className="block text-xs font-normal text-white/60">{m.note}</span>}</span>
-                    <span className="text-lg font-extrabold tabular-nums">{m.qty}<span className="text-sm font-normal text-white/60"> {m.unit}</span></span>
+                    <span className="shrink-0 text-lg font-extrabold tabular-nums">{m.qty}<span className="text-sm font-normal text-white/60"> {m.unit}</span></span>
                   </label>
                 ))}
               </div>
