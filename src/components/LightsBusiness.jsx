@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, ShoppingCart, ImagePlus, ExternalLink, Phone, MessageSquare, Pencil } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
 import { STARTER_SUPPLIES, STYLE_LABEL, quoteMaterials, quoteFeet, packPlan, kindOf } from '../lib/lightsMaterials';
-import { listQuotes } from '../lib/lightsStore';
+import { listQuotes, referLinks, referInbox, makeReferLink, markReferAdded } from '../lib/lightsStore';
 import { useJobberList, nameKey } from '../lib/jobberLights';
 
 // The business side of Christmas lights, shown inside the Lights page:
@@ -485,6 +485,31 @@ function ColdLeads({ leads, setLeads, inJobber = {} }) {
     setLeads((list) => [...(list || []), { ...BLANK_LEAD, id, contacts: [{ name: '', phone: '', pitch: true }] }]);
     setPopLead(id);
   };
+  // Referrals (Mom's link): her leads wait in an inbox; one tap adds them to the pipeline.
+  const [refer, setRefer] = useState({ links: [], inbox: [] });
+  const [referMsg, setReferMsg] = useState('');
+  const loadRefer = () => Promise.all([referLinks(), referInbox()]).then(([links, inbox]) => setRefer({ links, inbox })).catch(() => {});
+  useEffect(() => { loadRefer(); const t = setInterval(loadRefer, 60000); return () => clearInterval(t); }, []);
+  const waiting = refer.inbox.filter((r) => !r.added && !(leads || []).some((l) => l.id === r.id));
+  const addReferrals = async () => {
+    const now = new Date().toISOString();
+    setLeads((list) => [...(list || []), ...waiting.map((r) => ({
+      ...BLANK_LEAD, id: r.id, name: r.name || r.contacts?.[0]?.name || '', address: r.address || '', contacts: r.contacts?.length ? r.contacts : [{ name: '', phone: '', pitch: true }],
+      bestTime: r.bestTime || '', angle: r.angle || '', money: r.money || '', status: 'new', referredBy: r.from,
+      log: [{ at: r.at || now, status: '', how: `Referred by ${r.from}`, note: `Sent in by ${r.from}` }],
+    }))]);
+    await markReferAdded(waiting.map((r) => r.id)).catch(() => {});
+    loadRefer();
+  };
+  const copyReferLink = async () => {
+    let link = refer.links.find((l) => !l.off);
+    if (!link) { link = await makeReferLink('Mom'); loadRefer(); }
+    const origin = /localhost|127\.0\.0\.1/.test(window.location.hostname) ? 'https://lawn-care-hub.vercel.app' : window.location.origin;
+    const url = `${origin}/refer/${link.token}`;
+    try { await navigator.clipboard.writeText(url); } catch { /* shown below */ }
+    setReferMsg(url);
+    setTimeout(() => setReferMsg(''), 8000);
+  };
   const dropIfBlank = (id) => setLeads((list) => (list || []).filter((x) => x.id !== id || x.name?.trim()));
   const closePop = () => { dropIfBlank(popLead); setPopLead(''); setLogFor(''); setLogDraft({ status: '', note: '', how: '' }); if (draft?.id === popLead) setDraft(null); };
   useEffect(() => {
@@ -504,8 +529,18 @@ function ColdLeads({ leads, setLeads, inJobber = {} }) {
             ))}
           </div>
         </div>
-        <button onClick={addLead} className="inline-flex items-center gap-1 text-sm font-medium text-brand-text hover:underline cursor-pointer"><Plus size={14} /> Add lead</button>
+        <div className="flex items-center gap-3">
+          <button onClick={copyReferLink} title="Copy the link Mom uses to send you leads" className="text-sm font-medium text-secondary hover:text-primary cursor-pointer">🔗 {referMsg ? 'Copied!' : "Mom's link"}</button>
+          <button onClick={addLead} className="inline-flex items-center gap-1 text-sm font-medium text-brand-text hover:underline cursor-pointer"><Plus size={14} /> Add lead</button>
+        </div>
       </div>
+      {referMsg && <p className="px-4 py-2 text-xs text-brand-text border-b border-border-subtle break-all">Copied — text this to Mom: {referMsg}</p>}
+      {waiting.length > 0 && (
+        <div className="px-4 py-3 border-b border-border-subtle bg-brand-light flex items-center gap-3 flex-wrap">
+          <p className="text-sm font-semibold text-brand-text-strong flex-1">📥 New from {waiting[0].from} ({waiting.length}): {waiting.map((r) => r.name || r.contacts?.[0]?.name).join(', ')}</p>
+          <button onClick={addReferrals} className="rounded-lg bg-brand text-on-brand px-4 py-2 text-sm font-bold hover:bg-brand-hover cursor-pointer">Add to pipeline</button>
+        </div>
+      )}
       {mode === 'list' && <div className="px-4 py-2.5 border-b border-border-subtle flex items-stretch gap-1.5 overflow-x-auto">
         {OUTREACH.map(([k, label, cls]) => {
           const n = (leads || []).filter((l) => stageOf(l, inJobber) === k).length;

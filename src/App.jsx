@@ -69,6 +69,8 @@ const ChecklistTrackerPage = lazy(() => import('./pages/ChecklistTrackerPage'));
 const Quoting = lazy(() => import('./pages/Quoting'));
 const LightsQuoter = lazy(() => import('./pages/LightsQuoter'));
 const LightsPresentation = lazy(() => import('./pages/LightsPresentation'));
+const LightsCrew = lazy(() => import('./pages/LightsCrew'));
+const LightsRefer = lazy(() => import('./pages/LightsRefer'));
 const DailyChecklist = lazy(() => import('./pages/DailyChecklist'));
 const OwnerHome = lazy(() => import('./pages/OwnerHome'));
 const Plans = lazy(() => import('./pages/Plans'));
@@ -296,6 +298,22 @@ function App() {
 
   // Public routes (no auth required)
   const loc = useLocation();
+  // Crew view: a lights job's plan + materials from a secret link — no login.
+  // Referral form (e.g. Mom sending leads) from a secret link — no login.
+  if (loc.pathname.startsWith('/refer/')) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#0b0b0d]" />}>
+        <Routes><Route path="/refer/:token" element={<LightsRefer />} /></Routes>
+      </Suspense>
+    );
+  }
+  if (loc.pathname.startsWith('/crew/')) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#0b0b0d]" />}>
+        <Routes><Route path="/crew/:token" element={<LightsCrew />} /></Routes>
+      </Suspense>
+    );
+  }
   if (loc.pathname === '/apply') {
     return (
       <Suspense fallback={<div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center"><div className="w-8 h-8 border-4 border-gray-700 border-t-green-400 rounded-full animate-spin" /></div>}>

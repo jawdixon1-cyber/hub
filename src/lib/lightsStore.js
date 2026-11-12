@@ -202,3 +202,31 @@ export const setPrepFolder = (handle) => localPut({ id: FOLDER_ID, handle });
 
 // This device's copy (no network) — used by autosave to keep tracker fields.
 export const getLocalQuote = (id) => localGet(id);
+
+// ── Referral links (e.g. Mom's lead form) ──
+// Links: [{ token, name }] in greenteam-lightsReferLinks. Her submissions land in
+// greenteam-lightsReferrals (written by the server) until you add them to the pipeline.
+const REFER_LINKS = 'greenteam-lightsReferLinks';
+const REFER_INBOX = 'greenteam-lightsReferrals';
+async function readKey(key) {
+  const { data, error } = await supabase.from('app_state').select('value').eq('key', key).maybeSingle();
+  if (error) throw error;
+  return Array.isArray(data?.value) ? data.value : [];
+}
+export const referLinks = () => readKey(REFER_LINKS);
+export const referInbox = () => readKey(REFER_INBOX);
+export async function makeReferLink(name) {
+  const links = await readKey(REFER_LINKS);
+  const b = new Uint8Array(18);
+  crypto.getRandomValues(b);
+  const token = btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const link = { token, name, made: new Date().toISOString() };
+  await upsert([{ key: REFER_LINKS, value: [...links, link] }]);
+  return link;
+}
+// Mark referrals as added to the pipeline (re-reads first so a lead sent meanwhile isn't lost).
+export async function markReferAdded(ids) {
+  const inbox = await readKey(REFER_INBOX);
+  const set = new Set(ids);
+  await upsert([{ key: REFER_INBOX, value: inbox.map((r) => (set.has(r.id) ? { ...r, added: true } : r)) }]);
+}

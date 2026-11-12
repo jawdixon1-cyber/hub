@@ -238,12 +238,13 @@ export function OutletMarks({ outlets = [], w, h, onDown, inline = false }) {
 }
 
 // Backup of the editor's unsaved work (per photo), so a page reload / reset mid-edit never loses lines.
-const draftKey = (photo) => `lights-editor-draft:${(photo || '').length}:${(photo || '').slice(-40)}`;
-function readDraft(photo) {
-  try { return JSON.parse(localStorage.getItem(draftKey(photo)) || 'null'); } catch { return null; }
+// Keyed by section too — a duplicated section has the same photo.
+const draftKey = (photo, id = '') => `lights-editor-draft:${id}:${(photo || '').length}:${(photo || '').slice(-40)}`;
+function readDraft(photo, id) {
+  try { return JSON.parse(localStorage.getItem(draftKey(photo, id)) || 'null'); } catch { return null; }
 }
 
-export default function LightsMarkup({ photo, initialLines = [], initialScale = 0, initialPeaks = [], initialOutlets = [], initialInlines = [], initialJumps = [], onSave, onClose, mode = 'all' }) {
+export default function LightsMarkup({ photo, initialLines = [], initialScale = 0, initialPeaks = [], initialOutlets = [], initialInlines = [], initialJumps = [], onSave, onClose, mode = 'all', nav = null, draftId = '' }) {
   // draw = Mark up (plan: lights, jumps, power, peaks, mount, wire) · measure = feet only · rate = Easy/Medium/Hard
   const drawing = mode === 'draw' || mode === 'all';
   const measuring = mode !== 'draw';
@@ -252,7 +253,7 @@ export default function LightsMarkup({ photo, initialLines = [], initialScale = 
   const [size, setSize] = useState(null); // natural image size
   // What's saved on the quote right now — the backup only matters when the work differs from it.
   const savedSig = JSON.stringify({ lines: initialLines.map(normalize), jumps: initialJumps || [], outlets: initialOutlets || [], inlines: initialInlines || [], peaks: initialPeaks || [], scale: initialScale || 0 });
-  const [backup] = useState(() => { const d = readDraft(photo); return d && JSON.stringify({ lines: (d.lines || []).map(normalize), jumps: d.jumps || [], outlets: d.outlets || [], inlines: d.inlines || [], peaks: d.peaks || [], scale: d.scale || 0 }) !== savedSig ? d : null; }); // unsaved work from before a reload
+  const [backup] = useState(() => { const d = readDraft(photo, draftId); return d && JSON.stringify({ lines: (d.lines || []).map(normalize), jumps: d.jumps || [], outlets: d.outlets || [], inlines: d.inlines || [], peaks: d.peaks || [], scale: d.scale || 0 }) !== savedSig ? d : null; }); // unsaved work from before a reload
   const restored = !!backup;
   const [lines, setLines] = useState(() => (backup?.lines || initialLines).map(normalize));
   const [history, setHistory] = useState([]); // earlier { lines, jumps, outlets, peaks }, for Undo / ⌘Z
@@ -284,11 +285,13 @@ export default function LightsMarkup({ photo, initialLines = [], initialScale = 
   useEffect(() => {
     const cur = { lines, jumps, outlets, inlines, peaks, scale: scale || 0 };
     try {
-      if (JSON.stringify(cur) === savedSig) localStorage.removeItem(draftKey(photo));
-      else localStorage.setItem(draftKey(photo), JSON.stringify(cur));
+      if (JSON.stringify(cur) === savedSig) localStorage.removeItem(draftKey(photo, draftId));
+      else localStorage.setItem(draftKey(photo, draftId), JSON.stringify(cur));
     } catch { /* storage full — skip */ }
-  }, [photo, lines, jumps, outlets, inlines, peaks, scale, savedSig]);
-  const clearDraft = () => { try { localStorage.removeItem(draftKey(photo)); } catch { /* ignore */ } };
+  }, [photo, draftId, lines, jumps, outlets, inlines, peaks, scale, savedSig]);
+  const clearDraft = () => { try { localStorage.removeItem(draftKey(photo, draftId)); } catch { /* ignore */ } };
+  // ‹ › / ← →: save this section and go to the next or previous one.
+  const goSection = (dir) => { if (!nav) return; clearDraft(); nav.go(dir, [lines, size, scale, peaks, outlets, jumps, inlines]); };
   const [scaleMode, setScaleMode] = useState(false); // next drag draws the ruler
   const [ruler, setRuler] = useState(null); // { a, b } waiting for its real length
   const [rulerFt, setRulerFt] = useState('');
@@ -491,6 +494,7 @@ export default function LightsMarkup({ photo, initialLines = [], initialScale = 
       const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '');
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); return; }
       if (e.key === 'Escape') { setSel(-1); setSelJump(-1); }
+      if (!typing && nav && sel < 0 && selJump < 0 && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); goSection(e.key === 'ArrowLeft' ? -1 : 1); return; }
       if ((e.key === 'Backspace' || e.key === 'Delete') && sel >= 0 && document.activeElement !== feetRef.current) remove();
       if ((e.key === 'Backspace' || e.key === 'Delete') && selJump >= 0 && !typing) { snap(); setJumps((js) => js.filter((_, k) => k !== selJump)); setSelJump(-1); }
     };
@@ -554,6 +558,13 @@ export default function LightsMarkup({ photo, initialLines = [], initialScale = 
           <button onClick={estimateAll} className="ml-2 inline-flex items-center gap-1 text-sm text-neutral-300 hover:text-white cursor-pointer"><Wand2 size={15} /> Estimate all</button>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {nav && nav.total > 1 && (
+            <div className="flex items-center gap-1 mr-2">
+              <button onClick={() => goSection(-1)} disabled={nav.at <= 0} title="Previous section (←)" className="w-10 h-9 rounded-lg border border-[#404040] text-white text-xl font-bold disabled:opacity-25 hover:bg-white/10 cursor-pointer">‹</button>
+              <span className="px-2 text-sm font-semibold text-white whitespace-nowrap">Section {nav.at + 1} of {nav.total}</span>
+              <button onClick={() => goSection(1)} disabled={nav.at >= nav.total - 1} title="Next section (→)" className="w-10 h-9 rounded-lg border border-[#404040] text-white text-xl font-bold disabled:opacity-25 hover:bg-white/10 cursor-pointer">›</button>
+            </div>
+          )}
           {showRestored && (
             <span className="text-xs font-semibold text-yellow-300">
               Restored your unsaved changes ·{' '}

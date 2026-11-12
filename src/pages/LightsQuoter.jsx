@@ -179,6 +179,8 @@ export default function LightsQuoter() {
   const [matOk, setMatOk] = useState('');
   const [linesOk, setLinesOk] = useState(''); // plan as it was when you confirmed where the lights go
   const [stepsOk, setStepsOk] = useState({});
+  const [crewToken, setCrewToken] = useState(''); // secret for the no-login Crew view link
+  const [crewCopied, setCrewCopied] = useState(false);
   const [extras, setExtras] = useState([]); // columns, railings, trees, bushes… [{ id, side, x, y, type, run, around, wraps, width, strands, label }] // { stepNumber: true } — confirmed steps (6 + 7 use matOk / linesOk so changes un-confirm)
   const [clientInfo, setClientInfo] = useState(null); // Jobber client picked from search
   const [loaded, setLoaded] = useState(false);
@@ -190,7 +192,7 @@ export default function LightsQuoter() {
   const autosaveTimer = useRef(null);
   const [lastSaved, setLastSaved] = useState(null);
 
-  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, savedId });
+  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, savedId });
   // The cloud version this device is working from — if another device saves after it,
   // this device's copy is stale and must not overwrite (that's how removed photos came back).
   const baseSaved = useRef('');
@@ -219,6 +221,7 @@ export default function LightsQuoter() {
     // Quotes confirmed before Extras (step 6) was added: their steps 6+ move up one.
     setStepsOk(d.stepsV === 2 ? d.stepsOk || {} : Object.fromEntries(Object.entries(d.stepsOk || {}).map(([k, v]) => [Number(k) >= 6 ? Number(k) + 1 : Number(k), v])));
     setExtras(d.extras || []);
+    setCrewToken(d.crewToken || '');
     if (d.style) setStyle(d.style);
     setSavedId(d.savedId ?? (d.id && d.id !== DRAFT_ID ? d.id : null));
   };
@@ -266,7 +269,7 @@ export default function LightsQuoter() {
   // Only save when something actually changed. The fingerprint skips the big photo
   // data (length only), so it's cheap; opening a quote just records its fingerprint.
   const lastSig = useRef('');
-  const sigNow = () => JSON.stringify([client, clientInfo?.id, feet, strands, count, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto?.length || 0, nightPhoto?.length || 0, disc, installDate, takedownDate, matOk, linesOk.length, stepsOk, extras, savedId,
+  const sigNow = () => JSON.stringify([client, clientInfo?.id, feet, strands, count, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto?.length || 0, nightPhoto?.length || 0, disc, installDate, takedownDate, matOk, linesOk.length, stepsOk, extras, crewToken, savedId,
     angles.map(({ plain, marked, ai, ...rest }) => [plain?.length || 0, marked?.length || 0, ai?.image?.length || 0, rest]),
     previews.map((x) => [x.id, x.image?.length || 0])]);
   useEffect(() => {
@@ -305,7 +308,7 @@ export default function LightsQuoter() {
       }
     }, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, savedId]);
+  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, savedId]);
 
   useEffect(() => {
     localStorage.setItem(PRICES_KEY, JSON.stringify(prices));
@@ -348,7 +351,22 @@ export default function LightsQuoter() {
     setAngles(order.map((i) => angles[i]));
     setExtras((xs) => xs.map((e) => ({ ...e, side: order.indexOf(e.side) })));
   };
-  const reset = () => { setWstep(1); setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); setMaterials({}); setMatNotes({}); setWire('white'); setPower(''); setPowerPhoto(''); setNightPhoto(''); setDisc({}); setInstallDate(''); setTakedownDate(''); setMatOk(''); setLinesOk(''); setStepsOk({}); setExtras([]); };
+  // Crew view link: plan + materials, no login, no prices. Made once per quote.
+  const crewLink = async () => {
+    let t = crewToken;
+    if (!t) {
+      const b = new Uint8Array(18);
+      crypto.getRandomValues(b);
+      t = btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      setCrewToken(t);
+    }
+    const origin = /localhost|127\.0\.0\.1/.test(window.location.hostname) ? 'https://lawn-care-hub.vercel.app' : window.location.origin;
+    const url = `${origin}/crew/${t}`;
+    try { await navigator.clipboard.writeText(url); } catch { /* shown below */ }
+    setCrewCopied(url);
+    setTimeout(() => setCrewCopied(false), 6000);
+  };
+  const reset = () => { setWstep(1); setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); setMaterials({}); setMatNotes({}); setWire('white'); setPower(''); setPowerPhoto(''); setNightPhoto(''); setDisc({}); setInstallDate(''); setTakedownDate(''); setMatOk(''); setLinesOk(''); setStepsOk({}); setExtras([]); setCrewToken(''); };
   const say = (msg) => { setFlash(msg); setTimeout(() => setFlash(''), 2500); };
 
   const openQuote = async (id) => {
@@ -875,6 +893,19 @@ export default function LightsQuoter() {
           </div>
         );
       })()}
+
+      {/* Crew view: send the team the plan + materials */}
+      <div className="rounded-xl border border-border-default bg-card p-4 flex items-center gap-3 flex-wrap">
+        <div className="flex-1 min-w-[200px]">
+          <p className="text-base font-bold text-primary">Crew link</p>
+          <p className="text-xs text-muted">The plan (with feet) + materials for your team. No login, no prices.</p>
+          {crewCopied && <p className="text-xs text-brand-text mt-1 break-all">Copied: {crewCopied}</p>}
+        </div>
+        <button onClick={crewLink} disabled={!savedId} title={savedId ? '' : 'Pick the client first so the quote saves'} className="rounded-xl bg-brand text-on-brand px-5 py-3 text-base font-bold hover:bg-brand-hover disabled:opacity-40 cursor-pointer">
+          {crewCopied ? '✓ Link copied' : '📋 Copy crew link'}
+        </button>
+        {crewToken && <a href={`/crew/${crewToken}`} target="_blank" rel="noreferrer" className="text-sm text-secondary underline hover:text-primary">Open</a>}
+      </div>
 
       {/* Last thing: present */}
       <button

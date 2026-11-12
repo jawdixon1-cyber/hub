@@ -95,10 +95,22 @@ export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLine
       setAngles((prev) => [...prev.filter((a) => a.plain), ...shots.map((plain) => ({ ...emptyAngle(), plain }))]);
     } catch (err) { setError(err.message); }
   };
-  const saveLines = (lines, size, scale, peaks, outlets, jumps, inlines) => {
-    setAngles((a) => a.map((x, j) => (j === markIdx ? { ...x, lines, w: size.w, h: size.h, scale: scale || x.scale || 0, ...(peaks ? { peaks } : {}), ...(outlets ? { outlets } : {}), ...(jumps ? { jumps } : {}), ...(inlines ? { inlines } : {}) } : x)));
+  const storeAt = (idx, lines, size, scale, peaks, outlets, jumps, inlines) => {
+    setAngles((a) => a.map((x, j) => (j === idx ? { ...x, lines, ...(size ? { w: size.w, h: size.h } : {}), scale: scale || x.scale || 0, ...(peaks ? { peaks } : {}), ...(outlets ? { outlets } : {}), ...(jumps ? { jumps } : {}), ...(inlines ? { inlines } : {}) } : x)));
+  };
+  const saveLines = (...data) => {
+    storeAt(markIdx, ...data);
     setMarkIdx(-1);
     onLinesSaved?.();
+  };
+  // ‹ › in the editor: save this section, open the next / previous one (Photos order).
+  const withPhotos = angles.map((a, i) => (a.plain ? i : -1)).filter((i) => i >= 0);
+  const goSection = (dir, data) => {
+    const at = withPhotos.indexOf(markIdx);
+    const next = withPhotos[at + dir];
+    if (next === undefined) return;
+    if (data) storeAt(markIdx, ...data);
+    setMarkIdx(next);
   };
 
   const totals = { easy: 0, medium: 0, hard: 0 };
@@ -242,6 +254,9 @@ export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLine
 
       {markIdx >= 0 && angles[markIdx]?.plain && (
         <LightsMarkup
+          key={markIdx}
+          draftId={markIdx}
+          nav={{ at: withPhotos.indexOf(markIdx), total: withPhotos.length, go: goSection }}
           mode={rate ? 'rate' : measure ? 'measure' : 'draw'}
           photo={angles[markIdx].plain}
           initialLines={angles[markIdx].lines}
