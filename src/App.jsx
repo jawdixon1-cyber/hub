@@ -68,6 +68,7 @@ const MileageLog = lazy(() => import('./pages/MileageLog'));
 const ChecklistTrackerPage = lazy(() => import('./pages/ChecklistTrackerPage'));
 const Quoting = lazy(() => import('./pages/Quoting'));
 const LightsQuoter = lazy(() => import('./pages/LightsQuoter'));
+const LightsPresentation = lazy(() => import('./pages/LightsPresentation'));
 const DailyChecklist = lazy(() => import('./pages/DailyChecklist'));
 const OwnerHome = lazy(() => import('./pages/OwnerHome'));
 const Plans = lazy(() => import('./pages/Plans'));
@@ -879,7 +880,7 @@ function AppShell() {
               </span>
             </button>
           )}
-          {(ownerMoreOpen || collapsed) && OWNER_TOOLS_MORE.map((item) => {
+          {ownerMoreOpen && !collapsed && OWNER_TOOLS_MORE.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
             return (
@@ -902,7 +903,7 @@ function AppShell() {
               <ChevronDown size={14} className={`transition-transform ${buildingOpen ? 'rotate-180' : ''}`} />
             </button>
           )}
-          {!hideBuilding && ((ownerMoreOpen && buildingOpen) || collapsed) && OPERATIONS_ITEMS.filter((item) => !(item.id === 'schedule' && hideSchedule)).map((item) => {
+          {!hideBuilding && ownerMoreOpen && buildingOpen && !collapsed && OPERATIONS_ITEMS.filter((item) => !(item.id === 'schedule' && hideSchedule)).map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
             return (
@@ -1081,7 +1082,7 @@ function AppShell() {
             </div>
           }>
               <Routes>
-                <Route path="/" element={ownerMode ? <Navigate to="/sales" replace /> : <Home />} />
+                <Route path="/" element={ownerMode ? <Navigate to="/lights-quoter" replace /> : <Home />} />
                 <Route path="/home" element={ownerMode ? <OwnerHome /> : <Navigate to="/" replace />} />
                 <Route path="/client-base" element={ownerMode ? <Plans /> : <Navigate to="/" replace />} />
                 <Route path="/warm-leads" element={<Navigate to="/client-base" replace />} />
@@ -1106,6 +1107,7 @@ function AppShell() {
                 <Route path="/mowing" element={<MowingSchedule />} />
                 <Route path="/sales" element={<Sales />} />
                 <Route path="/lights-quoter" element={ownerMode ? <LightsQuoter /> : <Navigate to="/" replace />} />
+                <Route path="/lights-presentation/:id" element={ownerMode ? <LightsPresentation /> : <Navigate to="/" replace />} />
                 <Route path="/lights-supplies" element={<Navigate to="/lights-quoter?view=supplies" replace />} />
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/clients/new" element={<NewClient />} />

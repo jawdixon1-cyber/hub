@@ -43,7 +43,8 @@ export const FOLLOW_UP_DAYS = 3;
 // Archived in Jobber (quote or request) = Unqualified — that's why Jude archives people.
 export function quoteStage(sq, jobberQuotes, jobberRequests = []) {
   const names = [sq.clientInfo?.name, sq.client].filter(Boolean).map(nameKey);
-  const mine = (jobberQuotes || []).filter((q) => names.includes(nameKey(q.clientName)))
+  const cid = sq.clientInfo?.id;
+  const mine = (jobberQuotes || []).filter((q) => (cid && q.clientId === cid) || names.includes(nameKey(q.clientName)))
     .sort((a, b) => new Date(b.sentAt || b.createdAt || 0) - new Date(a.sentAt || a.createdAt || 0));
   const won = mine.find((q) => q.status === 'approved' || q.status === 'converted');
   if (won) return { key: 'sold', jq: won };

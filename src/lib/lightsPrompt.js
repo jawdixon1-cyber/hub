@@ -56,20 +56,33 @@ Lights: ${lightsFor(design, custom)}.
 Make exactly ${todo.length} image${todo.length > 1 ? 's' : ''} in THIS reply, in this order: ${todo.map((x) => `side ${x.n} (${lineCount(x)})`).join(', then ')}. Pair each sideN-photo with the sideN-lines that has the same number — some sides look alike, so go by the number. Make every side exactly once (never the same side twice) and don't stop or ask me anything until all ${todo.length} are done.`;
 }
 
+// Night "before" photo: same shot after dark, NO lights — the left side of the before/after slider.
+export function buildNightPrompt() {
+  return `Edit the uploaded house photo to show the exact same scene at night, about 30 minutes after sunset — with NO Christmas lights and no decorations of any kind.
+
+Use the original photo as the exact reference and keep the house, rooflines, landscaping, camera angle, framing, and composition completely unchanged, so it lines up perfectly with a lit-up version of the same photo.
+
+Make it dark and a little moody: deep blue night sky, the house mostly in shadow, just normal porch/garage lights on if the house has them. Realistic nighttime exposure — it should look like a real photo taken at night, not a filter.
+
+Do not add, remove, or alter anything. Remove any on-screen overlays or text boxes (like a Street View label). Use your image generator, not code.`;
+}
+
 // "Show photo" prompt: Jude's original ChatGPT prompt, with the color filled in.
 // These are just for the wow factor — no lines, no strict placement rules.
-export function buildShowPrompt(design, custom, count, guides = false) {
+export function buildShowPrompt(design, custom, count, guides = false, bulbs = 0, extras = []) {
   const many = count > 1;
   const guideNote = guides
-    ? `\n\nEach house photo (photo-sideN) comes with a matching lines photo (lines-sideN) — the same shot with yellow lines on the rooflines we're lighting. Use it as your guide for where the lights go, and edit the clean photo-sideN (no yellow lines in the result).`
+    ? `\n\nEach house photo (photo-sideN) comes with a matching lines photo (lines-sideN) — the same shot with our bulb map drawn on it. Use it as your guide for exactly where the lights go, and edit the clean photo-sideN.${bulbs ? `
+
+BULB COUNT IS EXACT. In each lines photo, every run is drawn in its own color, with a short bar where the run starts and where it ends, and a dot for every single bulb (they're 12 inches apart). Each run is also labeled with its bulb count (e.g. "25 bulbs"). Put exactly one C9 bulb on each dot — no extra bulbs between dots and nothing past the end bars. That's ${bulbs} bulbs in total across the whole house; do not add more. Leave every roofline without dots dark. No dots, bars, colors, labels or numbers in the result — just the real lights.` : ''}`
     : '';
   return `Edit the uploaded house photo${many ? `s (${count} photos of the same house)` : ''} to create ${many ? 'photorealistic nighttime exterior images' : 'a photorealistic nighttime exterior image'} showing a professional Christmas light installation.${guideNote}
 
 Use the original photo as the exact reference and keep the house, rooflines, landscaping, camera angle, and composition unchanged.
 
-Install ${lightsFor(design, custom)} ${guides ? 'along the rooflines marked in yellow (leave unmarked rooflines dark)' : 'along all visible gutter lines, eaves, and gable edges'}, spacing the bulbs evenly and facing outward. Keep all ridge caps completely bare with no lights.${design === 'warm' && !custom?.trim() ? ' Use a clean, bright warm-white color temperature — not too yellow, matching real-world C9 warm white lights.' : ' Keep the color pattern perfectly regular — never break the order.'}
+Install ${lightsFor(design, custom)} ${guides ? 'exactly on the dots in the lines photo (leave every other roofline dark)' : 'along all visible gutter lines, eaves, and gable edges'}, spacing the bulbs evenly about 12 inches apart and facing outward. Keep all ridge caps completely bare with no lights.${design === 'warm' && !custom?.trim() ? ' Use a clean, bright warm-white color temperature — not too yellow, matching real-world C9 warm white lights.' : ' Keep the color pattern perfectly regular — never break the order.'}
 
-Do not light every tree or bush — keep landscaping minimal and tasteful, leaving most bushes and trees unlit. No lights on cars.
+${extras.length ? `ALSO LIGHT THESE (marked with numbered green circles in the lines photo) with matching mini lights, wrapped neatly and evenly:\n${extras.join('\n')}\nOnly these — no other bushes, trees, columns or railings get lights. No green circles or numbers in the result.\n\n` : ''}Do not light any other trees or bushes — keep landscaping minimal and tasteful, leaving most bushes and trees unlit. No lights on cars.
 
 Maintain realistic nighttime/dusk lighting, with natural exposure, accurate shadows, and the glow from the lights softly illuminating the house and immediate surroundings.
 

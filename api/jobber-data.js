@@ -807,7 +807,7 @@ async function handleLightsQuotes(req, res) {
           id quoteNumber quoteStatus title
           amounts { total }
           createdAt updatedAt sentAt
-          client { firstName lastName companyName }
+          client { id firstName lastName companyName }
           lineItems(first: 15) { nodes { name } }
         }
       }
@@ -826,6 +826,7 @@ async function handleLightsQuotes(req, res) {
         // person's name first; business name only when there's no person
         clientName: `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim() || q.client?.companyName || 'Unknown',
         companyName: q.client?.companyName || '',
+        clientId: q.client?.id || null,
       }))
       .sort((a, b) => new Date(b.sentAt || b.createdAt || 0) - new Date(a.sentAt || a.createdAt || 0));
     lightsQuotesCache = { data: quotes, time: Date.now() };
@@ -855,18 +856,22 @@ async function handleRecentJobs(req, res) {
       jobs(first: 40, sort: [{key: CREATED_AT, direction: DESCENDING}]) {
         nodes {
           id jobNumber title jobStatus createdAt total
-          client { firstName lastName companyName }
-          visits(first: 2) { nodes { startAt completedAt } }
+          client { id firstName lastName companyName }
+          visits(first: 8) { nodes { id title startAt completedAt } }
         }
       }
     }`);
     const jobs = (data.jobs?.nodes || []).map((j) => ({
+      // Every visit (install, takedown, …) with its title and date; unscheduled = no startAt.
+      visits: (j.visits?.nodes || []).map((v) => ({ id: v.id, title: v.title || '', startAt: v.startAt || null, done: !!v.completedAt }))
+        .sort((a, b) => (a.startAt ? new Date(a.startAt) : Infinity) - (b.startAt ? new Date(b.startAt) : Infinity)),
       id: j.id,
       jobNumber: j.jobNumber,
       title: j.title || '',
       status: String(j.jobStatus || '').toLowerCase(),
       total: j.total || 0,
       createdAt: j.createdAt,
+      clientId: j.client?.id || null,
       clientName: `${j.client?.firstName || ''} ${j.client?.lastName || ''}`.trim() || j.client?.companyName || 'Unknown',
       visitAt: j.visits?.nodes?.[0]?.startAt || null,
       visitDone: !!j.visits?.nodes?.[0]?.completedAt,

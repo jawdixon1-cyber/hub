@@ -67,7 +67,7 @@ function shrink(src, max = 420) {
   });
 }
 async function metaOf(q) {
-  const { angles, previews, ...rest } = q; // eslint-disable-line no-unused-vars
+  const { angles, previews, powerPhoto, nightPhoto, ...rest } = q; // eslint-disable-line no-unused-vars
   return { ...rest, cover: await shrink(coverOf(q)), sides: (angles || []).filter((a) => a.plain).length };
 }
 
@@ -84,6 +84,8 @@ const fp = (x) => (x ? `${x.length}:${x.slice(-24)}` : '-');
 const photoSig = (q) => JSON.stringify([
   (q.angles || []).map(({ plain, marked, ai, ...rest }) => [fp(plain), fp(marked), fp(ai?.image), rest]),
   (q.previews || []).map((p) => [p.id, fp(p.image)]),
+  fp(q.powerPhoto),
+  fp(q.nightPhoto),
 ]);
 
 export async function putQuote(q) {
@@ -91,27 +93,65 @@ export async function putQuote(q) {
   if (!isCloud(q.id)) return;
   const sig = photoSig(q);
   const rows = [{ key: META + q.id, value: await metaOf(q) }];
-  if (lastPhotos.get(q.id) !== sig) rows.push({ key: DATA + q.id, value: { angles: q.angles || [], previews: q.previews || [] } });
+  if (lastPhotos.get(q.id) !== sig) rows.push({ key: DATA + q.id, value: { angles: q.angles || [], previews: q.previews || [], powerPhoto: q.powerPhoto || '', nightPhoto: q.nightPhoto || '' } });
   await upsert(rows);
   lastPhotos.set(q.id, sig);
+}
+
+// Every save bumps savedAt on the small meta row, so if this device's copy has the
+// same savedAt its photos are current: skip downloading the big photos row.
+const sameVersion = (local, meta) => local && meta && local.savedAt && local.savedAt === meta.savedAt && Array.isArray(local.angles);
+async function fetchPhotos(id) {
+  const { data, error } = await supabase.from('app_state').select('value').eq('key', DATA + id).maybeSingle();
+  if (error) throw error;
+  return data?.value || {};
 }
 
 export async function getQuote(id) {
   if (!isCloud(id)) return localGet(id);
   try {
-    const { data, error } = await supabase.from('app_state').select('key, value').in('key', [META + id, DATA + id]);
+    const [{ data: metaRow, error }, local] = await Promise.all([
+      supabase.from('app_state').select('value').eq('key', META + id).maybeSingle(),
+      localGet(id).catch(() => null),
+    ]);
     if (error) throw error;
-    const meta = data.find((r) => r.key === META + id)?.value;
-    const photos = data.find((r) => r.key === DATA + id)?.value || {};
+    const meta = metaRow?.value;
+    const photos = sameVersion(local, meta) ? { angles: local.angles, previews: local.previews, powerPhoto: local.powerPhoto, nightPhoto: local.nightPhoto } : meta ? await fetchPhotos(id) : {};
     if (meta) {
       const { cover, sides, ...rest } = meta; // eslint-disable-line no-unused-vars
-      const q = { ...rest, angles: photos.angles || [], previews: photos.previews || [] };
+      const q = { ...rest, angles: photos.angles || [], previews: photos.previews || [], powerPhoto: photos.powerPhoto || '', nightPhoto: photos.nightPhoto || '' };
       lastPhotos.set(id, photoSig(q));
       localPut(q).catch(() => {});
       return q;
     }
   } catch { /* offline — fall back to this device */ }
   return localGet(id);
+}
+
+// Quietly download photos for quotes this device doesn't have current, one at a
+// time, so opening any quote from the list is instant.
+export async function warmQuotes(metas) {
+  for (const meta of metas || []) {
+    if (!isCloud(meta?.id)) continue;
+    try {
+      const local = await localGet(meta.id).catch(() => null);
+      if (sameVersion(local, meta)) continue;
+      if (local?.savedAt && String(local.savedAt) > String(meta.savedAt || '')) continue; // newer here — never overwrite
+      const photos = await fetchPhotos(meta.id);
+      const { cover, sides, ...rest } = meta; // eslint-disable-line no-unused-vars
+      await localPut({ ...rest, angles: photos.angles || [], previews: photos.previews || [], powerPhoto: photos.powerPhoto || '', nightPhoto: photos.nightPhoto || '' });
+    } catch { /* try again next time */ }
+  }
+}
+
+// true / false, or null when offline (can't tell).
+export async function cloudHas(id) {
+  if (!isCloud(id)) return null;
+  try {
+    const { data, error } = await supabase.from('app_state').select('key').eq('key', META + id).maybeSingle();
+    if (error) throw error;
+    return !!data;
+  } catch { return null; }
 }
 
 export async function deleteQuote(id) {

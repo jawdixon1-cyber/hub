@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Plus, Trash2, X, PenLine } from 'lucide-react';
-import LightsMarkup, { LinesOverlay } from './LightsMarkup';
+import LightsMarkup, { PlanOverlay, OutletMarks } from './LightsMarkup';
 import { LEVEL_COLOR } from '../lib/lightsLevels';
 
 
@@ -16,7 +16,7 @@ function shrink(file, max = 1600) {
       c.height = Math.round(img.height * scale);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       URL.revokeObjectURL(url);
-      resolve(c.toDataURL('image/jpeg', 0.82));
+      resolve(c.toDataURL('image/jpeg', 0.7)); // ~half the size, looks the same on screen
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not open that photo')); };
     img.src = url;
@@ -47,7 +47,7 @@ function PhotoSlot({ label, value, onPick, onClear, drawn }) {
               <LinesOverlay lines={drawn.lines} w={drawn.w} h={drawn.h} />
             </svg>
           )}
-          <button onClick={onClear} className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white cursor-pointer"><X size={12} /></button>
+          {onClear && <button onClick={onClear} className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white cursor-pointer"><X size={12} /></button>}
         </div>
       ) : (
         <label {...dropProps} className={`h-28 rounded-lg border border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer ${over ? 'border-border-brand bg-brand-light text-brand-text' : 'border-border-strong text-muted hover:text-primary hover:border-border-brand'}`}>
@@ -62,18 +62,14 @@ function PhotoSlot({ label, value, onPick, onClear, drawn }) {
 
 const emptyAngle = () => ({ plain: '', marked: '', lines: [], w: 0, h: 0 });
 
-export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLinesSaved, children }) {
+// mode 'photos' = step 2 (just upload a photo of every section); mode 'lines' = step 3 (draw + measure).
+// mode 'photos' = upload; 'lines' = Mark up (plan); 'measure' = feet per line; 'rate' = Easy / Medium / Hard.
+export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLinesSaved, children, mode = 'lines' }) {
+  const measure = mode === 'measure' || mode === 'rate'; // after the plan: same photos, feet tags shown
+  const rate = mode === 'rate';
   const [error, setError] = useState('');
   const [markIdx, setMarkIdx] = useState(-1); // side being drawn on
 
-  const setPhoto = (i) => async (file) => {
-    try {
-      const data = await shrink(file);
-      setAngles((a) => a.map((x, j) => (j === i ? { ...x, plain: data } : x)));
-    } catch (e) {
-      setError(e.message);
-    }
-  };
   // Drop several photos on the box: each one becomes a side.
   const [boxOver, setBoxOver] = useState(false);
   const dropMany = async (e) => {
@@ -88,16 +84,23 @@ export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLine
       setError(err.message);
     }
   };
-  const clearPhoto = (i) => () => setAngles((a) => a.map((x, j) => (j === i ? { ...x, plain: '', lines: [] } : x)));
-  const saveLines = (lines, size, scale) => {
-    setAngles((a) => a.map((x, j) => (j === markIdx ? { ...x, lines, w: size.w, h: size.h, scale: scale || x.scale || 0 } : x)));
+  const addMany = async (fileList) => {
+    const files = [...(fileList || [])].filter((f) => f.type.startsWith('image/'));
+    if (!files.length) return;
+    try {
+      const shots = await Promise.all(files.map((f) => shrink(f)));
+      setAngles((prev) => [...prev.filter((a) => a.plain), ...shots.map((plain) => ({ ...emptyAngle(), plain }))]);
+    } catch (err) { setError(err.message); }
+  };
+  const saveLines = (lines, size, scale, peaks, outlets, jumps, inlines) => {
+    setAngles((a) => a.map((x, j) => (j === markIdx ? { ...x, lines, w: size.w, h: size.h, scale: scale || x.scale || 0, ...(peaks ? { peaks } : {}), ...(outlets ? { outlets } : {}), ...(jumps ? { jumps } : {}), ...(inlines ? { inlines } : {}) } : x)));
     setMarkIdx(-1);
     onLinesSaved?.();
   };
 
   const totals = { easy: 0, medium: 0, hard: 0 };
   const drawnLines = angles.flatMap((a) => a.lines);
-  drawnLines.forEach((l) => { totals[l.level] += Number(l.feet) || 0; });
+  drawnLines.forEach((l) => { if (l.level in totals) totals[l.level] += Number(l.feet) || 0; });
   const needFeet = drawnLines.filter((l) => !(Number(l.feet) > 0)).length;
 
   // Feet go into the Easy / Medium / Hard boxes on their own whenever the
@@ -106,11 +109,50 @@ export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLine
   const key = `${totals.easy}|${totals.medium}|${totals.hard}`;
   const lastKey = useRef(key);
   useEffect(() => {
-    if (key === lastKey.current) return;
+    if (!measure || key === lastKey.current) return;
     lastKey.current = key;
     if (drawnLines.length) onApply(totals);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+
+  if (mode === 'photos') {
+    const have = angles.filter((a) => a.plain);
+    return (
+      <div
+        onDragOver={(e) => { e.preventDefault(); setBoxOver(true); }}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setBoxOver(false); }}
+        onDrop={dropMany}
+        className={`rounded-xl border bg-card p-4 space-y-3 transition-colors ${boxOver ? 'border-border-brand ring-2 ring-ring-brand' : 'border-border-default'}`}
+      >
+        <div>
+          <p className="text-lg font-bold text-primary">Upload photos</p>
+          <p className="text-xs text-muted mt-0.5">Upload a photo of every section the lights are going on.</p>
+        </div>
+        {/* Phone: one big button — opens the camera or your photo library */}
+        <label className="sm:hidden flex items-center justify-center gap-2 rounded-xl bg-brand text-on-brand text-lg font-bold py-4 cursor-pointer active:brightness-95">
+          <Camera size={22} /> Take or add photos
+          <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addMany(e.target.files); e.target.value = ''; }} />
+        </label>
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+          {angles.map((a, i) => (a.plain ? (
+            <div key={i} className="relative">
+              <img src={a.plain} alt={`Section ${i + 1}`} className="w-full aspect-[4/3] object-cover rounded-lg border border-border-default" />
+              <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 text-[10px] font-semibold text-white">Section {i + 1}</span>
+              <button onClick={() => setAngles((x) => (x.length > 1 ? x.filter((_, j) => j !== i) : [emptyAngle()]))} title="Remove photo" className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white hover:bg-red-600 cursor-pointer"><X size={12} /></button>
+              <button onClick={() => setAngles((x) => [...x.slice(0, i + 1), { ...emptyAngle(), plain: a.plain, w: a.w, h: a.h, scale: a.scale || 0 }, ...x.slice(i + 1)])} title="Copy this photo as a new section with no lines" className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md bg-black/60 text-[11px] font-semibold text-white hover:bg-black cursor-pointer">Duplicate</button>
+            </div>
+          ) : null))}
+          <label className={`aspect-[4/3] rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer ${boxOver ? 'border-border-brand bg-brand-light text-brand-text' : 'border-border-strong text-muted hover:text-primary hover:border-border-brand'}`}>
+            <Camera size={20} />
+            <span className="text-xs font-semibold">{have.length ? 'Add more' : 'Add photos'}</span>
+            <span className="text-[10px]">drag here or click</span>
+            <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addMany(e.target.files); e.target.value = ''; }} />
+          </label>
+        </div>
+        {error && <p className="text-sm text-red-500">{error}</p>}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -120,52 +162,75 @@ export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLine
       className={`rounded-xl border bg-card p-4 space-y-3 transition-colors ${boxOver ? 'border-border-brand ring-2 ring-ring-brand' : 'border-border-default'}`}
     >
       <div>
-        <p className="text-sm font-semibold text-primary flex items-center gap-2">
-          <span className="w-5 h-5 rounded-full bg-brand text-on-brand text-[11px] font-bold flex items-center justify-center">1</span> Quote
-        </p>
-        <p className="text-[11px] text-muted mt-0.5 ml-7">Add a photo of each side, hit <b>Draw lines</b> along the roofline, and the price fills in.</p>
+        <p className="text-lg font-bold text-primary">{rate ? 'Difficulty' : measure ? 'Measure' : 'Plan'}</p>
+        <p className="text-xs text-muted mt-0.5">{rate ? 'Tap each line and rate it Easy / Medium / Hard.' : measure ? 'Measure each line and log its feet.' : 'Draw where the lights go and tap 🔌 Power to mark the outlet.'}</p>
       </div>
 
-      {angles.map((a, i) => (
-        <div key={i} className="flex items-end gap-2">
-          <span className="text-xs font-semibold text-muted w-12 pb-12">Side {i + 1}</span>
-          <div className="flex-1 min-w-0 space-y-1">
-            <PhotoSlot label="Photo" value={a.plain} onPick={setPhoto(i)} onClear={clearPhoto(i)} drawn={a.lines.length ? a : null} />
-            {a.plain && (
-              <button onClick={() => setMarkIdx(i)} className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold py-1.5 hover:bg-brand-hover cursor-pointer">
-                <PenLine size={13} /> {a.lines.length ? `Edit lines (${a.lines.length})` : 'Draw lines'}
-              </button>
-            )}
-          </div>
-          <div className="flex-1 min-w-0 h-28 mb-8 rounded-lg border border-border-default p-3 text-xs space-y-1 self-start mt-5">
-            {a.lines.length ? (
-              <>
-                {['easy', 'medium', 'hard'].map((k) => {
-                  const ft = a.lines.filter((l) => l.level === k).reduce((t, l) => t + (Number(l.feet) || 0), 0);
-                  return ft ? <p key={k} style={{ color: LEVEL_COLOR[k] }} className="font-semibold capitalize">{k} {ft} ft</p> : null;
-                })}
-                {a.lines.some((l) => !(Number(l.feet) > 0)) && <p className="text-red-400">{a.lines.filter((l) => !(Number(l.feet) > 0)).length} line(s) need feet</p>}
-              </>
-            ) : <p className="text-muted">{a.plain ? 'No lines yet' : 'Add a photo'}</p>}
-          </div>
-          {(angles.length > 1 || a.plain) && (
-            <button onClick={() => setAngles((x) => (x.length > 1 ? x.filter((_, j) => j !== i) : [emptyAngle()]))} className="p-2 text-muted hover:text-red-500 cursor-pointer mb-10"><Trash2 size={14} /></button>
-          )}
+      {!angles.some((a) => a.plain) && <p className="text-sm text-muted">Add photos in step 2 first.</p>}
+      {!measure && angles.some((a) => a.plain) && !angles.some((a) => (a.outlets || []).length) && (
+        <div className="rounded-lg border border-yellow-400/50 bg-yellow-400/10 px-3 py-2.5 text-sm font-semibold text-yellow-300">
+          🔌 Mark where the power is — open the photo with the outlet and tap <b>🔌 Power</b>, then tap the spot.
         </div>
-      ))}
-
-      <button onClick={() => setAngles((a) => [...a, emptyAngle()])} className="inline-flex items-center gap-1 text-sm font-medium text-brand-text hover:underline cursor-pointer">
-        <Plus size={14} /> Add a side
-      </button>
+      )}
+      <div className={`grid gap-4 ${!measure || angles.filter((x) => x.plain).length > 1 ? 'md:grid-cols-2' : ''}`}>
+      {angles.map((a, i) => (!a.plain ? null : (
+        <div key={i} className="rounded-xl border border-border-default bg-surface-alt/30 overflow-hidden">
+          {/* Big photo with the lines on it — click to draw */}
+          <button onClick={() => setMarkIdx(i)} className="relative block w-full bg-black cursor-pointer group" title="Plan">
+            <img src={a.plain} alt={`Section ${i + 1}`} className="block w-full" />
+            {(a.lines.length > 0 || (a.outlets || []).length > 0 || (a.inlines || []).length > 0 || (a.jumps || []).length > 0) && a.w > 0 && (
+              <svg viewBox={`0 0 ${a.w} ${a.h}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+                <PlanOverlay lines={a.lines} jumps={rate ? [] : a.jumps || []} w={a.w} h={a.h} tags={measure && !rate} plan={!rate} />
+                {!rate && <OutletMarks outlets={a.outlets} w={a.w} h={a.h} />}
+                {!rate && <OutletMarks inline outlets={a.inlines || []} w={a.w} h={a.h} />}
+              </svg>
+            )}
+            <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/65 text-xs font-semibold text-white">Section {i + 1}</span>
+            <span className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+          </button>
+          <div className="p-3 space-y-3">
+            <div className="flex items-center gap-2 flex-wrap min-h-[28px]">
+              {!measure ? <span className="text-sm text-muted">{a.lines.length ? `${a.lines.length} line${a.lines.length === 1 ? '' : 's'}` : 'No lines yet'}</span> : !rate ? <span className="px-2.5 py-1 rounded-lg bg-card border border-border-default text-sm font-bold text-primary">{a.lines.reduce((t, l) => t + (Number(l.feet) || 0), 0)} ft{(a.jumps || []).length ? ` · zip ${(a.jumps || []).reduce((t, l) => t + (Number(l.feet) || 0), 0)} ft` : ''}</span> : a.lines.length ? ['easy', 'medium', 'hard'].map((k) => {
+                const cnt = a.lines.filter((l) => l.level === k).length;
+                return cnt ? <span key={k} className="px-2.5 py-1 rounded-lg bg-card border border-border-default text-sm font-bold capitalize" style={{ color: LEVEL_COLOR[k] }}>{cnt} {k}</span> : null;
+              }) : <span className="text-sm text-muted">No lines yet</span>}
+              {!measure && (a.peaks || []).length > 0 && <span className="px-2.5 py-1 rounded-lg bg-card border border-border-default text-sm font-bold text-[#E8C36A]">▲ {a.peaks.length} peak{a.peaks.length === 1 ? '' : 's'}</span>}
+              {rate && a.lines.some((l) => !LEVEL_COLOR[l.level]) && <span className="text-sm font-semibold text-white/80">{a.lines.filter((l) => !LEVEL_COLOR[l.level]).length} not rated</span>}
+              {measure && !rate && a.lines.some((l) => !(Number(l.feet) > 0)) && <span className="text-sm font-semibold text-red-400">{a.lines.filter((l) => !(Number(l.feet) > 0)).length} line(s) need feet</span>}
+            </div>
+            <div className="flex gap-2">
+            <button onClick={() => setMarkIdx(i)} className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-brand text-on-brand text-sm font-bold py-2.5 hover:bg-brand-hover cursor-pointer">
+              <PenLine size={16} /> {measure ? (a.lines.length ? `${rate ? 'Rate' : 'Measure'} ${a.lines.length} line${a.lines.length === 1 ? '' : 's'}` : 'Plan first') : a.lines.length ? `Edit plan (${a.lines.length} lines)` : 'Plan'}
+            </button>
+            {!measure && <button onClick={() => setAngles((x) => [...x.slice(0, i + 1), { ...emptyAngle(), plain: a.plain, w: a.w, h: a.h, scale: a.scale || 0 }, ...x.slice(i + 1)])}
+              title="Copy this photo as a new section with no lines" className="px-3 rounded-lg border border-border-strong text-sm font-semibold text-secondary hover:text-primary cursor-pointer">Duplicate</button>}
+            </div>
+          </div>
+        </div>
+      )))}
+      {!measure && (
+        <label className={`min-h-[200px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer ${boxOver ? 'border-border-brand bg-brand-light text-brand-text' : 'border-border-strong text-muted hover:text-primary hover:border-border-brand'}`}>
+          <Camera size={22} />
+          <span className="text-sm font-semibold">Add a section</span>
+          <span className="text-xs">drag a photo here or click</span>
+          <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addMany(e.target.files); e.target.value = ''; }} />
+        </label>
+      )}
+      </div>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
-      {needFeet > 0 && <p className="text-sm text-red-400">{needFeet} line{needFeet > 1 ? 's' : ''} still need feet — hit Edit lines and tap the line.</p>}
+      {measure && needFeet > 0 && <p className="text-sm text-red-400">{needFeet} line{needFeet > 1 ? 's' : ''} still need feet — hit Edit lines and tap the line.</p>}
 
       {markIdx >= 0 && angles[markIdx]?.plain && (
         <LightsMarkup
+          mode={rate ? 'rate' : measure ? 'measure' : 'draw'}
           photo={angles[markIdx].plain}
           initialLines={angles[markIdx].lines}
           initialScale={angles[markIdx].scale || 0}
+          initialPeaks={angles[markIdx].peaks || []}
+          initialOutlets={angles[markIdx].outlets || []}
+          initialInlines={angles[markIdx].inlines || []}
+          initialJumps={angles[markIdx].jumps || []}
           onSave={saveLines}
           onClose={() => setMarkIdx(-1)}
         />
