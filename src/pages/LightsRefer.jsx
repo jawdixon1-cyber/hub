@@ -72,9 +72,11 @@ export default function LightsRefer() {
       <div className="mx-auto max-w-lg px-5 py-6 space-y-6">
         <header className="space-y-2 text-center">
           <img src="/holiday-logo.png" alt="Hey Jude's" className="h-12 w-auto mx-auto" />
-          <h1 className="text-3xl font-extrabold">Hook a friend up 🎄</h1>
-          {/* One line, not three: the greeting + the $50 */}
-          <p className="text-lg text-white/80">{info.name ? `Hi ${info.name}! ` : ''}Your friend gets <b style={{ color: GREEN }}>$50 off</b> their lights — you get <b style={{ color: GREEN }}>$50</b> when Jude sells 🎁</p>
+                    {/* One line, not three: the greeting + the $50 */}
+          <div className="space-y-1 text-[17px] sm:text-xl font-bold text-white">
+            <p>Your friend gets <b className="text-[26px] sm:text-3xl align-[-2px]" style={{ color: GREEN }}>$50 off</b> their lights 🎁</p>
+            <p>You get <b className="text-[26px] sm:text-3xl align-[-2px]" style={{ color: GREEN }}>$50</b> when they hire Jude 💵</p>
+          </div>
         </header>
 
         {sent ? (
