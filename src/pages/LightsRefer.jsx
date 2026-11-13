@@ -51,15 +51,24 @@ const makeChing = () => {
   for (let i = 0; i < n; i++) w.setInt16(44 + i * 2, d[i] * 0x7fff, true);
   return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
 };
-let ching = null;
-const unlockSound = () => { // on the tap itself
+// One <audio> element. On the tap it plays a SILENT clip (that's what unlocks sound on iPhones, with nothing
+// heard); after the animation it swaps to the cha-ching. Only one sound plays.
+const silentWav = () => {
+  const n = 2205; const buf = new ArrayBuffer(44 + n * 2); const w = new DataView(buf);
+  const str = (o, x) => { for (let i = 0; i < x.length; i++) w.setUint8(o + i, x.charCodeAt(i)); };
+  str(0, 'RIFF'); w.setUint32(4, 36 + n * 2, true); str(8, 'WAVEfmt '); w.setUint32(16, 16, true); w.setUint16(20, 1, true); w.setUint16(22, 1, true);
+  w.setUint32(24, 22050, true); w.setUint32(28, 44100, true); w.setUint16(32, 2, true); w.setUint16(34, 16, true); str(36, 'data'); w.setUint32(40, n * 2, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+};
+let ching = null; let chingUrl = null;
+const unlockSound = () => { // on the tap itself — silent
   try {
-    if (navigator.audioSession) navigator.audioSession.type = 'playback'; // iOS: play even on silent-ish setups
-    if (!ching) { ching = new Audio(makeChing()); ching.preload = 'auto'; }
-    ching.muted = true; const p = ching.play(); if (p) p.then(() => { ching.pause(); ching.currentTime = 0; ching.muted = false; }).catch(() => { ching.muted = false; });
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    if (!ching) { ching = new Audio(); chingUrl = makeChing(); }
+    ching.src = silentWav(); ching.play().catch(() => {});
   } catch { /* no sound is fine */ }
 };
-const chaChing = () => { try { if (ching) { ching.muted = false; ching.currentTime = 0; ching.play().catch(() => {}); } } catch { /* ignore */ } };
+const chaChing = () => { try { if (ching && chingUrl) { ching.src = chingUrl; ching.currentTime = 0; ching.play().catch(() => {}); } } catch { /* ignore */ } };
 
 export default function LightsRefer() {
   const { token } = useParams();
@@ -86,9 +95,9 @@ export default function LightsRefer() {
       const gr = giftRef.current?.getBoundingClientRect();
       const ok = gr && gr.width && gr.top > 0 && gr.top < window.innerHeight;
       setFlight({ x: ok ? gr.left + gr.width / 2 : window.innerWidth / 2, y: ok ? gr.top + gr.height / 2 : window.innerHeight - 70, at: Date.now(), name });
-      setTimeout(chaChing, 1500); // cha-ching as the gift takes off
-      setTimeout(() => setFlight(null), 5400);
-    }, 350);
+      setTimeout(chaChing, 1200); // cha-ching as the gift takes off
+      setTimeout(() => setFlight(null), 7500);
+    }, 250);
   };
 
   const submit = async (e) => {
@@ -256,28 +265,28 @@ export default function LightsRefer() {
         const dx = window.innerWidth / 2 - flight.x;
         const dy = window.innerHeight * 0.42 - flight.y;
         return (
-          <div key={flight.at} className="fixed inset-0 z-50 pointer-events-none" style={{ animation: 'hj-out .5s 4.7s forwards' }}>
+          <div key={flight.at} className="fixed inset-0 z-50 pointer-events-none" style={{ animation: 'hj-out .5s 7s forwards' }}>
             {/* screen dims as the gift lifts off */}
-            <div className="absolute inset-0" style={{ background: '#05070d', animation: 'hj-dim .45s forwards' }} />
+            <div className="absolute inset-0" style={{ background: '#05070d', animation: 'hj-dim .3s forwards' }} />
             <style>{`
               @keyframes hj-dim { from { opacity: 0; } to { opacity: .88; } }
               @keyframes hj-out { to { opacity: 0; } }
               @keyframes hj-msg { 0% { opacity: 0; transform: translateY(16px) scale(.96); } 100% { opacity: 1; transform: none; } }
               @keyframes hj-fly {
                 0%   { transform: translate(0,0) scale(1) rotate(0); opacity: 1; }
-                30%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(0); }
-                38%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(-14deg); }
-                46%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(14deg); }
-                54%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(-12deg); }
-                62%  { transform: translate(var(--dx), var(--dy)) scale(3.6) rotate(10deg); }
-                70%  { transform: translate(var(--dx), var(--dy)) scale(3.6) rotate(0); opacity: 1; }
+                18%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(0); }
+                28%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(-14deg); }
+                38%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(14deg); }
+                48%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(-12deg); }
+                58%  { transform: translate(var(--dx), var(--dy)) scale(3.6) rotate(10deg); }
+                66%  { transform: translate(var(--dx), var(--dy)) scale(3.6) rotate(0); opacity: 1; }
                 100% { transform: translate(var(--dx), calc(var(--dy) - 110vh)) scale(2) rotate(-25deg); opacity: 0; }
               }
               @keyframes hj-pop2 { 0% { transform: translate(0,0) scale(.3); opacity: 1; } 100% { transform: translate(var(--x), var(--y)) rotate(var(--r)) scale(1.1); opacity: 0; } }
             `}</style>
-            <span className="absolute text-3xl" style={{ left: flight.x, top: flight.y, marginLeft: -15, marginTop: -18, '--dx': `${dx}px`, '--dy': `${dy}px`, animation: 'hj-fly 1.9s .25s cubic-bezier(.3,.7,.3,1) both' }}>🎁</span>
+            <span className="absolute text-3xl" style={{ left: flight.x, top: flight.y, marginLeft: -15, marginTop: -18, '--dx': `${dx}px`, '--dy': `${dy}px`, animation: 'hj-fly 1.7s .1s cubic-bezier(.3,.7,.3,1) both' }}>🎁</span>
             {/* after it shoots off: the message */}
-            <div className="absolute inset-x-0 text-center px-6" style={{ top: '38%', animation: 'hj-msg .5s 2.15s both' }}>
+            <div className="absolute inset-x-0 text-center px-6" style={{ top: '38%', animation: 'hj-msg .5s 1.85s both' }}>
               <p className="text-5xl font-extrabold text-white">Sent! 🎉</p>
               <p className="mt-2 text-lg text-white/85"><b style={{ color: GREEN }}>{flight.name}</b> gets $50 off their lights</p>
               <p className="mt-3 text-2xl font-extrabold" style={{ color: GREEN }}>Keep it up!</p>
@@ -286,7 +295,7 @@ export default function LightsRefer() {
             {Array.from({ length: 30 }, (_, i) => {
               const a = (i / 30) * Math.PI * 2; const d = 110 + (i % 5) * 30;
               return (
-                <span key={i} className="absolute text-2xl" style={{ left: window.innerWidth / 2, top: window.innerHeight * 0.42, marginLeft: -12, marginTop: -14, '--x': `${Math.cos(a) * d}px`, '--y': `${Math.sin(a) * d}px`, '--r': `${(i % 2 ? 1 : -1) * (140 + i * 7)}deg`, animation: `hj-pop2 1.2s ${1.55 + (i % 3) * 0.04}s ease-out both` }}>
+                <span key={i} className="absolute text-2xl" style={{ left: window.innerWidth / 2, top: window.innerHeight * 0.42, marginLeft: -12, marginTop: -14, '--x': `${Math.cos(a) * d}px`, '--y': `${Math.sin(a) * d}px`, '--r': `${(i % 2 ? 1 : -1) * (140 + i * 7)}deg`, animation: `hj-pop2 1.2s ${1.25 + (i % 3) * 0.04}s ease-out both` }}>
                   {['🎉', '✨', '❄️', '🎄', '💵', '⭐'][i % 6]}
                 </span>
               );
