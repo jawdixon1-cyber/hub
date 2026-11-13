@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 // Referral form (secret link, no login) — e.g. Mom sending Jude Christmas-lights leads.
@@ -24,13 +24,38 @@ function Float({ label, value, onChange, className = '', inputClass = '', ...res
   return (
     <label className={`relative block ${className}`}>
       <input value={value} onChange={onChange} placeholder=" " {...rest}
-        className={`peer w-full bg-transparent px-4 pt-[18px] pb-1 text-base text-white outline-none ${inputClass}`} />
+        enterKeyHint={rest.enterKeyHint || 'next'} className={`peer w-full bg-transparent px-4 pt-[18px] pb-1 text-base text-white outline-none ${inputClass}`} />
       <span className="pointer-events-none absolute left-4 top-1.5 text-xs font-semibold text-white/55 transition-all
         peer-placeholder-shown:top-3 peer-placeholder-shown:text-base peer-placeholder-shown:font-normal peer-placeholder-shown:text-white/40
         peer-focus:top-1.5 peer-focus:text-xs peer-focus:font-semibold peer-focus:text-[#00DF00]">{label}</span>
     </label>
   );
 }
+
+// Cha-ching! A cash-register sound made in the browser (no file). The AudioContext is created on the
+// Send tap (iPhones only allow sound that starts from a tap), then played when the send succeeds.
+let audioCtx = null;
+const unlockSound = () => {
+  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch { audioCtx = null; }
+};
+const chaChing = () => {
+  const ctx = audioCtx; if (!ctx) return;
+  const t0 = ctx.currentTime + 0.02;
+  // "cha": a short clack of noise
+  const len = Math.floor(ctx.sampleRate * 0.06); const buf = ctx.createBuffer(1, len, ctx.sampleRate); const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const noise = ctx.createBufferSource(); noise.buffer = buf;
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800;
+  const ng = ctx.createGain(); ng.gain.value = 0.35;
+  noise.connect(hp).connect(ng).connect(ctx.destination); noise.start(t0);
+  // "ching": two bright bell tones with a ringing decay
+  [[2637, 0.12, 0], [3520, 0.1, 0.09], [5274, 0.05, 0.09]].forEach(([f, vol, delay]) => {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const g = ctx.createGain(); const t = t0 + 0.08 + delay;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 1);
+  });
+};
 
 export default function LightsRefer() {
   const { token } = useParams();
@@ -39,6 +64,8 @@ export default function LightsRefer() {
   const [form, setForm] = useState(EMPTY);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState('');
+  const giftRef = useRef(null); // the 🎁 on the Send button
+  const [flight, setFlight] = useState(null); // { x, y } where the gift takes off from
   const url = `/api/app-state?key=lights-refer&token=${encodeURIComponent(token)}`;
 
   useEffect(() => { document.title = 'Hook a friend up 🎄 — Hey Jude’s'; }, []);
@@ -49,17 +76,29 @@ export default function LightsRefer() {
 
   const submit = async (e) => {
     e.preventDefault();
+    unlockSound(); // must happen on the tap itself (iPhone rule)
     const first = form.first.trim(); const last = form.last.trim();
-    if (!first || !last || form.phone.replace(/\D/g, '').length !== 10) { setError('Add their first name, last name and a 10-digit phone number.'); return; }
+    // ?demo=1 → plays the gift animation + sound without sending anything (for previewing)
+    const demo = new URLSearchParams(window.location.search).has('demo');
+    if (!demo && (!first || !last || form.phone.replace(/\D/g, '').length !== 10)) { setError('Add their first name, last name and a 10-digit phone number.'); return; }
     setSending(true); setError('');
     try {
+      if (demo) {
+        const gr = giftRef.current?.getBoundingClientRect();
+        setFlight(gr ? { x: gr.left + gr.width / 2, y: gr.top + gr.height / 2, at: Date.now(), name: first || 'Your friend' } : null);
+        setForm(EMPTY);
+        chaChing(); setTimeout(() => setFlight(null), 5200);
+        return;
+      }
       const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lead: { name: [first, last].filter(Boolean).join(' '), contactName: first, phone: form.phone, address: form.address, bestTime: form.bestTime, angle: form.angle, money: form.money } }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Didn’t send — try again.');
       setInfo((i) => ({ ...i, submissions: d.submissions, leaderboard: d.leaderboard || i.leaderboard }));
-      setSent([first, last].filter(Boolean).join(' '));
+      const gr = giftRef.current?.getBoundingClientRect();
+      setFlight(gr ? { x: gr.left + gr.width / 2, y: gr.top + gr.height / 2, at: Date.now(), name: first } : null);
+      chaChing();
+      setTimeout(() => setFlight(null), 5200); // overlay plays, then the form is fresh for the next friend
       setForm(EMPTY);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) { setError(err.message); } finally { setSending(false); }
   };
 
@@ -91,14 +130,38 @@ export default function LightsRefer() {
         </header>
 
         {sent ? (
-          <div className="rounded-2xl border-2 p-6 text-center space-y-3" style={{ borderColor: GREEN, background: `${GREEN}14` }}>
-            <p className="text-5xl">✓</p>
-            <p className="text-2xl font-extrabold">Sent to Jude!</p>
-            <p className="text-white/80">{sent} gets $50 off their lights, and Jude will reach out. Thank you!</p>
+          <div className="relative rounded-2xl border-2 p-6 text-center space-y-3 overflow-hidden" style={{ borderColor: GREEN, background: `${GREEN}14` }}>
+            {/* 🎁 Gift-sent celebration: the gift pops in, wiggles, and bursts into confetti */}
+            <style>{`
+              @keyframes hj-pop { 0% { transform: scale(0) rotate(-20deg); } 55% { transform: scale(1.25) rotate(8deg); } 70% { transform: scale(.95) rotate(-6deg); } 85% { transform: scale(1.05) rotate(3deg); } 100% { transform: scale(1) rotate(0); } }
+              @keyframes hj-burst { 0% { transform: translate(0,0) scale(.4); opacity: 1; } 100% { transform: translate(var(--x), var(--y)) rotate(var(--r)) scale(1); opacity: 0; } }
+              @keyframes hj-rise { 0% { opacity: 0; transform: translateY(12px); } 100% { opacity: 1; transform: none; } }
+            `}</style>
+            <div className="relative h-10 flex items-center justify-center">
+              {Array.from({ length: 26 }, (_, i) => {
+                const a = (i / 26) * Math.PI * 2; const d = 90 + (i % 5) * 22;
+                const bits = ['🎉', '✨', '❄️', '🎄', '💵', '⭐'];
+                return (
+                  <span key={i} className="absolute left-1/2 top-1/2 text-xl pointer-events-none"
+                    style={{ '--x': `${Math.cos(a) * d}px`, '--y': `${Math.sin(a) * d - 20}px`, '--r': `${(i % 2 ? 1 : -1) * (120 + i * 9)}deg`, animation: `hj-burst 1.3s ${1.05 + (i % 4) * 0.05}s ease-out both`, marginLeft: -10, marginTop: -12 }}>
+                    {bits[i % bits.length]}
+                  </span>
+                );
+              })}
+            </div>
+            <p className="text-2xl font-extrabold" style={{ animation: 'hj-rise .5s 1.2s both' }}>Gift sent! 🎄</p>
+            <p className="text-white/80" style={{ animation: 'hj-rise .5s 1.4s both' }}><b className="text-white">{sent}</b> gets <b style={{ color: GREEN }}>$50 off</b> their lights, and Jude will reach out. Thank you!</p>
             <button onClick={() => setSent('')} className="w-full rounded-xl py-4 text-lg font-bold text-black cursor-pointer" style={{ background: GREEN }}>+ Send another</button>
           </div>
         ) : (
-          <form onSubmit={submit} className="space-y-3">
+          <form onSubmit={submit} className="space-y-3"
+            // Return/Enter jumps to the next box (like a phone's "Next" key); on the last box it sends.
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+              const boxes = [...e.currentTarget.querySelectorAll('input')];
+              const i = boxes.indexOf(e.target);
+              if (i >= 0 && i < boxes.length - 1) { e.preventDefault(); boxes[i + 1].focus(); }
+            }}>
             <p className="text-base font-extrabold">Who should Jude call?</p>
             {/* Feels short: step 1 is just who + phone. Everything else is a lighter, skippable "nice to have". */}
             {/* Who + phone: one joined block (fewer boxes = feels shorter) */}
@@ -115,17 +178,17 @@ export default function LightsRefer() {
 
             {/* Optional extras: same joined style */}
             <div className="space-y-1.5">
-              <p className="text-sm text-white/75">⭐ <b className="text-white">Optional, but really helps Jude</b></p>
+              <p className="text-sm text-white/75">⭐ <b className="text-white">Optional, but really helps</b></p>
               <div className="rounded-xl border border-white/20 bg-white/[0.06] divide-y divide-white/15 overflow-hidden focus-within:border-[#00DF00]">
                 <Float label="Best time to call" value={form.bestTime} onChange={set('bestTime')} autoComplete="off" />
                 <Float label="How they know Jude" value={form.angle} onChange={set('angle')} autoComplete="off" />
-                <Float label="Their job or business" value={form.money} onChange={set('money')} autoComplete="off" />
+                <Float label="Their job or business" value={form.money} onChange={set('money')} autoComplete="off" enterKeyHint="send" />
               </div>
             </div>
 
             {error && <p className="text-red-400 font-semibold">{error}</p>}
             <button type="submit" disabled={sending} className="w-full rounded-xl py-3.5 text-xl font-extrabold text-white disabled:opacity-50 cursor-pointer" style={{ background: RED }}>
-              {sending ? 'Sending…' : 'Send to Jude 🎄'}
+              {sending ? 'Sending…' : <>Send <span ref={giftRef} className="inline-block">🎁</span></>}
             </button>
           </form>
         )}
@@ -180,6 +243,49 @@ export default function LightsRefer() {
           ) : <p className="text-white/60">None yet — your first one will show up here.</p>}
         </section>
       </div>
+      {/* The 🎁 lifts off the Send button → rises to the middle → shakes → flies up and away */}
+      {flight && (() => {
+        const dx = window.innerWidth / 2 - flight.x;
+        const dy = window.innerHeight * 0.42 - flight.y;
+        return (
+          <div key={flight.at} className="fixed inset-0 z-50 pointer-events-none" style={{ animation: 'hj-out .5s 4.7s forwards' }}>
+            {/* screen dims as the gift lifts off */}
+            <div className="absolute inset-0" style={{ background: '#05070d', animation: 'hj-dim .6s forwards' }} />
+            <style>{`
+              @keyframes hj-dim { from { opacity: 0; } to { opacity: .88; } }
+              @keyframes hj-out { to { opacity: 0; } }
+              @keyframes hj-msg { 0% { opacity: 0; transform: translateY(16px) scale(.96); } 100% { opacity: 1; transform: none; } }
+              @keyframes hj-fly {
+                0%   { transform: translate(0,0) scale(1) rotate(0); opacity: 1; }
+                30%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(0); }
+                38%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(-14deg); }
+                46%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(14deg); }
+                54%  { transform: translate(var(--dx), var(--dy)) scale(3.4) rotate(-12deg); }
+                62%  { transform: translate(var(--dx), var(--dy)) scale(3.6) rotate(10deg); }
+                70%  { transform: translate(var(--dx), var(--dy)) scale(3.6) rotate(0); opacity: 1; }
+                100% { transform: translate(var(--dx), calc(var(--dy) - 110vh)) scale(2) rotate(-25deg); opacity: 0; }
+              }
+              @keyframes hj-pop2 { 0% { transform: translate(0,0) scale(.3); opacity: 1; } 100% { transform: translate(var(--x), var(--y)) rotate(var(--r)) scale(1.1); opacity: 0; } }
+            `}</style>
+            <span className="absolute text-3xl" style={{ left: flight.x, top: flight.y, marginLeft: -15, marginTop: -18, '--dx': `${dx}px`, '--dy': `${dy}px`, animation: 'hj-fly 1.9s cubic-bezier(.3,.7,.3,1) forwards' }}>🎁</span>
+            {/* after it shoots off: the message */}
+            <div className="absolute inset-x-0 text-center px-6" style={{ top: '38%', animation: 'hj-msg .5s 1.9s both' }}>
+              <p className="text-5xl font-extrabold text-white">Sent! 🎉</p>
+              <p className="mt-2 text-lg text-white/85"><b style={{ color: GREEN }}>{flight.name}</b> gets $50 off their lights</p>
+              <p className="mt-3 text-2xl font-extrabold" style={{ color: GREEN }}>Keep it up!</p>
+            </div>
+            {/* confetti bursts out right as it takes off */}
+            {Array.from({ length: 30 }, (_, i) => {
+              const a = (i / 30) * Math.PI * 2; const d = 110 + (i % 5) * 30;
+              return (
+                <span key={i} className="absolute text-2xl" style={{ left: window.innerWidth / 2, top: window.innerHeight * 0.42, marginLeft: -12, marginTop: -14, '--x': `${Math.cos(a) * d}px`, '--y': `${Math.sin(a) * d}px`, '--r': `${(i % 2 ? 1 : -1) * (140 + i * 7)}deg`, animation: `hj-pop2 1.2s ${1.3 + (i % 3) * 0.04}s ease-out both` }}>
+                  {['🎉', '✨', '❄️', '🎄', '💵', '⭐'][i % 6]}
+                </span>
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 }
