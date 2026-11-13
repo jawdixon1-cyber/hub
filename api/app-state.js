@@ -179,6 +179,7 @@ async function handleLightsRefer(req, res) {
     bestTime: clip(b.bestTime, 120),
     angle: clip(b.angle, 500),
     money: clip(b.money, 200),
+    note: clip(b.note, 600),
   };
   if (!lead.name && !lead.contacts[0].name) return res.status(400).json({ error: 'Add a name' });
   if (mine.length >= 500) return res.status(429).json({ error: 'Too many submissions' });

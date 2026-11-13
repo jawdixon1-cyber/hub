@@ -502,7 +502,7 @@ function ColdLeads({ leads, setLeads, inJobber = {} }) {
     const now = new Date().toISOString();
     setLeads((list) => [...(list || []), ...waiting.map((r) => ({
       ...BLANK_LEAD, id: r.id, name: r.name || r.contacts?.[0]?.name || '', address: r.address || '', contacts: r.contacts?.length ? r.contacts : [{ name: '', phone: '', pitch: true }],
-      bestTime: r.bestTime || '', angle: r.angle || '', money: r.money || '', status: 'new', referredBy: r.from,
+      bestTime: r.bestTime || '', angle: r.angle || '', money: r.money || '', notes: r.note || '', status: 'new', referredBy: r.from,
       log: [{ at: r.at || now, status: '', how: `Referred by ${r.from}`, note: `Sent in by ${r.from}` }],
     }))]);
     await markReferAdded(waiting.map((r) => r.id)).catch(() => {});
@@ -511,7 +511,7 @@ function ColdLeads({ leads, setLeads, inJobber = {} }) {
   // Referral links: one per person (Mom, step dad…). Copy any of them, or make a new one.
   const [linksOpen, setLinksOpen] = useState(false);
   const [newRef, setNewRef] = useState('');
-  const referUrl = (link) => `${/localhost|127\.0\.0\.1/.test(window.location.hostname) ? 'https://lawn-care-hub.vercel.app' : window.location.origin}/refer/${link.token}`;
+  const referUrl = (link) => `https://hub.heyjudeslawncare.com/refer/${link.token}`; // always the Hey Jude's address, never the vercel.app one
   const copyLink = async (link) => {
     const url = referUrl(link);
     try { await navigator.clipboard.writeText(url); } catch { /* shown below */ }

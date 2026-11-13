@@ -375,7 +375,7 @@ export default function LightsQuoter() {
       t = btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
       setCrewToken(t);
     }
-    const origin = /localhost|127\.0\.0\.1/.test(window.location.hostname) ? 'https://lawn-care-hub.vercel.app' : window.location.origin;
+    const origin = 'https://hub.heyjudeslawncare.com'; // team links always use the Hey Jude's address
     const url = `${origin}/crew/${t}`;
     try { await navigator.clipboard.writeText(url); } catch { /* shown below */ }
     setCrewCopied(url);

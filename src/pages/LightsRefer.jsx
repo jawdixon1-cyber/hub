@@ -7,7 +7,7 @@ import { useParams } from 'react-router-dom';
 const GREEN = '#00DF00';
 const RED = '#B3121F';
 // Kept dead simple for Mom (2026-11-13): first, last, phone, address, best time, how they know Jude.
-const EMPTY = { first: '', last: '', partner: '', phone: '', address: '', bestTime: '', angle: '', money: '' };
+const EMPTY = { first: '', last: '', phone: '', address: '', bestTime: '', angle: '', money: '' };
 
 
 // 8035551234 → 803-555-1234 as they type (10 digits max; a leading 1 is dropped).
@@ -24,9 +24,9 @@ function Float({ label, value, onChange, className = '', inputClass = '', ...res
   return (
     <label className={`relative block ${className}`}>
       <input value={value} onChange={onChange} placeholder=" " {...rest}
-        className={`peer w-full bg-transparent px-4 pt-6 pb-2 text-lg text-white outline-none ${inputClass}`} />
+        className={`peer w-full bg-transparent px-4 pt-[18px] pb-1 text-base text-white outline-none ${inputClass}`} />
       <span className="pointer-events-none absolute left-4 top-1.5 text-xs font-semibold text-white/55 transition-all
-        peer-placeholder-shown:top-4 peer-placeholder-shown:text-lg peer-placeholder-shown:font-normal peer-placeholder-shown:text-white/40
+        peer-placeholder-shown:top-3 peer-placeholder-shown:text-base peer-placeholder-shown:font-normal peer-placeholder-shown:text-white/40
         peer-focus:top-1.5 peer-focus:text-xs peer-focus:font-semibold peer-focus:text-[#00DF00]">{label}</span>
     </label>
   );
@@ -53,7 +53,7 @@ export default function LightsRefer() {
     if (!first || !last || form.phone.replace(/\D/g, '').length !== 10) { setError('Add their first name, last name and a 10-digit phone number.'); return; }
     setSending(true); setError('');
     try {
-      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lead: { name: [[first, form.partner.trim()].filter(Boolean).join(' & '), last].filter(Boolean).join(' '), contactName: first, partnerName: form.partner.trim(), phone: form.phone, address: form.address, bestTime: form.bestTime, angle: form.angle, money: form.money } }) });
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lead: { name: [first, last].filter(Boolean).join(' '), contactName: first, phone: form.phone, address: form.address, bestTime: form.bestTime, angle: form.angle, money: form.money } }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Didn’t send — try again.');
       setInfo((i) => ({ ...i, submissions: d.submissions, leaderboard: d.leaderboard || i.leaderboard }));
@@ -69,13 +69,14 @@ export default function LightsRefer() {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   return (
     <div className="min-h-screen bg-[#0b0b0d] text-white">
-      <div className="mx-auto max-w-lg px-5 py-6 space-y-6">
-        <header className="space-y-2 text-center">
-          <img src="/holiday-logo.png" alt="Hey Jude's" className="h-12 w-auto mx-auto" />
+      <div className="mx-auto max-w-lg px-4 pt-3 pb-6 space-y-5">
+        <header className="space-y-1.5 text-center">
+          <img src="/holiday-logo.png" alt="Hey Jude's" className="h-9 w-auto mx-auto" />
                     {/* One line, not three: the greeting + the $50 */}
-          <div className="space-y-1 text-[17px] sm:text-xl font-bold text-white">
-            <p>Your friend gets <b className="text-[26px] sm:text-3xl align-[-2px]" style={{ color: GREEN }}>$50 off</b> their lights 🎁</p>
-            <p>You get <b className="text-[26px] sm:text-3xl align-[-2px]" style={{ color: GREEN }}>$50</b> when they hire Jude 💵</p>
+          <div className="space-y-1 font-bold text-white whitespace-nowrap">
+            {/* Sized to the screen: as big as fits on one line (phone or desktop) */}
+            <p style={{ fontSize: 'min(4.6vw, 24px)' }}>Your friend gets <b className="align-[-0.06em]" style={{ color: GREEN, fontSize: '1.45em' }}>$50 off</b> their lights 🎁</p>
+            <p style={{ fontSize: 'min(4.6vw, 24px)' }}>You get <b className="align-[-0.06em]" style={{ color: GREEN, fontSize: '1.45em' }}>$50</b> when they hire Jude 💵</p>
           </div>
         </header>
 
@@ -87,7 +88,7 @@ export default function LightsRefer() {
             <button onClick={() => setSent('')} className="w-full rounded-xl py-4 text-lg font-bold text-black cursor-pointer" style={{ background: GREEN }}>+ Send another</button>
           </div>
         ) : (
-          <form onSubmit={submit} className="space-y-4">
+          <form onSubmit={submit} className="space-y-3">
             {/* Feels short: step 1 is just who + phone. Everything else is a lighter, skippable "nice to have". */}
             {/* Who + phone: one joined block (fewer boxes = feels shorter) */}
             <div className="space-y-2">
@@ -101,19 +102,18 @@ export default function LightsRefer() {
               </div>
             </div>
 
-            {/* Optional extras: same joined style, a little lighter */}
-            <div className="space-y-2">
+            {/* Optional extras: same joined style */}
+            <div className="space-y-1.5">
               <p className="text-sm text-white/75">⭐ <b className="text-white">Optional, but really helps Jude</b></p>
               <div className="rounded-xl border border-white/20 bg-white/[0.06] divide-y divide-white/15 overflow-hidden focus-within:border-[#00DF00]">
                 <Float label="Best time to call" value={form.bestTime} onChange={set('bestTime')} autoComplete="off" />
                 <Float label="How they know Jude" value={form.angle} onChange={set('angle')} autoComplete="off" />
-                <Float label="Partner’s name" value={form.partner} onChange={set('partner')} autoComplete="off" />
-                <Float label="How they have money (job, business…)" value={form.money} onChange={set('money')} autoComplete="off" />
+                <Float label="Their job or business" value={form.money} onChange={set('money')} autoComplete="off" />
               </div>
             </div>
 
             {error && <p className="text-red-400 font-semibold">{error}</p>}
-            <button type="submit" disabled={sending} className="w-full rounded-xl py-4 text-xl font-extrabold text-white disabled:opacity-50 cursor-pointer" style={{ background: RED }}>
+            <button type="submit" disabled={sending} className="w-full rounded-xl py-3.5 text-xl font-extrabold text-white disabled:opacity-50 cursor-pointer" style={{ background: RED }}>
               {sending ? 'Sending…' : 'Send to Jude 🎄'}
             </button>
           </form>
