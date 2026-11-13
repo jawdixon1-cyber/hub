@@ -70,13 +70,23 @@ export default function LightsRefer() {
   return (
     <div className="min-h-screen bg-[#0b0b0d] text-white">
       <div className="mx-auto max-w-lg px-4 pt-3 pb-6 space-y-5">
-        <header className="space-y-1.5 text-center">
-          <img src="/holiday-logo.png" alt="Hey Jude's" className="h-9 w-auto mx-auto" />
-                    {/* One line, not three: the greeting + the $50 */}
-          <div className="space-y-1 font-bold text-white whitespace-nowrap">
-            {/* Sized to the screen: as big as fits on one line (phone or desktop) */}
-            <p style={{ fontSize: 'min(4.6vw, 24px)' }}>Your friend gets <b className="align-[-0.06em]" style={{ color: GREEN, fontSize: '1.45em' }}>$50 off</b> their lights 🎁</p>
-            <p style={{ fontSize: 'min(4.6vw, 24px)' }}>You get <b className="align-[-0.06em]" style={{ color: GREEN, fontSize: '1.45em' }}>$50</b> when they hire Jude 💵</p>
+        {/* Hero: a real house we did (matches the text preview) + the offer as two tiles */}
+        <header className="space-y-2.5">
+          <div className="relative -mx-4 -mt-3 h-[128px] overflow-hidden">
+            <img src="/refer-hero.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: 'center 30%' }} />
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(11,11,13,.35) 0%, rgba(11,11,13,0) 40%, rgba(11,11,13,.9) 100%)' }} />
+            <img src="/holiday-logo.png" alt="Hey Jude's" className="absolute left-1/2 top-2.5 -translate-x-1/2 h-10 w-auto drop-shadow-[0_4px_10px_rgba(0,0,0,.6)]" />
+            <p className="absolute bottom-2 left-0 right-0 text-center text-[26px] font-extrabold drop-shadow-[0_3px_10px_rgba(0,0,0,.8)]">Give $50 + Get $50 🎁</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl px-2 py-1.5 text-center" style={{ background: `${GREEN}1f` }}>
+              <p className="text-[24px] leading-tight font-extrabold" style={{ color: GREEN }}>$50 off</p>
+              <p className="text-sm text-white/80 whitespace-nowrap">for your friend</p>
+            </div>
+            <div className="rounded-xl px-2 py-1.5 text-center" style={{ background: `${GREEN}1f` }}>
+              <p className="text-[24px] leading-tight font-extrabold" style={{ color: GREEN }}>$50 for you</p>
+              <p className="text-sm text-white/80 whitespace-nowrap">when they hire Jude</p>
+            </div>
           </div>
         </header>
 
@@ -89,6 +99,7 @@ export default function LightsRefer() {
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-3">
+            <p className="text-base font-extrabold">Who should Jude call?</p>
             {/* Feels short: step 1 is just who + phone. Everything else is a lighter, skippable "nice to have". */}
             {/* Who + phone: one joined block (fewer boxes = feels shorter) */}
             <div className="space-y-2">
