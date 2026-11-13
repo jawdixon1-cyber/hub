@@ -1533,6 +1533,8 @@ export async function syncJobberVisits(supabase, sinceDays = 60, untilDays = 90)
     const data = await jobberQuery(HUB_VISITS_QUERY, { cursor, startISO, endISO });
     const nodes = data.visits?.nodes || [];
     pages++;
+    // One request per page of visits (was one per visit — millions of tiny writes that kept the database maxed, 2026-11-13).
+    const pageRows = [];
     for (const v of nodes) {
       const contactId = await ensureContact(v.job?.client);
       const jobId = await ensureJob(v.job, contactId);
@@ -1548,10 +1550,13 @@ export async function syncJobberVisits(supabase, sinceDays = 60, untilDays = 90)
         source: 'jobber',
         source_id: v.id,
       };
+      pageRows.push(visitRow);
+    }
+    if (pageRows.length) {
       const { error: visitErr } = await supabase
-        .from('hub_visits').upsert(visitRow, { onConflict: 'source,source_id' });
-      if (visitErr) throw new Error(`hub_visits upsert failed for ${v.id}: ${visitErr.message}`);
-      totalVisits++;
+        .from('hub_visits').upsert(pageRows, { onConflict: 'source,source_id' });
+      if (visitErr) throw new Error(`hub_visits upsert failed: ${visitErr.message}`);
+      totalVisits += pageRows.length;
     }
     cursor = data.visits?.pageInfo?.hasNextPage ? data.visits.pageInfo.endCursor : null;
     if (cursor) await new Promise((r) => setTimeout(r, 600));

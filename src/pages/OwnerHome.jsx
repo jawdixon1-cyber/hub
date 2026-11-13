@@ -1207,15 +1207,19 @@ export default function OwnerHome() {
         error: prev.clients == null ? err.message : null,
       })));
   };
-  // Trigger a fresh sync from Jobber (catches missed webhook updates). Throttled to 1/min.
+  // Trigger a fresh sync from Jobber (catches missed webhook updates). Webhooks keep things current, so this
+  // runs at most once every 15 minutes across ALL open tabs (was every focus, per tab — it kept the database maxed).
   const lastSyncRef = useRef(0);
   const triggerSyncAndRefresh = async () => {
     const now = Date.now();
-    if (now - lastSyncRef.current < 60_000) {
+    let last = lastSyncRef.current;
+    try { last = Math.max(last, Number(localStorage.getItem('hub-sync-last')) || 0); } catch { /* ignore */ }
+    if (now - last < 15 * 60_000) {
       fetchRecurring();
       return;
     }
     lastSyncRef.current = now;
+    try { localStorage.setItem('hub-sync-last', String(now)); } catch { /* ignore */ }
     try {
       await fetch(`/api/jobber-data?action=hub-sync&entity=visits&sinceDays=7&untilDays=30&_=${now}`, { cache: 'no-store' });
     } catch { /* ignore — sync is best-effort */ }

@@ -495,7 +495,7 @@ function ColdLeads({ leads, setLeads, inJobber = {} }) {
   const [refer, setRefer] = useState({ links: [], inbox: [] });
   const [referMsg, setReferMsg] = useState('');
   const loadRefer = () => Promise.all([referLinks(), referInbox()]).then(([links, inbox]) => setRefer({ links, inbox })).catch(() => {});
-  useEffect(() => { loadRefer(); const t = setInterval(loadRefer, 60000); return () => clearInterval(t); }, []);
+  useEffect(() => { loadRefer(); const t = setInterval(() => { if (document.visibilityState === 'visible') loadRefer(); }, 60000); return () => clearInterval(t); }, []); // only the tab you're looking at re-checks
   const waiting = refer.inbox.filter((r) => !r.added && !(leads || []).some((l) => l.id === r.id));
   const addReferrals = async () => {
     const now = new Date().toISOString();
@@ -1411,7 +1411,13 @@ export default function LightsBusiness({ view, onOpen = null }) {
 
   const refresh = () => listQuotes().then((qs) => { setQuotes(qs); setQuotesReady(true); }).catch(() => {});
   // Jobs tab: start loading every quote's plan at once, so opening any job shows its plan right away.
-  useEffect(() => { if (view === 'jobs' && quotesReady) quotes.forEach((q) => q.id && loadPlan(q.id)); }, [view, quotesReady, quotes]);
+  // One at a time (photos are big — all at once clogged the connection for 20+ s). Uses this browser's saved copy when current.
+  useEffect(() => {
+    if (view !== 'jobs' || !quotesReady) return undefined;
+    let stop = false;
+    (async () => { await new Promise((r) => setTimeout(r, 1500)); for (const q of quotes) { if (stop) break; if (q.id) await loadPlan(q.id); } })();
+    return () => { stop = true; };
+  }, [view, quotesReady, quotes]);
   useEffect(() => { refresh(); }, [view]);
 
   const patchItem = (id, p) => setItems((list) => (list || []).map((x) => (x.id === id ? { ...x, ...p } : x)));

@@ -41,6 +41,7 @@ export default function LightsRefer() {
   const [sent, setSent] = useState('');
   const url = `/api/app-state?key=lights-refer&token=${encodeURIComponent(token)}`;
 
+  useEffect(() => { document.title = 'Hook a friend up 🎄 — Hey Jude’s'; }, []);
   useEffect(() => {
     fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(new Error('This link isn’t working. Ask Jude for a new one.'))))
       .then(setInfo).catch((e) => setError(e.message));

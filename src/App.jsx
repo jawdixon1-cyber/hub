@@ -245,7 +245,7 @@ function App() {
       if (keys) query = query.in('key', keys);
       if (skip) query = query.not('key', 'in', `(${skip.map((k) => `"${k}"`).join(',')})`);
       // Lights quotes are their own rows (with photos) and load on the Lights page only
-      if (!keys) query = query.not('key', 'like', 'lq-%');
+      if (!keys) query = query.not('key', 'like', 'lq-%').not('key', 'like', 'lr:%'); // lr: = Lights receipt photos, loaded only when shown
       const { data, error } = await query;
       if (error) throw error;
       return data || [];
@@ -719,7 +719,7 @@ function AppShell() {
     goOnline();
 
     // Heartbeat every 60s to stay fresh (in case Supabase sync is slow)
-    const interval = setInterval(goOnline, 60000);
+    const interval = setInterval(() => { if (document.visibilityState === 'visible') goOnline(); }, 60000); // background tabs don't write every minute
 
     // Tab close / navigate away — mark offline
     window.addEventListener('beforeunload', goOffline);

@@ -276,6 +276,22 @@ export default async function handler(req, res) {
     if (req.query.key === 'lights-refer') {
       return handleLightsRefer(req, res);
     }
+    // /refer/<token> → the app's page, with its own link preview (texts show this instead of "Management App").
+    if (req.query.key === 'refer-page') {
+      const host = req.headers['x-forwarded-host'] || req.headers.host;
+      const origin = `https://${host}`;
+      let html = '';
+      try { html = await (await fetch(`${origin}/index.html`)).text(); } catch { html = ''; }
+      if (!html) return res.redirect(302, `/index.html`);
+      const title = 'Hook a friend up 🎄 — Hey Jude’s';
+      const desc = 'Send Jude a friend who wants their Christmas lights done. Get $50 for every one Jude sells.';
+      const img = `${origin}/refer-og.jpg`;
+      const meta = `<meta property="og:title" content="${title}"><meta property="og:description" content="${desc}"><meta property="og:image" content="${img}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:type" content="website"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${img}"><meta name="description" content="${desc}">`;
+      html = html.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>${meta}`);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300');
+      return res.status(200).send(html);
+    }
 
     const db = getSupabaseAdmin();
     const { key } = req.query;
