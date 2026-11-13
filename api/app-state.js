@@ -144,7 +144,15 @@ async function handleLightsRefer(req, res) {
   const inbox = Array.isArray(inboxRow?.value) ? inboxRow.value : [];
   const mine = inbox.filter((r) => r.via === token);
   res.setHeader('Cache-Control', 'no-store');
-  const history = () => mine.map((r) => ({ id: r.id, name: r.name, contact: r.contacts?.[0]?.name || '', at: r.at })).reverse();
+  // Her referrals = Cold-leads pipeline leads tagged "Referred by <link name>" + any she sent that aren't
+  // in the pipeline yet. Status comes from the pipeline: Won = sold ($50), Not interested = no, else pending.
+  const { data: leadsRow } = await db.from('app_state').select('value').eq('key', 'greenteam-lightsColdLeads').maybeSingle();
+  const leads = (Array.isArray(leadsRow?.value) ? leadsRow.value : []).filter((l) => l.referredBy && l.referredBy === link.name && l.name);
+  const stage = (st) => (st === 'won' ? 'sold' : st === 'not_interested' ? 'no' : 'pending');
+  const history = () => [
+    ...mine.filter((r) => !leads.some((l) => l.id === r.id)).map((r) => ({ id: r.id, name: r.name, contact: r.contacts?.[0]?.name || '', at: r.at, stage: 'pending' })),
+    ...leads.map((l) => ({ id: l.id, name: l.name, contact: '', at: l.log?.[0]?.at || l.createdAt || '', stage: stage(l.status) })),
+  ].sort((x, y) => String(y.at || '').localeCompare(String(x.at || '')));
 
   if (req.method === 'GET') return res.json({ name: link.name || '', submissions: history() });
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -155,7 +163,7 @@ async function handleLightsRefer(req, res) {
     id: `ref-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     via: token, from: link.name || 'Referral', at: new Date().toISOString(),
     name: clip(b.name, 120),
-    contacts: [{ name: clip(b.contactName, 80), phone: clip(b.phone, 40), pitch: true }],
+    contacts: [{ name: clip(b.contactName, 80), phone: clip(b.phone, 40), pitch: true }, ...(clip(b.partnerName, 80) ? [{ name: clip(b.partnerName, 80), phone: '' }] : [])],
     address: clip(b.address, 200),
     bestTime: clip(b.bestTime, 120),
     angle: clip(b.angle, 500),
@@ -172,19 +180,32 @@ async function handleLightsRefer(req, res) {
 // ── Lights crew view ──
 // GET /api/app-state?key=lights-crew&token=… → only what the crew needs for that one job.
 async function handleLightsCrew(req, res) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const token = String(req.query.token || '');
   if (!/^[A-Za-z0-9_-]{20,}$/.test(token)) return res.status(404).json({ error: 'Not found' });
   const db = getSupabaseAdmin();
-  const { data: metaRow, error } = await db.from('app_state').select('key, value')
+  const { data: metaRow, error } = await db.from('app_state').select('key, value, org_id')
     .like('key', 'lq-meta:%').eq('value->>crewToken', token).maybeSingle();
   if (error) return res.status(500).json({ error: 'Lookup failed' });
   if (!metaRow) return res.status(404).json({ error: 'Not found' });
   const q = metaRow.value;
   const id = metaRow.key.slice('lq-meta:'.length);
-  const [{ data: photoRow }, { data: suppliesRow }] = await Promise.all([
+  // POST: the crew saves what they actually measured on the roof → its own row (the quote is never touched).
+  // Body: { actual: { "<side>-<line>": "28.5", "z<side>-<jump>": "12" }, by: "name" }
+  if (req.method === 'POST') {
+    const raw = req.body?.actual && typeof req.body.actual === 'object' ? req.body.actual : {};
+    const actual = Object.fromEntries(Object.entries(raw)
+      .filter(([k, v]) => /^z?\d{1,2}-\d{1,3}$/.test(k) && /^\d{0,4}(\.\d{0,2})?$/.test(String(v)))
+      .slice(0, 400).map(([k, v]) => [k, String(v)]));
+    const value = { actual, by: String(req.body?.by || '').slice(0, 40), savedAt: new Date().toISOString() };
+    const { error: e2 } = await db.from('app_state').upsert({ key: `lq-actual:${id}`, value, ...(metaRow.org_id ? { org_id: metaRow.org_id } : {}) }, { onConflict: 'key' });
+    if (e2) return res.status(500).json({ error: 'Save failed' });
+    return res.json({ ok: true, savedAt: value.savedAt });
+  }
+  const [{ data: photoRow }, { data: suppliesRow }, { data: actualRow }] = await Promise.all([
     db.from('app_state').select('value').eq('key', `lq-data:${id}`).maybeSingle(),
     db.from('app_state').select('value').eq('key', 'greenteam-lightsSupplies').maybeSingle(),
+    db.from('app_state').select('value').eq('key', `lq-actual:${id}`).maybeSingle(),
   ]);
   const supplies = Array.isArray(suppliesRow?.value) ? suppliesRow.value : [];
   // Same as the quote screen: a timer + 10 male / 10 female plugs (black) unless the quote already has that kind.
@@ -220,6 +241,8 @@ async function handleLightsCrew(req, res) {
     extras: q.extras || [],
     materials,
     sides,
+    actual: actualRow?.value?.actual || {},
+    actualSavedAt: actualRow?.value?.savedAt || '',
   });
 }
 

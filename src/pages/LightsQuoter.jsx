@@ -9,7 +9,7 @@ import { DESIGNS } from '../lib/lightsDesigns';
 import { kindOf } from '../lib/lightsMaterials';
 import JobberClientPicker from '../components/JobberClientPicker';
 import LightsBusiness, { QuoteMaterialsCard } from '../components/LightsBusiness';
-import { DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt } from '../lib/lightsStore';
+import { DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, listCovers, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt } from '../lib/lightsStore';
 import { useAuth } from '../contexts/AuthContext';
 import { useJobberList, quoteStage, STAGE_LABEL } from '../lib/jobberLights';
 
@@ -238,7 +238,8 @@ export default function LightsQuoter() {
     if (d.style) setStyle(d.style);
     setSavedId(d.savedId ?? (d.id && d.id !== DRAFT_ID ? d.id : null));
   };
-  const refreshList = () => listQuotes().then((list) => { setSaved(list); warmQuotes(list); }).catch(() => {});
+  const [covers, setCovers] = useState({}); // gallery cover photos, loaded after the list
+  const refreshList = () => listQuotes().then((list) => { setSaved(list); warmQuotes(list); listCovers().then(setCovers).catch(() => {}); }).catch(() => {});
   // (Removed: an automatic "rescue" that re-uploaded this device's copies. When the
   // device copy was old it overwrote newer work in the cloud — that's how Pam's lines
   // got wiped twice. Device-only quotes go up through the "Sync" button instead.)
@@ -532,7 +533,7 @@ export default function LightsQuoter() {
             const sold = stageOf(sq).key === 'sold';
             // Show photo first: a finished mockup from Client preview, then a ticked show photo, then any photo
             const sides = sq.angles || [];
-            const photo = sq.cover || sq.previews?.[0]?.image || sides.find((a) => a.ai?.image)?.ai.image
+            const photo = covers[sq.id] || sq.cover || sq.previews?.[0]?.image || sides.find((a) => a.ai?.image)?.ai.image
               || sides.find((a) => a.show && a.plain)?.plain || sides.find((a) => a.plain)?.plain;
             const ft = ['easy', 'medium', 'hard'].reduce((t, k) => t + num(sq.feet?.[k]), 0);
             return (

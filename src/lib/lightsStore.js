@@ -66,10 +66,14 @@ function shrink(src, max = 420) {
     img.src = src;
   });
 }
-async function metaOf(q) {
-  const { angles, previews, powerPhoto, nightPhoto, ...rest } = q; // eslint-disable-line no-unused-vars
-  return { ...rest, cover: await shrink(coverOf(q)), sides: (angles || []).filter((a) => a.plain).length };
+// The meta row stays small (no photos) so the quotes list loads fast. The gallery's cover photo
+// lives in its own row (lq-cover:<id>) — covers were 298 KB of the 312 KB list (2026-11-13).
+const COVER = 'lq-cover:';
+function metaOf(q) {
+  const { angles, previews, powerPhoto, nightPhoto, cover, ...rest } = q; // eslint-disable-line no-unused-vars
+  return { ...rest, sides: (angles || []).filter((a) => a.plain).length };
 }
+const lastCover = new Map();
 
 async function upsert(rows) {
   const payload = rows.map((r) => ({ ...r, ...(orgId ? { org_id: orgId } : {}) }));
@@ -92,10 +96,13 @@ export async function putQuote(q) {
   await localPut(q);
   if (!isCloud(q.id)) return;
   const sig = photoSig(q);
-  const rows = [{ key: META + q.id, value: await metaOf(q) }];
+  const rows = [{ key: META + q.id, value: metaOf(q) }];
   if (lastPhotos.get(q.id) !== sig) rows.push({ key: DATA + q.id, value: { angles: q.angles || [], previews: q.previews || [], powerPhoto: q.powerPhoto || '', nightPhoto: q.nightPhoto || '' } });
+  const src = coverOf(q); const cfp = fp(src);
+  if (lastCover.get(q.id) !== cfp) rows.push({ key: COVER + q.id, value: { cover: await shrink(src) } });
   await upsert(rows);
   lastPhotos.set(q.id, sig);
+  lastCover.set(q.id, cfp);
 }
 
 // Every save bumps savedAt on the small meta row, so if this device's copy has the
@@ -191,7 +198,20 @@ export async function deleteQuote(id) {
   await supabase.from('app_state').delete().in('key', [META + id, DATA + id]);
 }
 
-export async function listQuotes() {
+// Cover photos for the gallery, loaded after the list shows: { quoteId: dataUrl }.
+export async function listCovers() {
+  const { data, error } = await supabase.from('app_state').select('key, value').like('key', `${COVER}%`);
+  if (error) throw error;
+  return Object.fromEntries((data || []).map((r) => [r.key.slice(COVER.length), r.value?.cover || '']));
+}
+
+// Several parts of the page ask for the list at once; share one request.
+let listing = null;
+export function listQuotes() {
+  if (!listing) listing = listQuotesNow().finally(() => { setTimeout(() => { listing = null; }, 1500); });
+  return listing;
+}
+async function listQuotesNow() {
   try {
     const { data, error } = await supabase.from('app_state').select('key, value').like('key', `${META}%`);
     if (error) throw error;

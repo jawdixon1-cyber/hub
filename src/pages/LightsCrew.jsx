@@ -44,6 +44,17 @@ export default function LightsCrew() {
   const checkKey = `crew-checked:${token}`;
   const [checked, setChecked] = useState(() => { try { return JSON.parse(localStorage.getItem(checkKey) || '{}'); } catch { return {}; } });
   useEffect(() => { try { localStorage.setItem(checkKey, JSON.stringify(checked)); } catch { /* ignore */ } }, [checkKey, checked]);
+  // Measurer's actual feet per line ("side-line", zips "zside-jump"), typed on the roof and saved to the Hub.
+  const [edits, setEdits] = useState({});
+  const [saveState, setSaveState] = useState(''); // '', 'saving', 'saved', 'error'
+  const actualOf = (k) => (k in edits ? edits[k] : job?.actual?.[k] || '');
+  const saveActual = (next) => {
+    setSaveState('saving');
+    fetch(`/api/app-state?key=lights-crew&token=${encodeURIComponent(token)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actual: { ...(job?.actual || {}), ...next } }),
+    }).then((r) => setSaveState(r.ok ? 'saved' : 'error')).catch(() => setSaveState('error'));
+  };
 
   useEffect(() => {
     fetch(`/api/app-state?key=lights-crew&token=${encodeURIComponent(token)}`)
@@ -108,6 +119,30 @@ export default function LightsCrew() {
           )}
         </header>
 
+        {/* SOP — how a 2-person crew starts every job */}
+        <section className="rounded-2xl border p-4 space-y-3" style={{ borderColor: GREEN, background: 'rgba(0,223,0,0.06)' }}>
+          <h2 className="text-xl font-extrabold">When you get there (2 people)</h2>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="rounded-xl bg-white/[0.06] p-3 space-y-1">
+              <p className="font-extrabold">👷 Person 1: Unload</p>
+              <ol className="list-decimal pl-5 text-sm text-white/85 space-y-0.5">
+                <li>Unload everything on the <b className="text-white">Materials</b> list below.</li>
+                <li>Check each item off as it comes off the truck.</li>
+                <li>Missing or short on anything? Call Jude <b className="text-white">before</b> you start hanging.</li>
+              </ol>
+            </div>
+            <div className="rounded-xl bg-white/[0.06] p-3 space-y-1">
+              <p className="font-extrabold">📏 Person 2: Measure</p>
+              <ol className="list-decimal pl-5 text-sm text-white/85 space-y-0.5">
+                <li>Measure every line on <b className="text-white">The plan</b> — the real roofline.</li>
+                <li>Type each one in the <b className="text-white">Actual ft</b> box under its section.</li>
+                <li>Way off from the plan (5+ ft)? Tell Jude before cutting wire.</li>
+              </ol>
+            </div>
+          </div>
+          <p className="text-sm text-white/70">Then hang it together, following the plan's colors and lengths.</p>
+        </section>
+
         {/* Plan */}
         {sides.length > 0 && (
           <section className="space-y-4">
@@ -132,8 +167,30 @@ export default function LightsCrew() {
                 <button onClick={() => { setAt(i); setFull(true); }} className="block -mx-4 w-[calc(100%+2rem)] sm:mx-0 sm:w-full overflow-hidden sm:rounded-2xl border-y sm:border border-white/10 cursor-zoom-in">
                   <PlanPhoto side={sd} />
                 </button>
+                {/* Measurer: actual feet for each line in this section */}
+                {((sd.lines || []).length > 0 || (sd.jumps || []).length > 0) && (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 space-y-2">
+                    <p className="text-sm font-bold">📏 Actual ft <span className="font-normal text-white/50">— what you measured</span></p>
+                    {[...(sd.lines || []).map((l, li) => [`${i}-${li}`, `Line ${li + 1}`, l.feet]), ...(sd.jumps || []).map((l, ji) => [`z${i}-${ji}`, `Zip ${ji + 1}`, l.feet])].map(([k, label, plan]) => {
+                      const v = actualOf(k);
+                      const off = v !== '' && Number(plan) > 0 && Math.abs(Number(v) - Number(plan)) >= 5;
+                      return (
+                        <label key={k} className="flex items-center gap-3">
+                          <span className="w-16 text-sm font-semibold">{label}</span>
+                          <span className="w-24 text-sm text-white/60">plan {plan ? `${plan} ft` : '—'}</span>
+                          <input value={v} inputMode="decimal" placeholder="ft"
+                            onChange={(e) => setEdits((x) => ({ ...x, [k]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                            onBlur={() => { if (k in edits) saveActual(edits); }}
+                            className={`w-24 rounded-lg border bg-black px-3 py-2 text-lg font-bold text-center outline-none ${off ? 'border-yellow-400 text-yellow-300' : 'border-white/20 text-white focus:border-[#00DF00]'}`} />
+                          {off && <span className="text-xs font-semibold text-yellow-300">off by {Math.abs(Number(v) - Number(plan)).toFixed(1).replace(/\.0$/, '')} ft</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
+            {saveState && <p className={`text-sm font-semibold ${saveState === 'error' ? 'text-red-400' : 'text-white/70'}`}>{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? '✓ Measurements saved — Jude can see them' : 'Couldn’t save — check signal and tap a box again'}</p>}
           </section>
         )}
 

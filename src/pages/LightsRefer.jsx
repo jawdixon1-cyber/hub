@@ -6,19 +6,31 @@ import { useParams } from 'react-router-dom';
 
 const GREEN = '#00DF00';
 const RED = '#B3121F';
-const EMPTY = { name: '', contactName: '', phone: '', address: '', bestTime: '', angle: '', money: '' };
+// Kept dead simple for Mom (2026-11-13): first, last, phone, address, best time, how they know Jude.
+const EMPTY = { first: '', last: '', partner: '', phone: '', address: '', bestTime: '', angle: '', money: '' };
 
-const FIELDS = [
-  ['name', 'Family name', 'e.g. Mike and Sarah Johnson'],
-  ['contactName', 'Who you talked to', 'e.g. Sarah'],
-  ['phone', 'Their phone number', 'e.g. 803-555-1234', 'tel'],
-  ['address', 'Their address', 'e.g. 123 Oak St, Rock Hill'],
-  ['bestTime', 'Best time to call', 'e.g. weekdays after 5:30'],
-  ['angle', 'How they know Jude', 'e.g. plays mahjong with me', 'area'],
-  ['money', 'What they do / how they have money', "e.g. he's a contractor"],
-];
 
-const when = (iso) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+// 8035551234 → 803-555-1234 as they type (10 digits max; a leading 1 is dropped).
+const dashPhone = (v) => {
+  let d = String(v).replace(/\D/g, '');
+  if (d.length > 10 && d.startsWith('1')) d = d.slice(1);
+  d = d.slice(0, 10);
+  return d.length > 6 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : d.length > 3 ? `${d.slice(0, 3)}-${d.slice(3)}` : d;
+};
+
+
+// A box whose label sits inside like a placeholder, then floats up small when she taps or types.
+function Float({ label, value, onChange, className = '', inputClass = '', ...rest }) {
+  return (
+    <label className={`relative block ${className}`}>
+      <input value={value} onChange={onChange} placeholder=" " {...rest}
+        className={`peer w-full bg-transparent px-4 pt-6 pb-2 text-lg text-white outline-none ${inputClass}`} />
+      <span className="pointer-events-none absolute left-4 top-1.5 text-xs font-semibold text-white/55 transition-all
+        peer-placeholder-shown:top-4 peer-placeholder-shown:text-lg peer-placeholder-shown:font-normal peer-placeholder-shown:text-white/40
+        peer-focus:top-1.5 peer-focus:text-xs peer-focus:font-semibold peer-focus:text-[#00DF00]">{label}</span>
+    </label>
+  );
+}
 
 export default function LightsRefer() {
   const { token } = useParams();
@@ -36,14 +48,15 @@ export default function LightsRefer() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.name.trim() && !form.contactName.trim()) { setError('Add their name first.'); return; }
+    const first = form.first.trim(); const last = form.last.trim();
+    if (!first || !last || form.phone.replace(/\D/g, '').length !== 10) { setError('Add their first name, last name and a 10-digit phone number.'); return; }
     setSending(true); setError('');
     try {
-      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lead: form }) });
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lead: { name: [[first, form.partner.trim()].filter(Boolean).join(' & '), last].filter(Boolean).join(' '), contactName: first, partnerName: form.partner.trim(), phone: form.phone, address: form.address, bestTime: form.bestTime, angle: form.angle, money: form.money } }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Didn’t send — try again.');
       setInfo((i) => ({ ...i, submissions: d.submissions }));
-      setSent(form.name.trim() || form.contactName.trim());
+      setSent([first, last].filter(Boolean).join(' '));
       setForm(EMPTY);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) { setError(err.message); } finally { setSending(false); }
@@ -52,14 +65,15 @@ export default function LightsRefer() {
   if (!info && !error) return <div className="min-h-screen bg-[#0b0b0d] flex items-center justify-center"><div className="w-8 h-8 border-4 border-white/20 border-t-[#00DF00] rounded-full animate-spin" /></div>;
   if (!info) return <div className="min-h-screen bg-[#0b0b0d] text-white flex items-center justify-center p-6 text-center text-lg">{error}</div>;
 
-  const box = 'w-full rounded-xl border border-white/20 bg-white/[0.06] px-4 py-3.5 text-lg text-white outline-none focus:border-[#00DF00] placeholder:text-white/35';
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   return (
     <div className="min-h-screen bg-[#0b0b0d] text-white">
       <div className="mx-auto max-w-lg px-5 py-6 space-y-6">
         <header className="space-y-2 text-center">
           <img src="/holiday-logo.png" alt="Hey Jude's" className="h-12 w-auto mx-auto" />
           <h1 className="text-3xl font-extrabold">Send Jude a lead</h1>
-          <p className="text-white/70">{info.name ? `Hi ${info.name}! ` : ''}Who wants their Christmas lights done? Fill this out and Jude will reach out.</p>
+          {/* One line, not three: the greeting + the $50 */}
+          <p className="text-lg text-white/80">{info.name ? `Hi ${info.name}! ` : ''}Get <b style={{ color: GREEN }}>$50</b> for every one Jude sells 💵</p>
         </header>
 
         {sent ? (
@@ -71,14 +85,30 @@ export default function LightsRefer() {
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4">
-            {FIELDS.map(([key, label, ph, kind]) => (
-              <label key={key} className="block space-y-1.5">
-                <span className="text-base font-bold">{label}</span>
-                {kind === 'area'
-                  ? <textarea value={form[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} placeholder={ph} rows={2} className={box} />
-                  : <input value={form[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} placeholder={ph} type={kind === 'tel' ? 'tel' : 'text'} inputMode={kind === 'tel' ? 'tel' : undefined} className={box} />}
-              </label>
-            ))}
+            {/* Feels short: step 1 is just who + phone. Everything else is a lighter, skippable "nice to have". */}
+            {/* Who + phone: one joined block (fewer boxes = feels shorter) */}
+            <div className="space-y-2">
+              <div className="rounded-xl border border-white/20 bg-white/[0.06] divide-y divide-white/15 overflow-hidden focus-within:border-[#00DF00]">
+                <div className="grid grid-cols-2 divide-x divide-white/15">
+                  <Float label="First name" value={form.first} onChange={set('first')} autoComplete="off" />
+                  <Float label="Last name" value={form.last} onChange={set('last')} autoComplete="off" />
+                </div>
+                <Float label="Phone number" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: dashPhone(e.target.value) }))} type="tel" inputMode="tel" maxLength={12} autoComplete="off" />
+                <Float label="Address (optional)" value={form.address} onChange={set('address')} autoComplete="off" />
+              </div>
+            </div>
+
+            {/* Optional extras: same joined style, a little lighter */}
+            <div className="space-y-2">
+              <p className="text-sm text-white/75">⭐ <b className="text-white">Optional, but helps Jude close the sale</b></p>
+              <div className="rounded-xl border border-white/20 bg-white/[0.06] divide-y divide-white/15 overflow-hidden focus-within:border-[#00DF00]">
+                <Float label="Best time to call" value={form.bestTime} onChange={set('bestTime')} autoComplete="off" />
+                <Float label="How they know Jude" value={form.angle} onChange={set('angle')} autoComplete="off" />
+                <Float label="Partner’s name" value={form.partner} onChange={set('partner')} autoComplete="off" />
+                <Float label="How they have money (job, business…)" value={form.money} onChange={set('money')} autoComplete="off" />
+              </div>
+            </div>
+
             {error && <p className="text-red-400 font-semibold">{error}</p>}
             <button type="submit" disabled={sending} className="w-full rounded-xl py-4 text-xl font-extrabold text-white disabled:opacity-50 cursor-pointer" style={{ background: RED }}>
               {sending ? 'Sending…' : 'Send to Jude 🎄'}
@@ -88,12 +118,31 @@ export default function LightsRefer() {
 
         <section className="space-y-2 pt-2">
           <h2 className="text-lg font-extrabold">Your referrals ({info.submissions.length})</h2>
+          {/* $50 for every referral Jude sells — sold so far + what's still in play */}
+          {info.submissions.length > 0 && (() => {
+            const sold = info.submissions.filter((x) => x.stage === 'sold').length;
+            const pending = info.submissions.filter((x) => x.stage === 'pending').length;
+            return (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl p-3 text-center" style={{ background: `${GREEN}22` }}>
+                  <p className="text-3xl font-extrabold" style={{ color: GREEN }}>${sold * 50}</p>
+                  <p className="text-sm text-white/80">you’ve made · {sold} sold</p>
+                </div>
+                <div className="rounded-xl bg-white/[0.06] p-3 text-center">
+                  <p className="text-3xl font-extrabold text-white">${pending * 50}</p>
+                  <p className="text-sm text-white/80">still pending · {pending} in the works</p>
+                </div>
+              </div>
+            );
+          })()}
           {info.submissions.length ? (
             <div className="rounded-2xl border border-white/10 divide-y divide-white/10">
               {info.submissions.map((s) => (
                 <div key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
                   <span className="font-semibold">{s.name || s.contact}{s.name && s.contact ? <span className="font-normal text-white/60"> · {s.contact}</span> : null}</span>
-                  <span className="text-sm text-white/60 shrink-0">{when(s.at)}</span>
+                  <span className={`text-sm font-semibold shrink-0 ${s.stage === 'sold' ? '' : s.stage === 'no' ? 'text-white/40' : 'text-white/70'}`} style={s.stage === 'sold' ? { color: GREEN } : undefined}>
+                    {s.stage === 'sold' ? '✓ Sold · $50' : s.stage === 'no' ? 'Not this time' : 'Pending'}
+                  </span>
                 </div>
               ))}
             </div>

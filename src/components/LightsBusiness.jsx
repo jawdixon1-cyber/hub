@@ -914,11 +914,14 @@ const planCache = new Map();
 const planLoading = new Map();
 // Load a quote's plan once (shared by every job card + the Jobs-tab preload, all in parallel).
 // getQuote uses this browser's saved copy when it's current (instant); otherwise downloads the photos.
+const actualCache = new Map(); // crew's measured feet (Team view) per quote
 function loadPlan(quoteId) {
   if (!planLoading.has(quoteId)) {
-    planLoading.set(quoteId, getQuote(quoteId)
-      .then((q) => { planCache.set(quoteId, (q?.angles || []).filter((a) => a.plain && (a.lines || []).length)); })
-      .catch(() => { planCache.set(quoteId, []); }));
+    planLoading.set(quoteId, Promise.all([
+      getQuote(quoteId).then((q) => { planCache.set(quoteId, (q?.angles || []).filter((a) => a.plain && (a.lines || []).length)); }).catch(() => { planCache.set(quoteId, []); }),
+      supabase.from('app_state').select('value').eq('key', `lq-actual:${quoteId}`).maybeSingle()
+        .then(({ data }) => { actualCache.set(quoteId, data?.value || null); }).catch(() => {}),
+    ]));
   }
   return planLoading.get(quoteId);
 }
@@ -934,7 +937,26 @@ function JobPlan({ quoteId }) {
   if (!quoteId) return null;
   if (!sides) return <p className="text-xs text-muted">Loading plan…</p>;
   if (!sides.length) return <p className="text-xs text-muted">No lines drawn yet.</p>;
+  // Crew's actual measurements (Team view): totals + any line 5+ ft off the plan.
+  const act = actualCache.get(quoteId);
+  const measured = (() => {
+    if (!act?.actual || !Object.keys(act.actual).length) return null;
+    let plan = 0; let actual = 0; let count = 0; const off = [];
+    sides.forEach((sd, si) => (sd.lines || []).forEach((l, li) => {
+      const v = act.actual[`${si}-${li}`]; if (v == null || v === '') return;
+      count += 1; plan += Number(l.feet) || 0; actual += Number(v) || 0;
+      if (Math.abs((Number(v) || 0) - (Number(l.feet) || 0)) >= 5) off.push(`section ${si + 1} line ${li + 1}: plan ${l.feet || '?'} → ${v} ft`);
+    }));
+    return { plan, actual, count, off };
+  })();
   return (
+    <div className="space-y-2">
+    {measured && (
+      <div className={`rounded-lg px-3 py-2 text-sm ${measured.off.length ? 'bg-yellow-500/10 text-yellow-300' : 'bg-emerald-500/10 text-emerald-300'}`}>
+        📏 Crew measured {measured.count} line{measured.count === 1 ? '' : 's'}: <b>{Math.round(measured.actual * 10) / 10} ft</b> actual vs <b>{Math.round(measured.plan * 10) / 10} ft</b> plan
+        {measured.off.length > 0 && <span className="block text-xs">Off 5+ ft — {measured.off.join(' · ')}</span>}
+      </div>
+    )}
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
       {sides.map((side, i) => {
         const w = side.w || 1600; const h = side.h || 1200;
@@ -951,6 +973,7 @@ function JobPlan({ quoteId }) {
           </div>
         );
       })}
+    </div>
     </div>
   );
 }
@@ -1623,14 +1646,30 @@ export default function LightsBusiness({ view, onOpen = null }) {
               <div className="rounded-lg bg-emerald-500/10 px-3 py-2.5 space-y-2.5">
                 <p className="text-sm font-semibold text-emerald-400">✅ Installed {j.saved.installedAt ? fmtDate(j.saved.installedAt) : ''} — good job! 🎉</p>
                 {/* The money on this job: Jobber price − materials that went up (at your costs) */}
-                <p className="text-sm text-secondary tabular-nums">
-                  {n(j.total) > 0 ? (
-                    <>Job <b className="text-primary">{money(n(j.total))}</b> − Materials <b className="text-primary">{money(cost)}</b> = <b className="text-brand-text text-base">{money(n(j.total) - cost)}</b>
-                      <span className="text-muted"> · {Math.round(((n(j.total) - cost) / n(j.total)) * 100)}% left after materials</span></>
-                  ) : (
-                    <>Materials <b className="text-primary">{money(cost)}</b> · <span className="text-yellow-400">no price on this job in Jobber yet</span></>
-                  )}
-                </p>
+                {(() => {
+                  // Revenue: your number if you typed one, else Jobber's job total. Click it to edit.
+                  const own = j.saved.revenue != null && j.saved.revenue !== '';
+                  const rev = own ? n(j.saved.revenue) : n(j.total);
+                  return (
+                    <p className="text-sm text-secondary tabular-nums flex items-center gap-1 flex-wrap">
+                      Job
+                      <span className="inline-flex items-center rounded-md border border-border-strong bg-card px-1.5 focus-within:border-brand">
+                        <span className="text-muted">$</span>
+                        <input key={`${j.id}-${j.saved.revenue ?? ''}`} defaultValue={rev || ''} placeholder="price" inputMode="decimal" title="Click to change what this job brought in"
+                          onBlur={(e) => { const v = e.target.value.replace(/[^0-9.]/g, ''); if (v === String(rev || '')) return; patchJob(j, { revenue: v === '' ? null : v }); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                          className="w-20 bg-transparent py-0.5 text-sm font-bold text-primary outline-none" />
+                      </span>
+                      {own && <button onClick={() => patchJob(j, { revenue: null })} title={`Back to Jobber's ${money(n(j.total))}`} className="text-[10px] text-muted hover:text-primary underline cursor-pointer">edited · reset</button>}
+                      {rev > 0 ? (
+                        <>− Materials <b className="text-primary">{money(cost)}</b> = <b className="text-brand-text text-base">{money(rev - cost)}</b>
+                          <span className="text-muted"> · {Math.round(((rev - cost) / rev) * 100)}% left after materials</span></>
+                      ) : (
+                        <>· Materials <b className="text-primary">{money(cost)}</b> · <span className="text-yellow-400">type the job price</span></>
+                      )}
+                    </p>
+                  );
+                })()}
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {WRAP.map(([k, label]) => (k === 'pics'
                     ? <span key={k} className={`px-2 py-1 rounded-md text-xs font-semibold ${w.pics ? 'bg-emerald-500/20 text-emerald-300' : 'bg-surface-alt text-muted'}`}>{w.pics ? '✓' : '○'} {label}</span>
@@ -1762,6 +1801,21 @@ export default function LightsBusiness({ view, onOpen = null }) {
                   <span className="flex-1 min-w-0">
                     <span className="block text-base font-semibold text-primary truncate">{j.clientName} <span className="text-xs font-normal text-muted">#{j.jobNumber}</span>{jobQuote(j)?.planLocked && <span title="Plan + materials locked" className="ml-1.5">🔒</span>}</span>
                     <span className="block text-xs text-muted">{inst?.startAt ? `Install ${fmtDate(inst.startAt)}` : 'No install date'}</span>
+                    {/* Installed jobs: the wrap-up checklist right on the row (tap to check off; after pics come from the photos) */}
+                    {(stage === 'wrap' || stage === 'takedown' || stage === 'done') && (() => {
+                      const w = wrapOf(j);
+                      return (
+                        <span className="flex items-center gap-1 flex-wrap mt-1.5">
+                          {WRAP.map(([k, lbl]) => (
+                            <span key={k} role={k === 'pics' ? undefined : 'button'} title={k === 'pics' ? 'Add after pics inside the job' : w[k] ? 'Done — tap to undo' : 'Tap when done'}
+                              onClick={k === 'pics' ? undefined : (e) => { e.stopPropagation(); patchJob(j, k === 'review' ? { reviewed: !w.review, wrap: { ...(j.saved.wrap || {}), review: !w.review } } : { wrap: { ...(j.saved.wrap || {}), [k]: !w[k] } }); }}
+                              className={`px-2 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap ${k === 'pics' ? '' : 'cursor-pointer'} ${w[k] ? 'bg-emerald-500/20 text-emerald-300' : 'bg-surface-alt text-secondary hover:text-primary'}`}>
+                              {w[k] ? '✓' : '○'} {lbl}
+                            </span>
+                          ))}
+                        </span>
+                      );
+                    })()}
                   </span>
                   <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-bold ${tone}`}>{label}</span>
                 </button>
@@ -1866,97 +1920,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
 
     return (
       <div className="space-y-4">
-        {(() => {
-          const val = (f) => items.reduce((t, x) => t + f(x) * n(x.cost), 0);
-          const onHandV = val((x) => Math.max(0, n(x.onHand)));
-          const comV = val((x) => Math.min(Math.max(0, n(x.onHand)), committed[x.id] || 0));
-          const usedV = val((x) => n(x.used));
-          return (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {[
-                ['Stock on hand', onHandV, 'everything in the shop', true],
-                ['Committed to jobs', comV, 'set aside for booked installs'],
-                ['Free to use', onHandV - comV, 'not spoken for yet'],
-                ['Used this season', usedV, 'went up on houses'],
-              ].map(([label, v, sub, big]) => (
-                <div key={label} className={`rounded-xl border px-4 py-3 ${big ? 'bg-brand-light border-border-brand' : 'bg-card border-border-default'}`}>
-                  <p className={`text-[11px] ${big ? 'font-semibold text-brand-text-strong' : 'text-muted'}`}>{label}</p>
-                  <p className={`text-2xl font-bold ${big ? 'text-brand-text' : 'text-primary'}`}>{money(v)}</p>
-                  <p className="text-[10px] text-muted">{sub}</p>
-                </div>
-              ))}
-            </div>
-          );
-        })()}
-        {/* Returns: stuff going back for a refund. Refunded → comes out of Have. */}
-        {(() => {
-          const itemOf = (id) => items.find((x) => x.id === id);
-          const open = returns.filter((r) => r.status !== 'refunded');
-          const done = returns.filter((r) => r.status === 'refunded');
-          const owed = open.reduce((t, r) => t + n(r.refund), 0);
-          const setRet = (id, p) => setReturns((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
-          const refunded = (r) => {
-            // Money's back: the items leave Have for good.
-            setItems((list) => (list || []).map((x) => (x.id === r.itemId ? { ...x, onHand: Math.max(0, n(x.onHand) - n(r.qty)) } : x)));
-            setRet(r.id, { status: 'refunded', refundedAt: new Date().toISOString() });
-          };
-          const unrefund = (r) => {
-            setItems((list) => (list || []).map((x) => (x.id === r.itemId ? { ...x, onHand: n(x.onHand) + n(r.qty) } : x)));
-            setRet(r.id, { status: 'sent', refundedAt: null });
-          };
-          const row = (r) => {
-            const it = itemOf(r.itemId);
-            return (
-              <div key={r.id} className="px-4 py-2.5 border-t border-border-subtle flex items-center gap-3 flex-wrap">
-                {it?.image ? <img src={it.image} alt="" className="w-9 h-9 rounded-md object-cover bg-white shrink-0" /> : <span className="w-9 h-9 rounded-md bg-surface-alt shrink-0" />}
-                <div className="flex-1 min-w-[180px]">
-                  <p className="text-sm font-semibold text-primary"><span className="tabular-nums">{n(r.qty)}</span> × {it?.name || 'Removed item'}</p>
-                  <p className="text-[11px] text-muted">{r.from || 'No order noted'}{n(r.refund) > 0 && <> · refund ~<b className="text-primary">{money(n(r.refund))}</b></>}{r.note ? ` · ${r.note}` : ''}</p>
-                </div>
-                {r.status === 'refunded' ? (
-                  <>
-                    <span className="text-xs font-semibold text-emerald-400">✓ Refunded</span>
-                    <button onClick={() => unrefund(r)} className="text-[11px] text-muted hover:text-primary underline cursor-pointer">Undo</button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={() => setRet(r.id, { status: r.status === 'sent' ? 'todo' : 'sent' })} className={`px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${r.status === 'sent' ? 'bg-blue-500/15 text-blue-300' : 'bg-surface-alt text-secondary hover:text-primary'}`}>{r.status === 'sent' ? '📦 Sent back' : '○ Not sent yet'}</button>
-                    <button onClick={() => refunded(r)} className="px-2 py-1 rounded-md text-xs font-semibold bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 cursor-pointer">💵 Refunded</button>
-                    <button onClick={() => setReturns((list) => (list || []).filter((x) => x.id !== r.id))} className="p-1 text-muted hover:text-red-500 cursor-pointer" title="Remove from list"><Trash2 size={13} /></button>
-                  </>
-                )}
-              </div>
-            );
-          };
-          const addRet = () => {
-            if (!retDraft?.itemId || !n(retDraft.qty)) return;
-            setReturns((list) => [...(list || []), { id: `ret-${Date.now()}`, itemId: retDraft.itemId, qty: n(retDraft.qty), from: retDraft.from || '', refund: n(retDraft.refund), status: 'todo', createdAt: new Date().toISOString() }]);
-            setRetDraft(null);
-          };
-          return (
-            <div className="rounded-xl border border-orange-500/30 bg-card overflow-hidden">
-              <div className="px-4 py-2.5 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-bold text-primary">↩️ Returns</p>
-                  <p className="text-[11px] text-muted">{open.length ? <>{open.length} to send back{owed > 0 && <> · ~<b className="text-primary">{money(owed)}</b> coming back</>} · set aside, not counted as spare</> : 'Nothing to return'}</p>
-                </div>
-                {!retDraft && <button onClick={() => setRetDraft({ itemId: '', qty: '', from: '', refund: '' })} className="text-xs font-semibold text-secondary hover:text-primary cursor-pointer">+ Add return</button>}
-              </div>
-              {retDraft && (
-                <div className="px-4 py-2.5 border-t border-border-subtle flex items-end gap-2 flex-wrap text-[11px] text-muted">
-                  <label>Item<select value={retDraft.itemId} onChange={(e) => setRetDraft((d) => ({ ...d, itemId: e.target.value }))} className="block mt-0.5 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none max-w-[260px]"><option value="">Pick…</option>{groupSupplies(items).flatMap(([, , its]) => its).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-                  <label>Qty<input value={retDraft.qty} inputMode="decimal" onChange={(e) => setRetDraft((d) => ({ ...d, qty: e.target.value.replace(/[^0-9.]/g, '') }))} className="block mt-0.5 w-20 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none" /></label>
-                  <label>From order<input value={retDraft.from} placeholder="Lights at Wholesale #2" onChange={(e) => setRetDraft((d) => ({ ...d, from: e.target.value }))} className="block mt-0.5 w-48 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none" /></label>
-                  <label>Refund $<input value={retDraft.refund} inputMode="decimal" onChange={(e) => setRetDraft((d) => ({ ...d, refund: e.target.value.replace(/[^0-9.]/g, '') }))} className="block mt-0.5 w-24 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none" /></label>
-                  <button onClick={addRet} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">Add</button>
-                  <button onClick={() => setRetDraft(null)} className="px-2 py-1.5 text-xs text-muted hover:text-primary cursor-pointer">Cancel</button>
-                </div>
-              )}
-              {open.map(row)}
-              {done.length > 0 && <details className="border-t border-border-subtle"><summary className="px-4 py-2 text-[11px] text-muted cursor-pointer">{done.length} refunded</summary>{done.map(row)}</details>}
-            </div>
-          );
-        })()}
+        {/* (Top money cards removed — the money ledger lives in Real orders, 2026-11-13) */}
         {(() => {
           // Which booked (not installed) jobs use each item, for the tap-to-open breakdown.
           const byJob = {};
@@ -2158,11 +2122,104 @@ export default function LightsBusiness({ view, onOpen = null }) {
                 <p className="text-sm font-semibold text-primary">Real orders</p>
                 <button onClick={() => setOrderDraft(blank)} className="inline-flex items-center gap-1 text-sm font-medium text-brand-text hover:underline cursor-pointer"><Plus size={14} /> Log order</button>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-lg bg-surface-alt px-3 py-2"><p className="text-[11px] text-muted">Actually spent</p><p className="text-xl font-bold text-primary">{money(real)}</p><p className="text-[10px] text-muted">{orders.length} receipt{orders.length === 1 ? '' : 's'}</p></div>
-                <div className="rounded-lg bg-surface-alt px-3 py-2"><p className="text-[11px] text-muted">Hub thinks</p><p className="text-xl font-bold text-primary">{money(hub)}</p><p className="text-[10px] text-muted">have + used + on order, at your costs</p></div>
-                <div className="rounded-lg bg-surface-alt px-3 py-2"><p className="text-[11px] text-muted">Difference</p><p className={`text-xl font-bold ${Math.abs(diff) < 25 ? 'text-brand-text' : 'text-yellow-400'}`}>{diff >= 0 ? '+' : '−'}{money(Math.abs(diff))}</p><p className="text-[10px] text-muted">{Math.abs(diff) < 25 ? 'matches' : diff > 0 ? 'spent more than Hub counts (shipping, tax, missing items?)' : 'Hub counts more than you spent'}</p></div>
-              </div>
+              {/* Money, top to bottom: what you spent vs what the Hub counts, then where that stock is going. */}
+              {(() => {
+                const at = (qty, x) => Math.max(0, qty) * n(x.cost);
+                const committedV = rows.reduce((t, r) => t + at(r.com, r.x), 0);
+                const usedV = rows.reduce((t, r) => t + at(n(r.x.used), r.x), 0);
+                const returningV = rows.reduce((t, r) => t + at(r.ret || 0, r.x), 0);
+                const leftV = rows.reduce((t, r) => t + at(r.left, r.x), 0); // have + coming − jobs − returning
+                const line = (label, value, note, tone = 'text-primary', big = false) => (
+                  <div className="flex items-baseline justify-between gap-3 py-1.5">
+                    <span className="text-sm text-secondary">{label}{note && <span className="block text-[10px] text-muted">{note}</span>}</span>
+                    <span className={`${big ? 'text-xl' : 'text-lg'} font-bold tabular-nums ${tone}`}>{value}</span>
+                  </div>
+                );
+                return (
+                  <div className="rounded-lg bg-surface-alt px-4 py-2 divide-y divide-border-subtle">
+                    <div>
+                      {line('Actually spent', money(real), `${orders.length} receipt${orders.length === 1 ? '' : 's'}`)}
+                      {line('Hub thinks', money(hub), 'have + used + on order, at your costs')}
+                      {line('Difference', `${diff >= 0 ? '+' : '−'}${money(Math.abs(diff))}`, Math.abs(diff) < 25 ? 'matches' : diff > 0 ? 'spent more than Hub counts (shipping, tax, missing items?)' : 'Hub counts more than you spent (it prices before your discount code)', Math.abs(diff) < 25 ? 'text-brand-text' : 'text-yellow-400')}
+                    </div>
+                    <div>
+                      {line('Committed to jobs', money(committedV), 'set aside for booked installs')}
+                      {line('Used on installs', money(usedV), 'already up on houses')}
+                      {returningV > 0 && line('Being returned', money(returningV), 'on the Returns list', 'text-orange-400')}
+                      {line('Stock left', money(leftV), 'not spoken for — in the shop + on the way', 'text-brand-text', true)}
+                    </div>
+                  </div>
+                );
+              })()}
+              {/* Returns — right under the money: stuff going back for a refund. Refunded → comes out of Have. */}
+              {(() => {
+                const itemOf = (id) => items.find((x) => x.id === id);
+                const open = returns.filter((r) => r.status !== 'refunded');
+                const done = returns.filter((r) => r.status === 'refunded');
+                const owed = open.reduce((t, r) => t + n(r.refund), 0);
+                const setRet = (id, p) => setReturns((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
+                const refunded = (r) => {
+                  // Money's back: the items leave Have for good.
+                  setItems((list) => (list || []).map((x) => (x.id === r.itemId ? { ...x, onHand: Math.max(0, n(x.onHand) - n(r.qty)) } : x)));
+                  setRet(r.id, { status: 'refunded', refundedAt: new Date().toISOString() });
+                };
+                const unrefund = (r) => {
+                  setItems((list) => (list || []).map((x) => (x.id === r.itemId ? { ...x, onHand: n(x.onHand) + n(r.qty) } : x)));
+                  setRet(r.id, { status: 'sent', refundedAt: null });
+                };
+                const row = (r) => {
+                  const it = itemOf(r.itemId);
+                  return (
+                    <div key={r.id} className="px-4 py-2.5 border-t border-border-subtle flex items-center gap-3 flex-wrap">
+                      {it?.image ? <img src={it.image} alt="" className="w-9 h-9 rounded-md object-cover bg-white shrink-0" /> : <span className="w-9 h-9 rounded-md bg-surface-alt shrink-0" />}
+                      <div className="flex-1 min-w-[180px]">
+                        <p className="text-sm font-semibold text-primary"><span className="tabular-nums">{n(r.qty)}</span> × {it?.name || 'Removed item'}</p>
+                        <p className="text-[11px] text-muted">{r.from || 'No order noted'}{n(r.refund) > 0 && <> · refund ~<b className="text-primary">{money(n(r.refund))}</b></>}{r.note ? ` · ${r.note}` : ''}</p>
+                      </div>
+                      {r.status === 'refunded' ? (
+                        <>
+                          <span className="text-xs font-semibold text-emerald-400">✓ Refunded</span>
+                          <button onClick={() => unrefund(r)} className="text-[11px] text-muted hover:text-primary underline cursor-pointer">Undo</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => setRet(r.id, { status: r.status === 'sent' ? 'todo' : 'sent' })} className={`px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${r.status === 'sent' ? 'bg-blue-500/15 text-blue-300' : 'bg-surface-alt text-secondary hover:text-primary'}`}>{r.status === 'sent' ? '📦 Sent back' : '○ Not sent yet'}</button>
+                          <button onClick={() => refunded(r)} className="px-2 py-1 rounded-md text-xs font-semibold bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 cursor-pointer">💵 Refunded</button>
+                          <button onClick={() => setReturns((list) => (list || []).filter((x) => x.id !== r.id))} className="p-1 text-muted hover:text-red-500 cursor-pointer" title="Remove from list"><Trash2 size={13} /></button>
+                        </>
+                      )}
+                    </div>
+                  );
+                };
+                const addRet = () => {
+                  if (!retDraft?.itemId || !n(retDraft.qty)) return;
+                  setReturns((list) => [...(list || []), { id: `ret-${Date.now()}`, itemId: retDraft.itemId, qty: n(retDraft.qty), from: retDraft.from || '', refund: n(retDraft.refund), status: 'todo', createdAt: new Date().toISOString() }]);
+                  setRetDraft(null);
+                };
+                return (
+                  <div className="rounded-xl border border-orange-500/30 bg-card overflow-hidden">
+                    <div className="px-4 py-2.5 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-primary">↩️ Returns</p>
+                        <p className="text-[11px] text-muted">{open.length ? <>{open.length} to send back{owed > 0 && <> · ~<b className="text-primary">{money(owed)}</b> coming back</>} · set aside, not counted as spare</> : 'Nothing to return'}</p>
+                      </div>
+                      {!retDraft && <button onClick={() => setRetDraft({ itemId: '', qty: '', from: '', refund: '' })} className="text-xs font-semibold text-secondary hover:text-primary cursor-pointer">+ Add return</button>}
+                    </div>
+                    {retDraft && (
+                      <div className="px-4 py-2.5 border-t border-border-subtle flex items-end gap-2 flex-wrap text-[11px] text-muted">
+                        <label>Item<select value={retDraft.itemId} onChange={(e) => setRetDraft((d) => ({ ...d, itemId: e.target.value }))} className="block mt-0.5 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none max-w-[260px]"><option value="">Pick…</option>{groupSupplies(items).flatMap(([, , its]) => its).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+                        <label>Qty<input value={retDraft.qty} inputMode="decimal" onChange={(e) => setRetDraft((d) => ({ ...d, qty: e.target.value.replace(/[^0-9.]/g, '') }))} className="block mt-0.5 w-20 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none" /></label>
+                        <label>From order<input value={retDraft.from} placeholder="Lights at Wholesale #2" onChange={(e) => setRetDraft((d) => ({ ...d, from: e.target.value }))} className="block mt-0.5 w-48 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none" /></label>
+                        <label>Refund $<input value={retDraft.refund} inputMode="decimal" onChange={(e) => setRetDraft((d) => ({ ...d, refund: e.target.value.replace(/[^0-9.]/g, '') }))} className="block mt-0.5 w-24 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none" /></label>
+                        <button onClick={addRet} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">Add</button>
+                        <button onClick={() => setRetDraft(null)} className="px-2 py-1.5 text-xs text-muted hover:text-primary cursor-pointer">Cancel</button>
+                      </div>
+                    )}
+                    {open.map(row)}
+                    {done.length > 0 && <details className="border-t border-border-subtle"><summary className="px-4 py-2 text-[11px] text-muted cursor-pointer">{done.length} refunded</summary>{done.map(row)}</details>}
+                  </div>
+                );
+              })()}
               {orderDraft && (
                 <div className="rounded-lg border border-border-brand p-3 space-y-3">
                   <div className="flex items-end gap-3 flex-wrap">
