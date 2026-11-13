@@ -154,7 +154,18 @@ async function handleLightsRefer(req, res) {
     ...leads.map((l) => ({ id: l.id, name: l.name, contact: '', at: l.log?.[0]?.at || l.createdAt || '', stage: stage(l.status) })),
   ].sort((x, y) => String(y.at || '').localeCompare(String(x.at || '')));
 
-  if (req.method === 'GET') return res.json({ name: link.name || '', submissions: history() });
+  // Leaderboard across everyone with a link: sold (Won) and pending, from the pipeline. First names only.
+  const leaderboard = () => {
+    const allLeads = Array.isArray(leadsRow?.value) ? leadsRow.value : [];
+    const people = (Array.isArray(linksRow?.value) ? linksRow.value : []).filter((l) => !l.off && l.name);
+    return people.map((p) => {
+      const theirs = allLeads.filter((l) => l.referredBy === p.name && l.name);
+      const waiting = inbox.filter((r) => r.via === p.token && !theirs.some((l) => l.id === r.id)).length;
+      return { name: p.name, me: p.token === token, sold: theirs.filter((l) => l.status === 'won').length, pending: theirs.filter((l) => l.status !== 'won' && l.status !== 'not_interested').length + waiting };
+    }).sort((x, y) => (y.sold - x.sold) || (y.pending - x.pending) || x.name.localeCompare(y.name));
+  };
+
+  if (req.method === 'GET') return res.json({ name: link.name || '', submissions: history(), leaderboard: leaderboard() });
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const b = req.body?.lead || {};
@@ -174,7 +185,7 @@ async function handleLightsRefer(req, res) {
   const { error } = await db.from('app_state').upsert({ key: REFER_INBOX, value: [...inbox, lead], org_id: linksRow.org_id, updated_at: new Date().toISOString() }, { onConflict: 'key' });
   if (error) return res.status(500).json({ error: 'Could not save' });
   mine.push(lead);
-  return res.json({ ok: true, submissions: history() });
+  return res.json({ ok: true, submissions: history(), leaderboard: leaderboard() });
 }
 
 // ── Lights crew view ──

@@ -507,14 +507,20 @@ function ColdLeads({ leads, setLeads, inJobber = {} }) {
     await markReferAdded(waiting.map((r) => r.id)).catch(() => {});
     loadRefer();
   };
-  const copyReferLink = async () => {
-    let link = refer.links.find((l) => !l.off);
-    if (!link) { link = await makeReferLink('Mom'); loadRefer(); }
-    const origin = /localhost|127\.0\.0\.1/.test(window.location.hostname) ? 'https://lawn-care-hub.vercel.app' : window.location.origin;
-    const url = `${origin}/refer/${link.token}`;
+  // Referral links: one per person (Mom, step dad…). Copy any of them, or make a new one.
+  const [linksOpen, setLinksOpen] = useState(false);
+  const [newRef, setNewRef] = useState('');
+  const referUrl = (link) => `${/localhost|127\.0\.0\.1/.test(window.location.hostname) ? 'https://lawn-care-hub.vercel.app' : window.location.origin}/refer/${link.token}`;
+  const copyLink = async (link) => {
+    const url = referUrl(link);
     try { await navigator.clipboard.writeText(url); } catch { /* shown below */ }
-    setReferMsg(url);
+    setReferMsg(`${link.name}: ${url}`);
     setTimeout(() => setReferMsg(''), 8000);
+  };
+  const createLink = async () => {
+    const name = newRef.trim(); if (!name) return;
+    const link = await makeReferLink(name);
+    setNewRef(''); await loadRefer(); copyLink(link);
   };
   const dropIfBlank = (id) => setLeads((list) => (list || []).filter((x) => x.id !== id || x.name?.trim()));
   const closePop = () => { dropIfBlank(popLead); setPopLead(''); setLogFor(''); setLogDraft({ status: '', note: '', how: '' }); if (draft?.id === popLead) setDraft(null); };
@@ -536,11 +542,33 @@ function ColdLeads({ leads, setLeads, inJobber = {} }) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={copyReferLink} title="Copy the link Mom uses to send you leads" className="text-sm font-medium text-secondary hover:text-primary cursor-pointer">🔗 {referMsg ? 'Copied!' : "Mom's link"}</button>
+          <button onClick={() => setLinksOpen((o) => !o)} title="Referral links for Mom, step dad, anyone" className="text-sm font-medium text-secondary hover:text-primary cursor-pointer">🔗 Referral links</button>
           <button onClick={addLead} className="inline-flex items-center gap-1 text-sm font-medium text-brand-text hover:underline cursor-pointer"><Plus size={14} /> Add lead</button>
         </div>
       </div>
-      {referMsg && <p className="px-4 py-2 text-xs text-brand-text border-b border-border-subtle break-all">Copied — text this to Mom: {referMsg}</p>}
+      {referMsg && <p className="px-4 py-2 text-xs text-brand-text border-b border-border-subtle break-all">Copied — text this to {referMsg}</p>}
+      {linksOpen && (
+        <div className="px-4 py-3 border-b border-border-subtle bg-surface-alt/40 space-y-2">
+          <p className="text-xs text-muted">Each person gets their own link. $50 for every one you sell — Won leads count as sold.</p>
+          {refer.links.filter((l) => !l.off).map((l) => {
+            const theirs = (leads || []).filter((x) => x.referredBy === l.name && x.name);
+            const sold = theirs.filter((x) => stageOf(x, inJobber) === 'won').length;
+            const pending = theirs.filter((x) => !['won', 'not_interested'].includes(stageOf(x, inJobber))).length;
+            return (
+              <div key={l.token} className="flex items-center gap-3 text-sm">
+                <span className="flex-1 font-semibold text-primary">{l.name}</span>
+                <span className="text-xs text-muted">{theirs.length} sent · {pending} pending</span>
+                <span className="w-16 text-right font-bold text-brand-text">${sold * 50} owed</span>
+                <button onClick={() => copyLink(l)} className="px-2.5 py-1 rounded-md border border-border-strong text-xs font-semibold text-primary hover:bg-surface-alt cursor-pointer">Copy link</button>
+              </div>
+            );
+          })}
+          <div className="flex items-center gap-2 pt-1">
+            <input value={newRef} onChange={(e) => setNewRef(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createLink(); }} placeholder="New person (e.g. Steve)" className="flex-1 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-sm text-primary outline-none focus:border-brand" />
+            <button onClick={createLink} disabled={!newRef.trim()} className="px-3 py-1.5 rounded-md bg-brand text-on-brand text-xs font-semibold disabled:opacity-40 cursor-pointer">+ Make link</button>
+          </div>
+        </div>
+      )}
       {waiting.length > 0 && (
         <div className="px-4 py-3 border-b border-border-subtle bg-brand-light flex items-center gap-3 flex-wrap">
           <p className="text-sm font-semibold text-brand-text-strong flex-1">📥 New from {waiting[0].from} ({waiting.length}): {waiting.map((r) => r.name || r.contacts?.[0]?.name).join(', ')}</p>

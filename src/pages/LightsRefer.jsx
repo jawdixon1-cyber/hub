@@ -55,7 +55,7 @@ export default function LightsRefer() {
       const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lead: { name: [[first, form.partner.trim()].filter(Boolean).join(' & '), last].filter(Boolean).join(' '), contactName: first, partnerName: form.partner.trim(), phone: form.phone, address: form.address, bestTime: form.bestTime, angle: form.angle, money: form.money } }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Didn’t send — try again.');
-      setInfo((i) => ({ ...i, submissions: d.submissions }));
+      setInfo((i) => ({ ...i, submissions: d.submissions, leaderboard: d.leaderboard || i.leaderboard }));
       setSent([first, last].filter(Boolean).join(' '));
       setForm(EMPTY);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -71,7 +71,7 @@ export default function LightsRefer() {
       <div className="mx-auto max-w-lg px-5 py-6 space-y-6">
         <header className="space-y-2 text-center">
           <img src="/holiday-logo.png" alt="Hey Jude's" className="h-12 w-auto mx-auto" />
-          <h1 className="text-3xl font-extrabold">Send Jude a lead</h1>
+          <h1 className="text-3xl font-extrabold">Hook a friend up 🎄</h1>
           {/* One line, not three: the greeting + the $50 */}
           <p className="text-lg text-white/80">{info.name ? `Hi ${info.name}! ` : ''}Get <b style={{ color: GREEN }}>$50</b> for every one Jude sells 💵</p>
         </header>
@@ -100,7 +100,7 @@ export default function LightsRefer() {
 
             {/* Optional extras: same joined style, a little lighter */}
             <div className="space-y-2">
-              <p className="text-sm text-white/75">⭐ <b className="text-white">Optional, but helps Jude close the sale</b></p>
+              <p className="text-sm text-white/75">⭐ <b className="text-white">Optional, but really helps Jude</b></p>
               <div className="rounded-xl border border-white/20 bg-white/[0.06] divide-y divide-white/15 overflow-hidden focus-within:border-[#00DF00]">
                 <Float label="Best time to call" value={form.bestTime} onChange={set('bestTime')} autoComplete="off" />
                 <Float label="How they know Jude" value={form.angle} onChange={set('angle')} autoComplete="off" />
@@ -114,6 +114,23 @@ export default function LightsRefer() {
               {sending ? 'Sending…' : 'Send to Jude 🎄'}
             </button>
           </form>
+        )}
+
+        {/* 🏆 Everyone with a link, ranked by sales — friendly competition */}
+        {(info.leaderboard || []).length > 0 && (
+          <section className="space-y-2 pt-2">
+            <h2 className="text-lg font-extrabold">🏆 Leaderboard</h2>
+            <div className="rounded-2xl border border-white/10 divide-y divide-white/10">
+              {info.leaderboard.map((p, i) => (
+                <div key={p.name} className={`flex items-center gap-3 px-4 py-3 ${p.me ? 'bg-white/[0.06]' : ''}`}>
+                  <span className="w-6 text-center text-lg">{['🥇', '🥈', '🥉'][i] || i + 1}</span>
+                  <span className="flex-1 font-semibold">{p.name}{p.me && <span className="text-white/50 font-normal"> (you)</span>}</span>
+                  <span className="text-sm text-white/60">{p.pending} pending</span>
+                  <span className="w-14 text-right font-extrabold" style={{ color: GREEN }}>${p.sold * 50}</span>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         <section className="space-y-2 pt-2">
