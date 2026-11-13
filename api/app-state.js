@@ -283,7 +283,7 @@ export default async function handler(req, res) {
       let html = '';
       try { html = await (await fetch(`${origin}/index.html`)).text(); } catch { html = ''; }
       if (!html) return res.redirect(302, `/index.html`);
-      const title = 'Give $50, get $50 🎄 — Hey Jude’s';
+      const title = 'Hook a friend up 🎄';
       const desc = 'Give a friend $50 off their Christmas lights — get $50 when Jude sells.';
       const img = `${origin}/refer-og.jpg`;
       const meta = `<meta property="og:title" content="${title}"><meta property="og:description" content="${desc}"><meta property="og:image" content="${img}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:type" content="website"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${img}"><meta name="description" content="${desc}">`;
