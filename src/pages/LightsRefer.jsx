@@ -32,30 +32,34 @@ function Float({ label, value, onChange, className = '', inputClass = '', ...res
   );
 }
 
-// Cha-ching! A cash-register sound made in the browser (no file). The AudioContext is created on the
-// Send tap (iPhones only allow sound that starts from a tap), then played when the send succeeds.
-let audioCtx = null;
-const unlockSound = () => {
-  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch { audioCtx = null; }
+// Cha-ching! A cash-register sound built in the browser as a tiny WAV (no file to load).
+// Played through an <audio> element: iPhones allow it once it's been "unlocked" by a tap.
+const makeChing = () => {
+  const rate = 22050; const n = Math.floor(rate * 1.1); const d = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / rate; let v = 0;
+    if (t < 0.06) v += (Math.random() * 2 - 1) * (1 - t / 0.06) * 0.45; // "cha" clack
+    [[2637, 0.28, 0.08], [3520, 0.24, 0.17], [5274, 0.1, 0.17]].forEach(([f, a, at]) => { // "ching" bells
+      if (t >= at) v += Math.sin(2 * Math.PI * f * (t - at)) * a * Math.exp(-(t - at) * 5.5);
+    });
+    d[i] = Math.max(-1, Math.min(1, v));
+  }
+  const buf = new ArrayBuffer(44 + n * 2); const w = new DataView(buf);
+  const str = (o, x) => { for (let i = 0; i < x.length; i++) w.setUint8(o + i, x.charCodeAt(i)); };
+  str(0, 'RIFF'); w.setUint32(4, 36 + n * 2, true); str(8, 'WAVEfmt '); w.setUint32(16, 16, true); w.setUint16(20, 1, true); w.setUint16(22, 1, true);
+  w.setUint32(24, rate, true); w.setUint32(28, rate * 2, true); w.setUint16(32, 2, true); w.setUint16(34, 16, true); str(36, 'data'); w.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) w.setInt16(44 + i * 2, d[i] * 0x7fff, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
 };
-const chaChing = () => {
-  const ctx = audioCtx; if (!ctx) return;
-  const t0 = ctx.currentTime + 0.02;
-  // "cha": a short clack of noise
-  const len = Math.floor(ctx.sampleRate * 0.06); const buf = ctx.createBuffer(1, len, ctx.sampleRate); const d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
-  const noise = ctx.createBufferSource(); noise.buffer = buf;
-  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800;
-  const ng = ctx.createGain(); ng.gain.value = 0.35;
-  noise.connect(hp).connect(ng).connect(ctx.destination); noise.start(t0);
-  // "ching": two bright bell tones with a ringing decay
-  [[2637, 0.12, 0], [3520, 0.1, 0.09], [5274, 0.05, 0.09]].forEach(([f, vol, delay]) => {
-    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
-    const g = ctx.createGain(); const t = t0 + 0.08 + delay;
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
-    o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 1);
-  });
+let ching = null;
+const unlockSound = () => { // on the tap itself
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback'; // iOS: play even on silent-ish setups
+    if (!ching) { ching = new Audio(makeChing()); ching.preload = 'auto'; }
+    ching.muted = true; const p = ching.play(); if (p) p.then(() => { ching.pause(); ching.currentTime = 0; ching.muted = false; }).catch(() => { ching.muted = false; });
+  } catch { /* no sound is fine */ }
 };
+const chaChing = () => { try { if (ching) { ching.muted = false; ching.currentTime = 0; ching.play().catch(() => {}); } } catch { /* ignore */ } };
 
 export default function LightsRefer() {
   const { token } = useParams();
@@ -74,6 +78,19 @@ export default function LightsRefer() {
       .then(setInfo).catch((e) => setError(e.message));
   }, [url]);
 
+  // After a send: close the keyboard, scroll to the top, then the gift lifts off the Send button.
+  const launch = (name) => {
+    document.activeElement?.blur?.();
+    window.scrollTo(0, 0);
+    setTimeout(() => {
+      const gr = giftRef.current?.getBoundingClientRect();
+      const ok = gr && gr.width && gr.top > 0 && gr.top < window.innerHeight;
+      setFlight({ x: ok ? gr.left + gr.width / 2 : window.innerWidth / 2, y: ok ? gr.top + gr.height / 2 : window.innerHeight - 70, at: Date.now(), name });
+      setTimeout(chaChing, 1500); // cha-ching as the gift takes off
+      setTimeout(() => setFlight(null), 5400);
+    }, 350);
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     unlockSound(); // must happen on the tap itself (iPhone rule)
@@ -83,22 +100,13 @@ export default function LightsRefer() {
     if (!demo && (!first || !last || form.phone.replace(/\D/g, '').length !== 10)) { setError('Add their first name, last name and a 10-digit phone number.'); return; }
     setSending(true); setError('');
     try {
-      if (demo) {
-        const gr = giftRef.current?.getBoundingClientRect();
-        setFlight(gr ? { x: gr.left + gr.width / 2, y: gr.top + gr.height / 2, at: Date.now(), name: first || 'Your friend' } : null);
-        setForm(EMPTY);
-        chaChing(); setTimeout(() => setFlight(null), 5200);
-        return;
-      }
+      if (demo) { setForm(EMPTY); launch(first || 'Your friend'); return; }
       const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lead: { name: [first, last].filter(Boolean).join(' '), contactName: first, phone: form.phone, address: form.address, bestTime: form.bestTime, angle: form.angle, money: form.money } }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Didn’t send — try again.');
       setInfo((i) => ({ ...i, submissions: d.submissions, leaderboard: d.leaderboard || i.leaderboard }));
-      const gr = giftRef.current?.getBoundingClientRect();
-      setFlight(gr ? { x: gr.left + gr.width / 2, y: gr.top + gr.height / 2, at: Date.now(), name: first } : null);
-      chaChing();
-      setTimeout(() => setFlight(null), 5200); // overlay plays, then the form is fresh for the next friend
       setForm(EMPTY);
+      launch(first);
     } catch (err) { setError(err.message); } finally { setSending(false); }
   };
 
@@ -250,7 +258,7 @@ export default function LightsRefer() {
         return (
           <div key={flight.at} className="fixed inset-0 z-50 pointer-events-none" style={{ animation: 'hj-out .5s 4.7s forwards' }}>
             {/* screen dims as the gift lifts off */}
-            <div className="absolute inset-0" style={{ background: '#05070d', animation: 'hj-dim .6s forwards' }} />
+            <div className="absolute inset-0" style={{ background: '#05070d', animation: 'hj-dim .45s forwards' }} />
             <style>{`
               @keyframes hj-dim { from { opacity: 0; } to { opacity: .88; } }
               @keyframes hj-out { to { opacity: 0; } }
@@ -267,9 +275,9 @@ export default function LightsRefer() {
               }
               @keyframes hj-pop2 { 0% { transform: translate(0,0) scale(.3); opacity: 1; } 100% { transform: translate(var(--x), var(--y)) rotate(var(--r)) scale(1.1); opacity: 0; } }
             `}</style>
-            <span className="absolute text-3xl" style={{ left: flight.x, top: flight.y, marginLeft: -15, marginTop: -18, '--dx': `${dx}px`, '--dy': `${dy}px`, animation: 'hj-fly 1.9s cubic-bezier(.3,.7,.3,1) forwards' }}>🎁</span>
+            <span className="absolute text-3xl" style={{ left: flight.x, top: flight.y, marginLeft: -15, marginTop: -18, '--dx': `${dx}px`, '--dy': `${dy}px`, animation: 'hj-fly 1.9s .25s cubic-bezier(.3,.7,.3,1) both' }}>🎁</span>
             {/* after it shoots off: the message */}
-            <div className="absolute inset-x-0 text-center px-6" style={{ top: '38%', animation: 'hj-msg .5s 1.9s both' }}>
+            <div className="absolute inset-x-0 text-center px-6" style={{ top: '38%', animation: 'hj-msg .5s 2.15s both' }}>
               <p className="text-5xl font-extrabold text-white">Sent! 🎉</p>
               <p className="mt-2 text-lg text-white/85"><b style={{ color: GREEN }}>{flight.name}</b> gets $50 off their lights</p>
               <p className="mt-3 text-2xl font-extrabold" style={{ color: GREEN }}>Keep it up!</p>
@@ -278,7 +286,7 @@ export default function LightsRefer() {
             {Array.from({ length: 30 }, (_, i) => {
               const a = (i / 30) * Math.PI * 2; const d = 110 + (i % 5) * 30;
               return (
-                <span key={i} className="absolute text-2xl" style={{ left: window.innerWidth / 2, top: window.innerHeight * 0.42, marginLeft: -12, marginTop: -14, '--x': `${Math.cos(a) * d}px`, '--y': `${Math.sin(a) * d}px`, '--r': `${(i % 2 ? 1 : -1) * (140 + i * 7)}deg`, animation: `hj-pop2 1.2s ${1.3 + (i % 3) * 0.04}s ease-out both` }}>
+                <span key={i} className="absolute text-2xl" style={{ left: window.innerWidth / 2, top: window.innerHeight * 0.42, marginLeft: -12, marginTop: -14, '--x': `${Math.cos(a) * d}px`, '--y': `${Math.sin(a) * d}px`, '--r': `${(i % 2 ? 1 : -1) * (140 + i * 7)}deg`, animation: `hj-pop2 1.2s ${1.55 + (i % 3) * 0.04}s ease-out both` }}>
                   {['🎉', '✨', '❄️', '🎄', '💵', '⭐'][i % 6]}
                 </span>
               );
