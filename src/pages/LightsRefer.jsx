@@ -68,7 +68,7 @@ export default function LightsRefer() {
   const [flight, setFlight] = useState(null); // { x, y } where the gift takes off from
   const url = `/api/app-state?key=lights-refer&token=${encodeURIComponent(token)}`;
 
-  useEffect(() => { document.title = 'Hook a friend up 🎄 — Hey Jude’s'; }, []);
+  useEffect(() => { document.title = 'Hook a friend up 🎁 — Hey Jude’s'; }, []);
   useEffect(() => {
     fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(new Error('This link isn’t working. Ask Jude for a new one.'))))
       .then(setInfo).catch((e) => setError(e.message));
@@ -196,14 +196,14 @@ export default function LightsRefer() {
         {/* 🏆 Everyone with a link, ranked by sales — friendly competition */}
         {(info.leaderboard || []).length > 0 && (
           <section className="space-y-2 pt-2">
-            <h2 className="text-lg font-extrabold">🏆 Leaderboard</h2>
+            <h2 className="text-2xl font-extrabold">🏆 Leaderboard</h2>
             <div className="rounded-2xl border border-white/10 divide-y divide-white/10">
               {info.leaderboard.map((p, i) => (
-                <div key={p.name} className={`flex items-center gap-3 px-4 py-3 ${p.me ? 'bg-white/[0.06]' : ''}`}>
-                  <span className="w-6 text-center text-lg">{['🥇', '🥈', '🥉'][i] || i + 1}</span>
-                  <span className="flex-1 font-semibold">{p.name}{p.me && <span className="text-white/50 font-normal"> (you)</span>}</span>
-                  <span className="text-sm text-white/60">{p.pending} pending</span>
-                  <span className="w-14 text-right font-extrabold" style={{ color: GREEN }}>${p.sold * 50}</span>
+                <div key={p.name} className={`flex items-center gap-3 px-4 py-3.5 ${p.me ? 'bg-white/[0.06]' : ''}`}>
+                  <span className="w-8 text-center text-2xl">{['🥇', '🥈', '🥉'][i] || i + 1}</span>
+                  <span className="flex-1 text-xl font-bold">{p.name}{p.me && <span className="text-white/50 font-normal"> (you)</span>}</span>
+                  <span className="text-base text-white/70">{p.pending} pending</span>
+                  <span className="w-16 text-right text-2xl font-extrabold" style={{ color: GREEN }}>${p.sold * 50}</span>
                 </div>
               ))}
             </div>
@@ -211,7 +211,7 @@ export default function LightsRefer() {
         )}
 
         <section className="space-y-2 pt-2">
-          <h2 className="text-lg font-extrabold">Your referrals ({info.submissions.length})</h2>
+          <h2 className="text-2xl font-extrabold">Your referrals ({info.submissions.length})</h2>
           {/* $50 for every referral Jude sells — sold so far + what's still in play */}
           {info.submissions.length > 0 && (() => {
             const sold = info.submissions.filter((x) => x.stage === 'sold').length;
@@ -219,12 +219,12 @@ export default function LightsRefer() {
             return (
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-xl p-3 text-center" style={{ background: `${GREEN}22` }}>
-                  <p className="text-3xl font-extrabold" style={{ color: GREEN }}>${sold * 50}</p>
-                  <p className="text-sm text-white/80">you’ve made · {sold} sold</p>
+                  <p className="text-4xl font-extrabold" style={{ color: GREEN }}>${sold * 50}</p>
+                  <p className="text-base text-white/85">you’ve made · {sold} sold</p>
                 </div>
                 <div className="rounded-xl bg-white/[0.06] p-3 text-center">
-                  <p className="text-3xl font-extrabold text-white">${pending * 50}</p>
-                  <p className="text-sm text-white/80">still pending · {pending} in the works</p>
+                  <p className="text-4xl font-extrabold text-white">${pending * 50}</p>
+                  <p className="text-base text-white/85">still pending · {pending} in the works</p>
                 </div>
               </div>
             );
@@ -232,9 +232,9 @@ export default function LightsRefer() {
           {info.submissions.length ? (
             <div className="rounded-2xl border border-white/10 divide-y divide-white/10">
               {info.submissions.map((s) => (
-                <div key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                  <span className="font-semibold">{s.name || s.contact}{s.name && s.contact ? <span className="font-normal text-white/60"> · {s.contact}</span> : null}</span>
-                  <span className={`text-sm font-semibold shrink-0 ${s.stage === 'sold' ? '' : s.stage === 'no' ? 'text-white/40' : 'text-white/70'}`} style={s.stage === 'sold' ? { color: GREEN } : undefined}>
+                <div key={s.id} className="flex items-center justify-between gap-3 px-4 py-3.5">
+                  <span className="text-xl font-bold">{s.name || s.contact}{s.name && s.contact ? <span className="font-normal text-white/60"> · {s.contact}</span> : null}</span>
+                  <span className={`text-base font-bold shrink-0 ${s.stage === 'sold' ? '' : s.stage === 'no' ? 'text-white/40' : 'text-white/70'}`} style={s.stage === 'sold' ? { color: GREEN } : undefined}>
                     {s.stage === 'sold' ? '✓ Sold · $50' : s.stage === 'no' ? 'Not this time' : 'Pending'}
                   </span>
                 </div>
