@@ -260,6 +260,7 @@ function ColdLeads({ leads, setLeads, inJobber = {} }) {
                 <p className="text-sm font-semibold text-primary">{l.name}</p>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${outreachOf(l, inJobber)[2]}`}>{outreachOf(l, inJobber)[1]}</span>
                 {l.fromJobber && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-alt text-secondary">🌐 from website</span>}
+                {l.referredBy && <span title="Give $50 / Get $50 — take $50 off their first install on the quote" className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/15 text-red-300">🎁 $50 off · from {l.referredBy}</span>}
                 {inJobber[l.id]?.label && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-400">{inJobber[l.id].label}</span>}
                 <button onClick={(e) => { e.stopPropagation(); setLogFor(logFor === l.id ? '' : l.id); }} className="ml-auto px-2 py-0.5 rounded-md border border-border-default text-[11px] font-semibold text-secondary hover:text-primary hover:border-border-strong cursor-pointer">+ Log</button>
               </div>
@@ -637,6 +638,7 @@ function ColdLeads({ leads, setLeads, inJobber = {} }) {
                       className={`rounded-lg border bg-card p-2.5 cursor-grab active:cursor-grabbing hover:border-border-strong ${overId === l.id && dragId !== l.id ? 'border-border-default border-t-4 border-t-brand' : 'border-border-default'} ${dragId === l.id ? 'opacity-40' : ''}`}
                     >
                       <p className="text-sm font-semibold text-primary leading-tight">{l.name}</p>
+                      {l.referredBy && <p className="text-[10px] font-semibold text-red-300 mt-0.5" title="Give $50 / Get $50 — take $50 off their first install on the quote">🎁 $50 off · from {l.referredBy}</p>}
                       {inJobber[l.id]?.today && <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-emerald-500 text-[9px] font-black text-black tracking-wide">TODAY</span>}
                       {inJobber[l.id]?.label && <p className="text-[10px] font-semibold text-blue-400 mt-0.5">{inJobber[l.id].label}</p>}
                       {(l.log || []).find((e) => e.note?.trim()) && <p className="text-[11px] text-muted mt-1 line-clamp-2">{l.log.find((e) => e.note?.trim()).note}</p>}

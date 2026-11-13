@@ -74,14 +74,14 @@ export default function LightsRefer() {
           <img src="/holiday-logo.png" alt="Hey Jude's" className="h-12 w-auto mx-auto" />
           <h1 className="text-3xl font-extrabold">Hook a friend up 🎄</h1>
           {/* One line, not three: the greeting + the $50 */}
-          <p className="text-lg text-white/80">{info.name ? `Hi ${info.name}! ` : ''}Get <b style={{ color: GREEN }}>$50</b> for every one Jude sells 💵</p>
+          <p className="text-lg text-white/80">{info.name ? `Hi ${info.name}! ` : ''}Your friend gets <b style={{ color: GREEN }}>$50 off</b> their lights — you get <b style={{ color: GREEN }}>$50</b> when Jude sells 🎁</p>
         </header>
 
         {sent ? (
           <div className="rounded-2xl border-2 p-6 text-center space-y-3" style={{ borderColor: GREEN, background: `${GREEN}14` }}>
             <p className="text-5xl">✓</p>
             <p className="text-2xl font-extrabold">Sent to Jude!</p>
-            <p className="text-white/80">{sent} is on his list. Thank you!</p>
+            <p className="text-white/80">{sent} gets $50 off their lights, and Jude will reach out. Thank you!</p>
             <button onClick={() => setSent('')} className="w-full rounded-xl py-4 text-lg font-bold text-black cursor-pointer" style={{ background: GREEN }}>+ Send another</button>
           </div>
         ) : (
