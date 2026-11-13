@@ -79,6 +79,18 @@ export default function LightsRefer() {
   const [sent, setSent] = useState('');
   const giftRef = useRef(null); // the 🎁 on the Send button
   const [flight, setFlight] = useState(null); // { x, y } where the gift takes off from
+  // "Sent!" screen: counts down 5…1 once the message shows, then closes (or tap anywhere to close now)
+  const [countdown, setCountdown] = useState(0);
+  useEffect(() => {
+    if (!flight) { setCountdown(0); return undefined; }
+    let n = 5; const timers = [];
+    timers.push(setTimeout(() => {
+      setCountdown(n);
+      const iv = setInterval(() => { n -= 1; if (n <= 0) { clearInterval(iv); setFlight(null); } else setCountdown(n); }, 1000);
+      timers.push(iv);
+    }, 1850));
+    return () => timers.forEach((t) => { clearTimeout(t); clearInterval(t); });
+  }, [flight]);
   const url = `/api/app-state?key=lights-refer&token=${encodeURIComponent(token)}`;
 
   useEffect(() => { document.title = 'Hook a friend up 🎁 — Hey Jude’s'; }, []);
@@ -96,7 +108,6 @@ export default function LightsRefer() {
       const ok = gr && gr.width && gr.top > 0 && gr.top < window.innerHeight;
       setFlight({ x: ok ? gr.left + gr.width / 2 : window.innerWidth / 2, y: ok ? gr.top + gr.height / 2 : window.innerHeight - 70, at: Date.now(), name });
       setTimeout(chaChing, 1200); // cha-ching as the gift takes off
-      setTimeout(() => setFlight(null), 7500);
     }, 250);
   };
 
@@ -265,7 +276,7 @@ export default function LightsRefer() {
         const dx = window.innerWidth / 2 - flight.x;
         const dy = window.innerHeight * 0.42 - flight.y;
         return (
-          <div key={flight.at} className="fixed inset-0 z-50 pointer-events-none" style={{ animation: 'hj-out .5s 7s forwards' }}>
+          <div key={flight.at} className="fixed inset-0 z-50 cursor-pointer select-none" onClick={() => setFlight(null)}>
             {/* screen dims as the gift lifts off */}
             <div className="absolute inset-0" style={{ background: '#05070d', animation: 'hj-dim .3s forwards' }} />
             <style>{`
@@ -290,6 +301,7 @@ export default function LightsRefer() {
               <p className="text-5xl font-extrabold text-white">Sent! 🎉</p>
               <p className="mt-2 text-lg text-white/85"><b style={{ color: GREEN }}>{flight.name}</b> gets $50 off their lights</p>
               <p className="mt-3 text-2xl font-extrabold" style={{ color: GREEN }}>Keep it up!</p>
+              <p className="mt-8 text-sm text-white/60">Tap anywhere to send another{countdown > 0 ? ` · ${countdown}` : ''}</p>
             </div>
             {/* confetti bursts out right as it takes off */}
             {Array.from({ length: 30 }, (_, i) => {
