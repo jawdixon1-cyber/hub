@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, ShoppingCart, ImagePlus, ExternalLink, Phone, MessageSquare, Pencil } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
+import { Link } from 'react-router-dom';
 import { PlanOverlay, OutletMarks } from './LightsMarkup';
 import { supabase } from '../lib/supabase';
 import { STARTER_SUPPLIES, STYLE_LABEL, quoteMaterials, quoteFeet, packPlan } from '../lib/lightsMaterials';
@@ -1676,6 +1677,8 @@ export default function LightsBusiness({ view, onOpen = null }) {
                       {qq.planLocked ? '🔒 Locked · Unlock' : '🔓 Lock plan + materials'}
                     </button>
                     {qq.crewToken && <a href={`/crew/${qq.crewToken}`} target="_blank" rel="noreferrer" className={btn}>👀 Team view</a>}
+                    {/* Same presentation as the quote's last step */}
+                    <Link to={`/lights-presentation/${qq.id}`} className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white hover:brightness-110 cursor-pointer" style={{ background: '#B3121F' }}>🎄 Present</Link>
                     {!j.saved.fromQuote && !j.saved.installed && <span className="text-xs text-yellow-300">Materials here are the job's own list. The quote's Materials step is empty, so its plugs/timer there are just defaults.</span>}
                     {j.saved?.quoteId && <button onClick={() => patchJob(j, { quoteId: null })} title={`Linked to ${qq.clientInfo?.name || qq.client}`} className="text-xs text-muted hover:text-primary underline cursor-pointer">Wrong quote? Unlink</button>}
                   </div>
