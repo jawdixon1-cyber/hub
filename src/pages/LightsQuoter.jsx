@@ -39,30 +39,35 @@ function StepHead({ title, sub }) {
   );
 }
 // Each roof line's feet, mount and wire color (Mark up) — materials count clips + wire line by line.
-// Clip color: picked per line, else white on gutters / guard (matches the gutter), wire color on shingle / metal.
+// Clip color: picked per line, else white on gutters (matches the gutter), wire color on gutter guard / shingle / metal.
 const runsOf = (angles, wire) => angles.flatMap((a) => (a.lines || []).map((l) => {
   const mount = l.mount || 'gutter';
   const w = l.color || wire;
-  return { ft: Number(l.feet) || 0, mount, wire: w, clip: l.clip || (mount === 'gutter' || mount === 'guard' ? 'white' : w) };
+  return { ft: Number(l.feet) || 0, mount, wire: w, clip: mount === 'shingle' || mount === 'guard' ? 'black' : l.clip === 'black' ? 'black' : 'white' }; // shingle tabs always black; gutter clips white unless set black (black gutters)
 }));
 
 // Zip (jump) lines measured in Measure: feet + color for zip cord.
 const zipsOf = (angles) => angles.flatMap((a) => (a.jumps || []).map((j) => ({ ft: Number(j.feet) || 0, color: j.color || 'white' })));
 
 const WIZARD = ['', 'Discovery', 'Photos', 'Plan', 'Measure', 'Difficulty', 'Extras', 'Materials', 'Lights', 'Mockup', 'Dates', 'Present'];
+// The order you walk the steps in. Step numbers stay the same (saved confirmations use them);
+// Materials (7) is shown inside Plan (3): one step, one lock, one Confirm (2026-11-12).
+const STEP_ORDER = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11]; // Materials (7) lives inside Plan (3) now
+const nextStep = (n) => STEP_ORDER[STEP_ORDER.indexOf(n) + 1];
+const prevStep = (n) => STEP_ORDER[STEP_ORDER.indexOf(n) - 1];
 // Back / Next at the bottom of each wizard step.
 function StepNav({ step, onGo, ok, changed, onConfirm, onUndo }) {
-  const next = WIZARD[step + 1];
+  const next = WIZARD[nextStep(step)];
   return (
     <div className="flex items-center gap-3 pt-2">
-      {step > 1 && (
-        <button onClick={() => onGo(step - 1)} className="rounded-xl border border-border-strong px-5 py-3 text-sm font-semibold text-secondary hover:text-primary cursor-pointer">← {WIZARD[step - 1]}</button>
+      {prevStep(step) && (
+        <button onClick={() => onGo(prevStep(step))} className="rounded-xl border border-border-strong px-5 py-3 text-sm font-semibold text-secondary hover:text-primary cursor-pointer">← {WIZARD[prevStep(step)]}</button>
       )}
       {ok ? (
         <>
           <span className="ml-auto inline-flex items-center gap-1.5 text-sm font-bold text-brand-text">✓ Confirmed</span>
           <button onClick={onUndo} className="text-xs text-muted hover:text-primary cursor-pointer">Undo</button>
-          {next && <button onClick={() => onGo(step + 1)} className="rounded-xl border border-border-brand px-5 py-3 text-base font-bold text-brand-text hover:bg-brand-light cursor-pointer">Next: {next} →</button>}
+          {next && <button onClick={() => onGo(nextStep(step))} className="rounded-xl border border-border-brand px-5 py-3 text-base font-bold text-brand-text hover:bg-brand-light cursor-pointer">Next: {next} →</button>}
         </>
       ) : (
         <button onClick={onConfirm} className="ml-auto rounded-xl bg-brand px-6 py-3 text-base font-bold text-on-brand hover:bg-brand-hover cursor-pointer">
@@ -159,8 +164,9 @@ export default function LightsQuoter() {
   // Main views: all quotes (default), one quote, supplies
   const [view, setView] = useState(() => params.get('view') || (params.get('q') ? 'quote' : 'quotes'));
   const [editing, setEditing] = useState(() => !!params.get('q')); // Quotes tab: gallery vs one open quote
-  const [wstep, setWstep] = useState(1); // quote wizard step 1–8
-  const goStep = (n) => { setWstep(n); window.scrollTo({ top: 0, behavior: 'smooth' }); document.querySelector('main')?.scrollTo?.({ top: 0, behavior: 'smooth' }); };
+  const [wstep, setWstep] = useState(() => { const st = (params.get('q') && Math.min(11, Math.max(1, Number(params.get('step')) || 1))) || 1; return st === 7 ? 3 : st; }); // quote wizard step; a reload stays on it (?step=)
+  const goStep = (n) => { setWstep(n === 7 ? 3 : n); // Materials is inside Plan
+    window.scrollTo({ top: 0, behavior: 'smooth' }); document.querySelector('main')?.scrollTo?.({ top: 0, behavior: 'smooth' }); };
   const [angles, setAngles] = useState([EMPTY_SIDE]);
   const [previews, setPreviews] = useState([]); // finished show photos for the client
   const [quoted, setQuoted] = useState(''); // what Jude actually quoted / sold it for
@@ -180,6 +186,7 @@ export default function LightsQuoter() {
   const [linesOk, setLinesOk] = useState(''); // plan as it was when you confirmed where the lights go
   const [stepsOk, setStepsOk] = useState({});
   const [customColor, setCustomColor] = useState(''); // what 'Custom' means, typed in Discovery
+  const [planLocked, setPlanLocked] = useState(false); // Plan step locked: lines can't be drawn, moved or deleted
   const [crewToken, setCrewToken] = useState(''); // secret for the no-login Crew view link
   const [crewCopied, setCrewCopied] = useState(false);
   const [extras, setExtras] = useState([]); // columns, railings, trees, bushes… [{ id, side, x, y, type, run, around, wraps, width, strands, label }] // { stepNumber: true } — confirmed steps (6 + 7 use matOk / linesOk so changes un-confirm)
@@ -193,7 +200,10 @@ export default function LightsQuoter() {
   const autosaveTimer = useRef(null);
   const [lastSaved, setLastSaved] = useState(null);
 
-  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, customColor, savedId });
+  // A locked plan locks its materials too: no quantity or wire-color changes until it's unlocked.
+  const matSet = planLocked ? () => {} : setMaterials;
+  const wireSet = planLocked ? () => {} : setWire;
+  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, customColor, planLocked, savedId });
   // The cloud version this device is working from — if another device saves after it,
   // this device's copy is stale and must not overwrite (that's how removed photos came back).
   const baseSaved = useRef('');
@@ -224,6 +234,7 @@ export default function LightsQuoter() {
     setExtras(d.extras || []);
     setCrewToken(d.crewToken || '');
     setCustomColor(d.customColor || '');
+    setPlanLocked(!!d.planLocked);
     if (d.style) setStyle(d.style);
     setSavedId(d.savedId ?? (d.id && d.id !== DRAFT_ID ? d.id : null));
   };
@@ -258,9 +269,9 @@ export default function LightsQuoter() {
     if (!loaded) return;
     const next = {};
     if (view !== 'quotes') next.view = view;
-    if (view === 'quote' && editing && savedId) next.q = savedId;
+    if (view === 'quote' && editing && savedId) { next.q = savedId; if (wstep > 1) next.step = String(wstep); }
     setParams(next, { replace: true });
-  }, [loaded, savedId, view, editing, setParams]);
+  }, [loaded, savedId, view, editing, wstep, setParams]);
 
   // Fresh list whenever the gallery shows.
   useEffect(() => { if (view === 'quote' && !editing) refreshList(); }, [view, editing]);
@@ -271,7 +282,7 @@ export default function LightsQuoter() {
   // Only save when something actually changed. The fingerprint skips the big photo
   // data (length only), so it's cheap; opening a quote just records its fingerprint.
   const lastSig = useRef('');
-  const sigNow = () => JSON.stringify([client, clientInfo?.id, feet, strands, count, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto?.length || 0, nightPhoto?.length || 0, disc, installDate, takedownDate, matOk, linesOk.length, stepsOk, extras, crewToken, customColor, savedId,
+  const sigNow = () => JSON.stringify([client, clientInfo?.id, feet, strands, count, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto?.length || 0, nightPhoto?.length || 0, disc, installDate, takedownDate, matOk, linesOk.length, stepsOk, extras, crewToken, customColor, planLocked, savedId,
     angles.map(({ plain, marked, ai, ...rest }) => [plain?.length || 0, marked?.length || 0, ai?.image?.length || 0, rest]),
     previews.map((x) => [x.id, x.image?.length || 0])]);
   useEffect(() => {
@@ -310,7 +321,7 @@ export default function LightsQuoter() {
       }
     }, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, customColor, savedId]);
+  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, customColor, planLocked, savedId]);
 
   useEffect(() => {
     localStorage.setItem(PRICES_KEY, JSON.stringify(prices));
@@ -338,13 +349,14 @@ export default function LightsQuoter() {
   // Step confirms. Materials (6) and Lights (7) remember what they looked like, so a change un-confirms them.
   const matSig = JSON.stringify(Object.entries(materials || {}).filter(([, v]) => Number(v) > 0).sort());
   const linesSig = JSON.stringify(angles.map((a) => [a.lines || [], a.jumps || [], a.outlets || []]));
-  const isOk = (n) => (n === 7 ? !!matOk && matOk === matSig : n === 8 ? !!linesOk && linesOk === linesSig : !!stepsOk[n]);
+  const isOk = (n) => (n === 7 ? !!matOk && matOk === matSig : n === 3 ? !!stepsOk[3] && !!matOk && matOk === matSig : n === 8 ? !!linesOk && linesOk === linesSig : !!stepsOk[n]);
   const confirmStep = (n) => {
     if (n === 7) setMatOk(matSig); else if (n === 8) setLinesOk(linesSig); else setStepsOk((o) => ({ ...o, [n]: true }));
-    if (n < 11) goStep(n + 1);
+    if (n === 3) setMatOk(matSig); // Plan's Confirm also confirms its materials
+    if (nextStep(n)) goStep(nextStep(n));
   };
-  const unconfirm = (n) => { if (n === 7) setMatOk(''); else if (n === 8) setLinesOk(''); else setStepsOk((o) => { const c = { ...o }; delete c[n]; return c; }); };
-  const nav = (n) => <StepNav step={n} onGo={goStep} ok={isOk(n)} changed={(n === 7 && !!matOk) || (n === 8 && !!linesOk)} onConfirm={() => confirmStep(n)} onUndo={() => unconfirm(n)} />;
+  const unconfirm = (n) => { if (n === 3) setMatOk(''); if (n === 7) setMatOk(''); else if (n === 8) setLinesOk(''); else setStepsOk((o) => { const c = { ...o }; delete c[n]; return c; }); };
+  const nav = (n) => <StepNav step={n} onGo={goStep} ok={isOk(n)} changed={((n === 7 || n === 3) && !!matOk) || (n === 8 && !!linesOk)} onConfirm={() => confirmStep(n)} onUndo={() => unconfirm(n)} />;
   // Reorder photos; Extras markers follow their photo.
   const moveSide = (from, to) => {
     const order = angles.map((_, i) => i);
@@ -443,7 +455,7 @@ export default function LightsQuoter() {
 
       {view !== 'quote' && (
         <>
-          <LightsBusiness view={view} onNew={view === 'quotes' ? () => { reset(); setView('quote'); setEditing(true); } : null} onOpen={async (id) => { await openQuote(id); setView('quote'); setEditing(true); }} />
+          <LightsBusiness view={view} onNew={view === 'quotes' ? () => { reset(); setView('quote'); setEditing(true); } : null} onOpen={async (id, step) => { await openQuote(id); if (step) setWstep(step); setView('quote'); setEditing(true); }} />
         </>
       )}
 
@@ -595,7 +607,6 @@ export default function LightsQuoter() {
           [4, 'Measure', lines.length > 0 && lines.every((l) => Number(l.feet) > 0)],
           [5, 'Difficulty', q.roof > 0],
           [6, 'Extras', extras.length > 0],
-          [7, 'Materials', Object.values(materials || {}).some((v) => Number(v) > 0)],
           [8, 'Lights', !!linesOk],
           [9, 'Mockup', previews.length > 0],
           [10, 'Dates', !!installDate && !!takedownDate],
@@ -604,10 +615,11 @@ export default function LightsQuoter() {
         return (
           <div className="sticky top-0 z-30 -mx-2 mt-4 px-2 py-2 bg-surface/95 backdrop-blur">
           <div className="flex sm:grid sm:grid-cols-11 gap-0.5 overflow-x-auto rounded-xl border border-border-default bg-card p-1 shadow-lg">
-            {tabs.map(([n, label]) => (
+            {tabs.map(([n, label], ti) => (
               <button key={n} onClick={() => goStep(n)}
                 className={`min-w-[66px] sm:min-w-0 shrink-0 flex flex-col items-center justify-center gap-1 rounded-lg px-0.5 py-1.5 text-[11px] leading-none font-semibold cursor-pointer transition-colors ${wstep === n ? 'bg-surface-alt text-primary' : isOk(n) ? 'text-brand-text' : 'text-muted hover:text-primary'}`}>
-                <span className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold ${isOk(n) ? 'bg-brand text-on-brand' : wstep === n ? 'bg-primary text-surface' : 'bg-surface-alt text-muted'}`}>{isOk(n) ? '✓' : n}</span>
+                {/* Locked plan → Plan + Materials show a lock */}
+                <span className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold ${planLocked && n === 3 ? 'bg-yellow-400 text-black' : isOk(n) ? 'bg-brand text-on-brand' : wstep === n ? 'bg-primary text-surface' : 'bg-surface-alt text-muted'}`}>{planLocked && n === 3 ? '🔒' : isOk(n) ? '✓' : ti + 1}</span>
                 <span className="max-w-full truncate">{label}</span>
               </button>
             ))}
@@ -657,7 +669,7 @@ export default function LightsQuoter() {
           <div className={`rounded-xl border border-border-default bg-card p-4 space-y-3`}>
             <StepHead n={2} title="Questionnaire" sub="Their answers, then your picks." />
             <div className="space-y-3">
-              <QuoteMaterialsCard part="questions" start={1} only={['power', 'design']} value={materials} onChange={setMaterials} notes={matNotes} onNotes={setMatNotes} wire={wire} onWire={setWire} power={power} onPower={setPower} powerPhoto={powerPhoto} onPowerPhoto={setPowerPhoto} quote={{ feet, style, count, strands: strandCount, materials, wire, mountFt, runs: runsOf(angles, wire), zips: zipsOf(angles), peaks: angles.reduce((t, x) => t + (x.peaks || []).length, 0) }} designs={DESIGNS} design={style} onDesign={setStyle} customColor={customColor} onCustomColor={setCustomColor} />
+              <QuoteMaterialsCard part="questions" start={1} only={['power', 'design']} value={materials} onChange={matSet} notes={matNotes} onNotes={setMatNotes} wire={wire} onWire={wireSet} power={power} onPower={setPower} powerPhoto={powerPhoto} onPowerPhoto={setPowerPhoto} quote={{ feet, style, count, strands: strandCount, materials, wire, mountFt, runs: runsOf(angles, wire), zips: zipsOf(angles), peaks: angles.reduce((t, x) => t + (x.peaks || []).length, 0) }} designs={DESIGNS} design={style} onDesign={setStyle} customColor={customColor} onCustomColor={setCustomColor} />
               <div className="rounded-xl border border-border-default bg-surface-alt/30 p-4 space-y-3">
                 <p className="flex items-center gap-2.5 text-base font-semibold text-primary">
                   <span className="w-6 h-6 shrink-0 rounded-full bg-surface-alt text-xs font-bold text-secondary flex items-center justify-center">3</span>
@@ -676,7 +688,7 @@ export default function LightsQuoter() {
                 </div>
               </div>
               {/* Your picks — wire, plugs, timer (swaps the materials to match) */}
-              <QuoteMaterialsCard part="questions" start={4} only={['timer']} value={materials} onChange={setMaterials} notes={matNotes} onNotes={setMatNotes} wire={wire} onWire={setWire} power={power} onPower={setPower} quote={{ feet, style, count, strands: strandCount, materials, wire, mountFt, runs: runsOf(angles, wire), zips: zipsOf(angles), peaks: angles.reduce((t, x) => t + (x.peaks || []).length, 0) }} />
+              <QuoteMaterialsCard part="questions" start={4} only={['timer']} value={materials} onChange={matSet} notes={matNotes} onNotes={setMatNotes} wire={wire} onWire={wireSet} power={power} onPower={setPower} quote={{ feet, style, count, strands: strandCount, materials, wire, mountFt, runs: runsOf(angles, wire), zips: zipsOf(angles), peaks: angles.reduce((t, x) => t + (x.peaks || []).length, 0) }} />
             </div>
           </div>
           </>
@@ -693,9 +705,13 @@ export default function LightsQuoter() {
       </div>
       <div className={wstep === 3 ? 'space-y-5' : 'hidden'}>
       {/* Measure & rate, price per foot, total */}
-      <div id="step-5" className="scroll-mt-32"><LightsMeasurePhotos angles={angles} setAngles={setAngles} onApply={(t) => setFeet({ easy: t.easy ? String(t.easy) : '', medium: t.medium ? String(t.medium) : '', hard: t.hard ? String(t.hard) : '' })} /></div>
-
-        {nav(3)}
+      {/* Lock the plan so a stray tap can't draw, move or delete lines */}
+      <div className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${planLocked ? 'border-yellow-500/40 bg-yellow-500/10' : 'border-border-default bg-card'}`}>
+        <p className="text-sm text-secondary">{planLocked ? <><b className="text-yellow-300">🔒 Plan locked</b> — lines and materials can't be changed.</> : <><b className="text-primary">🔓 Plan unlocked</b> — lock it when the lines are right.</>}</p>
+        <button onClick={() => setPlanLocked((v) => !v)} className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer ${planLocked ? 'bg-surface-alt text-primary hover:bg-surface' : 'bg-yellow-400 text-black hover:bg-yellow-300'}`}>{planLocked ? 'Unlock' : 'Lock plan'}</button>
+      </div>
+      <div id="step-5" className={`scroll-mt-32 ${planLocked ? 'pointer-events-none select-none' : ''}`}><LightsMeasurePhotos angles={angles} setAngles={planLocked ? () => {} : setAngles} onMove={planLocked ? () => {} : moveSide} onApply={(t) => setFeet({ easy: t.easy ? String(t.easy) : '', medium: t.medium ? String(t.medium) : '', hard: t.hard ? String(t.hard) : '' })} /></div>
+        {/* Materials + the Confirm button show right below (the Materials block renders on the Plan step) */}
       </div>
       <div className={wstep === 4 ? 'space-y-5' : 'hidden'}>
       {/* Measure: log each line's feet */}
@@ -795,8 +811,8 @@ export default function LightsQuoter() {
       <LightsExtras angles={angles} extras={extras} setExtras={setExtras} perStrand={prices.perStrand} setPerStrand={setPrice('perStrand')} />
         {nav(6)}
       </div>
-      <div className={wstep === 7 ? 'space-y-5' : 'hidden'}>
-      {/* Materials */}
+      <div className={wstep === 3 ? 'space-y-5' : 'hidden'}>
+      {/* Materials — part of the Plan step */}
       {(() => {
         // Gutter vs shingle feet from the lines drawn on every side.
         const mountFt = { gutter: 0, guard: 0, shingle: 0, magnet: 0 };
@@ -811,19 +827,20 @@ export default function LightsQuoter() {
         const zipFt = sum(zips, () => true);
         const byColor = (arr, key, test = () => true) => ['white', 'black', 'green'].map((c) => [c, sum(arr, (r) => test(r) && (r[key] || 'white') === c)]).filter(([, f]) => f > 0);
         const colors = (pairs, unit = '') => pairs.map(([c, f]) => `${Math.ceil(f)}${unit} ${c}`).join(' · ');
-        const isFlex = (r) => r.mount === 'gutter' || r.mount === 'guard';
+        const isFlex = (r) => r.mount === 'gutter';
+        const isTab = (r) => r.mount === 'shingle' || r.mount === 'guard'; // gutter guard → shingle tabs
         const nm = (re) => (it) => re.test(it?.name || '');
         // Each group: what the plan needs (want = the number the items should add up to), then its items.
         const L = Math.ceil(lightsFt);
         const clipParts = [
-          ['flex', isFlex], ['shingle tab', (r) => r.mount === 'shingle'], ['magnet', (r) => r.mount === 'magnet'],
-        ].flatMap(([name, f]) => byColor(runs, 'clip', f).map(([c, ft]) => `${Math.ceil(ft)} ${name}${name === 'magnet' ? '' : ` ${c}`}`));
+          ['flex', isFlex], ['shingle tab', isTab], ['magnet', (r) => r.mount === 'magnet'],
+        ].flatMap(([name, f]) => byColor(runs, 'clip', f).map(([c, ft]) => `${Math.ceil(ft)} ${name === 'flex' && c === 'black' ? 'best clip' : name}${name === 'magnet' ? '' : ` ${c}`}`)); // black gutters use the black C9 Best Clip (no black flex clip)
         // Sections: everything that runs the length of the lights adds up to the same feet.
         const lightsSec = `Lights · ${r1(lightsFt)} ft`;
         const groups = [
           { section: lightsSec, label: 'Bulbs', amt: `${L}`, detail: '1 per ft', want: L, test: (it) => kindOf(it) === 'bulb' },
           { section: lightsSec, label: 'Socket wire', amt: `${L} ft`, detail: colors(byColor(runs, 'wire'), ' ft'), want: L, test: nm(/socket\s*wire/i) },
-          { section: lightsSec, label: 'Clips', amt: `${L}`, detail: clipParts.join(' · '), want: L, test: nm(/flex|shingle tab|magnet/i) },
+          { section: lightsSec, label: 'Clips', amt: `${L}`, detail: clipParts.join(' · '), want: L, test: (it) => /clip|shingle tab/i.test(it?.name || '') && !(peaks > 0 && /\bo\s*clips?\b/i.test(it?.name || '')) }, // any clip (flex, tab, magnet, all-in-one); O clips get their own row when there are peaks
           { section: lightsSec, label: 'O clips', amt: `${peaks}`, detail: '+1 per peak', want: peaks, test: nm(/\bo\s*clips?\b/i), show: peaks > 0 },
           { section: `Zip cord · ${zipFt > 0 ? `${r1(zipFt)} ft` : '50 ft'}`, label: 'Zip cord', amt: zipFt > 0 ? `${Math.ceil(zipFt)} ft` : '50 ft', detail: zipFt > 0 ? colors(byColor(zips, 'color'), ' ft') : 'no zip lines measured — default', want: zipFt > 0 ? Math.ceil(zipFt) : 50, test: nm(/zip/i) },
           { section: `Extras · ${extras.length} item${extras.length === 1 ? '' : 's'}`, label: 'Mini strands', amt: `${strandCount}`, detail: `${EXTRA_STRAND_FT} ft each · columns, railings, trees, bushes`, want: strandCount, test: (it) => kindOf(it) === 'mini', show: strandCount > 0 },
@@ -833,13 +850,16 @@ export default function LightsQuoter() {
         return (
           <div className="rounded-xl border border-border-default bg-card p-4 space-y-4">
             <StepHead n={8} title="Materials" sub="Each thing your plan needs, with the items for it right under it." />
-            <QuoteMaterialsCard part="materials" quoteId={savedId} groups={groups} value={materials} onChange={setMaterials} notes={matNotes} onNotes={setMatNotes} wire={wire} onWire={setWire} power={power} onPower={setPower} quote={{ feet, style, count, strands: strandCount, materials, wire, mountFt, runs: runsOf(angles, wire), zips: zipsOf(angles), peaks: angles.reduce((t, x) => t + (x.peaks || []).length, 0) }} />
+            {planLocked && <p className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-300">🔒 Plan locked — materials are locked too. Unlock at the top of this step (or uncheck the job) to change them.</p>}
+            <div className={planLocked ? 'pointer-events-none select-none opacity-80' : ''}>
+            <QuoteMaterialsCard part="materials" quoteId={savedId} groups={groups} value={materials} onChange={matSet} notes={matNotes} onNotes={setMatNotes} wire={wire} onWire={wireSet} power={power} onPower={setPower} quote={{ feet, style, count, strands: strandCount, materials, wire, mountFt, runs: runsOf(angles, wire), zips: zipsOf(angles), peaks: angles.reduce((t, x) => t + (x.peaks || []).length, 0) }} />
+            </div>
           </div>
         );
       })()}
 
 
-        {nav(7)}
+        {nav(3)}
       </div>
       <div className={wstep === 8 ? 'space-y-5' : 'hidden'}>
       {/* Where the lights go — confirm what the presentation will show */}
@@ -903,12 +923,12 @@ export default function LightsQuoter() {
       {/* Crew view: send the team the plan + materials */}
       <div className="rounded-xl border border-border-default bg-card p-4 flex items-center gap-3 flex-wrap">
         <div className="flex-1 min-w-[200px]">
-          <p className="text-base font-bold text-primary">Crew link</p>
+          <p className="text-base font-bold text-primary">Team view</p>
           <p className="text-xs text-muted">The plan (with feet) + materials for your team. No login, no prices.</p>
           {crewCopied && <p className="text-xs text-brand-text mt-1 break-all">Copied: {crewCopied}</p>}
         </div>
         <button onClick={crewLink} disabled={!savedId} title={savedId ? '' : 'Pick the client first so the quote saves'} className="rounded-xl bg-brand text-on-brand px-5 py-3 text-base font-bold hover:bg-brand-hover disabled:opacity-40 cursor-pointer">
-          {crewCopied ? '✓ Link copied' : '📋 Copy crew link'}
+          {crewCopied ? '✓ Link copied' : '📋 Copy team view link'}
         </button>
         {crewToken && <a href={`/crew/${crewToken}`} target="_blank" rel="noreferrer" className="text-sm text-secondary underline hover:text-primary">Open</a>}
       </div>

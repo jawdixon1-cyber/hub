@@ -78,6 +78,7 @@ const STATE_KEYS = [
   { key: 'lightsColdLeads',     supaKey: 'greenteam-lightsColdLeads',     initial: [] }, // Christmas lights: people Jude wants to reach out to (ordered by priority)
   { key: 'lightsOrders',        supaKey: 'greenteam-lightsOrders',        initial: [] }, // Christmas lights: real supply receipts (record only)
   { key: 'lightsJobs',          supaKey: 'greenteam-lightsJobs',          initial: {} }, // Christmas lights jobs: materials per Jobber job, installed or not
+  { key: 'lightsReturns',       supaKey: 'greenteam-lightsReturns',       initial: [] }, // Christmas lights: supplies being sent back for a refund
   { key: 'receiptLog',          supaKey: 'greenteam-receiptLog',          initial: initialReceiptLog },
   { key: 'ownerNotes',          supaKey: 'greenteam-ownerNotes',          initial: '' },
   { key: 'ownerSchedule',       supaKey: 'greenteam-ownerSchedule',       initial: { sales: { start: '07:00', end: '09:00' }, build: { start: '09:00', end: '11:00' }, delegate: { start: '11:00', end: '12:00' } } },
@@ -145,7 +146,9 @@ function seedMissingGuides(guides, allInitialGuides) {
 
 // Keys saved by merging with the cloud copy instead of overwriting it, so two tabs/devices
 // editing different clients or campaign cards don't wipe each other's changes.
-const MERGE_KEYS = new Set(['greenteam-planNotes', 'greenteam-planCampaigns', 'greenteam-planManual']);
+const MERGE_KEYS = new Set(['greenteam-planNotes', 'greenteam-planCampaigns', 'greenteam-planManual',
+  // Lights: an open tab with an old copy was overwriting newer edits (lost a shingle-tab rule + an item delete, 2026-11-12).
+  'greenteam-lightsSupplies', 'greenteam-lightsOrders', 'greenteam-lightsJobs', 'greenteam-lightsReturns']);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 const byId = (arr) => Array.isArray(arr) && arr.every((x) => isObj(x) && x.id != null);

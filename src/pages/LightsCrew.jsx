@@ -47,7 +47,7 @@ export default function LightsCrew() {
 
   useEffect(() => {
     fetch(`/api/app-state?key=lights-crew&token=${encodeURIComponent(token)}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status === 404 ? 'This crew link isn’t valid anymore.' : 'Couldn’t load the job.'))))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status === 404 ? 'This team link isn’t valid anymore.' : 'Couldn’t load the job.'))))
       .then(setJob)
       .catch((e) => setError(e.message));
   }, [token]);
@@ -91,7 +91,7 @@ export default function LightsCrew() {
         <header className="space-y-3">
           <div className="flex items-center justify-between">
             <img src="/holiday-logo.png" alt="Hey Jude's" className="h-9 w-auto" />
-            <span className="rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide text-black" style={{ background: GREEN }}>Crew view</span>
+            <span className="rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide text-black" style={{ background: GREEN }}>Team view</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold leading-tight break-words capitalize">{job.client}</h1>
           {job.address && (

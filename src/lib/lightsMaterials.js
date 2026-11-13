@@ -80,7 +80,7 @@ export function quoteMaterials(q, items) {
     Object.entries(splitPattern(ft, pattern.map((p) => ({ id: p.it.id, n: p.n })))).forEach(([id, qty]) => { out[id] = (out[id] || 0) + qty; });
     const allInOne = items.find((it) => kindOf(it) === 'clip' && /all.?(purpose|in.?one)/i.test(it.name)) || items.find((it) => kindOf(it) === 'clip');
     // Per line (from Mark up): each line's wire color + mount → its socket wire and clips.
-    // gutter → flex clip, gutter guard → flex clip (slid under the shingle), shingle → shingle tab, metal → magnet clip;
+    // gutter → flex clip, gutter guard → shingle tab (the guard covers the gutter), shingle → shingle tab, metal → magnet clip;
     // clips in the line's wire color when that color is stocked.
     const runs = (q?.runs || []).filter((r) => n(r.ft) > 0);
     const runSum = runs.reduce((t, r) => t + n(r.ft), 0);
@@ -95,11 +95,12 @@ export function quoteMaterials(q, items) {
       runs.forEach((r) => {
         const c = tone(r.wire);
         put(findItem(items, colorRe(c), 'wire') || items.find((it) => kindOf(it) === 'wire'), n(r.ft) * k);
-        // Clips can differ from the wire (black wire on a white gutter → white clips).
-        const cc = tone(r.clip || r.wire);
+        // Clips (final, 2026-11-12): shingle tabs are always BLACK; gutters white flex, or black C9 Best Clip on black gutters; O clips white.
+        const cc = r.mount === 'shingle' || r.mount === 'guard' ? 'black' : r.clip === 'black' ? 'black' : 'white';
         const clip = r.mount === 'magnet' ? pick(/magnet/i, cc)
-          : r.mount === 'shingle' ? pick(/shingle tab/i, cc)
-          : pick(/flex/i, cc); // gutter + gutter guard
+          : r.mount === 'shingle' || r.mount === 'guard' ? pick(/shingle tab/i, cc)
+          : cc === 'black' ? clips.find((it) => /best clip/i.test(it.name) && /black/i.test(it.name)) || pick(/flex/i, cc) // black gutters → black C9 Best Clip (no black flex at Lights at Wholesale)
+          : pick(/flex/i, cc); // gutter
         put(clip || allInOne, n(r.ft) * k);
       });
       Object.entries(acc).forEach(([id, qty]) => add({ id }, qty));
@@ -108,25 +109,24 @@ export function quoteMaterials(q, items) {
     add(findItem(items, q?.wire === 'black' ? /black/i : /white/i, 'wire') || items.find((it) => kindOf(it) === 'wire'), ft);
     // Clips: gutter lines → flex clips, shingle lines → shingle tabs (wire color).
     // No line tags (older quotes) → all-in-one clips for everything.
-    const mountSum = q?.mountFt ? n(q.mountFt.gutter) + n(q.mountFt.shingle) + n(q.mountFt.magnet) : 0;
+    const tabFt = q?.mountFt ? n(q.mountFt.shingle) + n(q.mountFt.guard) : 0; // gutter guard → shingle tabs
+    const mountSum = q?.mountFt ? n(q.mountFt.gutter) + tabFt + n(q.mountFt.magnet) : 0;
     if (mountSum > 0) {
       const scale = ft / mountSum; // keep clips = bulbs
       // Metal roofs → magnet clips.
       if (n(q.mountFt.magnet) > 0) add(items.find((it) => kindOf(it) === 'clip' && /magnet/i.test(it.name)) || allInOne, n(q.mountFt.magnet) * scale);
-      add(items.find((it) => kindOf(it) === 'clip' && /flex/i.test(it.name)) || allInOne, n(q.mountFt.gutter) * scale);
-      const tabColor = q?.wire === 'black' ? /black/i : /white/i;
+      add(items.find((it) => kindOf(it) === 'clip' && /flex/i.test(it.name) && /white/i.test(it.name)) || items.find((it) => kindOf(it) === 'clip' && /flex/i.test(it.name)) || allInOne, n(q.mountFt.gutter) * scale);
+      const tabColor = /black/i; // shingle tabs are always black
       add(items.find((it) => kindOf(it) === 'clip' && /shingle tab/i.test(it.name) && tabColor.test(it.name))
-        || items.find((it) => kindOf(it) === 'clip' && /shingle tab/i.test(it.name)) || allInOne, n(q.mountFt.shingle) * scale);
+        || items.find((it) => kindOf(it) === 'clip' && /shingle tab/i.test(it.name)) || allInOne, tabFt * scale);
     } else {
       add(allInOne, ft);
     }
     }
     // Peaks marked on the photos → one O clip each.
-    // O clips in the clip color used most (by feet); falls back to any O clip, then flex.
+    // O clips: white; falls back to any O clip, then flex.
     if (n(q?.peaks) > 0) {
-      const ftBy = { white: 0, black: 0, green: 0 };
-      (q?.runs || []).forEach((r) => { const k = r.clip || r.wire; ftBy[k === 'black' || k === 'green' ? k : 'white'] += n(r.ft); });
-      const pc = (q?.runs || []).length ? Object.entries(ftBy).sort((a, b) => b[1] - a[1])[0][0] : (q?.wire === 'black' ? 'black' : 'white');
+      const pc = 'white';
       const oClips = items.filter((it) => kindOf(it) === 'clip' && /\bo\s*clips?\b/i.test(it.name));
       add(oClips.find((it) => (pc === 'black' ? /black/i : pc === 'green' ? /green/i : /white/i).test(it.name)) || oClips[0] || items.find((it) => kindOf(it) === 'clip' && /flex/i.test(it.name)) || allInOne, n(q.peaks));
     }

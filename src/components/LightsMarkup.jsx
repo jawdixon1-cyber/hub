@@ -43,11 +43,9 @@ function pitchFromLine(pts) {
 // A line is a run of points: { pts: [{x,y}, ...], feet, level }. Older
 // straight lines ({x1,y1,x2,y2}) are converted on the way in.
 const ptsOf = (l) => l.pts || [{ x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 }];
-// mount: 'gutter' (flex clips), 'guard' (gutter guard → flex clips under the shingle), 'shingle' (shingle tabs) or 'magnet' (metal roofs). Older lines = gutter.
-const MOUNTS = [['gutter', 'Gutter', 'flex clips'], ['guard', 'Gutter guard', 'flex clips under the shingle'], ['shingle', 'Shingle', 'shingle tabs'], ['magnet', 'Magnet', 'magnet clips (metal roof)']];
+// mount: 'gutter' (flex clips), 'guard' (gutter guard → shingle tabs, since the guard covers the gutter), 'shingle' (shingle tabs) or 'magnet' (metal roofs). Older lines = gutter.
+const MOUNTS = [['gutter', 'Gutter', 'flex clips'], ['guard', 'Gutter guard', 'shingle tabs (guard covers the gutter)'], ['shingle', 'Shingle', 'shingle tabs'], ['magnet', 'Magnet', 'magnet clips (metal roof)']];
 const normalize = (l) => ({ feet: l.feet, level: l.level, mount: l.mount || 'gutter', pts: ptsOf(l), ...(l.color ? { color: l.color } : {}), ...(l.clip ? { clip: l.clip } : {}) });
-// Clip color: picked per line; otherwise white on gutters (to match the gutter), wire color on shingles/metal.
-const clipOf = (l) => l.clip || ((l.mount || 'gutter') === 'gutter' || l.mount === 'guard' ? 'white' : l.color || 'white');
 
 // Plan colors (Mark up step): wire color of each roof line and each zip (jump) line — white or black.
 const ZIP_COLORS = [['white', 'White', '#FFFFFF'], ['black', 'Black', '#111111'], ['green', 'Green', '#1F7A35']];
@@ -495,8 +493,9 @@ export default function LightsMarkup({ photo, initialLines = [], initialScale = 
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); return; }
       if (e.key === 'Escape') { setSel(-1); setSelJump(-1); }
       if (!typing && nav && !dragPlug && !grab && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); goSection(e.key === 'ArrowLeft' ? -1 : 1); return; }
-      if ((e.key === 'Backspace' || e.key === 'Delete') && sel >= 0 && document.activeElement !== feetRef.current) remove();
-      if ((e.key === 'Backspace' || e.key === 'Delete') && selJump >= 0 && !typing) { snap(); setJumps((js) => js.filter((_, k) => k !== selJump)); setSelJump(-1); }
+      // Delete key removes a line only while drawing the plan — on Measure/Difficulty a stray Backspace (fixing feet) wiped whole lines.
+      if ((e.key === 'Backspace' || e.key === 'Delete') && drawing && sel >= 0 && !typing && document.activeElement !== feetRef.current) remove();
+      if ((e.key === 'Backspace' || e.key === 'Delete') && drawing && selJump >= 0 && !typing) { snap(); setJumps((js) => js.filter((_, k) => k !== selJump)); setSelJump(-1); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -581,7 +580,7 @@ export default function LightsMarkup({ photo, initialLines = [], initialScale = 
         {scaleMode ? (
           <span className="text-yellow-300 font-semibold text-base">📏 Set the scale first: drag across something you know the length of — like the garage door (single 8–9 ft, double 16 ft). Then type its length.</span>
         ) : cur ? (
-          <div className="flex items-center gap-2" onPointerDown={(e) => e.stopPropagation()}>
+          <div className={measuring ? 'flex items-center gap-2' : 'flex flex-col items-start gap-2'} onPointerDown={(e) => e.stopPropagation()}>
             <span className="text-neutral-400">This line:</span>
             {feetUI && <>
             <input
@@ -612,13 +611,14 @@ export default function LightsMarkup({ photo, initialLines = [], initialScale = 
                 {l.label}
               </button>
             ))}
-            {!measuring && <span className="ml-2 text-neutral-400">On:</span>}
-            {!measuring && MOUNTS.map(([k, label, tip]) => (
-              <button key={k} title={`Uses ${tip}`} onClick={() => { if (!measuring) snap(); edit({ mount: k }); setMount(k); }}
+            {/* Plan options stacked: one row each for On / Wire / Clips */}
+            {!measuring && <div className="flex items-center gap-2 flex-wrap"><span className="w-12 text-neutral-400">On:</span>
+            {MOUNTS.map(([k, label, tip]) => (
+              <button key={k} title={`Uses ${tip}`} onClick={() => { snap(); edit({ mount: k }); setMount(k); }}
                 className={`px-2.5 h-8 rounded-md text-xs font-bold border cursor-pointer ${(cur.mount || 'gutter') === k ? 'bg-white text-black border-white' : 'border-[#404040] text-neutral-300'}`}>
                 {label}
               </button>
-            ))}
+            ))}</div>}
             {feetUI && <button
               onClick={() => setPitchOpen((o) => !o)}
               className={`inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs font-bold border cursor-pointer ${pitchOpen ? 'border-[#B0FF03] text-[#B0FF03]' : 'border-[#404040] text-neutral-300 hover:text-white'}`}
@@ -626,16 +626,19 @@ export default function LightsMarkup({ photo, initialLines = [], initialScale = 
             >
               <Triangle size={13} /> Pitch
             </button>}
-            {!measuring && <span className="text-neutral-400">Wire:</span>}
-            {!measuring && ZIP_COLORS.map(([k, label, hex]) => (
+            {!measuring && <div className="flex items-center gap-2 flex-wrap"><span className="w-12 text-neutral-400">Wire:</span>
+            {ZIP_COLORS.map(([k, label, hex]) => (
               <Swatch key={k} hex={hex} label={label} on={(cur.color || 'white') === k} onClick={() => { snap(); edit({ color: k }); setNewColor(k); }} />
-            ))}
-            {!measuring && <span className="text-neutral-400">Clips:</span>}
-            {!measuring && ZIP_COLORS.map(([k, label, hex]) => (
-              <Swatch key={`c${k}`} hex={hex} label={label} on={clipOf(cur) === k} onClick={() => { snap(); edit({ clip: k }); }} />
-            ))}
-            {drawing && <button onClick={remove} className="p-1.5 text-neutral-400 hover:text-red-500 cursor-pointer" title="Delete line"><Trash2 size={16} /></button>}
-            <button onClick={() => { setSel(-1); setPitchOpen(false); }} className="px-3 h-8 rounded-md bg-[#B0FF03] text-black text-xs font-bold cursor-pointer">OK</button>
+            ))}</div>}
+            {/* Clips: gutter lines only — white by default, black for black gutters. Shingle tabs are always black. */}
+            {!measuring && (cur.mount || 'gutter') === 'gutter' && <div className="flex items-center gap-2 flex-wrap"><span className="w-12 text-neutral-400">Clips:</span>
+            {ZIP_COLORS.filter(([k]) => k !== 'green').map(([k, label, hex]) => (
+              <Swatch key={`c${k}`} hex={hex} label={label} on={(cur.clip === 'black' ? 'black' : 'white') === k} onClick={() => { snap(); edit({ clip: k }); }} />
+            ))}</div>}
+            <div className="flex items-center gap-2">
+              {drawing && <button onClick={remove} className="p-1.5 text-neutral-400 hover:text-red-500 cursor-pointer" title="Delete line"><Trash2 size={16} /></button>}
+              <button onClick={() => { setSel(-1); setPitchOpen(false); }} className="px-3 h-8 rounded-md bg-[#B0FF03] text-black text-xs font-bold cursor-pointer">OK</button>
+            </div>
           </div>
         ) : (
           feetUI && selJump >= 0 && jumps[selJump]

@@ -205,10 +205,16 @@ export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLine
       )}
       <div className="grid gap-4">{/* top to bottom, same order as step 2 Photos */}
       {angles.map((a, i) => (!a.plain ? null : (
-        <div key={i} className="rounded-xl border border-border-default bg-surface-alt/30 overflow-hidden">
-          {/* Big photo with the lines on it — click to draw */}
+        <div key={i}
+          draggable={!measure}
+          onDragStart={(e) => { if (measure) return; setDragFrom(i); e.dataTransfer.setData('text/x-hub-photo', String(i)); e.dataTransfer.effectAllowed = 'move'; }}
+          onDragEnd={() => setDragFrom(-1)}
+          onDragOver={(e) => { if (dragFrom >= 0) { e.preventDefault(); e.stopPropagation(); } }}
+          onDrop={(e) => { if (dragFrom < 0) return; e.preventDefault(); e.stopPropagation(); if (dragFrom !== i) move(dragFrom, i); setDragFrom(-1); setBoxOver(false); }}
+          className={`rounded-xl border bg-surface-alt/30 overflow-hidden ${dragFrom === i ? 'opacity-40' : ''} ${dragFrom >= 0 && dragFrom !== i ? 'border-border-brand' : 'border-border-default'}`}>
+          {/* Big photo with the lines on it — click to draw; drag the card (desktop) or ↑ ↓ to reorder */}
           <button onClick={() => setMarkIdx(i)} className="relative block w-full bg-black cursor-pointer group" title="Plan">
-            <img src={a.plain} alt={`Section ${i + 1}`} className="block w-full" />
+            <img src={a.plain} alt={`Section ${i + 1}`} draggable={false} className="block w-full" />
             {(a.lines.length > 0 || (a.outlets || []).length > 0 || (a.inlines || []).length > 0 || (a.jumps || []).length > 0) && a.w > 0 && (
               <svg viewBox={`0 0 ${a.w} ${a.h}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
                 <PlanOverlay lines={a.lines} jumps={rate ? [] : a.jumps || []} w={a.w} h={a.h} tags={measure && !rate} plan={!rate} />
@@ -216,7 +222,7 @@ export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLine
                 {!rate && <OutletMarks inline outlets={a.inlines || []} w={a.w} h={a.h} />}
               </svg>
             )}
-            <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/65 text-xs font-semibold text-white">Section {i + 1}</span>
+            <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/65 text-xs font-semibold text-white">{!measure && <span className="hidden sm:inline cursor-grab mr-1" title="Drag to reorder">⠿</span>}Section {i + 1}</span>
             <span className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
           </button>
           <div className="p-3 space-y-3">
@@ -235,6 +241,8 @@ export default function LightsMeasurePhotos({ onApply, angles, setAngles, onLine
             </button>
             {!measure && <button onClick={() => setAngles((x) => [...x.slice(0, i + 1), { ...emptyAngle(), plain: a.plain, w: a.w, h: a.h, scale: a.scale || 0 }, ...x.slice(i + 1)])}
               title="Copy this photo as a new section with no lines" className="px-3 rounded-lg border border-border-strong text-sm font-semibold text-secondary hover:text-primary cursor-pointer">Duplicate</button>}
+            {!measure && <button onClick={() => move(i, i - 1)} disabled={i === 0} title="Move up" className="w-10 rounded-lg border border-border-strong text-primary font-bold disabled:opacity-25 hover:bg-surface-alt cursor-pointer">↑</button>}
+            {!measure && <button onClick={() => move(i, i + 1)} disabled={i >= angles.filter((x) => x.plain).length - 1} title="Move down" className="w-10 rounded-lg border border-border-strong text-primary font-bold disabled:opacity-25 hover:bg-surface-alt cursor-pointer">↓</button>}
             </div>
           </div>
         </div>

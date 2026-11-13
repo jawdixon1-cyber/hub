@@ -170,6 +170,21 @@ export async function cloudHas(id) {
   } catch { return null; }
 }
 
+// Change a few fields on a saved quote without touching its photos (e.g. moving a
+// job's materials into its quote). Bumps savedAt so every device takes this version.
+export async function patchQuoteMeta(id, patch) {
+  if (!isCloud(id)) throw new Error('Not a saved quote');
+  const { data, error } = await supabase.from('app_state').select('value').eq('key', META + id).maybeSingle();
+  if (error) throw error;
+  if (!data?.value) throw new Error('Quote not found');
+  const savedAt = new Date().toISOString();
+  const value = { ...data.value, ...patch, savedAt };
+  await upsert([{ key: META + id, value }]);
+  const local = await localGet(id).catch(() => null);
+  if (local) await localPut({ ...local, ...patch, savedAt }).catch(() => {});
+  return value;
+}
+
 export async function deleteQuote(id) {
   await localDel(id).catch(() => {});
   if (!isCloud(id)) return;

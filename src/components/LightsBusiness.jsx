@@ -1,8 +1,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, ShoppingCart, ImagePlus, ExternalLink, Phone, MessageSquare, Pencil } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
-import { STARTER_SUPPLIES, STYLE_LABEL, quoteMaterials, quoteFeet, packPlan, kindOf } from '../lib/lightsMaterials';
-import { listQuotes, referLinks, referInbox, makeReferLink, markReferAdded } from '../lib/lightsStore';
+import { PlanOverlay, OutletMarks } from './LightsMarkup';
+import { supabase } from '../lib/supabase';
+import { STARTER_SUPPLIES, STYLE_LABEL, quoteMaterials, quoteFeet, packPlan } from '../lib/lightsMaterials';
+import { listQuotes, getQuote, patchQuoteMeta, referLinks, referInbox, makeReferLink, markReferAdded } from '../lib/lightsStore';
 import { useJobberList, nameKey } from '../lib/jobberLights';
 
 // The business side of Christmas lights, shown inside the Lights page:
@@ -37,7 +39,7 @@ function cartLines(it, need) {
   if (k * small.size >= big.size) { c += 1; k = 0; }
   return [[big.id, c], [small.id, k]].filter(([, q]) => q > 0);
 }
-const CART_CODE = 'HSU2026';
+const CART_CODE = 'INSTALLER18';
 
 // When an on-the-way order should land: its Arrives date, else ordered Mon–Fri →
 // 4 days later; ordered Sat/Sun → ships Monday, lands Thursday (Mon = day 1 of 4).
@@ -52,11 +54,11 @@ function orderLandsOn(o) {
 
 // Supply sections, worked out from the item name.
 // Install order: what you grab first goes first.
-const CATS = [['bulb', 'Bulbs'], ['clip', 'Clips'], ['stake', 'Stakes'], ['wire', 'C9 socket wire'], ['zip', 'Zip cord'], ['male', 'Male plugs'], ['female', 'Female plugs'], ['plug', 'Gilbert One plugs'], ['timer', 'Timers'], ['strand', 'Mini strands'], ['other', 'Other']];
+const CATS = [['bulb', 'Bulbs'], ['clip', 'Clips'], ['stake', 'Stakes'], ['wire', 'C9 socket wire'], ['zip', 'Zip cord'], ['plugs', 'Plugs'], ['plug', 'Gilbert One plugs'], ['timer', 'Timers'], ['strand', 'Mini strands'], ['other', 'Other']];
 const catOf = (it) => {
   const name = it?.name || '';
   // Order matters: "Mini (Green Wire)" is a strand and "Plugs SPT-1" is a plug, not wire.
-  if (/plug/i.test(name)) return /female/i.test(name) ? 'female' : /\bmale\b/i.test(name) ? 'male' : 'plug';
+  if (/plug/i.test(name)) return /female|\bmale\b/i.test(name) ? 'plugs' : 'plug';
   if (/timer/i.test(name)) return 'timer';
   if (/mini|strand/i.test(name)) return 'strand';
   if (/stake/i.test(name)) return 'stake';
@@ -72,6 +74,9 @@ const rankIn = (cat, it) => (cat === 'bulb'
   ? (/warm white/i.test(it.name) ? 0 : /multi/i.test(it.name) ? 1 : 2)
   : cat === 'wire' ? (/socket/i.test(it.name) ? 0 : /zip/i.test(it.name) ? 1 : 2) // sockets together, then zips
   : cat === 'plug' ? (/female/i.test(it.name) ? 1 : /male/i.test(it.name) ? 0 : 2) // male, female, then others
+  : cat === 'plugs' ? (/black/i.test(it.name) ? 0 : 2) + (/female/i.test(it.name) ? 1 : 0) // black male, black female, then green male, green female
+  : cat === 'clip' ? (/white/i.test(it.name) ? 0 : /black/i.test(it.name) ? 10 : 20) // white clips together, then black, then the rest (all-in-one, magnet)
+    + (/shingle tab/i.test(it.name) && /white/i.test(it.name) ? -1 : /best clip/i.test(it.name) ? 0 : /flex/i.test(it.name) ? 1 : /shingle tab/i.test(it.name) ? 2 : 3) // white tab first (most used), then gutter clips, shingle tabs, O clips
   : /timer/i.test(it.name) ? 0 : 1);
 // Supplies grouped + ordered the same way everywhere: [[cat, label, items], ...]
 const groupSupplies = (list) => CATS
@@ -791,6 +796,18 @@ function InstallWrapUp({ saved, onPatch, hideReview }) {
 // Walk booked (not installed) jobs in date order. Stock = what's in the shop now,
 // plus each on-the-way order once it should have landed, minus what earlier jobs used.
 // Returns [{ id, name, at, mats, problems, late, landBy, landEst }].
+// The Hub quote for a Jobber job: one you linked by hand, else same Jobber client,
+// else same name, else a near-identical name ("McPeters" vs "mcpeter") if only one fits.
+function matchQuote(quotes, { quoteId, clientId, clientName }) {
+  if (quoteId) { const q = quotes.find((x) => x.id === quoteId); if (q) return q; }
+  if (clientId) { const q = quotes.find((x) => x.clientInfo?.id === clientId); if (q) return q; }
+  const k = nameKey(clientName);
+  const exact = quotes.find((x) => nameKey(x.clientInfo?.name || x.client) === k);
+  if (exact || k.length < 8) return exact || null;
+  const hits = quotes.filter((x) => { const k2 = nameKey(x.clientInfo?.name || x.client); return k2.length >= 8 && (k.startsWith(k2) || k2.startsWith(k)) && Math.abs(k.length - k2.length) <= 2; });
+  return hits.length === 1 ? hits[0] : null;
+}
+
 function jobReadiness(jobsMap, items, ordersStored, liveJobs) {
   const landsOn = (d) => {
     const x = new Date(d); const dow = x.getDay();
@@ -798,8 +815,9 @@ function jobReadiness(jobsMap, items, ordersStored, liveJobs) {
     x.setDate(x.getDate() + 4); return x;
   };
   const dayOf = (iso) => (iso ? new Date(String(iso).length <= 10 ? `${iso}T12:00:00` : iso) : null);
+  // Lines already marked arrived (part of an order came) aren't still on the way.
   const arrivals = (ordersStored || []).filter((o) => o.status === 'otw').map((o) => ({
-    o, at: orderLandsOn(o),
+    o: { ...o, lines: (o.lines || []).filter((l) => !l.arrived) }, at: orderLandsOn(o),
   }));
   items.forEach((x) => { if (n(x.extraOnOrder)) arrivals.push({ o: { lines: [{ itemId: x.id, qty: x.extraOnOrder }], number: '' }, at: landsOn(new Date()) }); });
   const live = Object.fromEntries((liveJobs || []).map((j) => [j.id, j]));
@@ -825,7 +843,9 @@ function jobReadiness(jobsMap, items, ordersStored, liveJobs) {
       if (before + landed < q) {
         const lateOrder = arrivals.find((a) => job.at && a.at > job.at && (a.o.lines || []).some((l) => l.itemId === id));
         problems.push({ id, name: x.name, image: x.image, qty: Math.ceil(q - before - landed),
-          note: lateOrder ? `order${lateOrder.o.number ? ` #${lateOrder.o.number}` : ''} ${lateOrder.o.eta ? `lands ${lateOrder.at.toLocaleDateString([], { month: 'short', day: 'numeric' })}` : 'on the way, may not make it'}` : 'not ordered' });
+          note: lateOrder ? `order${lateOrder.o.number ? ` #${lateOrder.o.number}` : ''} ${lateOrder.o.eta ? `lands ${lateOrder.at.toLocaleDateString([], { month: 'short', day: 'numeric' })}` : 'on the way, may not make it'}`
+            // Ordered, but earlier installs already use it all up → need more on top.
+            : arrivals.some((a2) => (a2.o.lines || []).some((l) => l.itemId === id)) ? 'more than ordered — earlier jobs use the rest' : 'not ordered' });
       }
       usedSoFar[id] = (usedSoFar[id] || 0) + q;
     });
@@ -842,7 +862,7 @@ function SupplyPhoto({ src, onChange }) {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
-      const size = 160;
+      const size = 96; // shown at ~40px; 96 stays sharp on Retina and keeps the supplies data small (fast page load)
       const c = document.createElement('canvas');
       c.width = size; c.height = size;
       const k = Math.max(size / img.width, size / img.height);
@@ -869,6 +889,90 @@ function SupplyPhoto({ src, onChange }) {
 }
 
 // Shrink a receipt screenshot so it stores small but stays readable.
+// Receipt photos live in their own app_state rows ('lr:<id>'); the order keeps just 'lr:<id>'.
+// Big images inside the orders data (455 KB) made the Lights page take ~10 s to open (2026-11-12).
+// Old receipts saved inline (data:...) still work. If saving the row fails, the photo stays inline.
+let receiptOrg;
+const receiptCache = new Map();
+async function saveReceipt(dataUrl) {
+  try {
+    if (receiptOrg === undefined) receiptOrg = (await supabase.from('app_state').select('org_id').eq('key', 'greenteam-lightsOrders').maybeSingle()).data?.org_id || null;
+    const ref = `lr:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const { error } = await supabase.from('app_state').upsert({ key: ref, value: { img: dataUrl }, ...(receiptOrg ? { org_id: receiptOrg } : {}) }, { onConflict: 'key' });
+    if (error) throw error;
+    receiptCache.set(ref, dataUrl);
+    return ref;
+  } catch (e) {
+    console.warn('[lights] receipt save failed, keeping it inline', e?.message);
+    return dataUrl;
+  }
+}
+const receiptUpload = async (file) => saveReceipt(await receiptImage(file));
+// A job's plan: the quote's photos with the lines on them (read-only). Photos load when the job opens.
+const planCache = new Map();
+const planLoading = new Map();
+// Load a quote's plan once (shared by every job card + the Jobs-tab preload, all in parallel).
+// getQuote uses this browser's saved copy when it's current (instant); otherwise downloads the photos.
+function loadPlan(quoteId) {
+  if (!planLoading.has(quoteId)) {
+    planLoading.set(quoteId, getQuote(quoteId)
+      .then((q) => { planCache.set(quoteId, (q?.angles || []).filter((a) => a.plain && (a.lines || []).length)); })
+      .catch(() => { planCache.set(quoteId, []); }));
+  }
+  return planLoading.get(quoteId);
+}
+function JobPlan({ quoteId }) {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    if (!quoteId || planCache.has(quoteId)) return undefined;
+    let live = true;
+    loadPlan(quoteId).then(() => { if (live) bump((x) => x + 1); });
+    return () => { live = false; };
+  }, [quoteId]);
+  const sides = planCache.get(quoteId);
+  if (!quoteId) return null;
+  if (!sides) return <p className="text-xs text-muted">Loading plan…</p>;
+  if (!sides.length) return <p className="text-xs text-muted">No lines drawn yet.</p>;
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      {sides.map((side, i) => {
+        const w = side.w || 1600; const h = side.h || 1200;
+        return (
+          <div key={i} className="relative rounded-lg overflow-hidden bg-black">
+            <img src={side.plain} alt="" className="block w-full" />
+            {side.w > 0 && (
+              <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+                <PlanOverlay lines={side.lines} jumps={side.jumps} w={w} h={h} tags />
+                <OutletMarks outlets={side.outlets} w={w} h={h} />
+                <OutletMarks inline outlets={side.inlines} w={w} h={h} />
+              </svg>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function useReceiptSrc(ref) {
+  const isRef = typeof ref === 'string' && ref.startsWith('lr:');
+  const [, bump] = useState(0); // re-render once the row arrives
+  useEffect(() => {
+    if (!isRef || receiptCache.has(ref)) return undefined;
+    let live = true;
+    supabase.from('app_state').select('value').eq('key', ref).maybeSingle().then(({ data }) => {
+      receiptCache.set(ref, data?.value?.img || '');
+      if (live) bump((x) => x + 1);
+    });
+    return () => { live = false; };
+  }, [ref, isRef]);
+  return isRef ? receiptCache.get(ref) || '' : ref;
+}
+function ReceiptImg({ src, ...props }) {
+  const url = useReceiptSrc(src);
+  return url ? <img src={url} {...props} /> : <span className={`${props.className || ''} inline-block animate-pulse`} />;
+}
+
 function receiptImage(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -964,7 +1068,7 @@ const ROLE_OF = (name = '') => (/plug/i.test(name) ? (/female/i.test(name) ? 'fe
   : /socket\s*wire/i.test(name) ? 'socket' : /zip/i.test(name) ? 'zip' : /shingle tab/i.test(name) ? 'tab' : '');
 const colorRe = (c) => new RegExp(`\\b${c}\\b`, 'i');
 
-export function QuoteMaterialsCard({ value, onChange, quote, notes, onNotes, wire, onWire, photos = [], power, onPower, powerPhoto = '', onPowerPhoto = null, part = 'all', designs = [], design, onDesign, start = 1, only = null, before = null, quoteId = null, groups = null, customColor = '', onCustomColor = null }) {
+export function QuoteMaterialsCard({ value, onChange, quote, notes, onNotes, wire, onWire, photos = [], power, onPower, powerPhoto = '', onPowerPhoto = null, part = 'all', designs = [], design, onDesign, start = 1, only = null, before = null, groups = null, customColor = '', onCustomColor = null }) {
   const [bigPhoto, setBigPhoto] = useState('');
   const [items] = useLightsSupplies();
   const list = items || [];
@@ -983,26 +1087,8 @@ export function QuoteMaterialsCard({ value, onChange, quote, notes, onNotes, wir
     onChange(filled);
   };
   const cost = Object.entries(mats).reduce((t, [id, qty]) => t + n(qty) * n(itemById(id)?.cost), 0);
-  // Lines drive the roofline gear: when the feet, gutter/shingle/magnet split, wire color
-  // or light color change, bulbs + socket wire + zip + clips refill on their own.
-  // (Not on open — only when something actually changes. Timer, plugs, extras untouched.)
-  const autoSig = JSON.stringify([ft, quote?.mountFt, quote?.runs, quote?.zips, quote?.wire, quote?.style, quote?.peaks, quote?.strands]);
-  const lastAuto = useRef(autoSig);
-  const lastId = useRef(quoteId);
-  useEffect(() => {
-    // Opening / switching quotes loads its numbers — that's not an edit, so leave materials alone.
-    if (quoteId !== lastId.current) { lastId.current = quoteId; lastAuto.current = autoSig; return; }
-    if (part !== 'materials' || autoSig === lastAuto.current || !list.length) return;
-    lastAuto.current = autoSig;
-    if (ft <= 0) return;
-    const isAuto = (it) => it && (['bulb', 'wire', 'clip'].includes(kindOf(it)) || /zip/i.test(it.name));
-    const est = quoteMaterials(quote, list);
-    const next = { ...(value || {}) };
-    Object.keys(next).forEach((id) => { if (isAuto(itemById(id))) delete next[id]; });
-    Object.entries(est).forEach(([id, qty]) => { if (isAuto(itemById(id))) next[id] = qty; });
-    onChange(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSig, quoteId]);
+  // Materials never refill on their own (it overwrote hand-entered amounts). Only the
+  // "Fill from measurements" button puts in amounts from the feet.
   // Swap every item of these parts to the picked color (same amounts).
   const swapColor = (roles, color, base = all) => {
     const next = { ...base };
@@ -1107,13 +1193,8 @@ export function QuoteMaterialsCard({ value, onChange, quote, notes, onNotes, wir
             )}
             {shown.includes('wire') && q(nWire, 'What color wire?', ['white', 'black'].map((c) => opt(wire === c, () => {
               onWire(c);
-              // Swap colors, then put in the amounts from the footage (wire, zip, clips, bulbs).
-              const swapped = swapColor(['socket', 'zip', 'tab'], c);
-              const est = ft > 0 ? quoteMaterials({ ...quote, wire: c }, list) : {};
-              // Keep the timer you picked (the estimate always suggests the first one).
-              const chosenTimer = timers.find((t) => n(swapped[t.id]) > 0);
-              if (chosenTimer) timers.forEach((t) => { delete est[t.id]; });
-              onChange({ ...swapped, ...est });
+              // Just swap colors — same amounts. Amounts only change when you hit Fill.
+              onChange(swapColor(['socket', 'zip', 'tab'], c));
             }, <>{dot(c === 'white' ? '#fff' : '#111')} {c === 'white' ? 'White' : 'Black'}</>, c)))}
             {shown.includes('plugs') && q(nPlugs, 'What color plugs?', ['green', 'black'].map((c) => opt(plugColor === c, () => onChange(swapColor(['male', 'female', 'gilbert'], c)), <>{dot(c === 'green' ? '#1f8a3b' : '#111')} {c === 'green' ? 'Green' : 'Black'}</>, c)))}
             {shown.includes('timer') && q(nTimer, 'Which timer?', timers.map((t) => opt(n(mats[t.id]) > 0, () => pickTimer(t), <>
@@ -1126,8 +1207,8 @@ export function QuoteMaterialsCard({ value, onChange, quote, notes, onNotes, wir
       {bigPhoto && <div onClick={() => setBigPhoto('')} className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6 cursor-zoom-out"><img src={bigPhoto} alt="" className="max-w-full max-h-full rounded-lg" /></div>}
       {showM && <>
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-[11px] text-muted">Fills in from your plan on its own. Becomes the job's materials when it's sold.</p>
-        {ft > 0 && <button onClick={fill} className="px-3 py-1.5 rounded-lg border border-border-brand bg-brand-light text-xs font-semibold text-brand-text-strong hover:brightness-110 cursor-pointer">⚡ Fill from {ft} ft</button>}
+        <p className="text-[11px] text-muted">Hit ⚡ Fill from measurements to put in amounts — nothing changes on its own. Becomes the job's materials when it's sold.</p>
+        {ft > 0 && <button onClick={fill} className="px-3 py-1.5 rounded-lg border border-border-brand bg-brand-light text-xs font-semibold text-brand-text-strong hover:brightness-110 cursor-pointer">⚡ Fill from measurements ({ft} ft)</button>}
       </div>
       <MustHaveChips mats={mats} items={list} onAdd={(it) => set(it.id, defaultQty(it))} />
       {groups ? (() => {
@@ -1214,7 +1295,7 @@ const JOBBER_STATUS = {
 };
 
 
-export default function LightsBusiness({ view }) {
+export default function LightsBusiness({ view, onOpen = null }) {
   const [tick, setTick] = useState(0); // ↻ Refresh: pull fresh from Jobber
   const needsJobber = view === 'quotes' || view === 'jobs' || view === 'supplies' || view === 'sales';
   const schedule = useLightsSchedule(needsJobber, tick);
@@ -1224,31 +1305,61 @@ export default function LightsBusiness({ view }) {
   const setColdLeads = useAppStore((st) => st.setLightsColdLeads);
   const ordersStored = useAppStore((st) => st.lightsOrders);
   const setOrders = useAppStore((st) => st.setLightsOrders);
+  const returnsStored = useAppStore((st) => st.lightsReturns);
+  const setReturns = useAppStore((st) => st.setLightsReturns);
+  const [retDraft, setRetDraft] = useState(null); // { itemId, qty, from, refund } — adding a return
   const [orderDraft, setOrderDraft] = useState(null);
   const [openOrder, setOpenOrder] = useState('');
   const [receiptView, setReceiptView] = useState('');
   const [dropOn, setDropOn] = useState('');
   const jobsStored = useAppStore((st) => st.lightsJobs);
-  const jobsMap = useMemo(() => jobsStored || {}, [jobsStored]);
   const setJobsMap = useAppStore((st) => st.setLightsJobs);
   const [filter, setFilter] = useState('cold'); // dashboard card open: cold (My list, default), booked, sent, scheduled, won, closed
   const [editing, setEditing] = useState(''); // supply row open for editing
   const [doneOpen, setDoneOpen] = useState([]); // installed jobs whose materials are expanded
   const [installing, setInstalling] = useState(null); // { id, draft } — "what did you actually use?"
-  const [showDone, setShowDone] = useState(false);
+  const [openJob, setOpenJob] = useState(''); // Jobs tab: the one job clicked open
+  const [openGroups, setOpenGroups] = useState({}); // Jobs tab: collapsible groups (Prepped / Installed)
   const [rawItems, setItems, empty, notLoaded] = useLightsSupplies();
   // "On order" = lines on every on-the-way order (always in sync, however the
   // order got added) + anything marked ordered without a receipt (extraOnOrder).
   const items = useMemo(() => {
     const q = {};
     (ordersStored || []).filter((o) => o.status === 'otw').forEach((o) => (o.lines || []).forEach((l) => {
-      if (l.itemId && n(l.qty)) q[l.itemId] = (q[l.itemId] || 0) + n(l.qty);
+      if (l.itemId && n(l.qty) && !l.arrived) q[l.itemId] = (q[l.itemId] || 0) + n(l.qty); // arrived lines are in Have, not coming
     }));
     return (rawItems || []).map((x) => ({ ...x, onOrder: n(x.extraOnOrder) + (q[x.id] || 0) }));
   }, [rawItems, ordersStored]);
   const [quotes, setQuotes] = useState([]);
+  const [quotesReady, setQuotesReady] = useState(false); // quotes load ~2 s after the page; don't say "no quote" before then
+  // Jobs pull their materials straight from their quote — one source, always in sync.
+  // (Installed jobs keep what was actually used.) A job with no quote keeps its own list.
+  const jobsMap = useMemo(() => {
+    const raw = jobsStored || {};
+    const live = Object.fromEntries((schedule.jobs || []).map((j) => [j.id, j]));
+    const ids = new Set([...Object.keys(raw), ...(schedule.jobs || []).filter((j) => j.status !== 'archived' && isLightsTitle(j.title)).map((j) => j.id)]);
+    const out = {};
+    ids.forEach((id) => {
+      const j = raw[id] || { clientName: live[id]?.clientName, title: live[id]?.title, date: live[id]?.visitAt };
+      if (j.installed) { out[id] = j; return; }
+      const q = matchQuote(quotes, { quoteId: j.quoteId, clientId: live[id]?.clientId, clientName: j.clientName || live[id]?.clientName });
+      // "Real" materials = anything besides the default plugs + timer every quote shows.
+      const isDefault = (itemId) => { const nm = items.find((x) => x.id === itemId)?.name || ''; return AUTO_ON_JOB.some(([re, , not]) => re.test(nm) && !(not && not.test(nm))); };
+      const real = (m) => Object.entries(m || {}).filter(([k, v]) => n(v) > 0 && !isDefault(k));
+      const same = (a, b) => { const A = Object.fromEntries(Object.entries(a || {}).filter(([, v]) => n(v) > 0).map(([k, v]) => [k, n(v)])); const B = Object.fromEntries(Object.entries(b || {}).filter(([, v]) => n(v) > 0).map(([k, v]) => [k, n(v)])); return Object.keys(A).length === Object.keys(B).length && Object.keys(A).every((k) => A[k] === B[k]); };
+      if (!q) { if (raw[id]) out[id] = { ...j, noQuote: true }; return; }
+      const fromQ = { ...j, materials: q.materials || {}, matNotes: q.matNotes || {}, confirmed: !!q.matOk, fromQuote: q.id };
+      if (!real(j.materials).length || j.oldResolved || same(j.materials, q.materials)) { out[id] = fromQ; return; }
+      // Old copy on the job that differs from the quote: you pick which one is right (one time).
+      if (!real(q.materials).length) out[id] = { ...j, fromQuote: q.id, needsMove: true, oldList: j.materials };
+      else out[id] = { ...fromQ, conflict: true, oldList: j.materials };
+    });
+    return out;
+  }, [jobsStored, quotes, schedule.jobs, items]);
 
-  const refresh = () => listQuotes().then(setQuotes).catch(() => {});
+  const refresh = () => listQuotes().then((qs) => { setQuotes(qs); setQuotesReady(true); }).catch(() => {});
+  // Jobs tab: start loading every quote's plan at once, so opening any job shows its plan right away.
+  useEffect(() => { if (view === 'jobs' && quotesReady) quotes.forEach((q) => q.id && loadPlan(q.id)); }, [view, quotesReady, quotes]);
   useEffect(() => { refresh(); }, [view]);
 
   const patchItem = (id, p) => setItems((list) => (list || []).map((x) => (x.id === id ? { ...x, ...p } : x)));
@@ -1264,7 +1375,7 @@ export default function LightsBusiness({ view }) {
       if (!j.installed) add(withDefaults(j.materials, items, j.noAuto));
     });
     quotes.filter((q) => statusOf(q) === 'won' && !jobClients.has(nameKey(q.clientInfo?.name || q.client)))
-      .forEach((q) => add(quoteMaterials(q, items)));
+      .forEach((q) => add(withDefaults(q.materials, items)));
     return out;
   }, [quotes, items, jobsMap]);
 
@@ -1282,15 +1393,9 @@ export default function LightsBusiness({ view }) {
     const all = jobberJobs.map((j) => ({ ...j, saved: withTimer(jobsMap[j.id] || {}) }));
     const readyById = Object.fromEntries(jobReadiness(jobsMap, items, ordersStored, schedule.jobs).map((r) => [r.id, r]));
     const patchJob = (j, p) => setJobsMap((m) => ({ ...(m || {}), [j.id]: { clientName: j.clientName, title: j.title, date: j.visitAt, ...((m || {})[j.id] || {}), ...p } }));
-    const setQty = (j, itemId, qty) => patchJob(j, { materials: { ...(j.saved.materials || {}), [itemId]: qty } });
-    // Deleting a plug/timer remembers it, so the job doesn't auto-add it right back.
-    const removeMat = (j, itemId) => {
-      const m = { ...(j.saved.materials || {}) }; delete m[itemId];
-      patchJob(j, { materials: m, noAuto: [...new Set([...(j.saved.noAuto || []), itemId])] });
-    };
-    // Match the Hub quote by Jobber client (names get spelled differently), then by name.
-    const quoteFor = (name, clientId) => (clientId && quotes.find((q) => q.clientInfo?.id === clientId)) || quotes.find((q) => nameKey(q.clientInfo?.name || q.client) === nameKey(name));
     const itemById = (id) => items.find((x) => x.id === id);
+    // A quote you linked by hand wins; otherwise match by Jobber client / name.
+    const jobQuote = (j) => matchQuote(quotes, { quoteId: j.saved?.quoteId, clientId: j.clientId, clientName: j.clientName });
     const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : 'no date');
     const DAY = 864e5;
 
@@ -1354,6 +1459,29 @@ export default function LightsBusiness({ view }) {
       </div>
     );
 
+    // Each material with where it stands: ✓ in stock, 📦 coming on order #, 🔴 short.
+    const statusChips = (j, mats) => {
+      const rd = readyById[j.id];
+      return (
+        <div className="flex items-start gap-1.5 flex-wrap">
+          {groupSupplies(Object.keys(mats).filter((id) => n(mats[id])).map((id) => itemById(id) || { id, name: 'Removed item' })).flatMap(([, , its]) => its).map((it) => {
+            const short = rd?.problems.find((p) => p.id === it.id);
+            const wait = rd?.waiting.find((w) => w.id === it.id);
+            const [tag, tone] = short ? [`short ${short.qty}`, 'text-red-400 bg-red-500/10'] : wait ? [wait.orders.length ? `#${wait.orders.join(' + #')} coming` : 'coming', 'text-blue-300 bg-blue-500/10'] : ['✓ in stock', 'text-emerald-400 bg-emerald-500/10'];
+            return (
+              <span key={it.id} title={`${it.name}${short ? ` · ${short.note}` : ''}`} className="inline-flex flex-col items-center gap-0.5 rounded-md bg-surface-alt px-1 pt-1 pb-0.5 min-w-[64px]">
+                <span className="inline-flex items-center gap-1.5">
+                  {it.image ? <img src={it.image} alt="" className="w-7 h-7 rounded object-cover bg-white" /> : <span className="w-7 h-7 rounded bg-card" />}
+                  <b className="text-sm tabular-nums text-primary">{n(mats[it.id])}</b>
+                </span>
+                <span className={`w-full text-center rounded px-1 text-[10px] font-semibold ${tone}`}>{tag}</span>
+              </span>
+            );
+          })}
+        </div>
+      );
+    };
+
     const visitChips = (j) => {
       const { inst, take } = jobVisits(j);
       const fmtV = (v) => new Date(v.startAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
@@ -1381,50 +1509,41 @@ export default function LightsBusiness({ view }) {
       return <span className="inline-block px-2 py-0.5 rounded-md text-xs font-bold bg-emerald-500/15 text-emerald-400">✅ Everything’s in stock</span>;
     };
 
-    // The full materials editor (plan before install).
+    // Materials on a job = its quote's Materials step (the one source). Shown here, edited in the quote.
+    // One-time pick: move the job's old list into the quote, or keep the quote. Either way the
+    // job stops having its own list (marked resolved; the old list is kept on the job as a backup).
+    const moveIntoQuote = async (list) => {
+      for (const j of list) {
+        const q = quotes.find((x) => x.id === j.saved.fromQuote);
+        // Keep what the quote had, so this can be undone.
+        await patchQuoteMeta(j.saved.fromQuote, { materials: { ...(j.saved.oldList || {}) }, matNotes: { ...(j.saved.matNotes || {}) }, materialsBefore: { ...(q?.materials || {}) }, matNotesBefore: { ...(q?.matNotes || {}) } });
+        patchJob(j, { oldResolved: true });
+      }
+      refresh();
+    };
+    const keepQuote = (j) => patchJob(j, { oldResolved: true });
     const editor = (j) => {
-      const mats = j.saved.materials || {};
-      const locked = !!j.saved.confirmed;
-      const q = quoteFor(j.clientName, j.clientId);
-      const unused = items.filter((x) => !(x.id in mats));
-      const onJob = Object.keys(mats).map((id) => itemById(id)).filter(Boolean);
-      const checklist = MUST_HAVE.map(([label, test]) => {
-        const present = onJob.filter(test);
-        return { label, present: present.length > 0, filled: present.some((it) => n(mats[it.id]) > 0), pick: pickBlack(items, test) };
-      });
-      const missing = checklist.filter((c) => !c.filled);
+      const mats = Object.fromEntries(Object.entries(j.saved.materials || {}).filter(([, v]) => n(v) > 0));
       const cost = Object.entries(mats).reduce((t, [id, qty]) => t + n(qty) * n(itemById(id)?.cost), 0);
-      const fill = () => {
-        const picked = q.materials && Object.keys(q.materials).length ? q.materials : null;
-        // 0 on the quote = you removed that plug/timer there — keep it off the job too.
-        const removed = picked ? Object.keys(picked).filter((id) => picked[id] === 0) : [];
-        const fromQuote = picked ? Object.fromEntries(Object.entries(picked).filter(([, v]) => v !== 0)) : quoteMaterials(q, items);
-        const filled = { ...mats, ...fromQuote };
-        MUST_HAVE.forEach(([, test]) => { if (!Object.keys(filled).some((id) => itemById(id) && test(itemById(id)))) { const it = pickBlack(items, test); if (it) filled[it.id] = defaultQty(it); } });
-        // Must-haves of the same kind you removed on the quote stay removed.
-        removed.forEach((id) => { const kind = MUST_HAVE.find(([, t]) => itemById(id) && t(itemById(id))); Object.keys(filled).forEach((k2) => { if (kind && itemById(k2) && kind[1](itemById(k2)) && !(k2 in fromQuote)) delete filled[k2]; }); delete filled[id]; });
-        patchJob(j, { materials: filled, matNotes: { ...(q.matNotes || {}), ...(j.saved.matNotes || {}) }, ...(removed.length ? { noAuto: [...new Set([...(j.saved.noAuto || []), ...removed])] } : {}) });
-      };
       return (
         <div className="space-y-2.5">
-          {!locked && q && (quoteFeet(q) > 0 || Object.keys(q.materials || {}).length > 0) && (
-            <button onClick={fill} className="w-full rounded-lg border border-border-brand bg-brand-light px-3 py-2 text-sm font-semibold text-brand-text-strong hover:brightness-110 cursor-pointer">
-              ⚡ Fill from quote — {Object.keys(q.materials || {}).length ? `${Object.keys(q.materials).length} items you picked` : `${quoteFeet(q)} ft, ${STYLE_LABEL[q.style || 'warm'] || 'custom colors'}`}
-            </button>
+          {j.saved.needsMove && (
+            <div className="rounded-lg border border-yellow-400/50 bg-yellow-400/10 p-3 flex items-center gap-3 flex-wrap">
+              <p className="flex-1 text-sm text-yellow-300">This list is only on the job, not in the quote yet.</p>
+              <button onClick={() => moveIntoQuote([j])} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">Move into the quote</button>
+            </div>
           )}
-          <MustHaveChips mats={mats} items={items} readOnly={locked} onAdd={(it) => setQty(j, it.id, defaultQty(it))} />
-          <MaterialRows mats={mats} items={items} locked={locked}
-            onQty={(id, v) => setQty(j, id, v)} onRemove={(id) => removeMat(j, id)}
-            notes={j.saved.matNotes || {}} fallbackNotes={q?.matNotes || {}}
-            onNote={(id, v) => patchJob(j, { matNotes: { ...(j.saved.matNotes || {}), [id]: v } })} />
+          {j.saved.noQuote && <p className="text-sm text-yellow-300">No quote linked. Link one above; materials live in the quote.</p>}
+          {Object.keys(mats).length > 0 ? (
+            <>
+              <MustHaveChips mats={mats} items={items} readOnly onAdd={() => {}} />
+              <MaterialRows mats={mats} items={items} locked onQty={() => {}} onRemove={() => {}} notes={j.saved.matNotes || {}} onNote={() => {}} />
+            </>
+          ) : <p className="text-sm text-muted">No materials in the quote yet.</p>}
           <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border-subtle">
-            {!locked && <MaterialPicker items={unused} onPick={(id) => setQty(j, id, defaultQty(itemById(id)))} />}
-            <span className="ml-auto text-sm text-muted">Materials <b className="text-primary tabular-nums">${cost.toFixed(2)}</b>
-              {n(j.total) > 0 && <> · Profit <b className="text-brand-text tabular-nums">{money(n(j.total) - cost)}</b></>}</span>
-            {locked
-              ? <button onClick={() => patchJob(j, { confirmed: false, confirmedAt: null })} className="text-xs text-muted hover:text-primary underline cursor-pointer">Edit materials</button>
-              : <button onClick={() => patchJob(j, { materials: j.saved.materials, confirmed: true, confirmedAt: new Date().toISOString() })} disabled={missing.length > 0}
-                className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold disabled:opacity-40 cursor-pointer" title={missing.length ? `Still need: ${missing.map((c) => c.label).join(', ')}` : ''}>Confirm materials</button>}
+            <span className="text-xs text-muted">{j.saved.fromQuote && !j.saved.needsMove ? 'From the quote. Always in sync.' : ''}</span>
+            <span className="ml-auto text-sm text-muted">Materials <b className="text-primary tabular-nums">${cost.toFixed(2)}</b></span>
+            {onOpen && j.saved.fromQuote && !j.saved.needsMove && <button onClick={() => onOpen(j.saved.fromQuote, 3)} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">{j.saved.confirmed ? 'Edit in quote' : 'Finish in quote'}</button>}
           </div>
         </div>
       );
@@ -1482,36 +1601,35 @@ export default function LightsBusiness({ view }) {
       const cost = Object.entries(mats).reduce((t, [id, qty]) => t + n(qty) * n(itemById(id)?.cost), 0);
       const w = wrapOf(j);
       return (
-        <div key={j.id} className="rounded-xl border border-border-default bg-card p-4 space-y-3">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="space-y-1.5 min-w-0">
-              <p className="text-base font-semibold text-primary">{j.clientName} <span className="text-xs font-normal text-muted">#{j.jobNumber} · {j.title || 'Lights job'}{n(j.total) ? ` · ${money(j.total)}` : ''}</span></p>
-              {quoteFor(j.clientName, j.clientId)?.power && <p className="text-xs font-semibold text-yellow-400">🔌 Power: {quoteFor(j.clientName, j.clientId).power}</p>}
-              {visitChips(j)}
-              {(stage === 'stock' || stage === 'ready' || stage === 'schedule') && stockLine(j)}
-            </div>
-            <div className="flex items-center gap-2">
-              {stage === 'ready' && installing?.id !== j.id && (
-                <button onClick={() => setInstalling({ id: j.id, draft: { ...(j.saved.materials || {}) } })} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">Mark installed</button>
-              )}
-              {(stage === 'stock' || stage === 'schedule') && installing?.id !== j.id && (
-                <button onClick={() => setInstalling({ id: j.id, draft: { ...(j.saved.materials || {}) } })} className="text-xs text-muted hover:text-primary underline cursor-pointer">Mark installed</button>
-              )}
-              {stage !== 'materials' && <button onClick={toggle} className="text-xs text-muted hover:text-primary underline cursor-pointer">{open ? 'Hide' : 'Materials'}</button>}
-            </div>
-          </div>
-
-          {stage === 'materials' && editor(j)}
+        <div key={j.id} className="p-4 space-y-3">
+          {/* Top: what matters most — stock + the plan + its materials. Dates, links and buttons are at the bottom. */}
+          {jobQuote(j)?.power && <p className="text-xs font-semibold text-yellow-400">🔌 Power: {jobQuote(j).power}</p>}
+          {stage === 'materials' && jobQuote(j) && onOpen && (
+            <p className="text-sm text-yellow-300">📝 Materials not confirmed yet — <button onClick={() => onOpen(jobQuote(j).id, 3)} className="underline font-semibold cursor-pointer">confirm them in the quote</button></p>
+          )}
+          {(stage === 'materials' || stage === 'stock' || stage === 'ready' || stage === 'schedule') && stockLine(j)}
           {installing?.id === j.id && installPanel(j)}
 
-          {(stage === 'schedule' || stage === 'stock' || stage === 'ready') && (open ? editor(j) : (
-            <div className="space-y-2"><MustHaveChips mats={mats} items={items} readOnly onAdd={() => {}} />{chips(mats)}</div>
+          {/* The plan: photos with the lines */}
+          {jobQuote(j) && stage !== 'wrap' && stage !== 'takedown' && stage !== 'done' && <JobPlan quoteId={jobQuote(j).id} />}
+
+          {(stage === 'materials' || stage === 'schedule' || stage === 'stock' || stage === 'ready') && (open ? editor(j) : (
+            <div className="space-y-2"><MustHaveChips mats={mats} items={items} readOnly onAdd={() => {}} />{statusChips(j, mats)}</div>
           ))}
 
           {(stage === 'wrap' || stage === 'takedown' || stage === 'done') && (
             <>
               <div className="rounded-lg bg-emerald-500/10 px-3 py-2.5 space-y-2.5">
                 <p className="text-sm font-semibold text-emerald-400">✅ Installed {j.saved.installedAt ? fmtDate(j.saved.installedAt) : ''} — good job! 🎉</p>
+                {/* The money on this job: Jobber price − materials that went up (at your costs) */}
+                <p className="text-sm text-secondary tabular-nums">
+                  {n(j.total) > 0 ? (
+                    <>Job <b className="text-primary">{money(n(j.total))}</b> − Materials <b className="text-primary">{money(cost)}</b> = <b className="text-brand-text text-base">{money(n(j.total) - cost)}</b>
+                      <span className="text-muted"> · {Math.round(((n(j.total) - cost) / n(j.total)) * 100)}% left after materials</span></>
+                  ) : (
+                    <>Materials <b className="text-primary">{money(cost)}</b> · <span className="text-yellow-400">no price on this job in Jobber yet</span></>
+                  )}
+                </p>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {WRAP.map(([k, label]) => (k === 'pics'
                     ? <span key={k} className={`px-2 py-1 rounded-md text-xs font-semibold ${w.pics ? 'bg-emerald-500/20 text-emerald-300' : 'bg-surface-alt text-muted'}`}>{w.pics ? '✓' : '○'} {label}</span>
@@ -1526,19 +1644,58 @@ export default function LightsBusiness({ view }) {
                 </div>
                 <InstallWrapUp saved={j.saved} onPatch={(p) => patchJob(j, p)} hideReview />
               </div>
-              {open ? actualEditor(j) : <div className="flex items-center justify-between gap-3">{chips(mats)}<span className="text-xs text-muted shrink-0">Used <b className="text-primary">{money(cost)}</b>{n(j.total) > 0 && <> · Profit <b className="text-brand-text">{money(n(j.total) - cost)}</b></>}</span></div>}
+              {open ? actualEditor(j) : <div className="flex items-center justify-between gap-3">{chips(mats)}</div>}
             </>
           )}
+          {/* Bottom: install / takedown dates, links, lock, Team view, actions */}
+          <div className="pt-3 border-t border-border-subtle flex items-start justify-between gap-3 flex-wrap">
+            <div className="space-y-1.5 min-w-0">
+              {visitChips(j)}
+              {(() => {
+                const qq = jobQuote(j);
+                if (!onOpen) return null;
+                if (!qq?.id && !quotesReady) return <p className="text-xs text-muted">Loading quote…</p>;
+                if (!qq?.id) return (
+                  <label className="flex items-center gap-2 flex-wrap text-sm text-muted">No quote linked yet.
+                    <select value="" onChange={(e) => e.target.value && patchJob(j, { quoteId: e.target.value })} className="rounded-lg border border-border-strong bg-card px-2 py-1.5 text-sm text-primary cursor-pointer">
+                      <option value="">Link a quote…</option>
+                      {[...quotes].filter((q) => q.id).sort((a, b) => String(a.clientInfo?.name || a.client || '').localeCompare(String(b.clientInfo?.name || b.client || ''))).map((q) => (
+                        <option key={q.id} value={q.id}>{q.clientInfo?.name || q.client || 'Unnamed quote'}</option>
+                      ))}
+                    </select>
+                  </label>
+                );
+                const btn = 'px-3 py-1.5 rounded-lg border border-border-strong text-sm font-semibold text-primary hover:bg-surface-alt cursor-pointer';
+                return (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button onClick={() => onOpen(qq.id, 3)} className={btn}>📐 Plan</button>
+                    <button onClick={() => onOpen(qq.id, 3)} className={btn}>📦 Materials</button>
+                    {/* Lock / unlock the plan + materials (same lock as the quote's Plan step) */}
+                    <button onClick={() => { const on = !qq.planLocked; setQuotes((qs) => qs.map((x) => (x.id === qq.id ? { ...x, planLocked: on } : x))); patchQuoteMeta(qq.id, { planLocked: on }).catch(() => refresh()); }}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer ${qq.planLocked ? 'border border-yellow-500/50 bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20' : 'bg-yellow-400 text-black hover:bg-yellow-300'}`}>
+                      {qq.planLocked ? '🔒 Locked · Unlock' : '🔓 Lock plan + materials'}
+                    </button>
+                    {qq.crewToken && <a href={`/crew/${qq.crewToken}`} target="_blank" rel="noreferrer" className={btn}>👀 Team view</a>}
+                    {!j.saved.fromQuote && !j.saved.installed && <span className="text-xs text-yellow-300">Materials here are the job's own list. The quote's Materials step is empty, so its plugs/timer there are just defaults.</span>}
+                    {j.saved?.quoteId && <button onClick={() => patchJob(j, { quoteId: null })} title={`Linked to ${qq.clientInfo?.name || qq.client}`} className="text-xs text-muted hover:text-primary underline cursor-pointer">Wrong quote? Unlink</button>}
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="flex items-center gap-2">
+              {stage === 'ready' && installing?.id !== j.id && (
+                <button onClick={() => setInstalling({ id: j.id, draft: { ...(j.saved.materials || {}) } })} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">Mark installed</button>
+              )}
+              {(stage === 'stock' || stage === 'schedule') && installing?.id !== j.id && (
+                <button onClick={() => setInstalling({ id: j.id, draft: { ...(j.saved.materials || {}) } })} className="text-xs text-muted hover:text-primary underline cursor-pointer">Mark installed</button>
+              )}
+              <button onClick={toggle} className="text-xs text-muted hover:text-primary underline cursor-pointer">{open ? 'Hide' : 'Materials'}</button>
+            </div>
+          </div>
         </div>
       );
     };
 
-    const totals = (() => {
-      const costOf = (j) => Object.entries(j.saved.installed ? usedOf(j) : (j.saved.materials || {})).reduce((t, [id, qty]) => t + n(qty) * n(itemById(id)?.cost), 0);
-      const jobsTotal = all.reduce((t, j) => t + n(j.total), 0);
-      const matTotal = all.reduce((t, j) => t + costOf(j), 0);
-      return { jobsTotal, matTotal, left: jobsTotal - matTotal, pct: jobsTotal ? Math.round((matTotal / jobsTotal) * 100) : 0 };
-    })();
 
     return (
       <div className="space-y-5">
@@ -1550,31 +1707,91 @@ export default function LightsBusiness({ view }) {
         {schedule.error && !all.length && <p className="text-sm text-red-400">Couldn't reach Jobber: {schedule.error.slice(0, 80)}</p>}
         {!schedule.loading && !schedule.error && !all.length && <p className="text-sm text-muted">No lights jobs in Jobber yet.</p>}
         {all.length > 0 && (
-          <div className="rounded-xl border border-border-brand bg-brand-light px-5 py-4 grid grid-cols-3 gap-4">
-            <div><p className="text-[11px] text-secondary">Jobs</p><p className="text-2xl font-bold text-primary">{money(totals.jobsTotal)}</p></div>
-            <div><p className="text-[11px] text-secondary">Materials</p><p className="text-2xl font-bold text-primary">{money(totals.matTotal)}</p><p className="text-[10px] text-muted">{totals.pct}% of job $</p></div>
-            <div><p className="text-[11px] font-semibold text-brand-text-strong">Left for labor &amp; profit</p><p className="text-2xl font-bold text-brand-text">{money(totals.left)}</p><p className="text-[10px] text-muted">{100 - totals.pct}% of job $</p></div>
-          </div>
+          <p className="text-base font-bold text-primary">{all.length} job{all.length === 1 ? '' : 's'} <span className="text-sm font-normal text-muted">· 🔒 {all.filter((j) => jobQuote(j)?.planLocked).length} plans locked</span></p>
         )}
-        {all.length > 0 && (
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {STAGES.filter(([k]) => k !== 'done').map(([k, title]) => (
-              <span key={k} className={`px-2.5 py-1 rounded-full text-xs font-semibold ${byStage[k].length ? 'bg-surface-alt text-primary' : 'text-muted/60'}`}>{title} · {byStage[k].length}</span>
-            ))}
-          </div>
-        )}
-        {STAGES.filter(([k]) => k !== 'done').map(([k, title, sub]) => (byStage[k].length > 0 && (
-          <section key={k} className="space-y-2.5">
-            <div><p className="text-sm font-bold text-primary">{title} <span className="text-muted font-normal">· {byStage[k].length}</span></p><p className="text-[11px] text-muted">{sub}</p></div>
-            {byStage[k].map((j) => card(j, k))}
-          </section>
-        )))}
-        {byStage.done.length > 0 && (
-          <section className="space-y-2">
-            <button onClick={() => setShowDone((v) => !v)} className="text-sm font-semibold text-muted hover:text-primary cursor-pointer">{showDone ? '▾' : '▸'} Completed · {byStage.done.length}</button>
-            {showDone && byStage.done.map((j) => card(j, 'done'))}
-          </section>
-        )}
+        {(() => {
+          // One-time cleanup: jobs that still carry their own old list. You pick which list is right.
+          const stuck = all.filter((j) => j.saved.needsMove || j.saved.conflict);
+          const loose = all.filter((j) => j.saved.noQuote);
+          if (!stuck.length && !loose.length) return null;
+          const listOf = (m) => Object.entries(m || {}).filter(([, v]) => n(v) > 0).map(([id, v]) => `${itemById(id)?.name || 'Removed item'} ${n(v)}`);
+          return (
+            <div className="rounded-xl border border-yellow-400/50 bg-yellow-400/10 p-4 space-y-3">
+              {stuck.length > 0 && <>
+                <div>
+                  <p className="text-sm font-bold text-yellow-300">Pick the right materials: {stuck.length} job{stuck.length === 1 ? '' : 's'}</p>
+                  <p className="text-xs text-secondary">These jobs still have an old list that isn't in the quote. Pick one per client. After that the quote is the only place materials live (the old list stays saved as a backup).</p>
+                </div>
+                {stuck.map((j) => {
+                  const q = quotes.find((x) => x.id === j.saved.fromQuote);
+                  const jobL = listOf(j.saved.oldList); const qL = listOf(q?.materials);
+                  return (
+                    <div key={j.id} className="rounded-lg bg-card border border-border-default p-3 space-y-2">
+                      <p className="text-sm font-bold text-primary">{j.clientName} <span className="text-xs font-normal text-muted">#{j.jobNumber}</span></p>
+                      <div className="grid sm:grid-cols-2 gap-3 text-xs">
+                        <div><p className="font-semibold text-secondary mb-1">Old job list</p>{jobL.map((t) => <p key={t} className="text-primary">{t}</p>)}</div>
+                        <div><p className="font-semibold text-secondary mb-1">Quote</p>{qL.length ? qL.map((t) => <p key={t} className="text-primary">{t}</p>) : <p className="text-muted">Empty</p>}</div>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        <button onClick={() => moveIntoQuote([j])} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">Use old job list (puts it in the quote)</button>
+                        {j.saved.conflict && <button onClick={() => keepQuote(j)} className="px-3 py-1.5 rounded-lg border border-border-strong text-xs font-semibold text-primary cursor-pointer">Keep the quote</button>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>}
+              {quotesReady && loose.length > 0 && <p className="text-sm text-yellow-300">No quote linked: {loose.map((j) => j.clientName).join(', ')}. Open the job and link its quote.</p>}
+            </div>
+          );
+        })()}
+        {(() => {
+          // One slim row per job; click it to open the full card (materials etc.).
+          const NEED = { materials: ['Needs materials', 'bg-red-500/15 text-red-400'], schedule: ['Not scheduled', 'bg-yellow-400/15 text-yellow-300'], stock: ['Waiting on stock', 'bg-blue-500/15 text-blue-300'], ready: ['Ready', 'bg-emerald-500/15 text-emerald-400'], wrap: ['Wrap-up', 'bg-surface-alt text-secondary'], takedown: ['Takedown soon', 'bg-yellow-400/15 text-yellow-300'], done: ['Done', 'bg-surface-alt text-muted'] };
+          const row = (j, stage) => {
+            const isOpen = openJob === j.id;
+            const inst = jobVisits(j).inst;
+            const [label, tone] = NEED[stage];
+            return (
+              <div key={j.id} className={`rounded-xl border bg-card ${isOpen ? 'border-border-brand' : 'border-border-default'}`}>
+                <div className="flex items-center">
+                <button onClick={() => setOpenJob(isOpen ? '' : j.id)} className="flex-1 min-w-0 flex items-center gap-3 pl-4 pr-4 py-3 text-left cursor-pointer hover:bg-surface-alt/40 rounded-xl">
+                  <span className="text-muted text-sm w-3">{isOpen ? '▾' : '▸'}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-base font-semibold text-primary truncate">{j.clientName} <span className="text-xs font-normal text-muted">#{j.jobNumber}</span>{jobQuote(j)?.planLocked && <span title="Plan + materials locked" className="ml-1.5">🔒</span>}</span>
+                    <span className="block text-xs text-muted">{inst?.startAt ? `Install ${fmtDate(inst.startAt)}` : 'No install date'}</span>
+                  </span>
+                  <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-bold ${tone}`}>{label}</span>
+                </button>
+                </div>
+                {isOpen && <div className="border-t border-border-subtle">{card(j, stage)}</div>}
+              </div>
+            );
+          };
+          const group = (key, title, sub, list, collapsible) => {
+            if (!list.length) return null;
+            const shown = !collapsible || openGroups[key];
+            return (
+              <section key={key} className="space-y-2">
+                {collapsible
+                  ? <button onClick={() => setOpenGroups((g) => ({ ...g, [key]: !g[key] }))} className="w-full flex items-center justify-between rounded-xl bg-surface-alt/50 px-4 py-3 text-left cursor-pointer hover:bg-surface-alt">
+                      <span className="text-sm font-bold text-primary">{shown ? '▾' : '▸'} {title} <span className="text-muted font-normal">· {list.length}</span></span>
+                      <span className="text-xs text-muted">{sub}</span>
+                    </button>
+                  : <div><p className="text-base font-bold text-primary">{title} <span className="text-muted font-normal">· {list.length}</span></p><p className="text-xs text-muted">{sub}</p></div>}
+                {shown && list.map(([j, st]) => row(j, st))}
+              </section>
+            );
+          };
+          const tag = (ks) => ks.flatMap((k2) => byStage[k2].map((j) => [j, k2])).sort(([a], [b]) => instAt(a) - instAt(b)); // soonest install first; no date last
+          return (
+            <>
+              {group('prep', 'Needs prep', 'Click a job to finish it', tag(['materials', 'schedule', 'stock']), false)}
+              {group('ready', '✅ Prepped', 'Ready to install', tag(['ready']), true)}
+              {group('installed', '🎉 Installed', 'Wrap-up and takedowns', tag(['wrap', 'takedown']), true)}
+              {group('done', 'Completed', '', tag(['done']), true)}
+            </>
+          );
+        })()}
       </div>
     );
   }
@@ -1612,20 +1829,25 @@ export default function LightsBusiness({ view }) {
 
   // ---------------- Supplies ----------------
   if (view === 'supplies') {
+    // Returns not refunded yet: set aside, so they don't count as spare stock.
+    const returns = returnsStored || [];
+    const returning = {};
+    returns.filter((r) => r.status !== 'refunded').forEach((r) => { returning[r.itemId] = (returning[r.itemId] || 0) + n(r.qty); });
     const rows = items.map((x) => {
       const com = committed[x.id] || 0;
       const avail = n(x.onHand) - com;
       const coming = n(x.onOrder);
-      // Have + On the way − For jobs = what's left. Order whatever it takes to get
+      const ret = returning[x.id] || 0;
+      // Have + On the way − For jobs − Returning = what's left. Order whatever it takes to get
       // back to the spare you want to keep on top of booked jobs.
-      const left = n(x.onHand) + coming - com;
+      const left = n(x.onHand) + coming - com - ret;
       const spare = n(x.spare); // "Alert below": spare left after booked jobs
       const gap = Math.max(0, spare - left);
       // Buy in set batches (e.g. 1000 ft spools) until back above the alert line.
       const need = gap && n(x.buy) ? Math.ceil(gap / n(x.buy)) * n(x.buy) : gap;
       // Round up to what the store actually sells (e.g. 250 shingle tabs → 3 packs of 100 = 300).
       const plan = packPlan(x, need);
-      return { x, com, avail, coming, left, spare, need: plan ? plan.qty : need, shortJobs: Math.max(0, -left), plan };
+      return { x, com, avail, coming, ret, left, spare, need: plan ? plan.qty : need, shortJobs: Math.max(0, -left), plan };
     });
 
     if (notLoaded) return <p className="text-sm text-muted p-4">Loading material…</p>;
@@ -1663,56 +1885,72 @@ export default function LightsBusiness({ view }) {
             </div>
           );
         })()}
-
+        {/* Returns: stuff going back for a refund. Refunded → comes out of Have. */}
         {(() => {
-          // By install date: walk booked jobs in date order. Stock = what's in the shop
-          // now, plus each on-the-way order once it should have landed (its Arrives
-          // date, or the usual shipping time below), minus what earlier jobs used.
-          // Ordered Mon–Fri → lands 4 days later. Ordered Sat/Sun → ships Monday and
-          // lands 4 days counting Monday as day 1 (Thursday).
-          const dayOf = (iso) => (iso ? new Date(String(iso).length <= 10 ? `${iso}T12:00:00` : iso) : null);
-          const results = jobReadiness(jobsMap, items, ordersStored, schedule.jobs);
-          // Lights jobs in Jobber with no materials entered yet can't be checked.
-          const noMats = (schedule.jobs || []).filter((j) => j.status !== 'archived' && isLightsTitle(j.title) && !jobsMap[j.id]);
-          if (!results.length && !noMats.length) return null;
-          const fmt = (d) => (d ? d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : 'no date');
-          return (
-            <div className="rounded-xl border border-border-default bg-card overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-border-subtle">
-                <p className="text-sm font-bold text-primary">📅 By install date</p>
-                <p className="text-[11px] text-muted">Do you have the material in time for each job?</p>
+          const itemOf = (id) => items.find((x) => x.id === id);
+          const open = returns.filter((r) => r.status !== 'refunded');
+          const done = returns.filter((r) => r.status === 'refunded');
+          const owed = open.reduce((t, r) => t + n(r.refund), 0);
+          const setRet = (id, p) => setReturns((list) => (list || []).map((r) => (r.id === id ? { ...r, ...p } : r)));
+          const refunded = (r) => {
+            // Money's back: the items leave Have for good.
+            setItems((list) => (list || []).map((x) => (x.id === r.itemId ? { ...x, onHand: Math.max(0, n(x.onHand) - n(r.qty)) } : x)));
+            setRet(r.id, { status: 'refunded', refundedAt: new Date().toISOString() });
+          };
+          const unrefund = (r) => {
+            setItems((list) => (list || []).map((x) => (x.id === r.itemId ? { ...x, onHand: n(x.onHand) + n(r.qty) } : x)));
+            setRet(r.id, { status: 'sent', refundedAt: null });
+          };
+          const row = (r) => {
+            const it = itemOf(r.itemId);
+            return (
+              <div key={r.id} className="px-4 py-2.5 border-t border-border-subtle flex items-center gap-3 flex-wrap">
+                {it?.image ? <img src={it.image} alt="" className="w-9 h-9 rounded-md object-cover bg-white shrink-0" /> : <span className="w-9 h-9 rounded-md bg-surface-alt shrink-0" />}
+                <div className="flex-1 min-w-[180px]">
+                  <p className="text-sm font-semibold text-primary"><span className="tabular-nums">{n(r.qty)}</span> × {it?.name || 'Removed item'}</p>
+                  <p className="text-[11px] text-muted">{r.from || 'No order noted'}{n(r.refund) > 0 && <> · refund ~<b className="text-primary">{money(n(r.refund))}</b></>}{r.note ? ` · ${r.note}` : ''}</p>
+                </div>
+                {r.status === 'refunded' ? (
+                  <>
+                    <span className="text-xs font-semibold text-emerald-400">✓ Refunded</span>
+                    <button onClick={() => unrefund(r)} className="text-[11px] text-muted hover:text-primary underline cursor-pointer">Undo</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => setRet(r.id, { status: r.status === 'sent' ? 'todo' : 'sent' })} className={`px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${r.status === 'sent' ? 'bg-blue-500/15 text-blue-300' : 'bg-surface-alt text-secondary hover:text-primary'}`}>{r.status === 'sent' ? '📦 Sent back' : '○ Not sent yet'}</button>
+                    <button onClick={() => refunded(r)} className="px-2 py-1 rounded-md text-xs font-semibold bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 cursor-pointer">💵 Refunded</button>
+                    <button onClick={() => setReturns((list) => (list || []).filter((x) => x.id !== r.id))} className="p-1 text-muted hover:text-red-500 cursor-pointer" title="Remove from list"><Trash2 size={13} /></button>
+                  </>
+                )}
               </div>
-              {results.map((j) => (
-                <div key={j.id} className={`flex items-start gap-3 px-4 py-2.5 border-t border-border-subtle first:border-t-0 ${j.problems.length ? 'bg-red-500/[0.07]' : ''}`}>
-                  <span className="w-24 shrink-0 text-xs text-muted pt-0.5">{fmt(j.at)}</span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-semibold text-primary">{j.name}</span>
-                    {j.problems.length > 0 && (<div className="mt-1 flex items-center gap-2 flex-wrap"><span className="text-xs font-semibold text-red-400">Short:</span>{j.problems.map((w) => (
-                          <span key={w.id} title={`${w.name} · ${w.note}`} className="inline-flex items-center gap-1.5 rounded-md bg-red-500/10 pl-0.5 pr-2 py-0.5">
-                            {w.image ? <img src={w.image} alt="" className="w-7 h-7 rounded object-cover bg-white" /> : <span className="w-7 h-7 rounded bg-surface-alt" />}
-                            <b className="text-sm text-red-400 tabular-nums">{w.qty}</b>
-                            <span className="text-[10px] text-muted">{w.note}</span>
-                          </span>
-                        ))}</div>)}
-                    {!j.problems.length && j.waiting.length > 0 && (<div className="mt-1 flex items-center gap-2 flex-wrap"><span className="text-xs font-semibold text-blue-400">Waiting on:</span>{j.waiting.map((w) => (
-                          <span key={w.id} title={`${w.name}${w.orders.length ? ` · order #${w.orders.join(' + #')}` : ''}`} className="inline-flex items-center gap-1.5 rounded-md bg-blue-500/10 pl-0.5 pr-2 py-0.5">
-                            {w.image ? <img src={w.image} alt="" className="w-7 h-7 rounded object-cover bg-white" /> : <span className="w-7 h-7 rounded bg-surface-alt" />}
-                            <b className="text-sm text-blue-400 tabular-nums">{w.qty}</b>
-                          </span>
-                        ))}</div>)}
-                  </span>
-                  <span className={`shrink-0 text-xs font-semibold pt-0.5 ${j.problems.length ? 'text-red-400' : j.late ? 'text-blue-400' : 'text-brand-text'}`}>
-                    {j.problems.length ? '🔴 Short' : j.late ? `📦 Ready once orders land${j.landBy && !j.landEst ? ` · ${j.landBy.toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}` : '✅ Ready'}
-                  </span>
+            );
+          };
+          const addRet = () => {
+            if (!retDraft?.itemId || !n(retDraft.qty)) return;
+            setReturns((list) => [...(list || []), { id: `ret-${Date.now()}`, itemId: retDraft.itemId, qty: n(retDraft.qty), from: retDraft.from || '', refund: n(retDraft.refund), status: 'todo', createdAt: new Date().toISOString() }]);
+            setRetDraft(null);
+          };
+          return (
+            <div className="rounded-xl border border-orange-500/30 bg-card overflow-hidden">
+              <div className="px-4 py-2.5 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-primary">↩️ Returns</p>
+                  <p className="text-[11px] text-muted">{open.length ? <>{open.length} to send back{owed > 0 && <> · ~<b className="text-primary">{money(owed)}</b> coming back</>} · set aside, not counted as spare</> : 'Nothing to return'}</p>
                 </div>
-              ))}
-              {noMats.map((j) => (
-                <div key={j.id} className="flex items-start gap-3 px-4 py-2.5 border-t border-border-subtle bg-yellow-500/[0.07]">
-                  <span className="w-24 shrink-0 text-xs text-muted pt-0.5">{fmt(dayOf(j.visitAt))}</span>
-                  <span className="flex-1 text-sm font-semibold text-primary">{j.clientName}</span>
-                  <span className="shrink-0 text-xs font-semibold text-yellow-400 pt-0.5">⚠️ No materials entered (Jobs tab)</span>
+                {!retDraft && <button onClick={() => setRetDraft({ itemId: '', qty: '', from: '', refund: '' })} className="text-xs font-semibold text-secondary hover:text-primary cursor-pointer">+ Add return</button>}
+              </div>
+              {retDraft && (
+                <div className="px-4 py-2.5 border-t border-border-subtle flex items-end gap-2 flex-wrap text-[11px] text-muted">
+                  <label>Item<select value={retDraft.itemId} onChange={(e) => setRetDraft((d) => ({ ...d, itemId: e.target.value }))} className="block mt-0.5 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none max-w-[260px]"><option value="">Pick…</option>{groupSupplies(items).flatMap(([, , its]) => its).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+                  <label>Qty<input value={retDraft.qty} inputMode="decimal" onChange={(e) => setRetDraft((d) => ({ ...d, qty: e.target.value.replace(/[^0-9.]/g, '') }))} className="block mt-0.5 w-20 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none" /></label>
+                  <label>From order<input value={retDraft.from} placeholder="Lights at Wholesale #2" onChange={(e) => setRetDraft((d) => ({ ...d, from: e.target.value }))} className="block mt-0.5 w-48 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none" /></label>
+                  <label>Refund $<input value={retDraft.refund} inputMode="decimal" onChange={(e) => setRetDraft((d) => ({ ...d, refund: e.target.value.replace(/[^0-9.]/g, '') }))} className="block mt-0.5 w-24 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary outline-none" /></label>
+                  <button onClick={addRet} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">Add</button>
+                  <button onClick={() => setRetDraft(null)} className="px-2 py-1.5 text-xs text-muted hover:text-primary cursor-pointer">Cancel</button>
                 </div>
-              ))}
+              )}
+              {open.map(row)}
+              {done.length > 0 && <details className="border-t border-border-subtle"><summary className="px-4 py-2 text-[11px] text-muted cursor-pointer">{done.length} refunded</summary>{done.map(row)}</details>}
             </div>
           );
         })()}
@@ -1750,7 +1988,7 @@ export default function LightsBusiness({ view }) {
                   );
                 })()}
               </div>
-              {list.map(({ x, com, coming, left, spare, need, shortJobs, plan }, i) => {
+              {list.map(({ x, com, coming, ret, left, spare, need, shortJobs, plan }, i) => {
                 const cat = catOf(x);
                 const head = i === 0 || catOf(list[i - 1].x) !== cat
                   ? <p className="px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wide text-muted border-t border-border-subtle first:border-t-0">{CATS.find(([c]) => c === cat)?.[1]}</p>
@@ -1784,7 +2022,10 @@ export default function LightsBusiness({ view }) {
                           Have <b className="text-primary">{n(x.onHand)}</b>
                           {coming > 0 && <> + <b className="text-blue-400">{coming}</b> coming</>}
                           {com > 0 && <> − <b className="text-primary">{com}</b> for jobs</>}
+                          {ret > 0 && <> − <b className="text-orange-400">{ret}</b> returning</>}
                           {' = '}<b className={left < 0 ? 'text-red-400' : 'text-primary'}>{Math.round(left)}</b> left
+                          {/* Already went up on installed jobs (came out of Have) — shown, not subtracted again */}
+                          {n(x.used) > 0 && <span className="text-muted"> · {n(x.used)} used on installs</span>}
                         </span>
                         {buy && (
                           <span className="block text-xs text-red-400 tabular-nums">
@@ -1854,6 +2095,8 @@ export default function LightsBusiness({ view }) {
           const real = orders.filter((o) => o.status !== 'draft').reduce((t, o) => t + n(o.total), 0);
           const hub = items.reduce((t, x) => t + (Math.max(0, n(x.onHand)) + n(x.used) + n(x.onOrder)) * n(x.cost), 0);
           const diff = real - hub;
+          // The lines of an order whose stock is already in Have: all of them once it's arrived, else the ones marked arrived.
+          const inHave = (o) => ((o.status || 'arrived') === 'arrived' ? (o.lines || []) : (o.lines || []).filter((l) => l.arrived));
           const blank = { id: '', date: new Date().toISOString().slice(0, 10), store: 'Lights at Wholesale', number: '', items: '', total: '', lines: [], status: 'otw' };
           // Stock moves for an order's lines: dir +1 = add, -1 = take back. Only Have
           // (onHand) is stored; On order is worked out from on-the-way orders.
@@ -1869,17 +2112,36 @@ export default function LightsBusiness({ view }) {
             // Arrived orders add to Have. Becoming / un-becoming arrived moves stock;
             // editing lines on an arrived order swaps old lines for new.
             const prev = isNew ? null : (ordersStored || []).find((x) => x.id === o.id);
-            if (prev && (prev.status || 'arrived') === 'arrived') moveStock(prev.lines, 'onHand', -1);
-            if ((o.status || 'arrived') === 'arrived') moveStock(o.lines, 'onHand', 1);
+            if (prev) moveStock(inHave(prev), 'onHand', -1);
+            moveStock(inHave(o), 'onHand', 1);
             setOrders((list) => [...(list || []).filter((x) => x.id !== o.id), o]);
             setOrderDraft(null);
           };
           const placed = (o) => {
             setOrders((list) => (list || []).map((x) => (x.id === o.id ? { ...x, status: 'otw', date: new Date().toISOString().slice(0, 10) } : x)));
           };
+          // Whole order here: add whatever hadn't arrived yet.
           const arrived = (o) => {
-            moveStock(o.lines, 'onHand', 1);
-            setOrders((list) => (list || []).map((x) => (x.id === o.id ? { ...x, status: 'arrived', arrivedAt: new Date().toISOString() } : x)));
+            moveStock((o.lines || []).filter((l) => !l.arrived), 'onHand', 1);
+            setOrders((list) => (list || []).map((x) => (x.id === o.id ? { ...x, status: 'arrived', arrivedAt: new Date().toISOString(), lines: (x.lines || []).map((l) => ({ ...l, arrived: true })) } : x)));
+          };
+          // Marked arrived by mistake: take its items back out of Have, back to On the way.
+          const notArrived = (o) => {
+            moveStock(o.lines, 'onHand', -1);
+            setOrders((list) => (list || []).map((x) => (x.id === o.id ? { ...x, status: 'otw', arrivedAt: null, lines: (x.lines || []).map((l) => ({ ...l, arrived: false })) } : x)));
+          };
+          // One item on an order arrived (orders often come in pieces). Tap again to undo.
+          // When every item is here the order flips to Arrived.
+          const toggleLine = (o, i) => {
+            const l = (o.lines || [])[i]; if (!l) return;
+            const was = (o.status || 'arrived') === 'arrived' || !!l.arrived;
+            moveStock([l], 'onHand', was ? -1 : 1);
+            setOrders((list) => (list || []).map((x) => {
+              if (x.id !== o.id) return x;
+              const lines = (x.lines || []).map((y, k) => (k === i ? { ...y, arrived: !was } : (x.status || 'arrived') === 'arrived' ? { ...y, arrived: true } : y));
+              const all = lines.every((y) => y.arrived);
+              return { ...x, lines, status: all ? 'arrived' : 'otw', arrivedAt: all ? new Date().toISOString() : null };
+            }));
           };
           const setLine = (i, patch) => setOrderDraft((d) => ({ ...d, lines: d.lines.map((l, k) => (k === i ? { ...l, ...patch } : l)) }));
           const field = (key, label, cls = 'w-32', type = 'text') => (
@@ -1955,7 +2217,7 @@ export default function LightsBusiness({ view }) {
                         e.preventDefault(); setDropOn('');
                         const files = [...(e.dataTransfer.files || [])].filter((f) => f.type.startsWith('image/'));
                         if (!files.length) return;
-                        const pics = await Promise.all(files.map(receiptImage));
+                        const pics = await Promise.all(files.map(receiptUpload));
                         setOrders((list) => (list || []).map((x) => (x.id === o.id ? { ...x, receipts: [...(x.receipts || []), ...pics] } : x)));
                       }}
                     >
@@ -1968,25 +2230,34 @@ export default function LightsBusiness({ view }) {
                           </button>
                           <div className="flex items-center gap-1.5 mt-1.5">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${o.status === 'draft' ? 'bg-surface-alt text-secondary' : o.status === 'otw' ? 'bg-blue-500/15 text-blue-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
-                              {o.status === 'draft' ? 'Draft' : o.status === 'otw' ? 'On the way' : 'Arrived'}
+                              {o.status === 'draft' ? 'Draft' : o.status === 'otw' ? ((o.lines || []).some((l) => l.arrived) ? `Part here · ${(o.lines || []).filter((l) => l.arrived).length} of ${(o.lines || []).length}` : 'On the way') : 'Arrived'}
                             </span>
                             {o.status === 'draft' && <button onClick={() => placed(o)} className="text-[10px] font-semibold text-brand-text hover:underline cursor-pointer">Mark ordered</button>}
                             {o.status === 'otw' && <button onClick={() => arrived(o)} className="text-[10px] font-semibold text-brand-text hover:underline cursor-pointer">Mark arrived</button>}
+                            {(o.status || 'arrived') === 'arrived' && <button onClick={() => notArrived(o)} title="Not here yet: takes these back out of Have" className="text-[10px] font-semibold text-muted hover:text-primary hover:underline cursor-pointer">Not here yet</button>}
                           </div>
                         </div>
                         {/* middle: product photos */}
                         <button onClick={() => setOpenOrder(open ? '' : o.id)} className="flex-1 min-w-0 flex items-center gap-2 flex-wrap text-left cursor-pointer">
-                          {lines.length > 0 ? lines.map((l, i) => (
-                            <span key={i} className="relative" title={`${l.qty} × ${l.it?.name || l.itemId}`}>
-                              {l.it?.image ? <img src={l.it.image} alt="" className="w-10 h-10 rounded-md object-cover bg-white border border-border-subtle" /> : <span className="block w-10 h-10 rounded-md bg-surface-alt" />}
-                              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-black text-white text-[9px] font-bold leading-[18px] text-center">{l.qty >= 1000 ? `${l.qty / 1000}k` : l.qty}</span>
-                            </span>
-                          )) : <span className="text-[11px] text-muted truncate">{o.items}</span>}
+                          {lines.length > 0 ? lines.map((l, i) => {
+                            // On-the-way orders: tap an item when it shows up (✓ = here). Faded = still coming.
+                            const here = (o.status || 'arrived') === 'arrived' || !!l.arrived;
+                            const tappable = o.status === 'otw'; // shows ✓ / faded; marking happens inside the order
+                            return (
+                              <span key={i}
+                                className={`relative ${tappable && !here ? 'opacity-45' : ''}`}
+                                title={`${l.qty} × ${l.it?.name || l.itemId}${tappable ? (here ? ' — here' : ' — still coming') : ''}`}>
+                                {l.it?.image ? <img src={l.it.image} alt="" className={`w-10 h-10 rounded-md object-cover bg-white border ${tappable && here ? 'border-emerald-400 ring-2 ring-emerald-400/60' : 'border-border-subtle'}`} /> : <span className="block w-10 h-10 rounded-md bg-surface-alt" />}
+                                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-black text-white text-[9px] font-bold leading-[18px] text-center">{l.qty >= 1000 ? `${l.qty / 1000}k` : l.qty}</span>
+                                {tappable && here && <span className="absolute -bottom-1.5 -right-1.5 w-[18px] h-[18px] rounded-full bg-emerald-500 text-white text-[10px] font-bold leading-[18px] text-center">✓</span>}
+                              </span>
+                            );
+                          }) : <span className="text-[11px] text-muted truncate">{o.items}</span>}
                         </button>
                         {/* receipt: click to see it full screen */}
                         {(o.receipts || []).length > 0 && (
-                          <button onClick={() => setReceiptView(o.receipts[0])} className="relative shrink-0 cursor-zoom-in" title="View receipt">
-                            <img src={o.receipts[0]} alt="Receipt" className="w-10 h-12 rounded border border-border-default object-cover object-top bg-white" />
+                          <button onClick={() => setReceiptView({ list: o.receipts, i: 0 })} className="relative shrink-0 cursor-zoom-in" title={o.receipts.length > 1 ? `View ${o.receipts.length} receipts` : 'View receipt'}>
+                            <ReceiptImg src={o.receipts[0]} alt="Receipt" className="w-10 h-12 rounded border border-border-default object-cover object-top bg-white" />
                             {o.receipts.length > 1 && <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-black text-white text-[9px] font-bold leading-4">{o.receipts.length}</span>}
                           </button>
                         )}
@@ -1998,12 +2269,16 @@ export default function LightsBusiness({ view }) {
                             <label className="p-1 hover:text-primary cursor-pointer" title="Add a receipt photo (or drag it onto this order)">
                               <ImagePlus size={13} />
                               <input type="file" accept="image/*" multiple className="hidden" onChange={async (e) => {
-                                const pics = await Promise.all([...(e.target.files || [])].map(receiptImage));
+                                const pics = await Promise.all([...(e.target.files || [])].map(receiptUpload));
                                 setOrders((list) => (list || []).map((x) => (x.id === o.id ? { ...x, receipts: [...(x.receipts || []), ...pics] } : x)));
                               }} />
                             </label>
                             <button onClick={() => setOrderDraft(o)} className="px-1 text-[11px] hover:text-primary cursor-pointer">Edit</button>
-                            <button onClick={() => setOrders((list) => (list || []).filter((x) => x.id !== o.id))} className="p-1 hover:text-red-500 cursor-pointer" title="Delete"><Trash2 size={12} /></button>
+                            <button onClick={() => {
+                              // An arrived order already added its items to Have — take them back out.
+                              moveStock(inHave(o), 'onHand', -1);
+                              setOrders((list) => (list || []).filter((x) => x.id !== o.id));
+                            }} className="p-1 hover:text-red-500 cursor-pointer" title="Delete"><Trash2 size={12} /></button>
                           </div>
                         </div>
                       </div>
@@ -2015,6 +2290,16 @@ export default function LightsBusiness({ view }) {
                               <span className="flex-1 text-primary truncate">{l.it?.name || l.itemId}</span>
                               <span className="text-xs text-muted tabular-nums">{l.qty} {l.it?.unit}</span>
                               <span className="w-20 text-right text-xs text-secondary tabular-nums">{l.price != null ? `$${n(l.price).toFixed(2)}` : ''}</span>
+                              {/* Mark each item as it shows up (on-the-way orders) */}
+                              {(o.status === 'otw' || (o.status || 'arrived') === 'arrived') && (() => {
+                                const here = (o.status || 'arrived') === 'arrived' || !!l.arrived; // arrived orders: every item is here
+                                return (
+                                  <button onClick={() => toggleLine(o, i)} title={here ? 'Click if this item isn’t actually here yet' : 'Click when this item shows up'}
+                                    className={`w-28 shrink-0 px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${here ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25' : 'border border-border-strong text-secondary hover:text-primary hover:bg-surface-alt'}`}>
+                                    {here ? '✓ Arrived' : 'Mark arrived'}
+                                  </button>
+                                );
+                              })()}
                             </div>
                           ))}
                           {o.items && <p className="text-[11px] text-muted pt-1">{o.items}</p>}
@@ -2022,7 +2307,7 @@ export default function LightsBusiness({ view }) {
                             <div className="flex gap-2 pt-1 flex-wrap">
                               {o.receipts.map((r, ri) => (
                                 <span key={ri} className="relative">
-                                  <img src={r} alt="Receipt" onClick={() => setReceiptView(r)} className="w-24 rounded border border-border-default bg-white cursor-zoom-in" />
+                                  <ReceiptImg src={r} alt="Receipt" onClick={() => setReceiptView({ list: o.receipts, i: o.receipts.indexOf(r) })} className="w-24 rounded border border-border-default bg-white cursor-zoom-in" />
                                   <button onClick={() => setOrders((list) => (list || []).map((x) => (x.id === o.id ? { ...x, receipts: x.receipts.filter((_, k) => k !== ri) } : x)))} className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-black text-white hover:bg-red-600 cursor-pointer" title="Remove receipt"><Trash2 size={10} /></button>
                                 </span>
                               ))}
@@ -2034,11 +2319,25 @@ export default function LightsBusiness({ view }) {
                   );
                 })}
                 {!orders.length && <p className="py-2 text-sm text-muted">No receipts yet.</p>}
-                {receiptView && (
-                  <div className="fixed inset-0 z-[300] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setReceiptView('')}>
-                    <img src={receiptView} alt="Receipt" className="max-w-full max-h-full rounded-lg bg-white" />
-                  </div>
-                )}
+                {receiptView && (() => {
+                  // Full-screen receipts; ‹ › (or arrow keys) flip through an order's receipts.
+                  const list = receiptView.list || [receiptView];
+                  const i = Math.min(receiptView.i || 0, list.length - 1);
+                  const go = (d) => setReceiptView({ list, i: (i + d + list.length) % list.length });
+                  return (
+                    <div tabIndex={-1} ref={(el) => el?.focus()} onKeyDown={(e) => { if (e.key === 'ArrowRight') go(1); if (e.key === 'ArrowLeft') go(-1); if (e.key === 'Escape') setReceiptView(''); }}
+                      className="fixed inset-0 z-[300] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out outline-none" onClick={() => setReceiptView('')}>
+                      <ReceiptImg src={list[i]} alt="Receipt" className="max-w-full max-h-full rounded-lg bg-white" />
+                      {list.length > 1 && (
+                        <>
+                          <button onClick={(e) => { e.stopPropagation(); go(-1); }} className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/15 hover:bg-white/30 text-white text-3xl font-bold cursor-pointer" title="Previous receipt">‹</button>
+                          <button onClick={(e) => { e.stopPropagation(); go(1); }} className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/15 hover:bg-white/30 text-white text-3xl font-bold cursor-pointer" title="Next receipt">›</button>
+                          <span className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/70 text-white text-sm font-semibold">Receipt {i + 1} of {list.length}</span>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           );

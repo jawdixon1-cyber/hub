@@ -175,6 +175,7 @@ const CRITICAL_KEYS = [
   'greenteam-lightsJobs',
   'greenteam-lightsColdLeads',
   'greenteam-lightsOrders',
+  'greenteam-lightsReturns',
   'greenteam-planNotes',      // Warm Leads reasons / do-not-contact: small, and stale counts show without it
   'greenteam-planCampaigns',
   'greenteam-planManual',
