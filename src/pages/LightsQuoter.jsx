@@ -3,14 +3,19 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Lightbulb, Sparkles, Copy, Check, FolderOpen, Trash2, Plus } from 'lucide-react';
 import LightsMeasurePhotos from '../components/LightsMeasurePhotos';
 import LightsMockup from '../components/LightsMockup';
+import LightsQuotePreview from '../components/LightsQuotePreview';
 import LightsExtras from '../components/LightsExtras';
 import { extrasStrands, STRAND_FT as EXTRA_STRAND_FT } from '../lib/lightsExtras';
+import LightsAddons from '../components/LightsAddons';
+import LightsOffers from '../components/LightsOffers';
+import LightsPairs from '../components/LightsPairs';
 import { DESIGNS } from '../lib/lightsDesigns';
 import { kindOf } from '../lib/lightsMaterials';
 import JobberClientPicker from '../components/JobberClientPicker';
 import LightsBusiness, { QuoteMaterialsCard } from '../components/LightsBusiness';
-import { DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, listCovers, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt } from '../lib/lightsStore';
+import { getExtrasMeta, DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, listCovers, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt } from '../lib/lightsStore';
 import { useAuth } from '../contexts/AuthContext';
+import { useAppStore } from '../store/AppStoreContext';
 import { useJobberList, quoteStage, STAGE_LABEL } from '../lib/jobberLights';
 
 // Christmas lights quoter: roofline per foot + strands each, with one minimum
@@ -49,10 +54,10 @@ const runsOf = (angles, wire) => angles.flatMap((a) => (a.lines || []).map((l) =
 // Zip (jump) lines measured in Measure: feet + color for zip cord.
 const zipsOf = (angles) => angles.flatMap((a) => (a.jumps || []).map((j) => ({ ft: Number(j.feet) || 0, color: j.color || 'white' })));
 
-const WIZARD = ['', 'Discovery', 'Photos', 'Plan', 'Measure', 'Difficulty', 'Extras', 'Materials', 'Lights', 'Mockup', 'Dates', 'Present'];
+const WIZARD = ['', 'Discovery', 'Photos', 'Plan', 'Measure', 'Difficulty', 'Add-ons', 'Materials', 'Lights', 'Mockup', 'Dates', 'Present', 'Offers'];
 // The order you walk the steps in. Step numbers stay the same (saved confirmations use them);
 // Materials (7) is shown inside Plan (3): one step, one lock, one Confirm (2026-11-12).
-const STEP_ORDER = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11]; // Materials (7) lives inside Plan (3) now
+const STEP_ORDER = [1, 2, 3, 4, 5, 7, 6, 9, 10, 12, 11]; // Materials (7) is its own step after Difficulty; Extras (6) replaced by Add-ons in Present; Lights (8) dropped — the Plan already shows the lines
 const nextStep = (n) => STEP_ORDER[STEP_ORDER.indexOf(n) + 1];
 const prevStep = (n) => STEP_ORDER[STEP_ORDER.indexOf(n) - 1];
 // Back / Next at the bottom of each wizard step.
@@ -136,6 +141,9 @@ function calcLightsQuote({ feet, strands, perStrand, minimum, ...prices }) {
   return { roof, roofParts, roofFt, strand, base, topUp, total: base + topUp };
 }
 
+// When a quote was made: its id is lq-<ms timestamp>; older ones fall back to last saved.
+const createdOf = (sq) => { const m = /^lq-(\d{12,})/.exec(sq?.id || ''); return m ? Number(m[1]) : new Date(sq?.savedAt || 0).getTime(); };
+
 export default function LightsQuoter() {
   const navigate = useNavigate();
   const { orgId } = useAuth();
@@ -164,8 +172,8 @@ export default function LightsQuoter() {
   // Main views: all quotes (default), one quote, supplies
   const [view, setView] = useState(() => params.get('view') || (params.get('q') ? 'quote' : 'quotes'));
   const [editing, setEditing] = useState(() => !!params.get('q')); // Quotes tab: gallery vs one open quote
-  const [wstep, setWstep] = useState(() => { const st = (params.get('q') && Math.min(11, Math.max(1, Number(params.get('step')) || 1))) || 1; return st === 7 ? 3 : st; }); // quote wizard step; a reload stays on it (?step=)
-  const goStep = (n) => { setWstep(n === 7 ? 3 : n); // Materials is inside Plan
+  const [wstep, setWstep] = useState(() => { const st = (params.get('q') && Math.min(12, Math.max(1, Number(params.get('step')) || 1))) || 1; return st === 8 ? 9 : st; }); // quote wizard step; a reload stays on it (?step=)
+  const goStep = (n) => { setWstep(n);
     window.scrollTo({ top: 0, behavior: 'smooth' }); document.querySelector('main')?.scrollTo?.({ top: 0, behavior: 'smooth' }); };
   const [angles, setAngles] = useState([EMPTY_SIDE]);
   const [previews, setPreviews] = useState([]); // finished show photos for the client
@@ -174,6 +182,31 @@ export default function LightsQuoter() {
   const [style, setStyle] = useState(() => localStorage.getItem('lights-mockup-design') || 'warm'); // light color for this quote
   const [savedId, setSavedId] = useState(null); // which saved client quote this is
   const [materials, setMaterials] = useState({}); // what the job will take (itemId -> qty)
+  // What the add-ons put into `materials` last time ({ itemId: qty }) — so a change swaps the old amount for the new one.
+  const allSupplies = useAppStore((st) => st.lightsSupplies) || []; // for naming add-on materials
+  // "Ready to present?" also shows the price bump + offers (they live in lq-ba, set in the Offers step).
+  const [present, setPresent] = useState(null);
+  useEffect(() => {
+    if (wstep !== 11 || !savedId) return undefined;
+    let off = false;
+    getExtrasMeta(savedId).then((v) => { if (!off) setPresent({ id: savedId, v }); }).catch(() => {});
+    return () => { off = true; };
+  }, [wstep, savedId]);
+  const [addonMats, setAddonMats] = useState({});
+  const addonMatsRef = useRef({});
+  const applyAddonMats = (next) => {
+    const prev = addonMatsRef.current || {};
+    if (JSON.stringify(prev) === JSON.stringify(next)) return;
+    addonMatsRef.current = next; setAddonMats(next);
+    setMaterials((m) => {
+      const out = { ...m };
+      new Set([...Object.keys(prev), ...Object.keys(next)]).forEach((id) => {
+        const v = (Number(out[id]) || 0) - (Number(prev[id]) || 0) + (Number(next[id]) || 0);
+        if (v > 0) out[id] = v; else delete out[id];
+      });
+      return out;
+    });
+  };
   const [matNotes, setMatNotes] = useState({}); // notes per material (carry to the job)
   const [wire, setWire] = useState('white'); // socket wire / zip / shingle tab color
   const [power, setPower] = useState(''); // where the outlet is — ask at the meeting
@@ -203,7 +236,7 @@ export default function LightsQuoter() {
   // A locked plan locks its materials too: no quantity or wire-color changes until it's unlocked.
   const matSet = planLocked ? () => {} : setMaterials;
   const wireSet = planLocked ? () => {} : setWire;
-  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, customColor, planLocked, savedId });
+  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, customColor, planLocked, savedId, addonMats });
   // The cloud version this device is working from — if another device saves after it,
   // this device's copy is stale and must not overwrite (that's how removed photos came back).
   const baseSaved = useRef('');
@@ -219,6 +252,7 @@ export default function LightsQuoter() {
     setQuoted(d.quoted || '');
     setQStage(d.qStage || '');
     setMaterials(d.materials || {});
+    setAddonMats(d.addonMats || {}); addonMatsRef.current = d.addonMats || {};
     setMatNotes(d.matNotes || {});
     setWire(d.wire || 'white');
     setPower(d.power || '');
@@ -322,7 +356,7 @@ export default function LightsQuoter() {
       }
     }, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, customColor, planLocked, savedId]);
+  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, customColor, planLocked, savedId, addonMats]);
 
   useEffect(() => {
     localStorage.setItem(PRICES_KEY, JSON.stringify(prices));
@@ -350,14 +384,13 @@ export default function LightsQuoter() {
   // Step confirms. Materials (6) and Lights (7) remember what they looked like, so a change un-confirms them.
   const matSig = JSON.stringify(Object.entries(materials || {}).filter(([, v]) => Number(v) > 0).sort());
   const linesSig = JSON.stringify(angles.map((a) => [a.lines || [], a.jumps || [], a.outlets || []]));
-  const isOk = (n) => (n === 7 ? !!matOk && matOk === matSig : n === 3 ? !!stepsOk[3] && !!matOk && matOk === matSig : n === 8 ? !!linesOk && linesOk === linesSig : !!stepsOk[n]);
+  const isOk = (n) => (n === 7 ? !!matOk && matOk === matSig : n === 3 ? !!stepsOk[3] : n === 8 ? !!linesOk && linesOk === linesSig : !!stepsOk[n]);
   const confirmStep = (n) => {
     if (n === 7) setMatOk(matSig); else if (n === 8) setLinesOk(linesSig); else setStepsOk((o) => ({ ...o, [n]: true }));
-    if (n === 3) setMatOk(matSig); // Plan's Confirm also confirms its materials
     if (nextStep(n)) goStep(nextStep(n));
   };
-  const unconfirm = (n) => { if (n === 3) setMatOk(''); if (n === 7) setMatOk(''); else if (n === 8) setLinesOk(''); else setStepsOk((o) => { const c = { ...o }; delete c[n]; return c; }); };
-  const nav = (n) => <StepNav step={n} onGo={goStep} ok={isOk(n)} changed={((n === 7 || n === 3) && !!matOk) || (n === 8 && !!linesOk)} onConfirm={() => confirmStep(n)} onUndo={() => unconfirm(n)} />;
+  const unconfirm = (n) => { if (n === 7) setMatOk(''); else if (n === 8) setLinesOk(''); else setStepsOk((o) => { const c = { ...o }; delete c[n]; return c; }); };
+  const nav = (n) => <StepNav step={n} onGo={goStep} ok={isOk(n)} changed={(n === 7 && !!matOk) || (n === 8 && !!linesOk)} onConfirm={() => confirmStep(n)} onUndo={() => unconfirm(n)} />;
   // Reorder photos; Extras markers follow their photo.
   const moveSide = (from, to) => {
     const order = angles.map((_, i) => i);
@@ -381,7 +414,7 @@ export default function LightsQuoter() {
     setCrewCopied(url);
     setTimeout(() => setCrewCopied(false), 6000);
   };
-  const reset = () => { setWstep(1); setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); setMaterials({}); setMatNotes({}); setWire('white'); setPower(''); setPowerPhoto(''); setNightPhoto(''); setDisc({}); setInstallDate(''); setTakedownDate(''); setMatOk(''); setLinesOk(''); setStepsOk({}); setExtras([]); setCrewToken(''); setCustomColor(''); };
+  const reset = () => { setWstep(1); setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); setMaterials({}); setMatNotes({}); setWire('white'); setPower(''); setPowerPhoto(''); setNightPhoto(''); setDisc({}); setInstallDate(''); setTakedownDate(''); setMatOk(''); setLinesOk(''); setStepsOk({}); setExtras([]); setCrewToken(''); setCustomColor(''); setAddonMats({}); addonMatsRef.current = {}; };
   const say = (msg) => { setFlash(msg); setTimeout(() => setFlash(''), 2500); };
 
   const openQuote = async (id) => {
@@ -482,7 +515,7 @@ export default function LightsQuoter() {
       })()}
       {view === 'quote' && !editing && qView === 'list' && (() => {
         const rows = saved.filter((sq) => stageOf(sq).key !== 'unqualified')
-          .sort((a, b) => (stageOf(a).key === 'sold') - (stageOf(b).key === 'sold'));
+          .sort((a, b) => createdOf(b) - createdOf(a)); // newest first
         const open = async (id) => { setOpening(id); try { await openQuote(id); setEditing(true); } finally { setOpening(''); } };
         return (
           <div className="rounded-xl border border-border-default bg-card overflow-hidden">
@@ -499,7 +532,7 @@ export default function LightsQuoter() {
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold text-primary truncate">{opening === sq.id ? 'Opening…' : sq.client || 'No name'}</span>
                     {/* Phone: the details under the name */}
-                    <span className="sm:hidden block text-xs text-muted truncate">{ft ? `${ft} ft` : 'No feet yet'}{ft > 0 && num(sq.total) > 0 ? ` · ${money(num(sq.total) / ft)}/ft` : ''} · {sold ? 'Sold' : 'Pending'} · {new Date(sq.savedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                    <span className="sm:hidden block text-xs text-muted truncate">{ft ? `${ft} ft` : 'No feet yet'}{ft > 0 && num(sq.total) > 0 ? ` · ${money(num(sq.total) / ft)}/ft` : ''} · {sold ? 'Sold' : 'Pending'} · {new Date(createdOf(sq)).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
                   </span>
                   <span className="hidden sm:block text-sm text-secondary text-right tabular-nums">{ft || '—'}</span>
                   <span className="text-sm font-bold text-brand-text text-right tabular-nums">{money(sq.total || 0)}</span>
@@ -507,11 +540,14 @@ export default function LightsQuoter() {
                   <span className="hidden sm:block">{sold
                     ? <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500 text-white">Sold</span>
                     : <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-yellow-500/15 text-yellow-400">Pending</span>}</span>
-                  <span className="hidden sm:block text-xs text-muted">{new Date(sq.savedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                  <span className="hidden sm:block text-xs text-muted">{new Date(createdOf(sq)).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
                   <span className="hidden sm:flex justify-end" onClick={(e) => e.stopPropagation()}>
                     {confirmDel === sq.id
-                      ? <button onClick={() => removeQuote(sq.id)} className="text-[10px] font-semibold text-red-500 whitespace-nowrap cursor-pointer">Delete?</button>
-                      : <button onClick={() => setConfirmDel(sq.id)} className="p-1 text-muted opacity-0 group-hover:opacity-100 hover:text-red-500 cursor-pointer" title="Delete"><Trash2 size={13} /></button>}
+                      ? <span className="flex items-center gap-1 whitespace-nowrap text-[11px]">
+                          <button onClick={() => setConfirmDel(null)} className="rounded px-1.5 py-0.5 text-muted hover:text-primary cursor-pointer">Cancel</button>
+                          <button onClick={() => removeQuote(sq.id)} className="rounded bg-red-600 px-1.5 py-0.5 font-semibold text-white hover:bg-red-700 cursor-pointer">Delete</button>
+                        </span>
+                      : <button onClick={() => setConfirmDel(sq.id)} className="p-1 text-muted hover:text-red-500 cursor-pointer" title="Delete"><Trash2 size={13} /></button>}
                   </span>
                 </div>
               );
@@ -528,7 +564,7 @@ export default function LightsQuoter() {
             <Plus size={22} /> <span className="text-sm font-semibold">New quote</span>
           </button>
           {saved.filter((sq) => stageOf(sq).key !== 'unqualified')
-            .sort((a, b) => (stageOf(a).key === 'sold') - (stageOf(b).key === 'sold')) // pending first, then sold
+            .sort((a, b) => createdOf(b) - createdOf(a)) // newest first
             .map((sq) => {
             const sold = stageOf(sq).key === 'sold';
             // Show photo first: a finished mockup from Client preview, then a ticked show photo, then any photo
@@ -551,7 +587,7 @@ export default function LightsQuoter() {
                   <div className="px-3 py-2">
                     <p className="text-sm font-semibold text-primary truncate">{sq.client || 'No name'}</p>
                     <p className="text-[11px] text-muted truncate">
-                      {ft ? `${ft} ft · ` : ''}{new Date(sq.savedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                      {ft ? `${ft} ft · ` : ''}{new Date(createdOf(sq)).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                       {sq.status && sq.status !== 'draft' && ` · ${sq.status[0].toUpperCase()}${sq.status.slice(1)}`}
                     </p>
                     <p className="text-base font-bold text-brand-text">{money(sq.total || 0)}{ft > 0 && num(sq.total) > 0 && <span className="ml-1.5 text-xs font-semibold text-secondary">{money(num(sq.total) / ft)}/ft</span>}</p>
@@ -607,23 +643,39 @@ export default function LightsQuoter() {
           [3, 'Plan', lines.length > 0],
           [4, 'Measure', lines.length > 0 && lines.every((l) => Number(l.feet) > 0)],
           [5, 'Difficulty', q.roof > 0],
-          [6, 'Extras', extras.length > 0],
-          [8, 'Lights', !!linesOk],
+          [7, 'Materials', !!matOk],
+          [6, 'Add-ons', false],
           [9, 'Mockup', previews.length > 0],
           [10, 'Dates', !!installDate && !!takedownDate],
+          [12, 'Offers', false],
           [11, 'Present', false],
         ];
         return (
           <div className="sticky top-0 z-30 -mx-2 mt-4 px-2 py-2 bg-surface/95 backdrop-blur">
-          <div className="flex sm:grid sm:grid-cols-11 gap-0.5 overflow-x-auto rounded-xl border border-border-default bg-card p-1 shadow-lg">
-            {tabs.map(([n, label], ti) => (
-              <button key={n} onClick={() => goStep(n)}
-                className={`min-w-[66px] sm:min-w-0 shrink-0 flex flex-col items-center justify-center gap-1 rounded-lg px-0.5 py-1.5 text-[11px] leading-none font-semibold cursor-pointer transition-colors ${wstep === n ? 'bg-surface-alt text-primary' : isOk(n) ? 'text-brand-text' : 'text-muted hover:text-primary'}`}>
-                {/* Locked plan → Plan + Materials show a lock */}
-                <span className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold ${planLocked && n === 3 ? 'bg-yellow-400 text-black' : isOk(n) ? 'bg-brand text-on-brand' : wstep === n ? 'bg-primary text-surface' : 'bg-surface-alt text-muted'}`}>{planLocked && n === 3 ? '🔒' : isOk(n) ? '✓' : ti + 1}</span>
-                <span className="max-w-full truncate">{label}</span>
-              </button>
-            ))}
+          {/* Steps grouped into the parts of a visit: Meet → Roofline → Add-ons → Present */}
+          <div className="flex gap-1 overflow-x-auto rounded-xl border border-border-default bg-card p-1 shadow-lg">
+            {[['Meet', [1, 2]], ['Roofline', [3, 4, 5, 7]], ['Add-ons', [6]], ['Present', [9, 10, 12, 11]]].map(([group, ns], gi) => {
+              const here = ns.includes(wstep);
+              const allOk = ns.every((n) => n === 11 || isOk(n));
+              return (
+                <div key={group} className={`shrink-0 sm:shrink rounded-lg border px-1 pt-1 pb-0.5 transition-colors ${here ? 'border-brand/60 bg-brand/5' : 'border-border-subtle bg-surface-alt/20'}`} style={{ flex: `${Math.max(ns.length, 1.3)} 1 0`, minWidth: ns.length === 1 ? 88 : undefined }}>
+                  <p className={`px-1 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.12em] ${here ? 'text-brand-text' : allOk && group !== 'Present' ? 'text-brand-text/70' : 'text-muted'}`}>{gi + 1} · {group}</p>
+                  <div className="flex gap-0.5">
+                    {tabs.filter(([n]) => ns.includes(n)).map(([n, label]) => {
+                      const ti = tabs.findIndex(([m]) => m === n);
+                      return (
+                        <button key={n} onClick={() => goStep(n)}
+                          className={`min-w-[50px] flex-1 flex flex-col items-center justify-center gap-1 rounded-md px-0 py-1.5 text-[10px] tracking-tight leading-none font-semibold cursor-pointer transition-colors ${wstep === n ? 'bg-surface-alt text-primary' : isOk(n) ? 'text-brand-text' : 'text-muted hover:text-primary'}`}>
+                          {/* Locked plan → Plan shows a lock */}
+                          <span className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold ${planLocked && n === 3 ? 'bg-yellow-400 text-black' : isOk(n) ? 'bg-brand text-on-brand' : wstep === n ? 'bg-primary text-surface' : 'bg-surface-alt text-muted'}`}>{planLocked && n === 3 ? '🔒' : isOk(n) ? '✓' : ti + 1}</span>
+                          <span className="max-w-full truncate">{label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
           </div>
         );
@@ -713,6 +765,7 @@ export default function LightsQuoter() {
       </div>
       <div id="step-5" className={`scroll-mt-32 ${planLocked ? 'pointer-events-none select-none' : ''}`}><LightsMeasurePhotos angles={angles} setAngles={planLocked ? () => {} : setAngles} onMove={planLocked ? () => {} : moveSide} onApply={(t) => setFeet({ easy: t.easy ? String(t.easy) : '', medium: t.medium ? String(t.medium) : '', hard: t.hard ? String(t.hard) : '' })} /></div>
         {/* Materials + the Confirm button show right below (the Materials block renders on the Plan step) */}
+        {nav(3)}
       </div>
       <div className={wstep === 4 ? 'space-y-5' : 'hidden'}>
       {/* Measure: log each line's feet */}
@@ -808,12 +861,16 @@ export default function LightsQuoter() {
         {nav(5)}
       </div>
       <div className={wstep === 6 ? 'space-y-5' : 'hidden'}>
-      {/* Extras: columns, railings, trees, bushes — priced per strand */}
-      <LightsExtras angles={angles} extras={extras} setExtras={setExtras} perStrand={prices.perStrand} setPerStrand={setPrice('perStrand')} />
+      {/* Add-ons: anything besides the roofline they want quoted (trees, doors, garages…) + free extras.
+          (Old per-photo Extras still count toward materials on quotes that have them.) */}
+      <div className="rounded-xl border border-border-default bg-card p-4 space-y-3">
+        <StepHead n={6} title="Add-ons" sub="Anything besides the roofline they want quoted — trees, doors, garages, bushes." />
+        <LightsAddons key={savedId || 'none'} quoteId={savedId} onMaterials={applyAddonMats} />
+      </div>
         {nav(6)}
       </div>
-      <div className={wstep === 3 ? 'space-y-5' : 'hidden'}>
-      {/* Materials — part of the Plan step */}
+      <div className={wstep === 7 ? 'space-y-5' : 'hidden'}>
+      {/* Materials — its own step, right after Difficulty */}
       {(() => {
         // Gutter vs shingle feet from the lines drawn on every side.
         const mountFt = { gutter: 0, guard: 0, shingle: 0, magnet: 0 };
@@ -844,7 +901,21 @@ export default function LightsQuoter() {
           { section: lightsSec, label: 'Clips', amt: `${L}`, detail: clipParts.join(' · '), want: L, test: (it) => /clip|shingle tab/i.test(it?.name || '') && !(peaks > 0 && /\bo\s*clips?\b/i.test(it?.name || '')) }, // any clip (flex, tab, magnet, all-in-one); O clips get their own row when there are peaks
           { section: lightsSec, label: 'O clips', amt: `${peaks}`, detail: '+1 per peak', want: peaks, test: nm(/\bo\s*clips?\b/i), show: peaks > 0 },
           { section: `Zip cord · ${zipFt > 0 ? `${r1(zipFt)} ft` : '50 ft'}`, label: 'Zip cord', amt: zipFt > 0 ? `${Math.ceil(zipFt)} ft` : '50 ft', detail: zipFt > 0 ? colors(byColor(zips, 'color'), ' ft') : 'no zip lines measured — default', want: zipFt > 0 ? Math.ceil(zipFt) : 50, test: nm(/zip/i) },
-          { section: `Extras · ${extras.length} item${extras.length === 1 ? '' : 's'}`, label: 'Mini strands', amt: `${strandCount}`, detail: `${EXTRA_STRAND_FT} ft each · columns, railings, trees, bushes`, want: strandCount, test: (it) => kindOf(it) === 'mini', show: strandCount > 0 },
+          // Add-ons (trees, doors, wreaths…) — what they use from Material, plus any old per-photo Extras strands.
+          ...(() => {
+            const sup = allSupplies;
+            const nameOf = (id) => sup.find((x) => x.id === id)?.name || '';
+            const want = (re) => Object.entries(addonMats || {}).reduce((t, [id, qn]) => t + (re.test(nameOf(id)) ? Number(qn) || 0 : 0), 0);
+            const minis = want(/mini/i) + (extras.length ? strandCount : 0);
+            const wreaths = want(/wreath/i); const bows = want(/\bbow\b/i); const garland = want(/garland/i);
+            const sec = 'Add-ons';
+            return [
+              { section: sec, label: 'Mini strands', amt: `${minis}`, detail: `${EXTRA_STRAND_FT} ft each · trees, bushes, windows, doors`, want: minis, test: (it) => kindOf(it) === 'mini', show: minis > 0 },
+              { section: sec, label: 'Wreaths', amt: `${wreaths}`, detail: '', want: wreaths, test: nm(/wreath/i), show: wreaths > 0 },
+              { section: sec, label: 'Bows', amt: `${bows}`, detail: '', want: bows, test: nm(/\bbow\b/i), show: bows > 0 },
+              { section: sec, label: 'Garland', amt: `${garland}`, detail: '9 ft each', want: garland, test: nm(/garland/i), show: garland > 0 },
+            ];
+          })(),
           { section: 'Power', label: 'Plugs', amt: '10 + 10', detail: 'male + female · always black', test: nm(/plug/i) },
           { section: 'Power', label: 'Timer', amt: '1', detail: '', test: nm(/timer/i) },
         ].filter((g) => g.show !== false);
@@ -860,7 +931,7 @@ export default function LightsQuoter() {
       })()}
 
 
-        {nav(3)}
+        {nav(7)}
       </div>
       <div className={wstep === 8 ? 'space-y-5' : 'hidden'}>
       {/* Where the lights go — confirm what the presentation will show */}
@@ -870,6 +941,11 @@ export default function LightsQuoter() {
       <div className={wstep === 9 ? 'space-y-5' : 'hidden'}>
       {/* Mockup: where the lights go, show photos for ChatGPT, client preview */}
       <LightsMockup part="mockup" angles={angles} setAngles={setAngles} client={client} previews={previews} setPreviews={setPreviews} designId={style} nightPhoto={nightPhoto} setNightPhoto={setNightPhoto} extras={extras} customColor={customColor} />
+      {/* Before / afters for the Present page — one per side */}
+      <div className="rounded-xl border border-border-default bg-card p-4 space-y-3">
+        <p className="text-base font-bold text-primary">Before / after photos</p>
+        <LightsPairs key={savedId || 'none'} quoteId={savedId} />
+      </div>
         {nav(9)}
       </div>
       <div className={wstep === 10 ? 'space-y-5' : 'hidden'}>
@@ -890,26 +966,33 @@ export default function LightsQuoter() {
 
         {nav(10)}
       </div>
+      <div className={wstep === 12 ? 'space-y-5' : 'hidden'}>
+      {/* Price bump + offers — right before presenting */}
+      <div className="rounded-xl border border-border-default bg-card p-4 space-y-3">
+        <StepHead n={12} title="Offers & bumps" sub="Tap bonuses to sweeten the deal, and add a price bump if you need one." />
+        <LightsOffers key={savedId || 'none'} quoteId={savedId} basePrice={num(quoted) || q.total} />
+      </div>
+
+        {nav(12)}
+      </div>
       <div className={wstep === 11 ? 'space-y-5' : 'hidden'}>
       {/* Summary of what you put in */}
       {(() => {
-        const price = num(quoted) || q.total;
         const design = DESIGNS.find((d) => d.id === style);
+        // Last check before presenting: who, what color, materials confirmed, any bump / offers.
+        const ba = present?.id === savedId ? present.v : null;
+        const offerList = (ba?.offers || []).filter((o) => o.on !== false && Number(o.amount) > 0);
         const rows = [
           ['Client', client || '—'],
           ['Light color', design?.label || '—'],
-          ['Power', power?.trim() || '—'],
-          ['Gutter guards', disc.gutterGuard === 'yes' ? 'Yes' : disc.gutterGuard === 'no' ? 'No' : '—'],
-          ['Extras', extras.length ? `${extras.length} item${extras.length === 1 ? '' : 's'} · ${strandCount} strands` : 'None'],
-          ['Price', price > 0 ? money(Math.round(price)) : '—'],
-          ['2-yr / 3-yr', price > 0 ? `${money(Math.round(price * 0.95))}/yr · ${money(Math.round(price * 0.9))}/yr` : '—'],
-          ['Install date', installDate ? new Date(`${installDate}T12:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '—'],
           ['Materials', isOk(7) ? 'Confirmed' : '—'],
-          ['Takedown date', takedownDate ? new Date(`${takedownDate}T12:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '—'],
+          ['Price bump', !ba ? '…' : Number(ba.adjust) > 0 ? `+${money(Number(ba.adjust))}` : 'None'],
+          ['Offers', !ba ? '…' : offerList.length ? offerList.map((o) => `${o.label || 'Offer'} (${o.kind === 'free' ? 'free' : o.kind === '%' ? `${o.amount}% off` : `${money(Number(o.amount))} off`})`).join(', ') : 'None'],
         ];
         return (
-          <div className="rounded-xl border border-border-default bg-card p-4">
-            <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+          <div className="rounded-xl border border-border-default bg-card p-4 space-y-2">
+            <StepHead title="Ready to present?" sub="Quick check, then tap ▶ Present." />
+            <div className="grid gap-x-6 gap-y-2">
               {rows.map(([k, v]) => (
                 <div key={k} className="flex items-baseline justify-between gap-3 border-b border-border-subtle py-1.5">
                   <span className="text-sm text-muted">{k}</span>
@@ -920,6 +1003,10 @@ export default function LightsQuoter() {
           </div>
         );
       })()}
+
+      {/* Plan photos (+ mockups) with downloads, then the exact quote text */}
+      <LightsMockup part="lines" title="Plan photos" sub="Every side with your lines. Tap one to see it big, or download." angles={angles} setAngles={setAngles} client={client} previews={previews} setPreviews={setPreviews} designId={style} />
+      <LightsQuotePreview quoteId={savedId} />
 
       {/* Crew view: send the team the plan + materials */}
       <div className="rounded-xl border border-border-default bg-card p-4 flex items-center gap-3 flex-wrap">

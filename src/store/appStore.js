@@ -61,6 +61,8 @@ const STATE_KEYS = [
   { key: 'planNotes',           supaKey: 'greenteam-planNotes',           initial: {} }, // Plans page: clientId -> { reason, note, dnc, updatedAt }
   { key: 'planCampaigns',       supaKey: 'greenteam-planCampaigns',       initial: [] }, // Warm Leads outreach campaigns (see PlanCampaigns.jsx)
   { key: 'planManual',          supaKey: 'greenteam-planManual',          initial: [] }, // Warm Leads people added by hand: [{ id, name, phone, note, createdAt }]
+  { key: 'plannerData',         supaKey: 'greenteam-planner',             initial: null }, // Plan page: habits, habitLog, goals, lists, days (see pages/Plan.jsx)
+  { key: 'socialIdeas',         supaKey: 'greenteam-socialIdeas',         initial: [] }, // Social media tab: video ideas [{ id, title, notes, status, platforms, createdAt }]
   { key: 'hangerTrips',         supaKey: 'greenteam-hangerTrips',         initial: [] },
   { key: 'hangerPeople',        supaKey: 'greenteam-hangerPeople',        initial: [] },
   { key: 'hangerAreas',         supaKey: 'greenteam-hangerAreas',         initial: [] },
@@ -148,7 +150,10 @@ function seedMissingGuides(guides, allInitialGuides) {
 // editing different clients or campaign cards don't wipe each other's changes.
 const MERGE_KEYS = new Set(['greenteam-planNotes', 'greenteam-planCampaigns', 'greenteam-planManual',
   // Lights: an open tab with an old copy was overwriting newer edits (lost a shingle-tab rule + an item delete, 2026-11-12).
-  'greenteam-lightsSupplies', 'greenteam-lightsOrders', 'greenteam-lightsJobs', 'greenteam-lightsReturns', 'greenteam-lightsColdLeads']);
+  'greenteam-lightsSupplies', 'greenteam-lightsOrders', 'greenteam-lightsJobs', 'greenteam-lightsReturns', 'greenteam-lightsColdLeads',
+  // Owner checklists: an old tab saved its copy over restored headers/steps (2026-11-17).
+  'greenteam-ownerStartChecklist', 'greenteam-ownerEndChecklist',
+  'greenteam-socialIdeas', 'greenteam-planner']);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 const byId = (arr) => Array.isArray(arr) && arr.every((x) => isObj(x) && x.id != null);

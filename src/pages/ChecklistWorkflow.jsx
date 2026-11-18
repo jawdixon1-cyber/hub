@@ -5,6 +5,11 @@ import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 
 const WeatherStep = lazy(() => import('../components/WeatherStep'));
+const QuoTextsStep = lazy(() => import('../components/QuoTextsStep'));
+const EmailStep = lazy(() => import('../components/EmailStep'));
+const JobberStep = lazy(() => import('../components/JobberStep'));
+const PersonalStep = lazy(() => import('../components/PersonalStep'));
+const PlanPage = lazy(() => import('./Plan'));
 const ChecklistEditorModal = lazy(() => import('../components/ChecklistEditorModal'));
 
 const DETAILS_KEY = 'greenteam-checklist-details';
@@ -100,7 +105,7 @@ export default function ChecklistWorkflow() {
   const setTeamChecklist = useAppStore((s) => s.setTeamChecklist);
   const teamEndChecklist = useAppStore((s) => s.teamEndChecklist);
   const setTeamEndChecklist = useAppStore((s) => s.setTeamEndChecklist);
-  const { user } = useAuth();
+  const { user, ownerMode } = useAuth();
   const userEmail = (user?.email || 'anon').toLowerCase();
 
   // Owner ('start', 'end') uses shared done state on the list itself.
@@ -188,6 +193,12 @@ export default function ChecklistWorkflow() {
     return filtered.map((i) => ({ ...i, done: !!teamDoneMap[i.id] }));
   }, [list, isTeam, teamDoneMap]);
   const total = steps.length;
+  // Each step's section header (e.g. "💼 Work" / "🏠 Personal"), shown as a label in the step list.
+  const stepHeader = useMemo(() => {
+    const m = {}; let h = null;
+    for (const i of list) { if (i.type === 'header') h = i.text; else m[i.id] = h; }
+    return m;
+  }, [list]);
 
   // First undone real step index, or last step if all done.
   const firstUndoneIdx = useMemo(() => {
@@ -279,6 +290,8 @@ export default function ChecklistWorkflow() {
   const prev = () => idx > 0 && navigate(`/workflow/${kind}/${idx - 1}`);
 
   const titleParts = parseLinks(item.text);
+  // Steps with a big live panel (the Quo inbox) get the full width; the step list collapses to the top bar.
+  const wide = ownerMode && !isTeam && ['texts', 'email', 'jobber', 'personal', 'plan'].includes(item.panel);
 
   // Short label for the step list (strip markdown links, trim to ~25 chars).
   const shortLabel = (t) => {
@@ -292,12 +305,12 @@ export default function ChecklistWorkflow() {
     : null;
 
   return (
-    <div className="px-4 sm:px-6 py-6 max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
-      {/* Mobile-only top progress bar — replaces the side stepper on small screens */}
-      <div className="lg:hidden">
+    <div className={`px-4 sm:px-6 py-6 max-w-6xl mx-auto grid grid-cols-1 ${wide ? '' : 'lg:grid-cols-[260px_1fr]'} gap-6`}>
+      {/* Top progress bar: replaces the side stepper on small screens, and on wide steps (Quo inbox) */}
+      <div className={wide ? '' : 'lg:hidden'}>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted">
-            {sectionLabel || (kind === 'end' ? 'End of Day' : kind === 'team-start' ? 'Open' : kind === 'team-end' ? 'Close' : kind === 'team-today' ? 'Today' : 'Start of Day')} · {idx + 1}/{total}
+            {sectionLabel || (kind === 'end' ? 'End of Day · 5 PM' : kind === 'team-start' ? 'Open' : kind === 'team-end' ? 'Close' : kind === 'team-today' ? 'Today' : 'Start of Day · 8 AM')} · {idx + 1}/{total}
           </p>
           <button
             onClick={() => setShowFullEditor(true)}
@@ -307,20 +320,44 @@ export default function ChecklistWorkflow() {
             <Pencil size={14} />
           </button>
         </div>
-        <div className="h-1.5 rounded-full bg-surface-alt overflow-hidden">
-          <div
-            className="h-full bg-primary transition-all duration-300"
-            style={{ width: `${total > 0 ? ((idx + 1) / total) * 100 : 0}%` }}
-          />
-        </div>
+        {wide ? (
+          // Wide steps: the step list as a row of chips (checks, current, next).
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {steps.map((s, i) => {
+              const active = i === idx;
+              return (
+                <button key={s.id} onClick={() => navigate(`/workflow/${kind}/${i}`)}
+                  className={`shrink-0 inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1 rounded-full text-xs cursor-pointer ${
+                    active ? 'bg-primary text-card font-black'
+                      : s.done ? 'text-tertiary hover:bg-surface-alt font-medium'
+                        : 'text-primary bg-surface-alt/60 hover:bg-surface-alt font-bold'
+                  }`}>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
+                    active ? 'bg-card text-primary' : s.done ? 'bg-emerald-500 text-white' : 'border border-card-border text-tertiary'
+                  }`}>
+                    {s.done ? <Check size={10} strokeWidth={3} /> : i + 1}
+                  </span>
+                  <span className={s.done && !active ? 'line-through opacity-60' : ''}>{shortLabel(s.text)}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="h-1.5 rounded-full bg-surface-alt overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all duration-300"
+              style={{ width: `${total > 0 ? ((idx + 1) / total) * 100 : 0}%` }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Side stepper — desktop only */}
-      <aside className="hidden lg:block lg:sticky lg:top-4 lg:self-start">
+      <aside className={`hidden ${wide ? '' : 'lg:block'} lg:sticky lg:top-4 lg:self-start`}>
         <div className="rounded-2xl border border-card-border bg-card p-3">
           <div className="flex items-center justify-between px-2 pt-1 pb-2">
             <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted">
-              {kind === 'end' ? 'End of Day' : kind === 'team-start' ? 'Open' : kind === 'team-end' ? 'Close' : kind === 'team-today' ? 'Today' : 'Start of Day'} · {idx + 1}/{total}
+              {kind === 'end' ? 'End of Day · 5 PM' : kind === 'team-start' ? 'Open' : kind === 'team-end' ? 'Close' : kind === 'team-today' ? 'Today' : 'Start of Day · 8 AM'} · {idx + 1}/{total}
             </p>
             <button
               onClick={() => setShowFullEditor(true)}
@@ -340,6 +377,9 @@ export default function ChecklistWorkflow() {
               const isFirstOfSection = isCombined && (!prev || prev.__section !== s.__section);
               return (
                 <Fragment key={s.id}>
+                  {!isCombined && stepHeader[s.id] && stepHeader[s.id] !== (prev ? stepHeader[prev.id] : null) && (
+                    <p className="px-3 pt-3 pb-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-muted">{stepHeader[s.id]}</p>
+                  )}
                   {(isCombined && (i === 0 || showDivider)) && (
                     <p className="px-3 pt-3 pb-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-muted">
                       {s.__section === 'open' ? '☀ Open' : '🌙 Close'}
@@ -399,6 +439,113 @@ export default function ChecklistWorkflow() {
             <WeatherStep hideContinue />
           </Suspense>
         </div>
+      )}
+
+      {/* Live panels (owner only). Added to a step with an explicit tap, never automatically. */}
+      {ownerMode && !isTeam && item.panel === 'texts' && (
+        <div className="mb-6">
+          <Suspense fallback={<p className="text-sm text-tertiary">Loading texts…</p>}>
+            <QuoTextsStep />
+          </Suspense>
+          <button
+            onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: undefined } : i))}
+            className="mt-3 text-[11px] font-bold text-muted hover:text-primary cursor-pointer"
+          >
+            Remove Quo texts from this step
+          </button>
+        </div>
+      )}
+      {ownerMode && !isTeam && item.panel === 'email' && (
+        <div className="mb-6">
+          <Suspense fallback={<p className="text-sm text-tertiary">Loading email…</p>}>
+            <EmailStep />
+          </Suspense>
+          <button
+            onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: undefined } : i))}
+            className="mt-3 text-[11px] font-bold text-muted hover:text-primary cursor-pointer"
+          >
+            Remove Gmail from this step
+          </button>
+        </div>
+      )}
+      {ownerMode && !isTeam && item.panel === 'jobber' && (
+        <div className="mb-6">
+          <Suspense fallback={<p className="text-sm text-tertiary">Loading Jobber…</p>}>
+            <JobberStep />
+          </Suspense>
+          <button
+            onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: undefined } : i))}
+            className="mt-3 text-[11px] font-bold text-muted hover:text-primary cursor-pointer"
+          >
+            Remove Jobber dashboard from this step
+          </button>
+        </div>
+      )}
+      {ownerMode && !isTeam && item.panel === 'personal' && (
+        <div className="mb-6">
+          <Suspense fallback={<p className="text-sm text-tertiary">Loading…</p>}>
+            <PersonalStep />
+          </Suspense>
+          <button
+            onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: undefined } : i))}
+            className="mt-3 text-[11px] font-bold text-muted hover:text-primary cursor-pointer"
+          >
+            Remove personal inbox from this step
+          </button>
+        </div>
+      )}
+      {ownerMode && !isTeam && item.panel === 'plan' && (
+        <div className="mb-6">
+          <Suspense fallback={<p className="text-sm text-tertiary">Loading plan…</p>}>
+            <PlanPage embedded />
+          </Suspense>
+          <button
+            onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: undefined } : i))}
+            className="mt-3 text-[11px] font-bold text-muted hover:text-primary cursor-pointer"
+          >
+            Remove the planner from this step
+          </button>
+        </div>
+      )}
+      {ownerMode && !isTeam && !item.panel && item.type !== 'weather' && /^plan\b/i.test(item.text.trim()) && (
+        <button
+          onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: 'plan' } : i))}
+          className="mb-6 mr-2 inline-flex items-center gap-1.5 text-sm font-black text-brand bg-brand/10 hover:bg-brand/15 px-3 py-2 rounded-2xl cursor-pointer"
+        >
+          + Show my planner here
+        </button>
+      )}
+      {ownerMode && !isTeam && !item.panel && item.type !== 'weather' && /\bpersonal\b/i.test(item.text) && (
+        <button
+          onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: 'personal' } : i))}
+          className="mb-6 mr-2 inline-flex items-center gap-1.5 text-sm font-black text-brand bg-brand/10 hover:bg-brand/15 px-3 py-2 rounded-2xl cursor-pointer"
+        >
+          + Show my iMessages and personal email here
+        </button>
+      )}
+      {ownerMode && !isTeam && !item.panel && item.type !== 'weather' && /\bjobber\b/i.test(item.text) && (
+        <button
+          onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: 'jobber' } : i))}
+          className="mb-6 mr-2 inline-flex items-center gap-1.5 text-sm font-black text-brand bg-brand/10 hover:bg-brand/15 px-3 py-2 rounded-2xl cursor-pointer"
+        >
+          + Show my Jobber day here
+        </button>
+      )}
+      {ownerMode && !isTeam && !item.panel && item.type !== 'weather' && !/\bpersonal\b/i.test(item.text) && /\bemails?\b/i.test(item.text) && (
+        <button
+          onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: 'email' } : i))}
+          className="mb-6 mr-2 inline-flex items-center gap-1.5 text-sm font-black text-brand bg-brand/10 hover:bg-brand/15 px-3 py-2 rounded-2xl cursor-pointer"
+        >
+          + Show my Gmail inbox here
+        </button>
+      )}
+      {ownerMode && !isTeam && !item.panel && item.type !== 'weather' && !/\bpersonal\b/i.test(item.text) && /\btexts?\b/i.test(item.text) && (
+        <button
+          onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: 'texts' } : i))}
+          className="mb-6 inline-flex items-center gap-1.5 text-sm font-black text-brand bg-brand/10 hover:bg-brand/15 px-3 py-2 rounded-2xl cursor-pointer"
+        >
+          + Show my Quo texts here (with drafted replies)
+        </button>
       )}
 
       {/* Links (from item + stored detail) */}

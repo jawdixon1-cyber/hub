@@ -5,6 +5,8 @@ import {
   Home as HomeIcon,
   Repeat,
   BookOpen,
+  Video,
+  CalendarCheck,
   Users,
   LogOut,
   RefreshCw,
@@ -65,6 +67,8 @@ const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'));
 const TeamManagement = lazy(() => import('./pages/TeamManagement'));
 const TeamMemberDetail = lazy(() => import('./pages/TeamMemberDetail'));
 const MileageLog = lazy(() => import('./pages/MileageLog'));
+const SocialMedia = lazy(() => import('./pages/SocialMedia'));
+const PlanPage = lazy(() => import('./pages/Plan'));
 const ChecklistTrackerPage = lazy(() => import('./pages/ChecklistTrackerPage'));
 const Quoting = lazy(() => import('./pages/Quoting'));
 const LightsQuoter = lazy(() => import('./pages/LightsQuoter'));
@@ -147,12 +151,13 @@ const OWNER_TOOLS_PINNED = [
   { id: 'sales', path: '/sales', label: 'Quoter', icon: Calculator },
   { id: 'lights', path: '/lights-quoter', label: 'Lights', icon: Lightbulb },
   { id: 'plans', path: '/client-base', label: 'Client Base', icon: Repeat },
-  { id: 'guides', path: '/playbooks', label: 'Playbooks', icon: BookOpen },
-  { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
-  { id: 'payroll', path: '/payroll', label: 'Finance', icon: DollarSign },
-  { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
+  { id: 'social', path: '/social', label: 'Social media', icon: Video },
 ];
 const OWNER_TOOLS_MORE = [
+  { id: 'payroll', path: '/payroll', label: 'Finance', icon: DollarSign },
+  { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
+  { id: 'guides', path: '/playbooks', label: 'Playbooks', icon: BookOpen },
+  { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
   { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
   { id: 'timesheets', path: '/timesheets', label: 'Timesheets', icon: Clock },
@@ -193,6 +198,8 @@ const CRITICAL_KEYS = [
   'greenteam-ownerEndChecklist',
   'greenteam-ownerTodos',
   'greenteam-mileageLog',
+  'greenteam-socialIdeas',
+  'greenteam-planner',
   'greenteam-vehicles',
   'greenteam-guides',
 ];
@@ -874,6 +881,31 @@ function AppShell() {
 
       {ownerMode && (
         <>
+          {/* Jude's Start Day / End Day checklists (his wall sheet), with today's count. */}
+          <div className="h-px bg-border-subtle my-3 mx-2" />
+          {[
+            { id: 'o-start', path: '/workflow/start', label: 'Start · 8 AM', icon: Sunrise, done: dailyProgress.startDone, total: dailyProgress.startTotal },
+            { id: 'o-end', path: '/workflow/end', label: 'End · 5 PM', icon: Sunset, done: dailyProgress.endDone, total: dailyProgress.endTotal },
+            { id: 'o-plan', path: '/plan', label: 'Plan', icon: CalendarCheck },
+          ].map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.path);
+            const allDone = item.total > 0 && item.done === item.total;
+            return (
+              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? `${item.label} ${item.done}/${item.total}` : undefined}
+                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
+                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                }`}>
+                <Icon size={15} className="shrink-0" />
+                {!collapsed && (
+                  <>
+                    <span className="truncate flex-1 text-left">{item.label}</span>
+                    {item.total != null && <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${allDone ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-tertiary'}`}>{item.done}/{item.total}</span>}
+                  </>
+                )}
+              </button>
+            );
+          })}
           {/* Tools — flat in the bar. "More" holds the overflow and the Building group. */}
           <div className="h-px bg-border-subtle my-3 mx-2" />
           {OWNER_TOOLS_PINNED.map((item) => {
@@ -1094,7 +1126,7 @@ function AppShell() {
             </div>
           </div>
         </div>
-        <div className={location.pathname === '/messages' || location.pathname === '/schedule' ? 'px-4 py-3' : 'px-[45px] py-3 sm:py-5'}>
+        <div className={location.pathname === '/messages' || location.pathname === '/schedule' ? 'px-4 py-3' : 'px-1 sm:px-6 lg:px-[45px] py-3 sm:py-5'}>
           <Suspense fallback={
             <div className="flex items-center justify-center py-20">
               <div className="w-8 h-8 border-4 border-brand-light border-t-brand rounded-full animate-spin" />
@@ -1161,6 +1193,8 @@ function AppShell() {
                 <Route path="/team/:memberEmail" element={<TeamMemberDetail />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/mileage" element={<MileageLog />} />
+                <Route path="/social" element={<SocialMedia />} />
+                <Route path="/plan" element={<PlanPage />} />
                 <Route path="/receipts" element={<ReceiptTracker />} />
                 <Route path="/standards" element={<Standards />} />
                 <Route path="/daily-checklist" element={<DailyChecklist />} />

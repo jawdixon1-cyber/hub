@@ -97,37 +97,58 @@ export function ChecklistSection({ items, setItems, kind }) {
   const [dragOver, setDragOver] = useState(null);
   const addRef = useRef(null);
 
-  // Strip out legacy section headers — we no longer support sections.
+  // The editor shows steps only, but section headers (💼 Work / 🏠 Personal) and every
+  // extra field on a step (panel, action, …) must survive an edit. Keep all fields, and
+  // put each header back in front of the step it came before.
   const all = items
     .filter((i) => (i.type || 'item') !== 'header')
     .map((i) => ({
+      ...i,
       id: i.id || genId(), text: i.text || '', type: i.type || 'item',
       indent: i.indent || 0, done: i.done || false, links: i.links || [],
-      days: i.days, fieldWorkOnly: i.fieldWorkOnly,
     }));
+  const headerAnchors = (() => {
+    const out = [];
+    items.forEach((it, idx) => {
+      if ((it.type || 'item') !== 'header') return;
+      const next = items.slice(idx + 1).find((x) => (x.type || 'item') !== 'header');
+      out.push({ header: it, anchorId: next?.id || null });
+    });
+    return out;
+  })();
+  const setItemsKeepHeaders = (list) => {
+    const placed = new Set();
+    const result = [];
+    for (const it of list) {
+      for (const h of headerAnchors) if (h.anchorId === it.id && !placed.has(h.header.id)) { result.push(h.header); placed.add(h.header.id); }
+      result.push(it);
+    }
+    for (const h of headerAnchors) if (!placed.has(h.header.id)) result.push(h.header);
+    setItems(result);
+  };
 
   const weatherEnabled = all.some((i) => i.type === 'weather');
   const toggleWeather = () => {
     if (weatherEnabled) {
-      setItems(all.filter((i) => i.type !== 'weather'));
+      setItemsKeepHeaders(all.filter((i) => i.type !== 'weather'));
     } else {
-      setItems([
+      setItemsKeepHeaders([
         { id: genId(), text: 'Weather Check', type: 'weather', indent: 0, done: false, links: [] },
         ...all,
       ]);
     }
   };
 
-  const update = (id, text) => setItems(all.map((i) => (i.id === id ? { ...i, text } : i)));
-  const remove = (id) => setItems(all.filter((i) => i.id !== id));
-  const setDays = (id, days) => setItems(all.map((i) => (i.id === id ? { ...i, days: days.length ? days : undefined } : i)));
+  const update = (id, text) => setItemsKeepHeaders(all.map((i) => (i.id === id ? { ...i, text } : i)));
+  const remove = (id) => setItemsKeepHeaders(all.filter((i) => i.id !== id));
+  const setDays = (id, days) => setItemsKeepHeaders(all.map((i) => (i.id === id ? { ...i, days: days.length ? days : undefined } : i)));
   const moveBy = (id, delta) => {
     const idx = all.findIndex((i) => i.id === id);
     const target = idx + delta;
     if (idx < 0 || target < 0 || target >= all.length) return;
     const next = [...all];
     [next[idx], next[target]] = [next[target], next[idx]];
-    setItems(next);
+    setItemsKeepHeaders(next);
   };
 
   // Sequential numbering across all non-header items so the user sees true order.
@@ -142,7 +163,7 @@ export function ChecklistSection({ items, setItems, kind }) {
   const onDragStart = (e, idx) => { setDragFrom(idx); e.dataTransfer.effectAllowed = 'move'; };
   const onDragEnd = () => {
     if (dragFrom != null && dragOver != null && dragFrom !== dragOver) {
-      const u = [...all]; const [d] = u.splice(dragFrom, 1); u.splice(dragOver, 0, d); setItems(u);
+      const u = [...all]; const [d] = u.splice(dragFrom, 1); u.splice(dragOver, 0, d); setItemsKeepHeaders(u);
     }
     setDragFrom(null); setDragOver(null);
   };
@@ -153,7 +174,7 @@ export function ChecklistSection({ items, setItems, kind }) {
     const idx = afterId ? all.findIndex((i) => i.id === afterId) + 1 : 0;
     const u = [...all];
     u.splice(idx, 0, { id: genId(), text: newItemText.trim(), type: 'item', indent: 0, done: false, links: [] });
-    setItems(u); setNewItemText('');
+    setItemsKeepHeaders(u); setNewItemText('');
     setTimeout(() => addRef.current?.focus(), 50);
   };
   const flat = (id) => all.findIndex((i) => i.id === id);

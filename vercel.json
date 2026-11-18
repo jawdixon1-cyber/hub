@@ -1,6 +1,7 @@
 {
   "rewrites": [
     { "source": "/api/team-auth", "destination": "/api/app-state?key=team-auth" },
+    { "source": "/api/gmail-callback", "destination": "/api/gmail?action=callback" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/refer/:token", "destination": "/api/app-state?key=refer-page&token=:token" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
@@ -20,6 +21,21 @@
     },
     "api/jobber-callback.js": {
       "maxDuration": 15
+    },
+    "api/plan-day.js": {
+      "maxDuration": 30
+    },
+    "api/plan-ai.js": {
+      "maxDuration": 60
+    },
+    "api/jobber-today.js": {
+      "maxDuration": 60
+    },
+    "api/gmail.js": {
+      "maxDuration": 60
+    },
+    "api/quo.js": {
+      "maxDuration": 60
     },
     "api/mowing.js": {
       "maxDuration": 30

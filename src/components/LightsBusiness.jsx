@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { STARTER_SUPPLIES, STYLE_LABEL, quoteMaterials, quoteFeet, packPlan } from '../lib/lightsMaterials';
 import { listQuotes, getQuote, patchQuoteMeta, referLinks, referInbox, makeReferLink, markReferAdded } from '../lib/lightsStore';
 import { useJobberList, nameKey } from '../lib/jobberLights';
+import { LIGHTS_INSTALL_TARGET } from '../lib/weeklyBonus';
 
 // The business side of Christmas lights, shown inside the Lights page:
 //  - "quotes": every saved lights quote — sent / won / installed / lost,
@@ -1351,6 +1352,30 @@ const JOBBER_STATUS = {
 
 export default function LightsBusiness({ view, onOpen = null }) {
   const [tick, setTick] = useState(0); // ↻ Refresh: pull fresh from Jobber
+  // Sales tab: crew wages per job this season (Jobber clock time on the job + its share of that
+  // day's general time, split by job hours — same math as the payroll page). { jobId: $ }
+  const [laborByJob, setLaborByJob] = useState(null);
+  useEffect(() => {
+    if (view !== 'sales') return undefined;
+    let off = false;
+    // Installs start in November; a longer range gets throttled by Jobber. One retry if it does.
+    const now = new Date(); const start = `${now.getMonth() < 6 ? now.getFullYear() - 1 : now.getFullYear()}-11-01`;
+    const url = `/api/jobber-data?action=labor&start=${start}&end=${now.toISOString().slice(0, 10)}`;
+    const get = () => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))));
+    get().catch(() => new Promise((res) => setTimeout(res, 6000)).then(get)).then((data) => {
+      if (off) return;
+      const out = {};
+      Object.values(data || {}).forEach((day) => {
+        const jobH = day?.labor?.jobHours || 0, genCost = day?.labor?.generalCost || 0;
+        (day?.visits || []).forEach((v) => {
+          if (!v.jobId || !v.labor?.totalHours) return;
+          out[v.jobId] = (out[v.jobId] || 0) + (v.labor.totalCost || 0) + (jobH > 0 ? genCost * (v.labor.totalHours / jobH) : 0);
+        });
+      });
+      setLaborByJob(out);
+    }).catch(() => { if (!off) setLaborByJob({}); });
+    return () => { off = true; };
+  }, [view, tick]);
   const needsJobber = view === 'quotes' || view === 'jobs' || view === 'supplies' || view === 'sales';
   const schedule = useLightsSchedule(needsJobber, tick);
   const jobber = useJobberLightsQuotes(needsJobber, tick);
@@ -1402,7 +1427,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
       const real = (m) => Object.entries(m || {}).filter(([k, v]) => n(v) > 0 && !isDefault(k));
       const same = (a, b) => { const A = Object.fromEntries(Object.entries(a || {}).filter(([, v]) => n(v) > 0).map(([k, v]) => [k, n(v)])); const B = Object.fromEntries(Object.entries(b || {}).filter(([, v]) => n(v) > 0).map(([k, v]) => [k, n(v)])); return Object.keys(A).length === Object.keys(B).length && Object.keys(A).every((k) => A[k] === B[k]); };
       if (!q) { if (raw[id]) out[id] = { ...j, noQuote: true }; return; }
-      const fromQ = { ...j, materials: q.materials || {}, matNotes: q.matNotes || {}, confirmed: !!q.matOk, fromQuote: q.id };
+      const fromQ = { ...j, materials: q.materials || {}, matNotes: q.matNotes || {}, confirmed: !!(q.matOk || q.planLocked), fromQuote: q.id };
       if (!real(j.materials).length || j.oldResolved || same(j.materials, q.materials)) { out[id] = fromQ; return; }
       // Old copy on the job that differs from the quote: you pick which one is right (one time).
       if (!real(q.materials).length) out[id] = { ...j, fromQuote: q.id, needsMove: true, oldList: j.materials };
@@ -1450,7 +1475,18 @@ export default function LightsBusiness({ view, onOpen = null }) {
       && (isLightsTitle(j.title) || (!j.title.trim() && lightsClients.has(nameKey(j.clientName)))));
     // Every job always has a timer + plugs unless it's installed (then it's what was used).
     const withTimer = (saved) => (saved.installed ? saved : { ...saved, materials: withDefaults(saved.materials, items, saved.noAuto) });
-    const all = jobberJobs.map((j) => ({ ...j, saved: withTimer(jobsMap[j.id] || {}) }));
+    // Jobs done without a Jobber job (e.g. Jude's own house): saved as hub-<quoteId>, same flow as any job.
+    const hubJobs = Object.entries(jobsMap).filter(([id]) => id.startsWith('hub-')).map(([id, s]) => ({
+      id, hubOnly: true, title: s.title || 'Christmas Lights', clientName: s.clientName, clientId: null, jobNumber: '', status: 'active', visitAt: s.date,
+      visits: [{ title: 'Install', startAt: s.date }, ...(s.takedownAt ? [{ title: 'Takedown', startAt: s.takedownAt }] : [])],
+    }));
+    const all = [...jobberJobs, ...hubJobs].map((j) => ({ ...j, saved: withTimer(jobsMap[j.id] || {}) }));
+    const addHubJob = (q) => {
+      if (!q) return;
+      const day = q.installDate ? new Date(`${q.installDate}T12:00:00`).toISOString() : new Date().toISOString();
+      const take = q.takedownDate ? new Date(`${q.takedownDate}T12:00:00`).toISOString() : `${new Date().getFullYear() + 1}-01-15T12:00:00.000Z`;
+      setJobsMap((m) => ({ ...(m || {}), [`hub-${q.id}`]: { clientName: q.client, title: 'Christmas Lights', date: day, takedownAt: take, quoteId: q.id, hubOnly: true } }));
+    };
     const readyById = Object.fromEntries(jobReadiness(jobsMap, items, ordersStored, schedule.jobs).map((r) => [r.id, r]));
     const patchJob = (j, p) => setJobsMap((m) => ({ ...(m || {}), [j.id]: { clientName: j.clientName, title: j.title, date: j.visitAt, ...((m || {})[j.id] || {}), ...p } }));
     const itemById = (id) => items.find((x) => x.id === id);
@@ -1779,6 +1815,11 @@ export default function LightsBusiness({ view, onOpen = null }) {
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <p className="text-[11px] text-muted">Every lights job from Jobber, sorted by what it needs next.</p>
+          {/* A job that isn't in Jobber (your own house, a freebie): pick its quote and it joins the list. */}
+          <select value="" onChange={(e) => addHubJob(quotes.find((q) => q.id === e.target.value))} className="ml-auto mr-3 rounded-lg border border-border-strong bg-card px-2 py-1 text-xs text-secondary cursor-pointer" title="Add a job that isn't in Jobber — its quote's materials come out of stock when you mark it installed">
+            <option value="">+ Job not in Jobber…</option>
+            {quotes.filter((q) => q.client && !jobsMap[`hub-${q.id}`]).map((q) => <option key={q.id} value={q.id}>{q.client}</option>)}
+          </select>
           <button onClick={() => setTick((t) => t + 1)} disabled={schedule.loading} className="text-xs text-muted hover:text-primary disabled:opacity-50 cursor-pointer">{schedule.loading ? 'Updating…' : '↻ Refresh from Jobber'}</button>
         </div>
         {schedule.loading && !all.length && <p className="text-sm text-muted">Loading jobs from Jobber…</p>}
@@ -1805,7 +1846,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
                   const jobL = listOf(j.saved.oldList); const qL = listOf(q?.materials);
                   return (
                     <div key={j.id} className="rounded-lg bg-card border border-border-default p-3 space-y-2">
-                      <p className="text-sm font-bold text-primary">{j.clientName} <span className="text-xs font-normal text-muted">#{j.jobNumber}</span></p>
+                      <p className="text-sm font-bold text-primary">{j.clientName} <span className="text-xs font-normal text-muted">{j.hubOnly ? "🏠 not in Jobber" : `#${j.jobNumber}`}</span></p>
                       <div className="grid sm:grid-cols-2 gap-3 text-xs">
                         <div><p className="font-semibold text-secondary mb-1">Old job list</p>{jobL.map((t) => <p key={t} className="text-primary">{t}</p>)}</div>
                         <div><p className="font-semibold text-secondary mb-1">Quote</p>{qL.length ? qL.map((t) => <p key={t} className="text-primary">{t}</p>) : <p className="text-muted">Empty</p>}</div>
@@ -1824,7 +1865,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
         })()}
         {(() => {
           // One slim row per job; click it to open the full card (materials etc.).
-          const NEED = { materials: ['Needs materials', 'bg-red-500/15 text-red-400'], schedule: ['Not scheduled', 'bg-yellow-400/15 text-yellow-300'], stock: ['Waiting on stock', 'bg-blue-500/15 text-blue-300'], ready: ['Ready', 'bg-emerald-500/15 text-emerald-400'], wrap: ['Wrap-up', 'bg-surface-alt text-secondary'], takedown: ['Takedown soon', 'bg-yellow-400/15 text-yellow-300'], done: ['Done', 'bg-surface-alt text-muted'] };
+          const NEED = { materials: ['Needs materials', 'bg-red-500/15 text-red-400'], schedule: ['Not scheduled', 'bg-yellow-400/15 text-yellow-300'], stock: ['Waiting on stock', 'bg-blue-500/15 text-blue-300'], ready: ['✅ Prepped', 'bg-emerald-500/15 text-emerald-400'], wrap: ['Wrap-up', 'bg-surface-alt text-secondary'], takedown: ['Takedown soon', 'bg-yellow-400/15 text-yellow-300'], done: ['Done', 'bg-surface-alt text-muted'] };
           const row = (j, stage) => {
             const isOpen = openJob === j.id;
             const inst = jobVisits(j).inst;
@@ -1835,7 +1876,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
                 <button onClick={() => setOpenJob(isOpen ? '' : j.id)} className="flex-1 min-w-0 flex items-center gap-3 pl-4 pr-4 py-3 text-left cursor-pointer hover:bg-surface-alt/40 rounded-xl">
                   <span className="text-muted text-sm w-3">{isOpen ? '▾' : '▸'}</span>
                   <span className="flex-1 min-w-0">
-                    <span className="block text-base font-semibold text-primary truncate">{j.clientName} <span className="text-xs font-normal text-muted">#{j.jobNumber}</span>{jobQuote(j)?.planLocked && <span title="Plan + materials locked" className="ml-1.5">🔒</span>}</span>
+                    <span className="block text-base font-semibold text-primary truncate">{j.clientName} <span className="text-xs font-normal text-muted">{j.hubOnly ? "🏠 not in Jobber" : `#${j.jobNumber}`}</span>{jobQuote(j)?.planLocked && <span title="Plan + materials locked" className="ml-1.5">🔒</span>}</span>
                     <span className="block text-xs text-muted">{inst?.startAt ? `Install ${fmtDate(inst.startAt)}` : 'No install date'}</span>
                     {/* Installed jobs: the wrap-up checklist right on the row (tap to check off; after pics come from the photos) */}
                     {(stage === 'wrap' || stage === 'takedown' || stage === 'done') && (() => {
@@ -1878,8 +1919,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
           const tag = (ks) => ks.flatMap((k2) => byStage[k2].map((j) => [j, k2])).sort(([a], [b]) => instAt(a) - instAt(b)); // soonest install first; no date last
           return (
             <>
-              {group('prep', 'Needs prep', 'Click a job to finish it', tag(['materials', 'schedule', 'stock']), false)}
-              {group('ready', '✅ Prepped', 'Ready to install', tag(['ready']), true)}
+              {group('upcoming', 'Upcoming', 'Soonest install first — the tag says what each one needs', tag(['materials', 'schedule', 'stock', 'ready']), false)}
               {group('installed', '🎉 Installed', 'Wrap-up and takedowns', tag(['wrap', 'takedown']), true)}
               {group('done', 'Completed', '', tag(['done']), true)}
             </>
@@ -1898,24 +1938,58 @@ export default function LightsBusiness({ view, onOpen = null }) {
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     const total = sold.reduce((t, j) => t + n(j.total), 0);
     const day = (iso) => (iso ? new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—');
+    // Materials per sale: what actually went up once installed, else the planned list. Cost = qty × item cost.
+    const matsOf = (j) => { const sv = jobsMap[j.id] || {}; return { done: !!sv.installed, mats: sv.installed ? (sv.actual || sv.materials || {}) : withDefaults(sv.materials, items, sv.noAuto) }; };
+    const costOf = (mats) => Object.entries(mats || {}).reduce((t, [id, q]) => t + n(q) * n(items.find((x) => x.id === id)?.cost), 0);
+    const matTotal = sold.reduce((t, j) => t + costOf(matsOf(j).mats), 0);
+    const pct = (a, b) => (b > 0 ? `${Math.round((a / b) * 100)}%` : '—');
     return (
       <div className="space-y-4">
         <div className="rounded-xl border border-border-brand bg-brand-light px-5 py-5">
           <p className="text-xs font-semibold text-brand-text-strong">Total lights sales</p>
           <p className="text-4xl font-bold text-brand-text">{schedule.loading && !sold.length ? '…' : money(total)}</p>
+          {matTotal > 0 && <p className="mt-1 text-sm text-secondary">Materials {money(matTotal)} · {pct(matTotal, total)} of sales</p>}
         </div>
-        <div className="rounded-xl border border-border-default bg-card divide-y divide-border-subtle">
-          {sold.map((j) => (
+        {/* Upcoming (not installed yet) first, then Installed — each with its own sales + materials total. */}
+        {[['Upcoming', 'Not installed yet — planned materials', sold.filter((j) => !matsOf(j).done)], ['Installed', 'What actually went up', sold.filter((j) => matsOf(j).done)]].map(([title, sub, list]) => list.length > 0 && (
+          <section key={title} className="space-y-2">
+            <div className="flex items-baseline justify-between gap-3 px-1">
+              <p className="text-base font-bold text-primary">{title} <span className="text-sm font-normal text-muted">· {list.length} · {sub}</span></p>
+              {(() => { const t = list.reduce((a, j) => a + n(j.total), 0); const c = list.reduce((a, j) => a + costOf(matsOf(j).mats), 0); return <p className="text-sm text-secondary tabular-nums"><b className="text-primary">{money(t)}</b>{c > 0 ? ` · mats ${money(c)} · ${pct(c, t)}` : ''}</p>; })()}
+            </div>
+            <div className="rounded-xl border border-border-default bg-card divide-y divide-border-subtle">
+              {list.map((j) => (
             <div key={j.id} className="px-4 py-3 flex items-center gap-3">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-primary truncate">{j.clientName} <span className="text-xs font-normal text-muted">#{j.jobNumber}</span></p>
+                <p className="text-sm font-semibold text-primary truncate">{j.clientName} <span className="text-xs font-normal text-muted">{j.hubOnly ? "🏠 not in Jobber" : `#${j.jobNumber}`}</span></p>
                 <p className="text-[11px] text-muted">Sold {day(j.createdAt)}</p>
+                {(() => { const { done, mats } = matsOf(j); const ids = Object.keys(mats).filter((id) => n(mats[id]));
+                  if (!ids.length) return <p className="mt-1 text-[11px] text-muted">No materials yet</p>;
+                  return (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wide ${done ? 'text-emerald-400' : 'text-muted'}`}>{done ? 'Used' : 'Planned'}</span>
+                      {ids.map((id) => { const it = items.find((x) => x.id === id); return (
+                        <span key={id} title={it?.name || id} className="inline-flex items-center gap-1 rounded-md bg-surface-alt pl-0.5 pr-1.5 py-0.5">
+                          {it?.image ? <img src={it.image} alt="" className="w-5 h-5 rounded object-cover bg-white" /> : <span className="w-5 h-5 rounded bg-card" />}
+                          <b className="text-xs tabular-nums text-primary">{n(mats[id])}</b>
+                        </span>
+                      ); })}
+                    </div>
+                  ); })()}
               </div>
-              <span className="text-base font-bold text-primary tabular-nums">{money(n(j.total))}</span>
+              <div className="text-right shrink-0">
+                <span className="block text-base font-bold text-primary tabular-nums">{money(n(j.total))}</span>
+                {(() => { const c = costOf(matsOf(j).mats); return c > 0 ? <span className="block text-[11px] text-muted tabular-nums">mats {money(c)} · {pct(c, n(j.total))}</span> : null; })()}
+                {matsOf(j).done && (() => { const w = laborByJob?.[j.id]; if (laborByJob == null) return <span className="block text-[11px] text-muted">labor …</span>; if (!w) return <span className="block text-[11px] text-muted">labor —</span>;
+                  const p = n(j.total) > 0 ? w / n(j.total) : null; const goal = LIGHTS_INSTALL_TARGET;
+                  return <span title={`Crew wages clocked on this job in Jobber (plus its share of that day's drive/general time) ÷ the sale. Goal ${Math.round(goal * 100)}% or less. Bonuses not included.`} className={`block text-[11px] font-semibold tabular-nums ${p == null ? 'text-muted' : p <= goal ? 'text-emerald-400' : p <= goal * 1.33 ? 'text-amber-400' : 'text-red-400'}`}>labor {money(w)} · {p == null ? '—' : `${Math.round(p * 100)}%`}</span>; })()}
+              </div>
             </div>
-          ))}
-          {!sold.length && <p className="px-4 py-3 text-sm text-muted">{schedule.loading ? 'Loading from Jobber…' : 'No lights jobs yet.'}</p>}
-        </div>
+              ))}
+            </div>
+          </section>
+        ))}
+        {!sold.length && <p className="rounded-xl border border-border-default bg-card px-4 py-3 text-sm text-muted">{schedule.loading ? 'Loading from Jobber…' : 'No lights jobs yet.'}</p>}
       </div>
     );
   }

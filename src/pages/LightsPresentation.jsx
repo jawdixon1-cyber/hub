@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getQuote } from '../lib/lightsStore';
+import { supabase } from '../lib/supabase';
 import { useAppStore } from '../store/AppStoreContext';
 import { DESIGNS } from '../lib/lightsDesigns';
 import { PlanOverlay, OutletMarks } from '../components/LightsMarkup';
@@ -57,10 +58,10 @@ function MonthCal({ year, month, today, install, takedown }) {
           const lit = install && takedown && key > install && key < takedown;
           return (
             <div key={i} className="relative flex flex-col items-center justify-center h-11 sm:h-12 rounded-lg text-sm font-semibold"
-              style={isInstall ? { background: GREEN, color: '#000' } : isTake ? { background: RED, color: '#fff' } : lit ? { background: `${GREEN}1f` } : undefined}>
+              style={isInstall ? { background: GREEN, color: '#000' } : isTake ? { background: GREEN, color: '#000' } : lit ? { background: `${GREEN}1f` } : undefined}>
               <span className={isToday && !isInstall && !isTake ? 'w-8 h-8 rounded-full ring-2 ring-white flex items-center justify-center' : ''}>{d}</span>
               {(isInstall || isTake || isToday) && (
-                <span className="text-[9px] font-bold uppercase leading-none mt-0.5" style={{ color: isInstall ? '#000' : isTake ? '#fff' : 'rgba(255,255,255,0.7)' }}>
+                <span className="text-[9px] font-bold uppercase leading-none mt-0.5" style={{ color: isInstall || isTake ? '#000' : 'rgba(255,255,255,0.7)' }}>
                   {isInstall ? 'Install' : isTake ? 'Takedown' : 'Today'}
                 </span>
               )}
@@ -96,7 +97,7 @@ function BeforeAfter({ before, after }) {
   return (
     // Sized to the screen height so the whole photo fits with the heading + bottom bar (4:3 photos).
     <div className="relative mx-auto rounded-3xl overflow-hidden shadow-2xl select-none" style={{ maxWidth: 'min(100%, calc((100vh - 300px) * 4 / 3))' }}>
-      <img src={after} alt="After" className="block w-full" />
+      <img src={after} alt="After" className="block w-full aspect-[4/3] object-cover" />
       <img src={before} alt="Before" className="absolute inset-0 w-full h-full object-cover" style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }} />
       <div className="absolute inset-y-0 w-1 bg-white shadow-[0_0_20px_rgba(0,0,0,0.6)] pointer-events-none" style={{ left: `${pos}%` }}>
         <span className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 left-1/2 w-12 h-12 rounded-full bg-white text-black flex items-center justify-center text-lg font-black shadow-xl">⇆</span>
@@ -142,6 +143,58 @@ export default function LightsPresentation() {
   useEffect(() => {
     getQuote(id).then((d) => (d ? setQ(d) : setFailed(true))).catch(() => setFailed(true));
   }, [id]);
+  // Extra before/after pairs (their own row so the Quoter never overwrites them): [{ label, before, after }]
+  const [pairs, setPairs] = useState([]);
+  // Optional add-ons (e.g. wrapped trees): [{ id, label, sub, photo, price, strands, on }] — they can take them out to lower the price.
+  const [addons, setAddons] = useState([]);
+  const [addOn, setAddOn] = useState({});
+  const [perks, setPerks] = useState([]);
+  const [bump, setBump] = useState(0); // price bump folded into the roofline price
+  const [look, setLook] = useState({}); // which light color is showing on each shared-before slider
+  const [heroY, setHeroY] = useState(72); // hero photo crop (% from top) — per quote, lq-ba.heroY
+  const [offers, setOffers] = useState([]); // real deals: [{ id, label, amount, kind: '$'|'%', when: 'always'|'today', on }]
+  // "Light up my home" → builds the Jobber quote (draft) from what they picked: plan + add-ons.
+  const [jq, setJq] = useState({ state: '' });
+  const makeJobberQuote = async () => {
+    setYes(true);
+    if (jq.state === 'making' || jq.state === 'done') return;
+    setJq({ state: 'making' });
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch('/api/jobber-data?action=lights-quote-create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+        body: JSON.stringify({ id, years: plan, addonIds: addons.filter((x) => addOn[x.id]).map((x) => x.id) }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Could not make the Jobber quote');
+      setJq({ state: 'done', ...d });
+    } catch (e) { setJq({ state: 'error', error: e.message }); }
+  }; // free extras for this client: [{ title, sub }]
+  useEffect(() => {
+    // lq-ba:<id> is small (labels, prices, strands). Each picture is its own lq-img:<id>:<name> row, fetched together.
+    (async () => {
+      const { data } = await supabase.from('app_state').select('value').eq('key', `lq-ba:${id}`).maybeSingle();
+      const v = data?.value || {};
+      // Prices first (add-ons, bump, offers, perks) — so the plan prices are right immediately…
+      const a0 = (v.addons || []).filter((x) => Number(x.price) > 0);
+      setAddons(a0.map((x) => ({ ...x, photo: '' }))); setAddOn(Object.fromEntries(a0.map((x) => [x.id, x.on !== false])));
+      setPerks(Array.isArray(v.perks) ? v.perks.filter((x) => x.title) : []);
+      setBump(Number(v.adjust) || 0);
+      if (v.heroY !== undefined && v.heroY !== '') setHeroY(Number(v.heroY));
+      setOffers(Array.isArray(v.offers) ? v.offers.filter((x) => x.on !== false && Number(x.amount) > 0) : []);
+      // …then the photos (slower) fill in.
+      const keys = [...(v.pairs || []).flatMap((x) => [x.before, x.after]), ...a0.map((x) => x.photo)].filter((k) => typeof k === 'string' && k.startsWith('lq-img:'));
+      const imgs = {};
+      if (keys.length) {
+        const { data: rows } = await supabase.from('app_state').select('key, value').in('key', keys);
+        (rows || []).forEach((r) => { imgs[r.key] = r.value?.src || ''; });
+      }
+      const src = (k) => (typeof k === 'string' && k.startsWith('lq-img:') ? imgs[k] || '' : k);
+      setPairs((v.pairs || []).map((x) => ({ ...x, before: src(x.before), after: src(x.after) })).filter((x) => x.before && x.after));
+      setAddons(a0.map((x) => ({ ...x, photo: src(x.photo) })));
+    })().catch(() => {});
+  }, [id]);
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') (big ? setBig('') : yes ? setYes(false) : navigate(-1));
@@ -153,11 +206,17 @@ export default function LightsPresentation() {
 
   const sides = (q?.angles || []).filter((a) => a.plain);
   const lined = sides.filter((a) => (a.lines || []).length);
-  const mockups = (q?.previews || []).map((p) => p.image).filter(Boolean);
+  const mockups = [...(q?.previews || []).map((p) => p.image).filter(Boolean), ...pairs.map((x) => x.after)];
   const hero = mockups[0] || sides[0]?.plain || '';
   // Before = the house at night with no lights (from ChatGPT) — falls back to the daytime photo.
   const before = q?.nightPhoto || sides.find((a) => a.show)?.plain || sides[0]?.plain || '';
-  const price = Number(q?.quoted) || Number(q?.total) || 0;
+  const roof = Number(q?.quoted) || Number(q?.total) || 0;
+  const basePrice = roof > 0 ? roof + bump : 0; // + any price bump (folded in, not shown separately)
+  const pickedAddons = addons.filter((x) => addOn[x.id]);
+  const fullPrice = basePrice > 0 ? basePrice + pickedAddons.reduce((t, x) => t + Number(x.price), 0) : 0;
+  const offerLines = offers.map((o) => ({ ...o, off: o.kind === 'free' ? 0 : o.kind === '%' ? fullPrice * Number(o.amount) / 100 : Number(o.amount) }));
+  const offerOff = Math.min(fullPrice, offerLines.reduce((t, o) => t + o.off, 0));
+  const price = fullPrice - offerOff;
   const parts = Object.entries(q?.materials || {})
     .map(([mid, qty]) => ({ it: supplies.find((x) => x.id === mid), qty: Number(qty) || 0 }))
     .filter((x) => x.it && x.qty > 0);
@@ -188,7 +247,7 @@ export default function LightsPresentation() {
         <>
           {/* Hero */}
           <section className="relative">
-            {hero && <img src={hero} alt="" onClick={() => setBig(hero)} className="w-full max-h-[78vh] object-cover cursor-zoom-in" />}
+            {hero && <img src={hero} alt="" onClick={() => setBig(hero)} className="w-full max-h-[78vh] object-cover cursor-zoom-in" style={{ objectPosition: `center ${heroY}%` }} />}
             <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b0d] via-[#0b0b0d]/30 to-transparent pointer-events-none" />
             <div className="absolute inset-x-0 bottom-0 px-6 pb-10">
               <div className="max-w-5xl mx-auto space-y-4">
@@ -210,7 +269,34 @@ export default function LightsPresentation() {
 
           <div className="max-w-5xl mx-auto px-6 pb-40 space-y-24 pt-10">
             {/* Before / after */}
-            {before && mockups[0] && (
+            {pairs.length > 0 ? (
+              <section className="space-y-6">
+                <div className="text-center">
+                  <h2 className="text-4xl font-extrabold">Drag to see the difference</h2>
+                  <p className="text-white/60 mt-2">Your house today → your house this Christmas.</p>
+                </div>
+                {/* Pairs that share the same "before" photo are color options for one view: one slider + a button per look. */}
+                {pairs.reduce((gs, x) => { const g = gs.find((y) => y.before === x.before); if (g) g.items.push(x); else gs.push({ before: x.before, items: [x] }); return gs; }, []).map((g, gi, gs) => {
+                  const sel = Math.min(look[gi] || 0, g.items.length - 1);
+                  const x = g.items[sel];
+                  return (
+                    <div key={gi} className="space-y-4">
+                      {g.items.length > 1 ? (
+                        <div className="flex justify-center gap-2 flex-wrap">
+                          {g.items.map((y, i) => (
+                            <button key={i} onClick={() => setLook((m) => ({ ...m, [gi]: i }))}
+                              className={`rounded-full px-5 py-2.5 text-base font-bold cursor-pointer transition-colors ${i === sel ? 'bg-white text-black' : 'bg-white/10 text-white/80 hover:bg-white/20'}`}>
+                              {y.label || `Look ${i + 1}`}
+                            </button>
+                          ))}
+                        </div>
+                      ) : gs.length > 1 && x.label && <p className="text-center text-lg font-bold text-white/80">{x.label}</p>}
+                      <BeforeAfter before={g.before} after={x.after} />
+                    </div>
+                  );
+                })}
+              </section>
+            ) : before && mockups[0] && (
               <section className="space-y-6">
                 <div className="text-center">
                   <h2 className="text-4xl font-extrabold">Drag to see the difference</h2>
@@ -221,7 +307,7 @@ export default function LightsPresentation() {
             )}
 
             {/* More mockups */}
-            {mockups.length > 1 && (
+            {pairs.length === 0 && mockups.length > 1 && (
               <section className="space-y-6">
                 <h2 className="text-4xl font-extrabold">More of your design</h2>
                 <div className="grid gap-5 sm:grid-cols-2">
@@ -270,7 +356,7 @@ export default function LightsPresentation() {
                 </div>
                 <DatesCalendar install={q?.installDate || ''} takedown={q?.takedownDate || ''} />
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {[['🎄', 'Install', installOn, GREEN], ['📦', 'Takedown', takedownOn, RED]].map(([icon, label, day, color]) => (
+                  {[['🎄', 'Install', installOn, GREEN], ['📦', 'Takedown', takedownOn, GREEN]].map(([icon, label, day, color]) => (
                     <div key={label} className="rounded-2xl border-2 p-7" style={{ borderColor: `${color}99`, background: `${color}14` }}>
                       <p className="text-sm font-bold uppercase tracking-[0.15em]" style={{ color }}>{icon} {label}</p>
                       <p className="text-4xl sm:text-5xl font-extrabold mt-2 leading-tight">{day || 'To be scheduled'}</p>
@@ -316,12 +402,51 @@ export default function LightsPresentation() {
                       🎯 Color-matched wire &amp; clips
                       <span className="block text-sm font-normal text-white/70 mt-0.5 ml-7">Cleanest look from every angle</span>
                     </li>
-                    <li>🗓️ January takedown guarantee<span className="text-white/50">*</span></li>
+                    <li>
+                      🗓️ January takedown guarantee
+                      <span className="block text-sm font-normal text-white/70 mt-0.5 ml-7">Down in January or your money back — weather permitting</span>
+                    </li>
+                    {perks.map((x) => (
+                      <li key={x.title}>
+                        {x.title} <span className="ml-1 rounded-full px-2 py-0.5 text-xs font-extrabold text-black align-middle" style={{ background: GREEN }}>FREE</span>
+                        {x.sub && <span className="block text-sm font-normal text-white/70 mt-0.5 ml-7">{x.sub}</span>}
+                      </li>
+                    ))}
                   </ul>
-                  <p className="mt-5 text-xs text-white/50">*Down in January or your money back — weather permitting.</p>
                 </div>
               </div>
             </section>
+
+            {/* Add-ons: on by default, tap to take out (prices below update) */}
+            {basePrice > 0 && addons.length > 0 && (
+              <section className="space-y-6">
+                <div className="text-center">
+                  <h2 className="text-4xl sm:text-5xl font-extrabold">Make it the best</h2>
+                  <p className="text-white/60 mt-2">Tap to add or remove — your price updates below.</p>
+                </div>
+                <div className={`grid gap-5 sm:grid-cols-2 ${addons.length === 3 ? 'lg:grid-cols-3' : ''}`}>
+                  {addons.map((x) => {
+                    const on = !!addOn[x.id];
+                    return (
+                      <div key={x.id} className={`rounded-3xl overflow-hidden border-2 transition-colors ${on ? '' : 'border-white/10 bg-white/[0.03]'}`} style={on ? { borderColor: GREEN, background: `${GREEN}12` } : undefined}>
+                        {x.photo && <img src={x.photo} alt="" onClick={() => setBig(x.photo)} className={`w-full aspect-[4/3] object-cover cursor-zoom-in transition-opacity ${on ? '' : 'opacity-50'}`} />}
+                        <div className="p-5 flex items-center gap-4">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xl font-extrabold">{x.label}</p>
+                            {x.sub && <p className="text-sm text-white/60">{x.sub}</p>}
+                            <p className="mt-1 text-lg font-bold" style={{ color: GREEN }}>+{money(Number(x.price))}<span className="text-sm font-semibold text-white/50">/season</span></p>
+                          </div>
+                          <button onClick={() => setAddOn((m) => ({ ...m, [x.id]: !on }))}
+                            className={`shrink-0 rounded-xl px-5 py-3 text-base font-extrabold cursor-pointer ${on ? 'text-black' : 'bg-white/10 text-white hover:bg-white/20'}`} style={on ? { background: GREEN } : undefined}>
+                            {on ? '✓ Added' : '+ Add'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {/* Price + plan picker */}
             {price > 0 && (
@@ -330,6 +455,7 @@ export default function LightsPresentation() {
                   <h2 className="text-4xl sm:text-5xl font-extrabold">Pick your plan</h2>
                   <p className="text-white/60 mt-2">Install, maintenance, takedown &amp; storage included every year.</p>
                 </div>
+                {/* (Offers aren't announced on the page — Jude says them; the price below already includes them.) */}
                 <div className="grid gap-5 sm:grid-cols-3 items-stretch">
                   {PLANS.map((t) => {
                     const per = price * (1 - t.off);
@@ -358,7 +484,7 @@ export default function LightsPresentation() {
 
                 {/* The ask */}
                 <div className="text-center space-y-4 pt-4">
-                  <button onClick={() => setYes(true)}
+                  <button onClick={makeJobberQuote}
                     className="w-full sm:w-auto rounded-2xl px-12 py-6 text-2xl font-extrabold text-black shadow-[0_0_60px_rgba(0,223,0,0.35)] hover:brightness-110 hover:scale-[1.02] transition-transform cursor-pointer"
                     style={{ background: GREEN }}>
                     🎄 Light up my home
@@ -375,18 +501,7 @@ export default function LightsPresentation() {
           </div>
 
           {/* Sticky bottom bar */}
-          {price > 0 && !yes && (
-            <div className="fixed bottom-0 inset-x-0 z-30 border-t border-white/10 bg-[#0b0b0d]/90 backdrop-blur">
-              <div className="max-w-5xl mx-auto px-6 py-3 flex items-center gap-4">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-white/60 truncate">{chosen.label}{installOn ? ` · install ${installOn}` : ''}</p>
-                  <p className="text-xl font-extrabold">{money(chosenPer)}<span className="text-sm font-semibold text-white/60">{chosen.years === 1 ? '' : '/yr'}</span>
-                    {chosen.off > 0 && <span className="ml-2 text-sm font-bold" style={{ color: GREEN }}>save {money(price * chosen.off * chosen.years)}</span>}</p>
-                </div>
-                <button onClick={toPrice} className="rounded-xl px-6 py-3 font-extrabold text-black cursor-pointer hover:brightness-110" style={{ background: GREEN }}>Light it up 🎄</button>
-              </div>
-            </div>
-          )}
+          {/* (No sticky price bar at the bottom — the price only shows in "Pick your plan".) */}
         </>
       )}
 
@@ -409,8 +524,16 @@ export default function LightsPresentation() {
               <img src="/holiday-logo.png" alt="" className="h-16 w-auto mx-auto" />
               <h2 className="text-4xl font-extrabold">You're on the list! 🎉</h2>
               <p className="text-lg text-white/90">{chosen.label} · {money(chosenPer)}{chosen.years === 1 ? '' : '/yr'}</p>
+              {pickedAddons.length > 0 && <p className="text-white/80">Including {pickedAddons.map((x) => x.label.toLowerCase()).join(' + ')}</p>}
+              {offerLines.length > 0 && <p className="text-white/80">🎁 {offerLines.map((o) => o.label || 'Special offer').join(' + ')} applied</p>}
               {installOn && <p className="text-xl font-bold">📅 We'll see you {installOn}</p>}
               <p className="text-white/80">Welcome to the Hey Jude's family.</p>
+              {/* For Jude: the Jobber quote it just made (draft) — small, at the bottom */}
+              <p className="pt-2 text-xs text-white/60">
+                {jq.state === 'making' && 'Making the quote in Jobber…'}
+                {jq.state === 'done' && <>Quote #{jq.quoteNumber}{jq.existing ? ' (already made)' : ''} is in Jobber · <a href={jq.url} target="_blank" rel="noreferrer" className="underline font-bold text-white">Open it</a></>}
+                {jq.state === 'error' && <>Jobber quote didn't go through: {jq.error}</>}
+              </p>
               <button onClick={() => setYes(false)} className="mt-2 rounded-xl bg-white px-6 py-2.5 font-bold text-black cursor-pointer">Done</button>
             </div>
           </div>

@@ -19,7 +19,7 @@ export function buildPrompt(design, custom) {
   const lights = custom?.trim() ? `C9 LED bulbs in this color pattern: ${custom.trim()}` : (DESIGNS[design] || DESIGNS.warm);
   return `Edit this photo into a photorealistic nighttime exterior image of a professional Christmas light installation.
 
-The bright magenta lines painted on the photo are installation guides. Install ${lights} exactly along every magenta line, following each line's full length and every corner, with bulbs evenly spaced about 12 inches apart and facing outward. Put lights ONLY where a magenta line is. Any roofline, gutter, eave, ridge, window, tree or bush without a magenta line on it must have zero lights — count the magenta lines and light exactly those, nothing more. Then remove every trace of the magenta lines; none of the magenta may remain in the final image.
+The bright magenta lines painted on the photo are installation guides. Install ${lights} exactly along every magenta line, following each line's full length and every corner, with bulbs evenly spaced about 12 inches apart, every bulb facing the same way — straight out from the house toward the street, all uniform, none tilted, sideways or crooked — so the glow shines back onto the house. Put lights ONLY where a magenta line is. Any roofline, gutter, eave, ridge, window, tree or bush without a magenta line on it must have zero lights — count the magenta lines and light exactly those, nothing more. Then remove every trace of the magenta lines; none of the magenta may remain in the final image.
 
 Keep the house, rooflines, landscaping, vehicles, camera angle and composition exactly the same. Do not add, remove or change any architectural elements, landscaping or objects. Remove any on-screen overlays or text boxes (like a map or Street View label) by filling in the scene naturally.
 
@@ -46,7 +46,7 @@ For each side, make ONE image with your image generator (never with code, Python
 
 Lights: ${lightsFor(design, custom)}.
 
-- Put bulbs exactly on every magenta line — follow each line's full length and every corner, about 12 inches apart, facing outward. Count the lines; each one must be lit, including any behind trees (bulbs glowing through the leaves).
+- Put bulbs exactly on every magenta line — follow each line's full length and every corner, about 12 inches apart, every bulb facing the same way — straight out from the house toward the street, all uniform, none tilted, sideways or crooked — so the glow shines back onto the house. Count the lines; each one must be lit, including any behind trees (bulbs glowing through the leaves).
 - Light ONLY the magenta lines. Hips, ridges, other gutters, windows, trees, bushes, cars and anything else stay unlit. No magenta and no "SIDE N" stamp in the result.
 - The color pattern must be perfectly regular on every line — check bulb by bulb so the order never breaks.
 - Keep the house, roof, landscaping, vehicles, camera angle and framing exactly the same. Don't add, remove or change anything. Remove any on-screen overlays or text boxes (like a Street View label) naturally.
@@ -80,7 +80,7 @@ BULB COUNT IS EXACT. In each lines photo, every run is drawn in its own color, w
 
 Use the original photo as the exact reference and keep the house, rooflines, landscaping, camera angle, and composition unchanged.
 
-Install ${lightsFor(design, custom)} ${guides ? 'exactly on the dots in the lines photo (leave every other roofline dark)' : 'along all visible gutter lines, eaves, and gable edges'}, spacing the bulbs evenly about 12 inches apart and facing outward. Keep all ridge caps completely bare with no lights.${design === 'warm' && !custom?.trim() ? ' Use a clean, bright warm-white color temperature — not too yellow, matching real-world C9 warm white lights.' : ' Keep the color pattern perfectly regular — never break the order.'}
+Install ${lightsFor(design, custom)} ${guides ? 'exactly on the dots in the lines photo (leave every other roofline dark)' : 'along all visible gutter lines, eaves, and gable edges'}, spacing the bulbs evenly about 12 inches apart, every bulb facing the same way — straight out from the house toward the street, all uniform, none tilted, sideways or crooked — so the glow shines back onto the house. Keep all ridge caps completely bare with no lights.${design === 'warm' && !custom?.trim() ? ' Use a clean, bright warm-white color temperature — not too yellow, matching real-world C9 warm white lights.' : ' Keep the color pattern perfectly regular — never break the order.'}
 
 ${extras.length ? `ALSO LIGHT THESE (marked with numbered green circles in the lines photo) with matching mini lights, wrapped neatly and evenly:\n${extras.join('\n')}\nOnly these — no other bushes, trees, columns or railings get lights. No green circles or numbers in the result.\n\n` : ''}Do not light any other trees or bushes — keep landscaping minimal and tasteful, leaving most bushes and trees unlit. No lights on cars.
 

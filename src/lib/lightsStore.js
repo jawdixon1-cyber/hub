@@ -196,6 +196,9 @@ export async function deleteQuote(id) {
   await localDel(id).catch(() => {});
   if (!isCloud(id)) return;
   await supabase.from('app_state').delete().in('key', [META + id, DATA + id]);
+  // Its extras too (before/afters, add-ons, offers, cover, Jobber link) and every photo row.
+  await supabase.from('app_state').delete().in('key', [`lq-ba:${id}`, `lq-jq:${id}`, COVER + id]);
+  await supabase.from('app_state').delete().like('key', `lq-img:${id}:%`);
 }
 
 // Cover photos for the gallery, loaded after the list shows: { quoteId: dataUrl }.
@@ -264,4 +267,31 @@ export async function markReferAdded(ids) {
   const inbox = await readKey(REFER_INBOX);
   const set = new Set(ids);
   await upsert([{ key: REFER_INBOX, value: inbox.map((r) => (set.has(r.id) ? { ...r, added: true } : r)) }]);
+}
+
+// ── Client add-ons + free perks for the Present page ──
+// lq-ba:<id> = small row { pairs, addons: [{ id, label, sub, photo: 'lq-img:…', price, strands, on }], perks: [{ title, sub }] }
+// Each photo is its own lq-img:<id>:<name> row (big rows time out). Separate from the quote rows so
+// the Quoter's autosave never overwrites them.
+export async function getExtrasMeta(id) {
+  const { data, error } = await supabase.from('app_state').select('value').eq('key', `lq-ba:${id}`).maybeSingle();
+  if (error) throw error;
+  return data?.value || {};
+}
+export async function getImages(keys) {
+  const want = [...new Set(keys.filter((k) => typeof k === 'string' && k.startsWith('lq-img:')))];
+  if (!want.length) return {};
+  const { data, error } = await supabase.from('app_state').select('key, value').in('key', want);
+  if (error) throw error;
+  return Object.fromEntries((data || []).map((r) => [r.key, r.value?.src || '']));
+}
+// Re-reads before writing so the before/after pairs (and anything else in the row) are kept.
+export async function saveExtrasMeta(id, patch) {
+  const cur = await getExtrasMeta(id);
+  await upsert([{ key: `lq-ba:${id}`, value: { ...cur, ...patch }, updated_at: new Date().toISOString() }]);
+}
+export async function saveImage(id, name, src) {
+  const key = `lq-img:${id}:${name}`;
+  await upsert([{ key, value: { src }, updated_at: new Date().toISOString() }]);
+  return key;
 }

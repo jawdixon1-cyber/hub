@@ -26,6 +26,12 @@ import stripeSetDefaultCard from './api/stripe-set-default-card.js';
 import stripeChargeCard from './api/stripe-charge-card.js';
 import lightsMeasure from './api/lights-measure.js';
 import lightsMockup from './api/lights-mockup.js';
+import quoHandler from './api/quo.js';
+import gmailHandler from './api/gmail.js';
+import jobberTodayHandler from './api/jobber-today.js';
+import imessageHandler from './api/imessage.js';
+import planDayHandler from './api/plan-day.js';
+import planAiHandler from './api/plan-ai.js';
 
 config({ path: '.env.local' });
 
@@ -55,6 +61,13 @@ app.all('/api/qb-data', qbData);
 // Jobber data (clients search + labor data + refresh)
 app.all('/api/jobber-data', jobberDataHandler);
 app.post('/api/lights-measure', lightsMeasure);
+app.all('/api/quo', quoHandler);
+app.all('/api/gmail', gmailHandler);
+app.get('/api/gmail-callback', gmailHandler);
+app.get('/api/jobber-today', jobberTodayHandler);
+app.all('/api/imessage', imessageHandler);
+app.get('/api/plan-day', planDayHandler);
+app.post('/api/plan-ai', planAiHandler);
 app.post('/api/lights-mockup', lightsMockup);
 
 // Messaging + storage uploads (PDF agreement, attachments, etc.)

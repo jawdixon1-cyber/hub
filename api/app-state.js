@@ -161,8 +161,10 @@ async function handleLightsRefer(req, res) {
     return people.map((p) => {
       const theirs = allLeads.filter((l) => l.referredBy === p.name && l.name);
       const waiting = inbox.filter((r) => r.via === p.token && !theirs.some((l) => l.id === r.id)).length;
-      return { name: p.name, me: p.token === token, sold: theirs.filter((l) => l.status === 'won').length, pending: theirs.filter((l) => l.status !== 'won' && l.status !== 'not_interested').length + waiting };
-    }).sort((x, y) => (y.sold - x.sold) || (y.pending - x.pending) || x.name.localeCompare(y.name));
+      // others see first names only
+      return { name: p.token === token ? p.name : p.name.split(' ')[0], me: p.token === token, sold: theirs.filter((l) => l.status === 'won').length, pending: theirs.filter((l) => l.status !== 'won' && l.status !== 'not_interested').length + waiting, sent: theirs.length + waiting };
+    }).filter((p) => p.sent > 0) // nobody shows until they've sent one
+      .sort((x, y) => (y.sold - x.sold) || (y.pending - x.pending) || x.name.localeCompare(y.name));
   };
 
   if (req.method === 'GET') return res.json({ name: link.name || '', submissions: history(), leaderboard: leaderboard() });

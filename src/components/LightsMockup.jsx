@@ -4,6 +4,8 @@ import { buildShowPrompt, buildNightPrompt } from '../lib/lightsPrompt';
 import { getPrepFolder, setPrepFolder } from '../lib/lightsStore';
 import { DESIGNS } from '../lib/lightsDesigns';
 import { extrasPromptLines } from '../lib/lightsExtras';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { PlanOverlay, OutletMarks } from './LightsMarkup';
 
 // One-line heads-up while the folder picker is open (window.alert would block the picker flow less than a toast).
 const alertOnce = (msg) => { try { window.alert(msg); } catch { console.warn(msg); } };
@@ -182,6 +184,27 @@ async function linesPhoto(side, bulbMap = false, extrasHere = []) {
   return cv.toDataURL('image/jpeg', 0.92);
 }
 
+// Full plan photo: exactly what the Plan step shows (lights with feet, jump lines, 🔌 power,
+// ⚡ inline power), drawn onto the photo at full size. For the Present step's downloads.
+async function planPhoto(side) {
+  const img = await loadImage(side.plain);
+  const w = side.w || img.width, h = side.h || img.height;
+  const svg = renderToStaticMarkup(
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${w} ${h}`} width={img.width} height={img.height} preserveAspectRatio="none">
+      <PlanOverlay lines={side.lines || []} jumps={side.jumps || []} w={w} h={h} tags plan />
+      <OutletMarks outlets={side.outlets || []} w={w} h={h} />
+      <OutletMarks inline outlets={side.inlines || []} w={w} h={h} />
+    </svg>,
+  );
+  const overlay = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+  const cv = canvasOf(img.width, img.height);
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  ctx.drawImage(overlay, 0, 0, img.width, img.height);
+  return cv.toDataURL('image/jpeg', 0.92);
+}
+const hasPlan = (a) => a.plain && ((a.lines || []).length || (a.jumps || []).length || (a.outlets || []).length || (a.inlines || []).length);
+
 function downloadUrl(url, name) {
   const a = document.createElement('a');
   a.download = name;
@@ -282,7 +305,7 @@ function ShowCard({ side, index, onPatch }) {
 }
 
 // part 'lines' = Where the lights go (confirm the plan photos) · part 'mockup' = make the ChatGPT mockup, step by step.
-export default function LightsMockup({ angles, setAngles, client, previews = [], setPreviews, designId: designProp, part = 'mockup', nightPhoto = '', setNightPhoto, extras = [], customColor = null }) {
+export default function LightsMockup({ angles, setAngles, client, previews = [], setPreviews, designId: designProp, part = 'mockup', nightPhoto = '', setNightPhoto, extras = [], customColor = null, title, sub }) {
   // Extras on each photo, numbered the same as the Extras step.
   const extrasOn = (i) => extras.map((e, k) => ({ ...e, n: k + 1 })).filter((e) => e.side === i);
   const [designLocal] = useState(() => localStorage.getItem('lights-mockup-design') || 'warm');
@@ -295,6 +318,7 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
   const design = DESIGNS.find((d) => d.id === designId) || DESIGNS[0];
   const [lineUrls, setLineUrls] = useState({}); // side index -> lines photo
   const [galleryAt, setGalleryAt] = useState(-1);
+  const [openGuide, setOpenGuide] = useState(null); // which guide preview is shown big
   const [guideUrls, setGuideUrls] = useState({}); // side index -> lines photo with "ft · bulbs" labels (what ChatGPT gets)
   useEffect(() => {
     if (part !== 'mockup') return undefined;
@@ -314,8 +338,19 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
       .then((urls) => { if (alive) setLineUrls(Object.fromEntries(urls.map((u, i) => [i, u]).filter(([, u]) => u))); });
     return () => { alive = false; };
   }, [angles]);
-  const lineName = (i) => `${slug(client)}-side${i + 1}-lines.jpg`;
-  const galleryItems = withLines.filter(({ i }) => lineUrls[i]).map(({ i }) => ({ url: lineUrls[i], label: `Side ${i + 1}`, name: lineName(i) }));
+  // Present step (title set): full plan photos instead of the clean presentation lines.
+  const [planUrls, setPlanUrls] = useState({});
+  useEffect(() => {
+    if (part !== 'lines' || !title) return undefined;
+    let alive = true;
+    Promise.all(angles.map((a) => (hasPlan(a) ? planPhoto(a).catch(() => null) : null)))
+      .then((urls) => { if (alive) setPlanUrls(Object.fromEntries(urls.map((u, i) => [i, u]).filter(([, u]) => u))); });
+    return () => { alive = false; };
+  }, [angles, part, title]);
+  const lineName = (i) => `${slug(client)}-side${i + 1}-${title ? 'plan' : 'lines'}.jpg`;
+  const shownLines = title ? angles.map((a, i) => ({ a, i })).filter(({ a }) => hasPlan(a)) : withLines;
+  const urlFor = (i) => (title ? planUrls[i] : lineUrls[i]);
+  const galleryItems = shownLines.filter(({ i }) => urlFor(i)).map(({ i }) => ({ url: urlFor(i), label: `Side ${i + 1}`, name: lineName(i) }));
   const withPhoto = angles.map((a, i) => ({ a, i })).filter(({ a }) => a.plain);
   // Ticked show photos — or every photo if none are ticked, so Prep always does something.
   const ticked = withPhoto.filter(({ a }) => a.show);
@@ -414,9 +449,9 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
   const heading = (n, text, sub) => (
     <div>
       <p className="text-sm font-semibold text-primary flex items-center gap-2">
-        <span className="w-5 h-5 rounded-full bg-brand text-on-brand text-[11px] font-bold flex items-center justify-center">{n}</span> {text}
+        {n != null && <span className="w-5 h-5 rounded-full bg-brand text-on-brand text-[11px] font-bold flex items-center justify-center">{n}</span>} {text}
       </p>
-      {sub && <p className="text-[11px] text-muted mt-0.5 ml-7">{sub}</p>}
+      {sub && <p className={`text-[11px] text-muted mt-0.5 ${n != null ? 'ml-7' : ''}`}>{sub}</p>}
     </div>
   );
 
@@ -445,14 +480,40 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
   );
 
   if (part === 'lines') {
+    // Present step reuses this with its own title, plus the mockups and a Download all.
+    const mockups = title ? previews.filter((p) => p.image).map((p, k) => ({ url: p.image, name: `${slug(client)}-mockup-${k + 1}.jpg` })) : [];
+    const everything = [...galleryItems.map((g) => ({ url: g.url, name: g.name })), ...mockups];
+    const downloadAll = async () => { for (const f of everything) { downloadUrl(f.url, f.name); await new Promise((r) => setTimeout(r, 350)); } };
     return (
       <div className={card}>
-        {heading(1, 'Where the lights go', 'Your plan on each photo — this is what the presentation shows. Check it, then confirm.')}
-        {withLines.length ? (
+        <div className="flex items-start gap-3 flex-wrap">
+          <div className="flex-1 min-w-[200px]">{heading(title ? null : 1, title || 'Where the lights go', sub || 'Your plan on each photo — this is what the presentation shows. Check it, then confirm.')}</div>
+          {title && everything.length > 1 && (
+            <button onClick={downloadAll} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold px-4 py-2 cursor-pointer hover:bg-brand-hover">
+              <Download size={15} /> Download all ({everything.length})
+            </button>
+          )}
+        </div>
+        {shownLines.length ? (
           <div className="grid gap-4 sm:grid-cols-2">
-            {withLines.map(({ i }) => <LinesCard key={i} url={lineUrls[i]} index={i} name={lineName(i)} onOpen={() => setGalleryAt(galleryItems.findIndex((g) => g.label === `Side ${i + 1}`))} />)}
+            {shownLines.map(({ i }) => <LinesCard key={i} url={urlFor(i)} index={i} name={lineName(i)} onOpen={() => setGalleryAt(galleryItems.findIndex((g) => g.label === `Side ${i + 1}`))} />)}
           </div>
         ) : <p className="text-sm text-muted">Draw lines in Plan and they show up here.</p>}
+        {mockups.length > 0 && (
+          <>
+            <p className="text-sm font-semibold text-primary mt-4 mb-2">Mockups</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {mockups.map((m) => (
+                <div key={m.name} className="relative rounded-lg overflow-hidden border border-border-default">
+                  <img src={m.url} alt="Mockup" className="w-full h-auto block" />
+                  <button onClick={() => downloadUrl(m.url, m.name)} className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-lg bg-black/70 text-white text-xs font-semibold px-2.5 py-1.5 cursor-pointer hover:bg-black/85">
+                    <Download size={13} /> Download
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
         {galleryAt >= 0 && galleryItems.length > 0 && <Gallery items={galleryItems} start={Math.min(galleryAt, galleryItems.length - 1)} onClose={() => setGalleryAt(-1)} />}
       </div>
     );
@@ -487,9 +548,17 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
           {picked.some(({ i }) => guideUrls[i]) && (
             <div className="space-y-1.5">
               <p className="text-sm font-semibold text-primary">What ChatGPT gets: a dot for every bulb <span className="font-normal text-muted">· each run its own color, bars where it starts + ends · 12" spacing = 1 per ft · {bulbs} bulbs total</span></p>
-              <div className="space-y-3">
-                {picked.filter(({ i }) => guideUrls[i]).map(({ i }) => <img key={i} src={guideUrls[i]} alt={`Side ${i + 1} guide`} className="w-full rounded-lg border border-border-default" />)}
+              {/* Small previews — tap one to open it full size */}
+              <div className="flex gap-2 flex-wrap">
+                {picked.filter(({ i }) => guideUrls[i]).map(({ i }) => (
+                  <button key={i} onClick={() => setOpenGuide(openGuide === i ? null : i)} title="Tap to see it big" className="cursor-pointer">
+                    <img src={guideUrls[i]} alt={`Side ${i + 1} guide`} className={`h-28 w-auto rounded-lg border-2 ${openGuide === i ? 'border-brand' : 'border-border-default hover:border-brand'}`} />
+                  </button>
+                ))}
               </div>
+              {openGuide !== null && guideUrls[openGuide] && (
+                <img src={guideUrls[openGuide]} alt="" onClick={() => setOpenGuide(null)} className="w-full rounded-lg border border-border-default cursor-zoom-out" />
+              )}
             </div>
           )}
           <div className="flex items-center gap-3 flex-wrap">

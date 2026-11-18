@@ -316,7 +316,7 @@ async function handleLaborData(req, res) {
 }
 
 async function loadLaborGrouped({ start, end, skipLineItems = true, skipJobExpenses = true, forceRefresh = false } = {}) {
-  const cacheKey = `v3|${start}|${end}|${skipLineItems ? 'nopv' : 'full'}|${skipJobExpenses ? 'noje' : 'je'}`; // v2: one-off jobs split by hours; v3: billing type + schedules
+  const cacheKey = `v6|${start}|${end}|${skipLineItems ? 'nopv' : 'full'}|${skipJobExpenses ? 'noje' : 'je'}`; // v2: one-off jobs split by hours; v3: billing type + schedules
   let cached = laborCache[cacheKey];
   if (!cached) cached = await loadPersistedLabor(cacheKey);
   if (cached && !forceRefresh && Date.now() - cached.time < LABOR_CACHE_TTL) {
@@ -438,7 +438,9 @@ async function loadLaborGrouped({ start, end, skipLineItems = true, skipJobExpen
     grouped[dateStr].labor.totalHours += hours;
     grouped[dateStr].labor.totalCost += cost;
     if (timeType === 'job') { grouped[dateStr].labor.jobHours = (grouped[dateStr].labor.jobHours || 0) + hours; grouped[dateStr].labor.jobCost = (grouped[dateStr].labor.jobCost || 0) + cost; }
-    else { grouped[dateStr].labor.generalHours = (grouped[dateStr].labor.generalHours || 0) + hours; grouped[dateStr].labor.generalCost = (grouped[dateStr].labor.generalCost || 0) + cost; }
+    else { grouped[dateStr].labor.generalHours = (grouped[dateStr].labor.generalHours || 0) + hours; grouped[dateStr].labor.generalCost = (grouped[dateStr].labor.generalCost || 0) + cost;
+      // Each general clock entry (drive, load, gas between jobs) — the payroll page shows them between the jobs.
+      (grouped[dateStr].labor.generalEntries ||= []).push({ name, startAt: entry.startAt, endAt: entry.endAt || null, hours: Math.round(hours * 100) / 100, label }); }
     if (!grouped[dateStr].labor.byPerson[name]) grouped[dateStr].labor.byPerson[name] = { hours: 0, rate, cost: 0, jobHours: 0, jobCost: 0, generalHours: 0, generalCost: 0 };
     grouped[dateStr].labor.byPerson[name].hours += hours;
     grouped[dateStr].labor.byPerson[name].cost += cost;
@@ -584,6 +586,10 @@ async function loadLaborGrouped({ start, end, skipLineItems = true, skipJobExpen
       personByDate[d][name].hours += hrs;
       personByDate[d][name].cost += cost;
       if (rate > 0) personByDate[d][name].rate = rate;
+      // Each person's clock-in/out on this job (the payroll page shows who was there when).
+      const pp = personByDate[d][name];
+      if (startRaw && (!pp.firstAt || startRaw < pp.firstAt)) pp.firstAt = startRaw;
+      if (t.endAt && (!pp.lastAt || t.endAt > pp.lastAt)) pp.lastAt = t.endAt;
       if (!earliestStartByDate[d] || startRaw < earliestStartByDate[d]) earliestStartByDate[d] = startRaw;
     }
 
@@ -1806,7 +1812,7 @@ async function handleHubSync(req, res) {
 // ("Real Amount", "Plan") used on fixed-price plans, so price comes from lines with quantity > 0.
 // Fixed price: that amount per invoice period → monthly; per visit = monthly ÷ visits a month.
 // Visit based: that amount per visit; monthly = per visit × visits a month (weekly 4.33, EOW 2.17).
-function planMoney(j) {
+export function planMoney(j) {
   if (j.jobType !== 'RECURRING') return {};
   const lines = (j.lineItems?.nodes || []).filter((l) => (l.quantity || 0) > 0);
   const price = lines.length ? lines.reduce((n, l) => n + (parseFloat(l.totalPrice) || 0), 0) : parseFloat(j.total) || 0;
@@ -1847,6 +1853,18 @@ async function handlePlans(req, res) {
       after = data.jobs?.pageInfo?.hasNextPage ? data.jobs.pageInfo.endCursor : null;
       if (after) await new Promise((r) => setTimeout(r, 300));
     } while (after && jobs.length < 2000);
+
+    // Jobber's job list lags behind its single-job records, so a job reopened a few minutes ago
+    // can still list as archived. Re-check recently closed recurring jobs one by one (aliased in one query).
+    const weekAgo = Date.now() - 7 * 864e5;
+    const recent = jobs.filter((j) => j.jobType === 'RECURRING' && j.jobStatus === 'archived' && j.completedAt && new Date(j.completedAt).getTime() > weekAgo).slice(0, 40);
+    if (recent.length) {
+      try {
+        const q = recent.map((j, i) => `j${i}: job(id: "${j.id}") { jobStatus completedAt }`).join(' ');
+        const live = await jobberQuery(`{ ${q} }`);
+        recent.forEach((j, i) => { const l = live[`j${i}`]; if (l) { j.jobStatus = l.jobStatus; j.completedAt = l.completedAt; } });
+      } catch (e) { console.warn('[plans] recheck of recently closed jobs failed:', e.message); }
+    }
 
     const byClient = {};
     for (const j of jobs) {
@@ -1890,6 +1908,209 @@ async function handlePlans(req, res) {
   }
 }
 
+
+// ── Lights: client said yes on the Present page → build the Jobber quote ──
+// POST /api/jobber-data?action=lights-quote-create  { id, years, addonIds }   (owner login required)
+// Prices come from the saved quote (lq-meta) + its add-ons (lq-ba), never from the browser.
+// Mirrors Jude's hand-built lights quotes: Roofline C9 line, add-on lines, $0 term line,
+// % discount for multi-year, 50% deposit, the usual terms message. Created as a DRAFT —
+// Jude reviews it in Jobber and sends it / collects the deposit from there.
+const LQ_PRODUCTS = {
+  roofline: 'Z2lkOi8vSm9iYmVyL1Byb2R1Y3RPclNlcnZpY2UvNTUwNDIxOTY=',
+  trees: 'Z2lkOi8vSm9iYmVyL1Byb2R1Y3RPclNlcnZpY2UvNTUwNDIxOTk=',
+  bushes: 'Z2lkOi8vSm9iYmVyL1Byb2R1Y3RPclNlcnZpY2UvNTUwNDIyMDA=',
+  wreath24: 'Z2lkOi8vSm9iYmVyL1Byb2R1Y3RPclNlcnZpY2UvNTUwNDIyMDU=',
+  garland: 'Z2lkOi8vSm9iYmVyL1Byb2R1Y3RPclNlcnZpY2UvNTUwNDIyMDQ=',
+  term1: 'Z2lkOi8vSm9iYmVyL1Byb2R1Y3RPclNlcnZpY2UvNTUwNDIyMDk=',
+  term2: 'Z2lkOi8vSm9iYmVyL1Byb2R1Y3RPclNlcnZpY2UvNTUwNDIyMTA=',
+  term3: 'Z2lkOi8vSm9iYmVyL1Byb2R1Y3RPclNlcnZpY2UvNTUwNDIyMTE=',
+};
+const LQ_OFF = { 1: 0, 2: 5, 3: 10 }; // must match PLANS on the Present page
+const LQ_COLORS = { warm: 'Warm White', cool: 'Pure White', multi: 'Multicolor', redwhite: 'Red & White', redgreen: 'Red & Green' };
+const LQ_MESSAGE = `Ownership - Single installation & renewal - Unless explicitly stated to be a purchase agreement, all materials are leased to the client from the installation date until the scheduled date of removal.
+
+Ownership - Multi-year agreement - Unless explicitly stated to be a purchase agreement, all materials are leased to the client from the time on initial installation until the removal during the final year of the agreed upon multi-year term.
+
+Payment terms - Single installation & renewal - A 50% deposit is required upon approval of this quote before installation can be scheduled. The final deposit of the remaining 50% is due at the time of installation unless payment plan terms approved by client and Hey Jude's.
+
+Payment terms - Multi-year agreement - The total balance for the multi-year agreement will be paid in equal bi-annual installments over the period of the agreement. The first installment is due upon signing this agreement with the following amounts and cadence referred to in the above section of this agreement. During the agreement term, you may choose to cancel your subscription to services early, provided that, we will not provide any refunds and you will promptly pay any discounts received to date from the benefits of having signed a multi-year agreement.
+
+Payments are to be made by credit card unless agreed upon in writing by Hey Jude's. When paying by credit card, you authorize us to charge your credit card or bank account for all fees payable during the agreement term. You further authorize us to use a third party to process payments, and consent to the disclosure of your payment information to such third party.
+
+Removal - Removal dates will be scheduled upon completion of installation. Pending unavoidable weather conditions, all displays will be removed prior to February 1st.
+
+Maintenance - Maintenance of the display is included in the service provided for the duration of the installation.
+
+Use of Media - Your display will look extraordinary, and deserves to be shared. By accepting this contract, you agree that we may capture, store and use images and video of your property's display on our website and social media without compromising the privacy of your home.
+
+Property Access - You agree to provide unmitigated access at the scheduled work times to ensure we have reasonable access to the working area needed to install and remove the display.
+
+Disclaimers - We will provide all materials and equipment necessary to complete the display. No other person(s) are permitted to make alterations or repairs without prior written consent from Hey Jude's. Any alterations or repairs made by other person(s) will void the inclusive maintenance warranty and any further replacements or repairs performed by Hey Jude's will be considered additional billable services. In certain instances, we may use tape, hot glue, or staples to mount components of the display. These methods are used on an as-needed basis. By accepting the quote, you agree to these installation methods.`;
+
+function lqTermText(years, startYear) {
+  const ys = Array.from({ length: years }, (_, i) => startYear + i);
+  const words = { 2: 'two (2)', 3: 'three (3)' };
+  const pay = [];
+  ys.forEach((y, i) => { if (i > 0) pay.push(`August 1, ${y}`); pay.push(`${y} installation date`); });
+  const lines = ['Due upon quote acceptance', ...pay];
+  return [
+    `- The display described above will be installed, maintained, removed and stored for ${words[years]} seasons: ${ys.slice(0, -1).join(', ')} and ${ys[ys.length - 1]}. Changes to the display may be made in ${years === 2 ? 'the second season' : 'later seasons'}, but may be billed as additional work outside the scope of this quote.`,
+    `- A ${LQ_OFF[years]}% discount is applied to each season's price, and pricing is locked for ${years === 2 ? 'both' : 'all three'} seasons.`,
+    `- All lights and equipment remain the property of Hey Jude's.`,
+    `- If the agreement is cancelled before the end of the term, the discount received on completed seasons becomes due.`,
+    `- The total agreement is paid in ${lines.length} equal installments:`,
+    ...lines.map((l, i) => `${i + 1}${['st', 'nd', 'rd'][i] || 'th'} payment: ${l}`),
+  ].join('\n');
+}
+
+// Builds the Jobber quote line items for a lights quote. Shared by the real quote (quoteCreate)
+// and the Present-step preview, so the preview always says exactly what the quote will say.
+// Wire color as drawn on the plan: each roof line's own color (Mark up), else the quote's default.
+// Weighted by feet, same as the materials list. Mixed → "Black & White".
+function lqWireLabel(meta, angles) {
+  const ft = { black: 0, white: 0, green: 0 };
+  for (const a of angles || []) for (const l of a.lines || []) {
+    const c = String(l.color || meta.wire || 'white').toLowerCase();
+    const k = /black/.test(c) ? 'black' : /green/.test(c) ? 'green' : 'white';
+    ft[k] += Number(l.feet) || 1;
+  }
+  const used = Object.entries(ft).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]).map(([k]) => k[0].toUpperCase() + k.slice(1));
+  if (used.length) return used.join(' & ');
+  return /black/i.test(String(meta.wire || '')) ? 'Black' : /green/i.test(String(meta.wire || '')) ? 'Green' : 'White';
+}
+
+function buildLqQuote({ meta, ba, base, years, addonIds, angles }) {
+  const baRow = { value: ba };
+  const wanted = new Set(Array.isArray(addonIds) ? addonIds.map(String) : []);
+  const addons = (baRow?.value?.addons || []).filter((a) => Number(a.price) > 0 && wanted.has(String(a.id)));
+  const perks = (baRow?.value?.perks || []).filter((p) => p.title);
+  // Offers (same math as the Present page): % is of roofline + kept add-ons.
+  const full = base + addons.reduce((t, a) => t + Number(a.price), 0);
+  const offers = (baRow?.value?.offers || []).filter((o) => o.on !== false && Number(o.amount) > 0)
+    .map((o) => ({ label: o.label || 'Special offer', free: o.kind === 'free', value: Number(o.amount), off: o.kind === 'free' ? 0 : Math.round((o.kind === '%' ? full * Number(o.amount) / 100 : Number(o.amount)) * 100) / 100, when: o.when }));
+
+  const color = LQ_COLORS[meta.style] || (meta.customColor ? String(meta.customColor) : 'Warm White');
+  const wire = lqWireLabel(meta, angles);
+  const startYear = Number(String(meta.installDate || '').slice(0, 4)) || new Date().getFullYear();
+  const lineItems = [
+    {
+      name: 'Roofline C9 Lighting', productOrServiceId: LQ_PRODUCTS.roofline, saveToProductsAndServices: false, quantity: 1, unitPrice: base,
+      description: ['- Commercial-grade, energy-efficient LED C9 lights, custom-cut to fit your home', '- Lighting covers: All shown in your design', `- Bulb color: ${color}`, `- Wire color: ${wire}`, '- Includes installation, in-season maintenance, takedown and storage'].join('\n'),
+    },
+    ...addons.map((a) => {
+      const what = `${a.id} ${a.label}`;
+      const kind = /wreath/i.test(what) ? 'wreath24' : /garland/i.test(what) ? 'garland' : /bush|shrub/i.test(what) ? 'bushes' : /tree/i.test(what) ? 'trees' : '';
+      const NAMES = { trees: 'Deciduous Tree Lighting', bushes: 'Bush & Shrub Lighting', wreath24: 'Lit Wreath - 24 in', garland: 'Lit Garland' };
+      const DESC = {
+        trees: ['- Commercial-grade, energy-efficient LED mini lights, 24 ft per strand', `- Wrapping includes: ${a.sub || 'tight spiral trunk wrap'}`, `- Bulb color: ${color}`, '- Includes installation, in-season maintenance, takedown and storage'],
+        bushes: ['- Commercial-grade, energy-efficient LED mini lights, 24 ft per strand', `- ${a.sub || 'Net-style wrap for even, full coverage across each bush'}`, `- Bulb color: ${color}`, '- Includes installation, in-season maintenance, takedown and storage'],
+        wreath24: ['- 24-inch commercial-grade evergreen Christmas wreath, pre-lit with LED lights', `- ${a.sub || 'Light color: ' + color}`, '- Professionally hung without damage to your siding or stucco', '- Includes installation, in-season maintenance, takedown and storage'],
+        garland: ['- Commercial-grade 14-inch evergreen garland, pre-lit with LED mini lights', `- ${a.sub || 'Wrapped on the railing or doorway'}`, '- Includes installation, in-season maintenance, takedown and storage'],
+      };
+      return {
+        name: kind ? `${NAMES[kind]} — ${a.label}` : a.label,
+        ...(kind ? { productOrServiceId: LQ_PRODUCTS[kind] } : {}),
+        saveToProductsAndServices: false, quantity: 1, unitPrice: Number(a.price),
+        description: (DESC[kind] || [`- ${a.sub || 'Outlined in lights'}`, `- Bulb color: ${color}`, '- Includes installation, in-season maintenance, takedown and storage']).join('\n'),
+      };
+    }),
+    ...perks.map((p) => ({ name: (() => { const t = String(p.title).replace(/^[^\w"]+\s*/u, ''); return /^free\b/i.test(t) ? `🎁 ${t}` : `🎁 ${t} — FREE`; })(), description: p.sub || '', saveToProductsAndServices: false, quantity: 1, unitPrice: 0 })),
+    ...offers.map((o) => ({ name: `🎁 ${o.label}${o.free ? ' — FREE' : ''}`, description: [o.free ? `A $${o.value} value, included free` : '', o.when === 'today' ? 'Offer good when booked today' : ''].filter(Boolean).join('\n'), saveToProductsAndServices: false, quantity: 1, unitPrice: o.free ? 0 : -o.off })),
+    years > 1
+      ? { name: `Holiday Display - ${years} Season term`, productOrServiceId: LQ_PRODUCTS[`term${years}`], saveToProductsAndServices: false, quantity: 1, unitPrice: 0, description: lqTermText(years, startYear) }
+      : { name: 'Holiday Display - Seasonal Rental', productOrServiceId: LQ_PRODUCTS.term1, saveToProductsAndServices: false, quantity: 1, unitPrice: 0 },
+  ];
+
+  return { lineItems, addons, offers };
+}
+
+export async function handleLightsQuotePreview(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  const db = getSupabaseAdmin();
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const { data: who } = token ? await db.auth.getUser(token) : { data: null };
+  if (who?.user?.user_metadata?.role !== 'owner') return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const { id, years: y, addonIds } = req.body || {};
+  const years = [1, 2, 3].includes(Number(y)) ? Number(y) : 1;
+  if (!/^[\w-]+$/.test(String(id || ''))) return res.status(400).json({ error: 'Bad quote id' });
+  const [{ data: metaRow }, { data: baRow }, { data: dataRow }] = await Promise.all([
+    db.from('app_state').select('value').eq('key', `lq-meta:${id}`).maybeSingle(),
+    db.from('app_state').select('value').eq('key', `lq-ba:${id}`).maybeSingle(),
+    db.from('app_state').select('value').eq('key', `lq-data:${id}`).maybeSingle(),
+  ]);
+  const meta = metaRow?.value;
+  if (!meta) return res.status(404).json({ error: 'Save the quote first (pick the client).' });
+  const roof = Number(meta.quoted) || Number(meta.total) || 0;
+  const base = roof + Math.max(0, Number(baRow?.value?.adjust) || 0);
+  const { lineItems } = buildLqQuote({ meta, ba: baRow?.value, base, years, addonIds, angles: dataRow?.value?.angles });
+  const subtotal = lineItems.reduce((t, li) => t + (Number(li.unitPrice) || 0) * (Number(li.quantity) || 1), 0);
+  const discountRate = LQ_OFF[years] || 0;
+  const discount = Math.round(subtotal * discountRate) / 100;
+  const total = Math.round((subtotal - discount) * 100) / 100;
+  const allAddons = (baRow?.value?.addons || []).filter((a) => Number(a.price) > 0).map((a) => ({ id: String(a.id), label: a.label, price: Number(a.price) }));
+  return res.json({
+    title: '🎄✨Christmas Magic Makeover',
+    lineItems: lineItems.map((li) => ({ name: li.name, description: li.description || '', quantity: li.quantity, unitPrice: li.unitPrice })),
+    subtotal, discountRate, discount, total, depositRate: 50, deposit: Math.round(total * 50) / 100,
+    message: LQ_MESSAGE, years, availableAddons: allAddons, priced: roof > 0,
+  });
+}
+
+async function handleLightsQuoteCreate(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  const db = getSupabaseAdmin();
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const { data: who } = token ? await db.auth.getUser(token) : { data: null };
+  if (who?.user?.user_metadata?.role !== 'owner') return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+
+  const { id, years: y, addonIds } = req.body || {};
+  const years = [1, 2, 3].includes(Number(y)) ? Number(y) : 1;
+  if (!/^[\w-]+$/.test(String(id || ''))) return res.status(400).json({ error: 'Bad quote id' });
+
+  // One Jobber quote per presentation — tapping again just reopens it.
+  const { data: done } = await db.from('app_state').select('value').eq('key', `lq-jq:${id}`).maybeSingle();
+  if (done?.value?.quoteId) return res.json({ ...done.value, existing: true });
+
+  const [{ data: metaRow }, { data: baRow }, { data: dataRow }] = await Promise.all([
+    db.from('app_state').select('value, org_id').eq('key', `lq-meta:${id}`).maybeSingle(),
+    db.from('app_state').select('value').eq('key', `lq-ba:${id}`).maybeSingle(),
+    db.from('app_state').select('value').eq('key', `lq-data:${id}`).maybeSingle(),
+  ]);
+  const meta = metaRow?.value;
+  if (!meta) return res.status(404).json({ error: 'Quote not found' });
+  const roof = Number(meta.quoted) || Number(meta.total) || 0;
+  if (!(roof > 0)) return res.status(400).json({ error: 'This quote has no price yet.' });
+  const base = roof + Math.max(0, Number(baRow?.value?.adjust) || 0); // price bump folds into the roofline line
+  const clientId = meta.clientInfo?.id;
+  if (!clientId) return res.status(400).json({ error: 'No Jobber client on this quote — pick the client in the Quoter first.' });
+
+  // Their property (match the quote's address, else their first one) + their open lights request, if any.
+  const c = await jobberQuery(`query($id: EncodedId!) { client(id: $id) { properties { id address { street } } requests(first: 10) { nodes { id title requestStatus } } } }`, { id: clientId });
+  const props = c?.client?.properties || [];
+  const street = String(meta.clientInfo?.address || '').toLowerCase().split(',')[0].trim();
+  const prop = props.find((p) => street && String(p.address?.street || '').toLowerCase().includes(street)) || props[0];
+  if (!prop) return res.status(400).json({ error: 'That Jobber client has no property — add their address in Jobber first.' });
+  const req0 = (c.client.requests?.nodes || []).find((r) => /light|christmas|holiday/i.test(r.title || '') && !/converted|archived/i.test(r.requestStatus || ''));
+
+  const { lineItems, addons } = buildLqQuote({ meta, ba: baRow?.value, base, years, addonIds, angles: dataRow?.value?.angles });
+  const attributes = {
+    clientId, propertyId: prop.id, ...(req0 ? { requestId: req0.id } : {}),
+    title: '🎄✨Christmas Magic Makeover',
+    message: LQ_MESSAGE,
+    lineItems,
+    deposit: { rate: 50, type: 'Percent' },
+    ...(LQ_OFF[years] ? { discount: { rate: LQ_OFF[years], type: 'Percent' } } : {}),
+  };
+  const r = await jobberQuery(`mutation($a: QuoteCreateAttributes!) { quoteCreate(attributes: $a) { quote { id quoteNumber jobberWebUri amounts { subtotal discountAmount total depositAmount } } userErrors { message path } } }`, { a: attributes });
+  const errs = r?.quoteCreate?.userErrors || [];
+  const q = r?.quoteCreate?.quote;
+  if (!q) return res.status(400).json({ error: errs.map((e) => e.message).join('; ') || 'Jobber did not create the quote' });
+
+  const out = { quoteId: q.id, quoteNumber: q.quoteNumber, url: q.jobberWebUri, total: q.amounts?.total, deposit: q.amounts?.depositAmount, years, addons: addons.map((a) => a.id), at: new Date().toISOString() };
+  await db.from('app_state').upsert({ key: `lq-jq:${id}`, value: out, org_id: metaRow.org_id, updated_at: out.at }, { onConflict: 'key' });
+  return res.json(out);
+}
+
 export default async function handler(req, res) {
   try {
     const action = req.query.action;
@@ -1920,6 +2141,8 @@ export default async function handler(req, res) {
     if (action === 'ytd-revenue') return handleYTDRevenue(req, res);
     if (action === 'recurring-summary') return handleRecurringSummary(req, res);
     if (action === 'plans') return handlePlans(req, res);
+    if (action === 'lights-quote-create') return handleLightsQuoteCreate(req, res);
+    if (action === 'lights-quote-preview') return handleLightsQuotePreview(req, res);
     return res.status(400).json({ error: 'action param required: status | crew-status | clients | labor | ytd-revenue' });
   } catch (err) {
     console.error('[Jobber Data] Error:', err.message);
