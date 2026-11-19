@@ -820,15 +820,17 @@ function ReviewJobs({ name: myName }) {
     return () => { alive = false; };
   }, [token]);
 
-  // The crew only — not the owner.
+  // Everyone can pick whose route to see (crew names only — not Jude). Crew start on their own.
   const meFirst = (myName || '').split(' ')[0].toLowerCase();
-  const crewNames = [...new Set(st.stops.flatMap((x) => x.crew))].filter((c) => { const f = c.split(' ')[0].toLowerCase(); return f !== 'jude' && f !== meFirst; }).sort();
-  const name = isOwner ? pick : myName;
+  const firstOf = (c) => c.split(' ')[0].toLowerCase();
+  const crewNames = [...new Set(st.stops.flatMap((x) => x.crew))].filter((c) => firstOf(c) !== 'jude').sort();
+  const myCrewName = isOwner ? null : crewNames.find((c) => firstOf(c) === meFirst);
+  const name = pick || myCrewName || null;
   const first = (name || '').split(' ')[0].toLowerCase();
-  const mine = first ? st.stops.filter((x) => x.crew.some((c) => c.split(' ')[0].toLowerCase() === first)) : [];
+  const mine = first ? st.stops.filter((x) => x.crew.some((c) => firstOf(c) === first)) : [];
   const groups = {};
   for (const x of (mine.length ? mine : st.stops)) {
-    const k = mine.length ? 'Your stops' : (x.crew.join(' + ') || 'Not assigned');
+    const k = mine.length ? (first === meFirst ? 'Your stops' : `${name.split(' ')[0]}'s stops`) : (x.crew.join(' + ') || 'Not assigned');
     (groups[k] = groups[k] || []).push(x);
   }
   // Job name without the "Client Name - " Jobber puts in front; falls back to the client.
@@ -838,12 +840,12 @@ function ReviewJobs({ name: myName }) {
   return (
     <div className="mb-2">
       <p className="pt-1 pb-1 text-sm font-black uppercase tracking-wider text-muted">Review jobs</p>
-      {isOwner && crewNames.length > 0 && (
+      {crewNames.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 py-1">
           <span className="text-sm font-bold text-secondary">Whose route?</span>
           {crewNames.map((c) => (
             <button key={c} onClick={() => setPick(c)}
-              className={`px-4 py-2 rounded-full text-base font-bold cursor-pointer ${pick === c ? 'bg-amber-400 text-black' : 'bg-surface-alt text-primary'}`}>{c.split(' ')[0]}</button>
+              className={`px-4 py-2 rounded-full text-base font-bold cursor-pointer ${name === c ? 'bg-amber-400 text-black' : 'bg-surface-alt text-primary'}`}>{firstOf(c) === meFirst ? 'Me' : c.split(' ')[0]}</button>
           ))}
         </div>
       )}
