@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { EQUIPMENT_TYPES, genId, getActiveRepairs } from '../data';
 import ManagementSection from '../components/owner/ManagementSection';
-import AnnouncementEditorModal from '../components/AnnouncementEditorModal';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getTimezone, getTodayInTimezone, toDateStringInTimezone } from '../utils/timezone';
@@ -50,10 +49,6 @@ export default function OwnerDashboard() {
   const setEquipmentRepairLog = useAppStore((s) => s.setEquipmentRepairLog);
   const quotes = useAppStore((s) => s.quotes) || [];
   const permissions = useAppStore((s) => s.permissions);
-  const announcements = useAppStore((s) => s.announcements);
-  const setAnnouncements = useAppStore((s) => s.setAnnouncements);
-  const archivedAnnouncements = useAppStore((s) => s.archivedAnnouncements);
-  const setArchivedAnnouncements = useAppStore((s) => s.setArchivedAnnouncements);
 
   const equipmentCategories = useAppStore((s) => s.equipmentCategories);
   const allTypes = equipmentCategories?.length > 0 ? equipmentCategories : EQUIPMENT_TYPES;
@@ -69,15 +64,7 @@ export default function OwnerDashboard() {
   const [fixingRepairId, setFixingRepairId] = useState(null);
   const [fixDescription, setFixDescription] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
-  const [showAnnouncementEditor, setShowAnnouncementEditor] = useState(false);
 
-  // Auto-open announcement editor from query param
-  useEffect(() => {
-    if (searchParams.get('announce') === '1') {
-      setShowAnnouncementEditor(true);
-      setSearchParams({}, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
 
   // ─── Greeting ───
   const firstName = currentUser?.split(' ')[0] || 'Boss';
@@ -237,10 +224,6 @@ export default function OwnerDashboard() {
 
       {/* ─── Quick Actions ─── */}
       <div className="flex gap-3">
-        <button onClick={() => setShowAnnouncementEditor(true)} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border-default text-sm font-semibold text-secondary hover:bg-surface-alt transition-colors cursor-pointer">
-          <Megaphone size={16} />
-          Announcement
-        </button>
         <button onClick={() => navigate('/quoting')} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-border-default text-sm font-semibold text-secondary hover:bg-surface-alt transition-colors cursor-pointer">
           <Plus size={16} />
           New Quote
@@ -553,18 +536,6 @@ export default function OwnerDashboard() {
         );
       })()}
 
-      {/* ─── Announcement Editor Modal ─── */}
-      {showAnnouncementEditor && (
-        <AnnouncementEditorModal
-          onClose={() => setShowAnnouncementEditor(false)}
-          announcements={announcements}
-          setAnnouncements={setAnnouncements}
-          archivedAnnouncements={archivedAnnouncements}
-          setArchivedAnnouncements={setArchivedAnnouncements}
-          currentUser={currentUser}
-          permissions={permissions}
-        />
-      )}
     </div>
   );
 }

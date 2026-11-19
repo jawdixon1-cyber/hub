@@ -59,10 +59,15 @@ export function AuthProvider({ children }) {
 
   const user = session?.user ?? null;
   const currentUser = user?.user_metadata?.display_name ?? null;
-  const ownerMode = user?.user_metadata?.role === 'owner';
+  // isOwner = the real role. ownerMode can be switched off with "Team view" so the
+  // owner sees exactly what the crew sees (UI only; the server still knows he's the owner).
+  const isOwner = user?.user_metadata?.role === 'owner';
+  const [teamView, setTeamViewState] = useState(() => { try { return localStorage.getItem('hub-team-view') === '1'; } catch { return false; } });
+  const setTeamView = (on) => { try { localStorage.setItem('hub-team-view', on ? '1' : '0'); } catch { /* ignore */ } setTeamViewState(on); };
+  const ownerMode = isOwner && !teamView;
 
   return (
-    <AuthContext.Provider value={{ session, user, currentUser, ownerMode, orgId, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, user, currentUser, ownerMode, isOwner, teamView: isOwner && teamView, setTeamView, orgId, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

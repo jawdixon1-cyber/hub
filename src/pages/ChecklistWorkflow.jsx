@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check, ExternalLink, CheckCircle2, RotateCcw, Pencil } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
+const RouteMapInner = lazy(() => import('../components/RouteMapInner'));
 
 const WeatherStep = lazy(() => import('../components/WeatherStep'));
 const QuoTextsStep = lazy(() => import('../components/QuoTextsStep'));
@@ -41,6 +42,25 @@ function parseLinks(text) {
   }
   if (lastIndex < text.length) parts.push({ type: 'text', value: text.slice(lastIndex) });
   return parts;
+}
+
+// Section title on the team checklist; the owner (not in Team view) can tap it to rename.
+function SectionLabel({ value, canEdit, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  useEffect(() => { setDraft(value); }, [value]);
+  const cls = 'pt-5 pb-1 text-sm font-black uppercase tracking-wider text-muted';
+  if (editing) {
+    return (
+      <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => { const t = draft.trim(); setEditing(false); if (t && t !== value) onSave(t); else setDraft(value); }}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setDraft(value); setEditing(false); } }}
+        className={`${cls} mt-5 pt-0 bg-transparent outline-none border-b-2 border-primary w-full`} />
+    );
+  }
+  return canEdit
+    ? <p onClick={() => setEditing(true)} title="Tap to rename this section" className={`${cls} cursor-text hover:text-primary`}>{value}</p>
+    : <p className={cls}>{value}</p>;
 }
 
 function EditableTitle({ value, onSave }) {
@@ -105,7 +125,7 @@ export default function ChecklistWorkflow() {
   const setTeamChecklist = useAppStore((s) => s.setTeamChecklist);
   const teamEndChecklist = useAppStore((s) => s.teamEndChecklist);
   const setTeamEndChecklist = useAppStore((s) => s.setTeamEndChecklist);
-  const { user, ownerMode } = useAuth();
+  const { user, ownerMode, currentUser } = useAuth();
   const userEmail = (user?.email || 'anon').toLowerCase();
 
   // Owner ('start', 'end') uses shared done state on the list itself.
@@ -190,7 +210,7 @@ export default function ChecklistWorkflow() {
   const steps = useMemo(() => {
     const filtered = list.filter((i) => i.type !== 'header' && isItemForToday(i));
     if (!isTeam) return filtered;
-    return filtered.map((i) => ({ ...i, done: !!teamDoneMap[i.id] }));
+    return filtered.map((i) => ({ ...i, done: !!teamDoneMap[i.id], doneAt: typeof teamDoneMap[i.id] === 'number' ? teamDoneMap[i.id] : null }));
   }, [list, isTeam, teamDoneMap]);
   const total = steps.length;
   // Each step's section header (e.g. "💼 Work" / "🏠 Personal"), shown as a label in the step list.
@@ -199,12 +219,18 @@ export default function ChecklistWorkflow() {
     for (const i of list) { if (i.type === 'header') h = i.text; else m[i.id] = h; }
     return m;
   }, [list]);
+  // Same, but the header item itself (so the owner can rename a section).
+  const stepHeaderItem = useMemo(() => {
+    const m = {}; let h = null;
+    for (const i of list) { if (i.type === 'header') h = i; else m[i.id] = h; }
+    return m;
+  }, [list]);
 
   // First undone real step index, or last step if all done.
   const firstUndoneIdx = useMemo(() => {
     if (steps.length === 0) return 0;
     const idx = steps.findIndex((s) => !s.done);
-    return idx === -1 ? steps.length - 1 : idx;
+    return idx === -1 ? (isTeam && !isCombined ? steps.length : steps.length - 1) : idx;
   }, [steps]);
 
   useEffect(() => {
@@ -232,6 +258,8 @@ export default function ChecklistWorkflow() {
 
   const [subItems, setSubItems] = useState(initial.subItems);
   const [showFullEditor, setShowFullEditor] = useState(false);
+  // Team lists show as one checklist; the proof card shows after they tap Finish (or reopen a finished list).
+  const [finished, setFinished] = useState(() => isTeam && !isCombined && steps.length > 0 && steps.every((x) => x.done));
 
   // Reset local sub-items state when navigating to a new step
   useEffect(() => {
@@ -247,6 +275,42 @@ export default function ChecklistWorkflow() {
     writeAll(data);
   }, [item?.id, subItems]);
 
+  if (isTeam && !isCombined) {
+    const allDone = steps.length > 0 && steps.every((x) => x.done);
+    if (finished && allDone) return <TeamDoneCard kind={kind} steps={steps} name={currentUser || userEmail.split('@')[0]} />;
+    const toggle = (id) => setTeamDoneMap((m) => { const n = { ...m }; if (n[id]) delete n[id]; else n[id] = Date.now(); return n; });
+    const left = steps.filter((x) => !x.done).length;
+    const plain = (t) => (t || '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+    return (
+      <div className="px-3 py-4 max-w-md mx-auto">
+        <h1 className="text-3xl font-black text-primary">{kind === 'team-start' ? 'Start of Day' : 'End of Day'}</h1>
+        <p className="text-base font-semibold text-muted mb-4">Tap each one when it's done</p>
+        {kind === 'team-start' && <ReviewJobs name={currentUser} />}
+        <div>
+          {steps.map((x, n) => (
+            <Fragment key={x.id}>
+            {stepHeader[x.id] && stepHeader[x.id] !== stepHeader[steps[n - 1]?.id] && (
+              <SectionLabel value={stepHeader[x.id]} canEdit={ownerMode}
+                onSave={(t) => { const h = stepHeaderItem[x.id]; if (h) setList(list.map((i) => (i.id === h.id ? { ...i, text: t } : i))); }} />
+            )}
+            <button onClick={() => toggle(x.id)}
+              className="w-full text-left py-3 flex items-center gap-3 cursor-pointer">
+              <span className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 ${x.done ? 'bg-emerald-400 border-emerald-400 text-black' : 'border-border-strong'}`}>
+                {x.done && <Check size={20} strokeWidth={3.5} />}
+              </span>
+              <span className={`flex-1 text-base font-semibold ${x.done ? 'text-muted line-through' : 'text-primary'}`}>{plain(x.text)}</span>
+            </button>
+            </Fragment>
+          ))}
+        </div>
+        <button onClick={() => allDone && setFinished(true)} disabled={!allDone}
+          className="mt-5 w-full rounded-2xl bg-brand text-on-brand py-4 text-lg font-black disabled:opacity-40 cursor-pointer">
+          {allDone ? 'Finish ✓' : `${left} left`}
+        </button>
+      </div>
+    );
+  }
+
   if (!item) {
     return (
       <div className="px-4 py-12 max-w-3xl mx-auto text-center">
@@ -254,7 +318,7 @@ export default function ChecklistWorkflow() {
           <CheckCircle2 size={48} strokeWidth={2.5} />
         </div>
         <h1 className="text-3xl font-black text-primary tracking-tight mb-2">
-          {kind === 'end' ? 'End of Day complete' : kind === 'team-start' ? 'Open complete' : kind === 'team-end' ? 'Close complete' : 'Start of Day complete'}
+          {kind === 'end' ? 'End of Day complete' : kind === 'team-start' ? 'Start of Day complete' : kind === 'team-end' ? 'End of Day complete' : 'Start of Day complete'}
         </h1>
         <p className="text-base font-bold text-muted mb-8">
           Nice. {total} steps done. Go get it.
@@ -277,7 +341,7 @@ export default function ChecklistWorkflow() {
   const markAndNext = () => {
     if (isTeam) {
       // Per-user team completion — only this user's localStorage updates.
-      setTeamDoneMap((m) => ({ ...m, [item.id]: true }));
+      setTeamDoneMap((m) => ({ ...m, [item.id]: Date.now() }));
     } else {
       // Owner mode: shared done state on the list itself.
       setList(list.map((i) => i.id === item.id ? { ...i, done: true } : i));
@@ -310,11 +374,11 @@ export default function ChecklistWorkflow() {
       <div className={wide ? '' : 'lg:hidden'}>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted">
-            {sectionLabel || (kind === 'end' ? 'End of Day · 5 PM' : kind === 'team-start' ? 'Open' : kind === 'team-end' ? 'Close' : kind === 'team-today' ? 'Today' : 'Start of Day · 8 AM')} · {idx + 1}/{total}
+            {sectionLabel || (kind === 'end' ? 'End of Day · 5 PM' : kind === 'team-start' ? 'Start of Day' : kind === 'team-end' ? 'End of Day' : kind === 'team-today' ? 'Today' : 'Start of Day · 8 AM')} · {idx + 1}/{total}
           </p>
           <button
             onClick={() => setShowFullEditor(true)}
-            className="text-muted hover:text-primary p-1 rounded-lg hover:bg-surface-alt cursor-pointer"
+            className={`${ownerMode ? '' : 'hidden '}text-muted hover:text-primary p-1 rounded-lg hover:bg-surface-alt cursor-pointer`}
             title="Edit checklist"
           >
             <Pencil size={14} />
@@ -357,11 +421,11 @@ export default function ChecklistWorkflow() {
         <div className="rounded-2xl border border-card-border bg-card p-3">
           <div className="flex items-center justify-between px-2 pt-1 pb-2">
             <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted">
-              {kind === 'end' ? 'End of Day · 5 PM' : kind === 'team-start' ? 'Open' : kind === 'team-end' ? 'Close' : kind === 'team-today' ? 'Today' : 'Start of Day · 8 AM'} · {idx + 1}/{total}
+              {kind === 'end' ? 'End of Day · 5 PM' : kind === 'team-start' ? 'Start of Day' : kind === 'team-end' ? 'End of Day' : kind === 'team-today' ? 'Today' : 'Start of Day · 8 AM'} · {idx + 1}/{total}
             </p>
             <button
               onClick={() => setShowFullEditor(true)}
-              className="text-muted hover:text-primary p-1 rounded-lg hover:bg-surface-alt cursor-pointer"
+              className={`${ownerMode ? '' : 'hidden '}text-muted hover:text-primary p-1 rounded-lg hover:bg-surface-alt cursor-pointer`}
               title="Edit the whole checklist"
             >
               <Pencil size={13} />
@@ -425,7 +489,7 @@ export default function ChecklistWorkflow() {
         />
         <Link
           to={`/checklist/${kind}/${item.id}`}
-          className="shrink-0 mt-1 text-muted hover:text-primary p-1.5 rounded-lg hover:bg-surface-alt cursor-pointer"
+          className={`${ownerMode ? '' : 'hidden '}shrink-0 mt-1 text-muted hover:text-primary p-1.5 rounded-lg hover:bg-surface-alt cursor-pointer`}
           title="Edit this step's details · SOP, sub-checklist, links"
         >
           <Pencil size={14} />
@@ -634,7 +698,7 @@ export default function ChecklistWorkflow() {
       )}
 
       {/* Empty state if no SOP and no sub-items */}
-      {!sop.trim() && subItems.length === 0 && (
+      {ownerMode && !sop.trim() && subItems.length === 0 && (
         <p className="text-xs text-muted mb-5">
           <Link to={`/checklist/${kind}/${item.id}`} className="hover:text-primary">+ Add instructions</Link>
         </p>
@@ -671,6 +735,158 @@ export default function ChecklistWorkflow() {
           />
         </Suspense>
       )}
+    </div>
+  );
+}
+
+// Crew finished Open or Close: a proof card they screenshot and attach in Jobber.
+// Only shows when every step is checked; skipped steps send them back first.
+function TeamDoneCard({ kind, steps, name }) {
+  const isOpen = kind === 'team-start';
+  const tz = { timeZone: 'America/New_York' };
+  const time = (t) => new Date(t).toLocaleTimeString('en-US', { ...tz, hour: 'numeric', minute: '2-digit' });
+  const finished = Math.max(0, ...steps.map((s) => s.doneAt || 0)) || Date.now();
+  const date = new Date(finished).toLocaleDateString('en-US', { ...tz, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+  return (
+    <div className="px-3 py-6 max-w-md mx-auto">
+      <div className="rounded-3xl border-2 border-emerald-400 bg-emerald-400/10 p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-400 text-black flex items-center justify-center shrink-0">
+            <Check size={34} strokeWidth={3.5} />
+          </div>
+          <div>
+            <p className="text-xs font-black tracking-widest text-emerald-300">COMPLETE</p>
+            <h1 className="text-2xl font-black text-primary leading-tight">{isOpen ? 'Start of Day' : 'End of Day'}</h1>
+          </div>
+        </div>
+        <div className="mt-4 rounded-2xl bg-black/30 p-4">
+          <p className="text-xl font-black text-primary">{name}</p>
+          <p className="text-sm font-semibold text-secondary">{date}</p>
+          <p className="text-sm font-semibold text-secondary">Finished at {time(finished)}</p>
+        </div>
+        <ul className="mt-4 space-y-1.5">
+          {steps.map((s, i) => (
+            <li key={s.id} className="flex gap-2 text-sm text-primary">
+              <Check size={16} strokeWidth={3} className="text-emerald-300 shrink-0 mt-0.5" />
+              <span className="flex-1">{i + 1}. {s.text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')}</span>
+              {s.doneAt && <span className="text-xs text-muted shrink-0">{time(s.doneAt)}</span>}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-4 text-center text-xs font-bold text-emerald-300">All {steps.length} steps done ✓ Hey Jude's Lawn Care</p>
+      </div>
+      <div className="mt-4 rounded-2xl border border-border-default bg-card p-4 text-sm text-primary">
+        <p className="font-black mb-1">📸 Last step</p>
+        <p className="text-secondary">Screenshot this screen and add it to Jobber.</p>
+      </div>
+      <Link to="/" className="mt-4 w-full inline-flex items-center justify-center gap-2 bg-surface-alt text-primary font-bold px-6 py-3 rounded-2xl">
+        <ArrowLeft size={16} /> Back to home
+      </Link>
+    </div>
+  );
+}
+
+function routeLink(list) {
+  const p = list.filter((x) => x.lat && x.lng).map((x) => `${x.lat},${x.lng}`);
+  if (!p.length) return null;
+  const dest = p[p.length - 1];
+  const way = p.slice(0, -1).slice(-9).join('|');
+  return `https://www.google.com/maps/dir/?api=1&destination=${dest}${way ? `&waypoints=${encodeURIComponent(way)}` : ''}&travelmode=driving`;
+}
+
+// Start of Day: today's Jobber stops, in route order. Shows your own crew's stops when
+// your name is on any; otherwise everyone's, grouped by crew. No money, no phone numbers.
+function ReviewJobs({ name: myName }) {
+  const { session, teamView } = useAuth();
+  // Owner in Team view: pick which crew member to see it as.
+  const [asName, setAsName] = useState(null);
+  const myFirst = (myName || '').split(' ')[0].toLowerCase();
+  const token = session?.access_token || '';
+  const [st, setSt] = useState({ loading: true, stops: [], error: null });
+  // Owner testing in Team view can flip to tomorrow's schedule (from the Plan feed).
+  const [tomorrow, setTomorrow] = useState(true);
+  const useTomorrow = teamView && tomorrow;
+  useEffect(() => {
+    if (!token) return undefined;
+    let alive = true;
+    setSt((x) => ({ ...x, loading: true }));
+    const t = new Date(Date.now() + 864e5).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const url = useTomorrow ? `/api/plan-day?date=${t}` : '/api/jobber-today?crew=1';
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `Error ${r.status}`); return d; })
+      .then((d) => {
+        if (!useTomorrow) return d.stops || [];
+        const order = (x) => (x.allDay ? x.order ?? 9999 : -1);
+        return [...(d.visits || []), ...(d.assessments || [])]
+          .sort((a, b) => (a.allDay !== b.allDay ? (a.allDay ? -1 : 1) : a.allDay ? order(a) - order(b) : new Date(a.start) - new Date(b.start)))
+          .map((x) => ({ id: x.id, client: x.client || x.title, title: x.title, address: x.address, lat: x.lat, lng: x.lng, crew: x.crew || [], allDay: x.allDay, startAt: x.start, done: x.done }));
+      })
+      .then((stops) => alive && setSt({ loading: false, stops, error: null }))
+      .catch((e) => alive && setSt({ loading: false, stops: [], error: e.message }));
+    return () => { alive = false; };
+  }, [token, useTomorrow]);
+
+  const crewNames = [...new Set(st.stops.flatMap((x) => x.crew))].filter((c) => c.split(' ')[0].toLowerCase() !== myFirst);
+  const name = teamView ? (asName || crewNames[0] || null) : myName;
+  const first = (name || '').split(' ')[0].toLowerCase();
+  const mine = first ? st.stops.filter((x) => x.crew.some((c) => c.split(' ')[0].toLowerCase() === first)) : [];
+  const groups = {};
+  for (const x of (mine.length ? mine : st.stops)) {
+    const k = mine.length ? 'Your stops' : (x.crew.join(' + ') || 'Not assigned');
+    (groups[k] = groups[k] || []).push(x);
+  }
+  // Job name without the "Client Name - " Jobber puts in front; falls back to the client.
+  const jobName = (x) => (x.title && x.title !== x.client ? x.title.replace(/^[^-–]+\s[-–]\s/, '') : x.client);
+  const time = (x) => (x.allDay ? '' : new Date(x.startAt).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }));
+
+  return (
+    <div className="mb-2">
+      <p className="pt-1 pb-1 text-sm font-black uppercase tracking-wider text-muted">Review jobs</p>
+      {teamView && (
+        <div className="flex flex-wrap gap-2 py-1">
+          {[['Today', false], ['Tomorrow', true]].map(([l, v]) => (
+            <button key={l} onClick={() => setTomorrow(v)}
+              className={`px-3 py-1 rounded-full text-sm font-semibold cursor-pointer ${tomorrow === v ? 'bg-amber-400 text-black' : 'bg-surface-alt text-primary'}`}>{l}</button>
+          ))}
+          <span className="text-xs font-bold text-amber-400 self-center ml-2">See it as:</span>
+          {crewNames.map((c) => (
+            <button key={c} onClick={() => setAsName(c)}
+              className={`px-3 py-1 rounded-full text-sm font-semibold cursor-pointer ${name === c ? 'bg-amber-400 text-black' : 'bg-surface-alt text-primary'}`}>{c.split(' ')[0]}</button>
+          ))}
+        </div>
+      )}
+      {st.loading && <p className="text-sm text-muted py-2">Loading today's jobs…</p>}
+      {st.error && <p className="text-sm text-red-400 py-2">Couldn't load jobs. Check Jobber.</p>}
+      {!st.loading && !st.error && st.stops.length === 0 && <p className="text-sm text-muted py-2">No jobs today.</p>}
+      {Object.entries(groups).map(([k, list]) => (
+        <div key={k} className="mb-2">
+          <p className="text-sm font-bold text-primary mt-2">{k} · {list.length} stop{list.length === 1 ? '' : 's'}</p>
+          {list.some((x) => x.lat && x.lng) && (
+            <div className="mt-2 mb-1">
+              <div className="h-64 rounded-xl overflow-hidden border border-border relative z-0">
+                <Suspense fallback={<div className="h-full grid place-items-center text-sm text-muted">Loading map…</div>}>
+                  <RouteMapInner stops={list.map((x, i) => ({ ...x, n: i + 1, job: jobName(x) })).filter((x) => x.lat && x.lng)} />
+                </Suspense>
+              </div>
+              <a href={routeLink(list)} target="_blank" rel="noreferrer"
+                className="inline-block mt-2 px-3 py-1.5 rounded-full bg-amber-400 text-black text-sm font-bold">Drive the route in Google Maps</a>
+            </div>
+          )}
+          <ol>
+            {list.map((x, i) => (
+              <li key={x.id} className="py-1.5 flex gap-3">
+                <span className="w-6 text-base font-black text-muted shrink-0">{i + 1}.</span>
+                <div className="min-w-0">
+                  <p className="text-base font-bold text-primary">{jobName(x)}{time(x) && <span className="text-muted font-normal"> · {time(x)}</span>}</p>
+                  {jobName(x) !== x.client && <p className="text-sm font-semibold text-secondary">{x.client}</p>}
+                  {x.address && <a href={`https://maps.apple.com/?q=${encodeURIComponent(x.address)}`} className="text-sm text-muted underline">{x.address}</a>}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ))}
     </div>
   );
 }

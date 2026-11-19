@@ -13,7 +13,7 @@ import { DESIGNS } from '../lib/lightsDesigns';
 import { kindOf } from '../lib/lightsMaterials';
 import JobberClientPicker from '../components/JobberClientPicker';
 import LightsBusiness, { QuoteMaterialsCard } from '../components/LightsBusiness';
-import { getExtrasMeta, DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, listCovers, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt } from '../lib/lightsStore';
+import { openCrewView, getExtrasMeta, DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, listCovers, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt } from '../lib/lightsStore';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { useJobberList, quoteStage, STAGE_LABEL } from '../lib/jobberLights';
@@ -1018,7 +1018,8 @@ export default function LightsQuoter() {
         <button onClick={crewLink} disabled={!savedId} title={savedId ? '' : 'Pick the client first so the quote saves'} className="rounded-xl bg-brand text-on-brand px-5 py-3 text-base font-bold hover:bg-brand-hover disabled:opacity-40 cursor-pointer">
           {crewCopied ? '✓ Link copied' : '📋 Copy team view link'}
         </button>
-        {crewToken && <a href={`/crew/${crewToken}`} target="_blank" rel="noreferrer" className="text-sm text-secondary underline hover:text-primary">Open</a>}
+        <button onClick={() => openCrewView(savedId, crewToken).then(setCrewToken).catch((e) => say(`Couldn't open team view: ${e.message}`))}
+          disabled={!savedId} className="rounded-xl border border-border-strong px-5 py-3 text-base font-bold text-primary hover:bg-surface-alt disabled:opacity-40 cursor-pointer">👀 Open team view</button>
       </div>
 
       {/* Last thing: present */}

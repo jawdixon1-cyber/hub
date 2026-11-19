@@ -14,6 +14,20 @@ export default function LightsQuotePreview({ quoteId }) {
   const [addonIds, setAddonIds] = useState([]);
   const [state, setState] = useState({ loading: true, data: null, error: null });
   const [showTerms, setShowTerms] = useState(false);
+  const [made, setMade] = useState({ busy: false, quote: null, error: null });
+  // Same call the presentation makes when the client picks: one Jobber quote per presentation.
+  const createQuote = async () => {
+    setMade({ busy: true, quote: null, error: null });
+    try {
+      const r = await fetch('/api/jobber-data?action=lights-quote-create', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id: quoteId, years, addonIds }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || `Error ${r.status}`);
+      setMade({ busy: false, quote: d, error: null });
+    } catch (e) { setMade({ busy: false, quote: null, error: e.message }); }
+  };
 
   useEffect(() => {
     if (!quoteId || !token) return undefined;
@@ -88,6 +102,26 @@ export default function LightsQuotePreview({ quoteId }) {
             <ChevronDown size={12} className={showTerms ? 'rotate-180' : ''} /> {showTerms ? 'Hide' : 'Show'} the terms on the quote
           </button>
           {showTerms && <p className="mt-2 text-xs text-secondary whitespace-pre-wrap">{d.message}</p>}
+        </div>
+      )}
+
+      {d && (
+        <div className="mt-3">
+          {made.quote ? (
+            <div className="rounded-lg border border-border-brand bg-brand-light p-3 flex items-center gap-3 flex-wrap">
+              <p className="flex-1 text-sm font-semibold text-primary">
+                {made.quote.existing ? 'Already in Jobber' : '✓ Created in Jobber'}: quote #{made.quote.quoteNumber}
+                {made.quote.total != null && <span className="text-secondary"> · {money(made.quote.total)}</span>}
+              </p>
+              {made.quote.url && <a href={made.quote.url} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-brand text-on-brand px-4 py-2 text-sm font-bold">Open in Jobber ↗</a>}
+            </div>
+          ) : (
+            <button onClick={createQuote} disabled={made.busy || state.loading}
+              className="w-full rounded-xl bg-brand text-on-brand py-3 text-base font-bold hover:bg-brand-hover disabled:opacity-50 cursor-pointer">
+              {made.busy ? 'Creating in Jobber…' : `Create quote in Jobber · ${years} season${years > 1 ? 's' : ''}`}
+            </button>
+          )}
+          {made.error && <p className="text-sm text-red-400 mt-1">{made.error}</p>}
         </div>
       )}
     </div>

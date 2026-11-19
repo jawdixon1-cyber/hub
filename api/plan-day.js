@@ -92,11 +92,11 @@ export default async function handler(req, res) {
   const errors = {};
 
   const visitsP = jobberQuery(`{ visits(first: 80, filter: { startAt: { after: "${start.toISOString()}", before: "${new Date(endExcl.getTime() - 1000).toISOString()}" } }) {
-    nodes { id title startAt endAt allDay isComplete overrideOrder assignedUsers(first: 4) { nodes { name { full } } } client { name } property { address { street city } } job { jobberWebUri } } } }`)
+    nodes { id title startAt endAt allDay isComplete overrideOrder assignedUsers(first: 4) { nodes { name { full } } } client { name } property { address { street city coordinates { latitudeString longitudeString } } } job { jobberWebUri } } } }`)
     .then((d) => (d.visits?.nodes || []).filter((v) => ymd(v.startAt) === date).map((v) => ({
       id: v.id, title: v.title || '', client: v.client?.name || '', start: v.startAt, end: v.endAt, allDay: !!v.allDay, done: !!v.isComplete,
       order: v.overrideOrder ?? 9999, crew: (v.assignedUsers?.nodes || []).map((u) => u.name?.full).filter(Boolean),
-      address: [v.property?.address?.street, v.property?.address?.city].filter(Boolean).join(', '), url: v.job?.jobberWebUri || null,
+      address: [v.property?.address?.street, v.property?.address?.city].filter(Boolean).join(', '), lat: Number(v.property?.address?.coordinates?.latitudeString) || null, lng: Number(v.property?.address?.coordinates?.longitudeString) || null, url: v.job?.jobberWebUri || null,
     })).sort((a, b) => (a.allDay !== b.allDay ? (a.allDay ? -1 : 1) : a.allDay ? a.order - b.order : new Date(a.start) - new Date(b.start))))
     .catch((e) => { errors.jobber = /THROTTLED/i.test(e.message) ? 'Jobber is busy. Refresh in a minute.' : e.message; return []; });
 
@@ -158,10 +158,10 @@ export default async function handler(req, res) {
 
   // Requests scheduled for that day = Jobber assessments.
   const assessP = jobberQuery(`{ scheduledItems(first: 30, filter: { scheduleItemType: ASSESSMENT, includeUnassigned: true, occursWithin: { startAt: "${start.toISOString()}", endAt: "${new Date(endExcl.getTime() - 1000).toISOString()}" } }) {
-      nodes { ... on Assessment { id title startAt endAt allDay isComplete client { name } property { address { street city } } request { jobberWebUri } assignedUsers(first: 4) { nodes { name { full } } } } } } }`)
+      nodes { ... on Assessment { id title startAt endAt allDay isComplete client { name } property { address { street city coordinates { latitudeString longitudeString } } } request { jobberWebUri } assignedUsers(first: 4) { nodes { name { full } } } } } } }`)
     .then((d) => (d.scheduledItems?.nodes || []).filter((a) => a.id && ymd(a.startAt) === date).map((a) => ({
       id: a.id, title: a.title || 'Assessment', client: a.client?.name || '', start: a.startAt, end: a.endAt, allDay: !!a.allDay, done: !!a.isComplete,
-      address: [a.property?.address?.street, a.property?.address?.city].filter(Boolean).join(', '), url: a.request?.jobberWebUri || null,
+      address: [a.property?.address?.street, a.property?.address?.city].filter(Boolean).join(', '), lat: Number(a.property?.address?.coordinates?.latitudeString) || null, lng: Number(a.property?.address?.coordinates?.longitudeString) || null, url: a.request?.jobberWebUri || null,
       crew: (a.assignedUsers?.nodes || []).map((u) => u.name?.full).filter(Boolean),
     })))
     .catch((e) => { errors.assessments = /THROTTLED/i.test(e.message) ? 'Assessments: Jobber is busy, refresh in a minute.' : `Assessments: ${e.message}`; return []; });

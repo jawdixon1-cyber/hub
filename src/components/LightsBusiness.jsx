@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { PlanOverlay, OutletMarks } from './LightsMarkup';
 import { supabase } from '../lib/supabase';
 import { STARTER_SUPPLIES, STYLE_LABEL, quoteMaterials, quoteFeet, packPlan } from '../lib/lightsMaterials';
-import { listQuotes, getQuote, patchQuoteMeta, referLinks, referInbox, makeReferLink, markReferAdded } from '../lib/lightsStore';
+import { listQuotes, getQuote, patchQuoteMeta, openCrewView, referLinks, referInbox, makeReferLink, markReferAdded } from '../lib/lightsStore';
 import { useJobberList, nameKey } from '../lib/jobberLights';
 import { LIGHTS_INSTALL_TARGET } from '../lib/weeklyBonus';
 
@@ -1787,7 +1787,9 @@ export default function LightsBusiness({ view, onOpen = null }) {
                       className={`px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer ${qq.planLocked ? 'border border-yellow-500/50 bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20' : 'bg-yellow-400 text-black hover:bg-yellow-300'}`}>
                       {qq.planLocked ? '🔒 Locked · Unlock' : '🔓 Lock plan + materials'}
                     </button>
-                    {qq.crewToken && <a href={`/crew/${qq.crewToken}`} target="_blank" rel="noreferrer" className={btn}>👀 Team view</a>}
+                    <button className={btn} onClick={() => openCrewView(qq.id, qq.crewToken)
+                      .then((t) => setQuotes((qs) => qs.map((x) => (x.id === qq.id ? { ...x, crewToken: t } : x))))
+                      .catch((e) => alert(`Couldn't open team view: ${e.message}`))}>👀 Team view</button>
                     {/* Same presentation as the quote's last step */}
                     <Link to={`/lights-presentation/${qq.id}`} className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white hover:brightness-110 cursor-pointer" style={{ background: '#B3121F' }}>🎄 Present</Link>
                     {!j.saved.fromQuote && !j.saved.installed && <span className="text-xs text-yellow-300">Materials here are the job's own list. The quote's Materials step is empty, so its plugs/timer there are just defaults.</span>}

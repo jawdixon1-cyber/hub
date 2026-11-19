@@ -214,7 +214,7 @@ function App() {
       </Suspense>
     );
   }
-  const { session, user, ownerMode, orgId, loading: authLoading, signOut } = useAuth();
+  const { session, user, ownerMode, isOwner, orgId, loading: authLoading, signOut } = useAuth();
   const [cloudData, setCloudData] = useState(() => {
     try {
       const cached = localStorage.getItem(DATA_CACHE_KEY);
@@ -387,7 +387,7 @@ function App() {
       </Suspense>
     );
   }
-  if (!ownerMode && userEmail && !permissions[userEmail] && !accessBypass.includes(userEmail)) {
+  if (!isOwner && userEmail && !permissions[userEmail] && !accessBypass.includes(userEmail)) {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center p-4">
         <div className="bg-card rounded-2xl shadow-lg border border-border-subtle p-8 max-w-sm w-full text-center">
@@ -546,6 +546,7 @@ function OwnerSettingsMenu({ collapsed, currentUser, userEmail, onNav, onSignOut
               Manage Team
             </button>
           </div>
+          <TeamViewToggle onDone={() => setOpen(false)} />
           <div className="border-t border-border-subtle py-1">
             <button onClick={() => { setOpen(false); toggleTheme(); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
               {theme === 'dark' ? '☀️ Light mode' : '🌙 Dark mode'}
@@ -601,6 +602,7 @@ function TopbarSettingsMenu({ currentUser, userEmail, onNav, onSignOut }) {
               Settings
             </button>
           </div>
+          <TeamViewToggle onDone={() => setOpen(false)} />
           <div className="border-t border-border-subtle py-1">
             <button onClick={() => { setOpen(false); toggleTheme(); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
               {theme === 'dark' ? '☀️ Light mode' : '🌙 Dark mode'}
@@ -615,6 +617,21 @@ function TopbarSettingsMenu({ currentUser, userEmail, onNav, onSignOut }) {
   );
 }
 
+/* ─── Team view: owner previews exactly what the crew sees ─── */
+function TeamViewToggle({ onDone }) {
+  const { isOwner, teamView, setTeamView } = useAuth();
+  const navigate = useNavigate();
+  if (!isOwner) return null;
+  return (
+    <div className="border-t border-border-subtle py-1">
+      <button onClick={() => { onDone(); setTeamView(!teamView); navigate('/'); }}
+        className="w-full text-left px-4 py-2 text-sm font-semibold text-primary hover:bg-surface-alt cursor-pointer">
+        {teamView ? '← Back to owner view' : '👀 Team view (see what the crew sees)'}
+      </button>
+    </div>
+  );
+}
+
 /* ─── AppShell (inner) — sidebar + main content ─── */
 
 function getInitials(name) {
@@ -625,7 +642,7 @@ function getInitials(name) {
 }
 
 function AppShell() {
-  const { user, currentUser, ownerMode, signOut } = useAuth();
+  const { user, currentUser, ownerMode, isOwner, teamView, setTeamView, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -634,7 +651,7 @@ function AppShell() {
   // periods. Ping the refresh endpoint every 45 min while the app is open so the
   // token never goes stale. Owners only — team members don't use Jobber-backed data.
   useEffect(() => {
-    if (!ownerMode) return;
+    if (!isOwner) return;
     let timer;
     const ping = () => {
       fetch('/api/jobber-data?action=refresh', { method: 'POST' }).catch(() => {});
@@ -643,7 +660,7 @@ function AppShell() {
     const initial = setTimeout(ping, 30000);
     timer = setInterval(ping, 45 * 60 * 1000);
     return () => { clearTimeout(initial); clearInterval(timer); };
-  }, [ownerMode]);
+  }, [isOwner]);
 
   const permissions = useAppStore((s) => s.permissions);
   const ownerStartChecklist = useAppStore((s) => s.ownerStartChecklist) || [];
@@ -688,10 +705,10 @@ function AppShell() {
   const agreementPdf = useAppStore((s) => s.agreementPdf);
   const currentAgreementVersion = agreementPdf?.version || null;
 
-  const hasSignedCurrent = ownerMode || !agreementPdf || signedAgreements.some(
+  const hasSignedCurrent = isOwner || !agreementPdf || signedAgreements.some(
     (a) => a.memberEmail === userEmail && a.version === currentAgreementVersion
   );
-  const needsAgreement = !ownerMode && !!agreementPdf && !hasSignedCurrent;
+  const needsAgreement = !isOwner && !!agreementPdf && !hasSignedCurrent;
 
   // Force navigate to agreement page if not signed — no other route is accessible.
   // Sign Out lives on the agreement page itself, so we don't need a /profile exception.
@@ -815,10 +832,10 @@ function AppShell() {
           <div className="h-px bg-border-subtle my-3 mx-2" />
           {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Daily</p>}
           {[
-            { id: 't-today', path: '/workflow/team-today', label: 'Today',
-              icon: Sunrise,
-              done: dailyProgress.teamStartDone + dailyProgress.teamEndDone,
-              total: dailyProgress.teamStartTotal + dailyProgress.teamEndTotal },
+            { id: 't-open', path: '/workflow/team-start', label: 'Start of Day',
+              icon: Sunrise, done: dailyProgress.teamStartDone, total: dailyProgress.teamStartTotal },
+            { id: 't-close', path: '/workflow/team-end', label: 'End of Day',
+              icon: Sunset, done: dailyProgress.teamEndDone, total: dailyProgress.teamEndTotal },
           ].map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
@@ -992,6 +1009,12 @@ function AppShell() {
 
   return (
     <div className="min-h-screen bg-surface">
+      {teamView && (
+        <button onClick={() => { setTeamView(false); navigate('/'); }}
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] rounded-full bg-amber-400 text-black text-sm font-black px-4 py-2.5 shadow-2xl cursor-pointer whitespace-nowrap">
+          👀 Team view · Exit
+        </button>
+      )}
       {/* ─── Desktop Sidebar ─── */}
       <aside className={`hidden lg:flex fixed left-0 top-0 h-full ${sidebarCollapsed ? 'w-14' : 'w-52'} bg-surface-alt border-r border-border-subtle z-40 flex-col transition-all duration-200`}>
         {/* Logo */}
@@ -1139,6 +1162,10 @@ function AppShell() {
                 <Route path="/warm-leads" element={<Navigate to="/client-base" replace />} />
                 <Route path="/plans" element={<Navigate to="/client-base" replace />} />
                 <Route path="/checklist/:kind/:itemId" element={<ChecklistItem />} />
+                <Route path="/start-day" element={<Navigate to="/workflow/team-start" replace />} />
+                <Route path="/end-day" element={<Navigate to="/workflow/team-end" replace />} />
+                <Route path="/open" element={<Navigate to="/workflow/team-start" replace />} />
+                <Route path="/close" element={<Navigate to="/workflow/team-end" replace />} />
                 <Route path="/workflow/:kind" element={<ChecklistWorkflow />} />
                 <Route path="/workflow/:kind/:stepIndex" element={<ChecklistWorkflow />} />
                 <Route path="/timesheets" element={<Timesheets />} />

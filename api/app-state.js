@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 // Server-side proxy for app_state + team auth + GHL — bypasses RLS using service role key
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
 import { promises as dns } from 'dns';
@@ -207,19 +208,124 @@ async function handleLightsCrew(req, res) {
   // POST: the crew saves what they actually measured on the roof → its own row (the quote is never touched).
   // Body: { actual: { "<side>-<line>": "28.5", "z<side>-<jump>": "12" }, by: "name" }
   if (req.method === 'POST') {
-    const raw = req.body?.actual && typeof req.body.actual === 'object' ? req.body.actual : {};
-    const actual = Object.fromEntries(Object.entries(raw)
-      .filter(([k, v]) => /^z?\d{1,2}-\d{1,3}$/.test(k) && /^\d{0,4}(\.\d{0,2})?$/.test(String(v)))
+    // Body: { actual: { "<side>-<line>": "28.5", "z<side>-<jump>": "12" }, parts: { "<side>-<line>": [pieces] }, done: { "<side>-<line>": true } }
+    // Merged into what's saved, so two crew phones don't wipe each other's numbers.
+    const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {});
+    const num = (v) => /^\d{0,4}(\.\d{0,2})?$/.test(String(v ?? ''));
+    const actual = Object.fromEntries(Object.entries(obj(req.body?.actual))
+      .filter(([k, v]) => /^(z|c|zc)?\d{1,2}-\d{1,3}$/.test(k) && num(v))
       .slice(0, 400).map(([k, v]) => [k, String(v)]));
-    const value = { actual, by: String(req.body?.by || '').slice(0, 40), savedAt: new Date().toISOString() };
+    const parts = Object.fromEntries(Object.entries(obj(req.body?.parts))
+      .filter(([k, v]) => /^c?\d{1,2}-\d{1,3}$/.test(k) && Array.isArray(v) && v.length <= 40)
+      .slice(0, 400)
+      .map(([k, v]) => [k, v.map((p) => (p?.m === 's' ? { m: 's', run: num(p.run) ? String(p.run ?? '') : '', deg: num(p.deg) ? String(p.deg ?? '') : '' } : { m: 't', ft: num(p?.ft) ? String(p?.ft ?? '') : '' }))]));
+    const done = Object.fromEntries(Object.entries(obj(req.body?.done))
+      .filter(([k]) => /^c?\d{1,2}-\d{1,3}$/.test(k)).slice(0, 400).map(([k, v]) => [k, !!v]));
+    // groups: drawn lines the crew joined into one wire — replaced whole when sent.
+    const groups = Array.isArray(req.body?.groups)
+      ? req.body.groups.filter((g) => Array.isArray(g)).slice(0, 200)
+        .map((g) => [...new Set(g.filter((k) => /^\d{1,2}-\d{1,3}$/.test(String(k))).map(String))].slice(0, 40)).filter((g) => g.length > 1)
+      : null;
+    const org = metaRow.org_id ? { org_id: metaRow.org_id } : {};
+    // Crew photos taken on site: one row per photo. { pic: { pid, data } } adds one, { delPic: pid } removes one.
+    if (req.body?.pic) {
+      const { pid, data, thumb } = req.body.pic;
+      const jpg = (x) => /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(String(x)) && x.length < 4_000_000;
+      if (!/^[a-z0-9]{6,16}$/.test(String(pid)) || !jpg(data) || (thumb && !jpg(thumb))) return res.status(400).json({ error: 'Bad photo' });
+      const { error: ep } = await db.from('app_state').upsert({ key: `lq-crewpic:${id}:${pid}`, value: { data, ...(thumb ? { thumb } : {}) }, ...org }, { onConflict: 'key' });
+      if (ep) return res.status(500).json({ error: 'Save failed' });
+      return res.json({ ok: true });
+    }
+    if (req.body?.delPic) {
+      if (!/^[a-z0-9]{6,16}$/.test(String(req.body.delPic))) return res.status(400).json({ error: 'Bad photo' });
+      await db.from('app_state').delete().eq('key', `lq-crewpic:${id}:${req.body.delPic}`);
+      return res.json({ ok: true });
+    }
+    // The strands the crew drew on their photos — replaced whole.
+    // { map: { photos: [{ pid, no, w, h, lines: [{ id, s, pts: [{x,y}], a: 'male'|'in', b: 'female'|'out' }] }], seq } }
+    if (req.body?.map) {
+      const m = req.body.map;
+      const n = (v) => Math.round(Number(v) || 0);
+      const photos = (Array.isArray(m.photos) ? m.photos : []).slice(0, 60)
+        .filter((p) => /^[a-z0-9]{6,16}$/.test(String(p?.pid)))
+        .map((p) => ({
+          pid: String(p.pid), no: Math.min(99, Math.max(1, n(p.no))), w: n(p.w), h: n(p.h),
+          lines: (Array.isArray(p.lines) ? p.lines : []).slice(0, 80).map((l) => {
+            const pts = (Array.isArray(l?.pts) ? l.pts : []).slice(0, 60).map((q) => ({ x: n(q?.x), y: n(q?.y) }));
+            const id = Math.min(999, Math.max(0, n(l?.id)));
+            if (l?.k === 'zip') return { id, k: 'zip', s: 0, a: '', b: '', pts }; // zip cord, no lights
+            return { id, s: Math.min(999, Math.max(1, n(l?.s))), pts, a: l?.a === 'in' ? 'in' : 'male', b: l?.b === 'out' ? 'out' : l?.b === 'female' ? 'female' : '' };
+          }).filter((l) => l.pts.length >= 2),
+        }));
+      const value = { photos, seq: Math.min(999, n(m.seq)), savedAt: new Date().toISOString() };
+      const { error: em } = await db.from('app_state').upsert({ key: `lq-crewmap:${id}`, value, ...org }, { onConflict: 'key' });
+      if (em) return res.status(500).json({ error: 'Save failed' });
+      return res.json({ ok: true });
+    }
+    const { data: prevRow } = await db.from('app_state').select('value').eq('key', `lq-actual:${id}`).maybeSingle();
+    const prev = prevRow?.value || {};
+    const value = {
+      actual: Object.fromEntries(Object.entries({ ...(prev.actual || {}), ...actual }).filter(([, v]) => v !== '')),
+      parts: { ...(prev.parts || {}), ...parts },
+      done: { ...(prev.done || {}), ...done },
+      groups: groups || prev.groups || [],
+      by: String(req.body?.by || prev.by || '').slice(0, 40), savedAt: new Date().toISOString(),
+    };
     const { error: e2 } = await db.from('app_state').upsert({ key: `lq-actual:${id}`, value, ...(metaRow.org_id ? { org_id: metaRow.org_id } : {}) }, { onConflict: 'key' });
     if (e2) return res.status(500).json({ error: 'Save failed' });
     return res.json({ ok: true, savedAt: value.savedAt });
   }
-  const [{ data: photoRow }, { data: suppliesRow }, { data: actualRow }] = await Promise.all([
-    db.from('app_state').select('value').eq('key', `lq-data:${id}`).maybeSingle(),
+  // GET …&cpic=<pid> → one crew photo.
+  if (req.query.cpic != null) {
+    const pid = String(req.query.cpic);
+    if (!/^[a-z0-9]{6,16}$/.test(pid)) return res.status(404).end();
+    // &t=1 → the small thumbnail (falls back to the photo for older uploads).
+    const want = req.query.t ? 'p:value->>thumb' : 'p:value->>data';
+    let { data: ph } = await db.from('app_state').select(want).eq('key', `lq-crewpic:${id}:${pid}`).maybeSingle();
+    if (req.query.t && !ph?.p) ({ data: ph } = await db.from('app_state').select('p:value->>data').eq('key', `lq-crewpic:${id}:${pid}`).maybeSingle());
+    const m = /^data:(image\/[a-z+]+);base64,(.+)$/s.exec(ph?.p || '');
+    if (!m) return res.status(404).end();
+    res.setHeader('Content-Type', m[1]);
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    return res.status(200).send(Buffer.from(m[2], 'base64'));
+  }
+  // GET …&photo=<angle index | power>&v=… → one plan photo as an image (cached on the phone).
+  if (req.query.photo != null) {
+    const ix = String(req.query.photo);
+    if (!/^(\d{1,2}|power)$/.test(ix)) return res.status(404).end();
+    const path = ix === 'power' ? 'p:value->>powerPhoto' : `p:value->angles->${Number(ix)}->>plain`;
+    const { data: ph } = await db.from('app_state').select(path).eq('key', `lq-data:${id}`).maybeSingle();
+    const m = /^data:(image\/[a-z+]+);base64,(.+)$/s.exec(ph?.p || '');
+    if (!m) return res.status(404).end();
+    res.setHeader('Content-Type', m[1]);
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    return res.status(200).send(Buffer.from(m[2], 'base64'));
+  }
+  // The plan without photos, cached in its own small row and rebuilt only when the quote's photos row changes
+  // (pulling every photo out of the database takes 5–8 s).
+  const [{ data: stampRow }, { data: cacheRow }] = await Promise.all([
+    db.from('app_state').select('updated_at').eq('key', `lq-data:${id}`).maybeSingle(),
+    db.from('app_state').select('value').eq('key', `lq-crewplan:${id}`).maybeSingle(),
+  ]);
+  const stamp = String(stampRow?.updated_at || '');
+  let plan = cacheRow?.value && cacheRow.value.stamp === stamp && stamp ? cacheRow.value : null;
+  if (!plan) {
+    const { data: photoRow } = await db.from('app_state').select('value').eq('key', `lq-data:${id}`).maybeSingle();
+    const v = photoRow?.value || {};
+    plan = {
+      stamp,
+      hasPower: !!v.powerPhoto,
+      sides: (v.angles || []).map((a, ai) => ({ a, ai })).filter(({ a }) => a.plain).map(({ a, ai }) => ({
+        ai, w: a.w, h: a.h, lines: a.lines || [], jumps: a.jumps || [], outlets: a.outlets || [], inlines: a.inlines || [],
+      })),
+    };
+    if (stamp) await db.from('app_state').upsert({ key: `lq-crewplan:${id}`, value: plan, ...(metaRow.org_id ? { org_id: metaRow.org_id } : {}) }, { onConflict: 'key' });
+  }
+  const photoUrl = (ix) => `/api/app-state?key=lights-crew&token=${encodeURIComponent(token)}&photo=${ix}&v=${encodeURIComponent(stamp)}`;
+  const [{ data: suppliesRow }, { data: actualRow }, { data: mapRow }] = await Promise.all([
     db.from('app_state').select('value').eq('key', 'greenteam-lightsSupplies').maybeSingle(),
     db.from('app_state').select('value').eq('key', `lq-actual:${id}`).maybeSingle(),
+    db.from('app_state').select('value').eq('key', `lq-crewmap:${id}`).maybeSingle(),
   ]);
   const supplies = Array.isArray(suppliesRow?.value) ? suppliesRow.value : [];
   // Same as the quote screen: a timer + 10 male / 10 female plugs (black) unless the quote already has that kind.
@@ -237,10 +343,7 @@ async function handleLightsCrew(req, res) {
       const it = supplies.find((s) => s.id === itemId);
       return { id: itemId, name: it?.name || itemId, unit: it?.unit || 'ea', qty: Number(qty), image: it?.image || '', note: q.matNotes?.[itemId] || '' };
     });
-  const sides = (photoRow?.value?.angles || []).filter((a) => a.plain).map((a) => ({
-    plain: a.plain, w: a.w, h: a.h,
-    lines: a.lines || [], jumps: a.jumps || [], outlets: a.outlets || [], inlines: a.inlines || [],
-  }));
+  const sides = plan.sides.map(({ ai, ...sd }) => ({ plain: photoUrl(ai), ...sd }));
   res.setHeader('Cache-Control', 'no-store');
   return res.json({
     client: q.client || '',
@@ -248,7 +351,7 @@ async function handleLightsCrew(req, res) {
     installDate: q.installDate || '',
     takedownDate: q.takedownDate || '',
     power: q.power || '',
-    powerPhoto: photoRow?.value?.powerPhoto || '',
+    powerPhoto: plan.hasPower ? photoUrl('power') : '',
     gutterGuard: q.disc?.gutterGuard || '',
     style: q.style || '',
     customColor: q.customColor || '',
@@ -256,6 +359,11 @@ async function handleLightsCrew(req, res) {
     materials,
     sides,
     actual: actualRow?.value?.actual || {},
+    parts: actualRow?.value?.parts || {},
+    done: actualRow?.value?.done || {},
+    groups: actualRow?.value?.groups || [],
+    wire: q.wire || '',
+    crewMap: mapRow?.value || { photos: [], seq: 0 },
     actualSavedAt: actualRow?.value?.savedAt || '',
   });
 }

@@ -224,9 +224,6 @@ export default function Home() {
   const navigate = useNavigate();
   const { user, currentUser } = useAuth();
   const userEmail = user?.email;
-
-  const announcements = useAppStore((s) => s.announcements);
-  const setAnnouncements = useAppStore((s) => s.setAnnouncements);
   const teamChecklist = useAppStore((s) => s.teamChecklist);
   const teamStartChecklist = useAppStore((s) => s.teamChecklist);
   const teamEndChecklist = useAppStore((s) => s.teamEndChecklist);
@@ -370,30 +367,6 @@ export default function Home() {
 
   const firstName = currentUser?.split(' ')[0] || 'Team Member';
 
-  // Only show announcements posted after the user's account was created
-  const userCreatedAt = user?.created_at ? new Date(user.created_at).getTime() : 0;
-  const unacknowledged = announcements.filter((a) => {
-    if (a.acknowledgedBy?.[userEmail]) return false;
-    // Parse announcement date — try createdAt ISO first, then date string
-    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : a.date ? new Date(a.date).getTime() : 0;
-    return aTime > userCreatedAt;
-  });
-
-  const handleAcknowledge = (id) => {
-    setAnnouncements(
-      announcements.map((a) =>
-        a.id === id
-          ? {
-              ...a,
-              acknowledgedBy: {
-                ...a.acknowledgedBy,
-                [userEmail]: { name: currentUser, at: new Date().toISOString() },
-              },
-            }
-          : a
-      )
-    );
-  };
 
   // --- Modal submit handlers ---
   const handleRepairSubmit = (form) => {
@@ -541,135 +514,29 @@ export default function Home() {
         />
       )}
 
-      {/* Blocking announcement modal — only show announcements posted after user was created */}
-      {!unacknowledgedStrike && unacknowledged.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
-            <div className="flex items-center gap-2 px-6 py-4 border-b border-border-subtle shrink-0">
-              <Megaphone size={18} className="text-brand-text" />
-              <h2 className="text-lg font-bold text-primary">New Announcements</h2>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                {unacknowledged.length}
-              </span>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {unacknowledged.map((a) => (
-                <div
-                  key={a.id}
-                  className={`rounded-xl border p-5 ${
-                    a.priority === 'high'
-                      ? 'border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/40'
-                      : 'border-border-subtle bg-surface'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <h3 className="text-base font-bold text-primary">{a.title}</h3>
-                    {a.priority === 'high' && (
-                      <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
-                        HIGH
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-secondary text-sm leading-relaxed mb-4">{a.message}</p>
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs text-muted">
-                      <span>Posted by {a.postedBy}</span>
-                      <span className="ml-3">{a.date}</span>
-                    </div>
-                    <button
-                      onClick={() => handleAcknowledge(a.id)}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-on-brand text-xs font-semibold hover:bg-brand-hover transition-colors cursor-pointer"
-                    >
-                      <Check size={14} />
-                      Got it
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ─── Day Progress Tabs (clickable) ─── */}
-      {flowState !== 'done' && (
-        <div className="flex items-center bg-card rounded-xl border border-border-subtle p-1 mb-5">
-          {[
-            { id: 'needs-opening', label: 'Open', done: openingDone, icon: ClipboardCheck },
-            { id: 'working', label: 'Working', done: openingDone && !closingDone, icon: CheckCircle },
-            { id: 'needs-closing', label: 'Close', done: closingDone, icon: FlagTriangleRight },
-          ].map((step) => {
-            const Icon = step.icon;
-            const isActive = flowState === step.id;
-            const canClick = step.id === 'needs-opening' || (step.id === 'working' && openingDone) || (step.id === 'needs-closing' && openingDone);
-            return (
-              <button key={step.id}
-                onClick={() => {
-                  if (!canClick) return;
-                  if (step.id === 'needs-opening') { setClosingMode(false); }
-                  else if (step.id === 'working') { setClosingMode(false); }
-                  else if (step.id === 'needs-closing') { setClosingMode(true); }
-                }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold transition-all ${
-                  isActive ? 'bg-brand text-on-brand shadow-sm' :
-                  step.done ? 'text-brand-text cursor-pointer hover:bg-surface-alt' :
-                  canClick ? 'text-muted cursor-pointer hover:bg-surface-alt' : 'text-muted/40'
-                }`}>
-                {step.done && !isActive ? <Check size={13} /> : <Icon size={13} />}
-                {step.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ─── Start Day Checklist ─── */}
-      {flowState === 'needs-opening' && (
-        <div className="rounded-xl bg-card border border-border-subtle p-5">
-          <h2 className="text-lg font-bold text-primary mb-4">Opening Checklist</h2>
-          <ChecklistPanel title="Opening" items={teamStartChecklist} checklistType="team-start" checklistLog={checklistLog} setChecklistLog={setChecklistLog} />
-        </div>
-      )}
-
-      {/* ─── Working Dashboard ─── */}
-      {flowState === 'working' && (
-        <div className="space-y-4">
-          <p className="text-sm text-muted">Opening done. Tap <strong className="text-primary">Close</strong> when you're finished for the day.</p>
-          {quickLinks}
-        </div>
-      )}
-
-      {/* ─── End Day Checklist ─── */}
-      {flowState === 'needs-closing' && (
-        <div className="rounded-xl bg-card border border-border-subtle p-5">
-          <h2 className="text-lg font-bold text-primary mb-4">Closing Checklist</h2>
-          <ChecklistPanel title="Closing" items={teamEndChecklist} checklistType="team-end" checklistLog={checklistLog} setChecklistLog={setChecklistLog} mileage={{ vehicles, onSubmit: handleInlineMileage }} />
-        </div>
-      )}
-
-      {/* ─── Done ─── */}
-      {flowState === 'done' && (
-        <div className="space-y-4">
-          <div className="rounded-xl bg-card border border-border-subtle p-6 text-center">
-            <PartyPopper size={40} className="text-amber-500 mx-auto mb-3" />
-            <h2 className="text-xl font-bold text-primary mb-1">Great work today!</h2>
-            <p className="text-sm text-muted">Both checklists complete. See you tomorrow.</p>
-          </div>
-          {quickLinks}
-        </div>
-      )}
-
-      {/* Reset (testing) */}
-      <button
-        onClick={() => {
-          setChecklistLog(checklistLog.filter((e) => e.date !== today));
-          setClosingMode(false);
-          setStartedDay(false);
-        }}
-        className="mt-4 self-center text-[10px] text-muted/40 hover:text-muted cursor-pointer"
-      >
-        Reset
-      </button>
+      {/* Two big buttons. Same pages the Jobber route links open (/open, /close). */}
+      <div className="space-y-4">
+        {[
+          { kind: 'team-start', label: 'Start of Day', sub: 'Tap to start', items: teamStartChecklist, Icon: ClipboardCheck },
+          { kind: 'team-end', label: 'End of Day', sub: 'Tap to start', items: teamEndChecklist, Icon: FlagTriangleRight },
+        ].map(({ kind, label, sub, items, Icon }) => {
+          const steps = (items || []).filter((i) => i.type !== 'header');
+          let doneMap = {};
+          try { doneMap = JSON.parse(localStorage.getItem(`boost-team-done-${(userEmail || 'anon').toLowerCase()}-${kind}-${new Date().toLocaleDateString('en-CA')}`) || '{}'); } catch { /* ignore */ }
+          const done = steps.length > 0 && steps.every((i) => doneMap[i.id]);
+          return (
+            <button key={kind} onClick={() => navigate(`/workflow/${kind}`)}
+              className={`w-full rounded-2xl p-6 flex items-center gap-4 text-left cursor-pointer ${done ? 'bg-card border-2 border-emerald-400' : 'bg-brand text-on-brand'}`}>
+              {done ? <CheckCircle size={40} className="text-emerald-400 shrink-0" /> : <Icon size={40} className="shrink-0" />}
+              <div>
+                <p className={`text-3xl font-black ${done ? 'text-primary' : ''}`}>{label}</p>
+                <p className={`text-base font-semibold ${done ? 'text-emerald-300' : 'opacity-80'}`}>{done ? 'Done ✓ tap to see your screenshot' : sub}</p>
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Report Repair Modal */}
       {showRepairModal && (

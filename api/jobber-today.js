@@ -15,7 +15,7 @@ let cache = { at: 0, data: null };
 
 const clientBits = 'client { id name phones { number primary } }';
 const clientLite = 'client { name }';
-const placeBits = 'property { address { street city } }';
+const placeBits = 'property { address { street city coordinates { latitudeString longitudeString } } }';
 const crewBits = 'assignedUsers(first: 4) { nodes { name { full } } }';
 
 const phoneOf = (c) => (c?.phones || []).find((p) => p.primary)?.number || c?.phones?.[0]?.number || null;
@@ -47,6 +47,8 @@ const mapScheduled = (n) => ({
   client: n.client?.name || null,
   phone: phoneOf(n.client),
   address: addrOf(n.property),
+  lat: Number(n.property?.address?.coordinates?.latitudeString) || null,
+  lng: Number(n.property?.address?.coordinates?.longitudeString) || null,
   crew: crewOf(n),
   jobNumber: n.job?.jobNumber || null,
   value: (n.lineItems?.nodes || []).reduce((s, li) => s + (Number(li.totalPrice) || 0), 0),
@@ -341,7 +343,18 @@ export default async function handler(req, res) {
   const db = getSupabaseAdmin();
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   const { data: who } = token ? await db.auth.getUser(token) : { data: null };
-  if (who?.user?.user_metadata?.role !== 'owner') return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const role = who?.user?.user_metadata?.role;
+  // ?crew=1 → the crew's Start of Day "Review jobs": today's stops only (no money, no phones).
+  if (req.query?.crew) {
+    if (!who?.user || role === 'applicant') return res.status(401).json({ error: 'Log in to the Hub first.' });
+    try {
+      if (!cache.data || Date.now() - cache.at > TTL) cache = { at: Date.now(), data: await build() };
+      const stops = (cache.data.today || []).filter((x) => x.type === 'Visit' || x.type === 'Assessment')
+        .map((x) => ({ id: x.id, client: x.client || x.title, title: x.title, address: x.address, lat: x.lat, lng: x.lng, crew: x.crew, allDay: x.allDay, startAt: x.startAt, done: x.done }));
+      return res.json({ stops });
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
+  if (role !== 'owner') return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
 
   if (!req.query?.fresh && cache.data && Date.now() - cache.at < TTL) return res.json({ ...cache.data, cached: true });
   try {

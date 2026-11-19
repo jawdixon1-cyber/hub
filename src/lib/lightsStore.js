@@ -295,3 +295,28 @@ export async function saveImage(id, name, src) {
   await upsert([{ key, value: { src }, updated_at: new Date().toISOString() }]);
   return key;
 }
+
+// Team view (crew page) for a saved quote: reuse its crew link, or make one and save it
+// to the quote first so the link works the moment it opens.
+export async function ensureCrewToken(id, existing) {
+  if (existing) return existing;
+  const b = new Uint8Array(18);
+  crypto.getRandomValues(b);
+  const t = btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  await patchQuoteMeta(id, { crewToken: t });
+  return t;
+}
+
+// Opens the team view in a new tab. The tab opens right away (phones block pop-ups
+// opened after a wait), then goes to the link once it's ready.
+export async function openCrewView(id, existing) {
+  const w = window.open('', '_blank');
+  try {
+    const t = await ensureCrewToken(id, existing);
+    if (w) w.location.href = `/crew/${t}`; else window.location.href = `/crew/${t}`;
+    return t;
+  } catch (e) {
+    if (w) w.close();
+    throw e;
+  }
+}
