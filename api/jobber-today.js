@@ -12,6 +12,7 @@ import { planMoney } from './jobber-data.js';
 
 const TTL = 2 * 60e3;
 let cache = { at: 0, data: null };
+let crewCache = { at: 0, data: null }; // today's stops only, for the crew
 
 const clientBits = 'client { id name phones { number primary } }';
 const clientLite = 'client { name }';
@@ -80,7 +81,7 @@ async function section(name, fn, errors) {
   return null;
 }
 
-async function build() {
+async function build({ onlyToday = false } = {}) {
   const errors = {};
   const todayStr = ymd(new Date());
   const start = day();
@@ -157,6 +158,9 @@ async function build() {
     return [...realVisits, ...others, ...tasks]
       .sort((a, b) => (a.allDay !== b.allDay ? (a.allDay ? -1 : 1) : a.allDay ? ro(a) - ro(b) : new Date(a.startAt) - new Date(b.startAt)));
   }, errors);
+
+  // Crew "Review jobs" only needs today's stops — skip the money/invoice/labor queries.
+  if (onlyToday) return { today, errors };
 
   // Money for today: appointment value (like Jobber) + payments that actually came in today.
   const now = Date.now();
@@ -348,8 +352,17 @@ export default async function handler(req, res) {
   if (req.query?.crew) {
     if (!who?.user || role === 'applicant') return res.status(401).json({ error: 'Log in to the Hub first.' });
     try {
-      if (!cache.data || Date.now() - cache.at > TTL) cache = { at: Date.now(), data: await build() };
-      const stops = (cache.data.today || []).filter((x) => x.type === 'Visit' || x.type === 'Assessment')
+      // Use the owner's fresh full build if there is one; else a quick stops-only build (own cache).
+      let today = cache.data && Date.now() - cache.at < TTL ? cache.data.today : null;
+      if (!today) {
+        if (!crewCache.data || Date.now() - crewCache.at > TTL) {
+          const d = await build({ onlyToday: true });
+          if (!d.today) throw new Error(d.errors.today || 'Couldn’t load jobs');
+          crewCache = { at: Date.now(), data: d.today };
+        }
+        today = crewCache.data;
+      }
+      const stops = (today || []).filter((x) => x.type === 'Visit' || x.type === 'Assessment')
         .map((x) => ({ id: x.id, client: x.client || x.title, title: x.title, address: x.address, lat: x.lat, lng: x.lng, crew: x.crew, allDay: x.allDay, startAt: x.startAt, done: x.done }));
       return res.json({ stops });
     } catch (err) { return res.status(502).json({ error: err.message }); }

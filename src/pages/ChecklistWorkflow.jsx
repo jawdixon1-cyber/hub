@@ -799,9 +799,6 @@ function routeLink(list) {
 // your name is on any; otherwise everyone's, grouped by crew. No money, no phone numbers.
 function ReviewJobs({ name: myName }) {
   const { session, teamView } = useAuth();
-  // Owner in Team view: pick which crew member to see it as.
-  const [asName, setAsName] = useState(null);
-  const myFirst = (myName || '').split(' ')[0].toLowerCase();
   const token = session?.access_token || '';
   const [st, setSt] = useState({ loading: true, stops: [], error: null });
   // Owner testing in Team view can flip to tomorrow's schedule (from the Plan feed).
@@ -810,9 +807,13 @@ function ReviewJobs({ name: myName }) {
   useEffect(() => {
     if (!token) return undefined;
     let alive = true;
-    setSt((x) => ({ ...x, loading: true }));
     const t = new Date(Date.now() + 864e5).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const url = useTomorrow ? `/api/plan-day?date=${t}` : '/api/jobber-today?crew=1';
+    // Show the last list this phone loaded today right away, then refresh it (slow signal = no wait).
+    const ck = `review-jobs:${url}:${new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })}`;
+    let had = false;
+    try { const c = JSON.parse(localStorage.getItem(ck) || 'null'); if (c) { had = true; setSt({ loading: false, stops: c, error: null }); } } catch { /* ignore */ }
+    if (!had) setSt((x) => ({ ...x, loading: true }));
     fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `Error ${r.status}`); return d; })
       .then((d) => {
@@ -822,13 +823,12 @@ function ReviewJobs({ name: myName }) {
           .sort((a, b) => (a.allDay !== b.allDay ? (a.allDay ? -1 : 1) : a.allDay ? order(a) - order(b) : new Date(a.start) - new Date(b.start)))
           .map((x) => ({ id: x.id, client: x.client || x.title, title: x.title, address: x.address, lat: x.lat, lng: x.lng, crew: x.crew || [], allDay: x.allDay, startAt: x.start, done: x.done }));
       })
-      .then((stops) => alive && setSt({ loading: false, stops, error: null }))
-      .catch((e) => alive && setSt({ loading: false, stops: [], error: e.message }));
+      .then((stops) => { try { localStorage.setItem(ck, JSON.stringify(stops)); } catch { /* ignore */ } if (alive) setSt({ loading: false, stops, error: null }); })
+      .catch((e) => alive && !had && setSt({ loading: false, stops: [], error: e.message }));
     return () => { alive = false; };
   }, [token, useTomorrow]);
 
-  const crewNames = [...new Set(st.stops.flatMap((x) => x.crew))].filter((c) => c.split(' ')[0].toLowerCase() !== myFirst);
-  const name = teamView ? (asName || crewNames[0] || null) : myName;
+  const name = myName;
   const first = (name || '').split(' ')[0].toLowerCase();
   const mine = first ? st.stops.filter((x) => x.crew.some((c) => c.split(' ')[0].toLowerCase() === first)) : [];
   const groups = {};
@@ -848,11 +848,6 @@ function ReviewJobs({ name: myName }) {
           {[['Today', false], ['Tomorrow', true]].map(([l, v]) => (
             <button key={l} onClick={() => setTomorrow(v)}
               className={`px-3 py-1 rounded-full text-sm font-semibold cursor-pointer ${tomorrow === v ? 'bg-amber-400 text-black' : 'bg-surface-alt text-primary'}`}>{l}</button>
-          ))}
-          <span className="text-xs font-bold text-amber-400 self-center ml-2">See it as:</span>
-          {crewNames.map((c) => (
-            <button key={c} onClick={() => setAsName(c)}
-              className={`px-3 py-1 rounded-full text-sm font-semibold cursor-pointer ${name === c ? 'bg-amber-400 text-black' : 'bg-surface-alt text-primary'}`}>{c.split(' ')[0]}</button>
           ))}
         </div>
       )}
