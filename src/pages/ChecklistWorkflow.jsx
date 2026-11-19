@@ -798,17 +798,15 @@ function routeLink(list) {
 // Start of Day: today's Jobber stops, in route order. Shows your own crew's stops when
 // your name is on any; otherwise everyone's, grouped by crew. No money, no phone numbers.
 function ReviewJobs({ name: myName }) {
-  const { session, teamView } = useAuth();
+  const { session, isOwner } = useAuth();
   const token = session?.access_token || '';
   const [st, setSt] = useState({ loading: true, stops: [], error: null });
-  // Owner testing in Team view can flip to tomorrow's schedule (from the Plan feed).
-  const [tomorrow, setTomorrow] = useState(true);
-  const useTomorrow = teamView && tomorrow;
+  // Owner: pick whose route to see first (the list loads in the background meanwhile).
+  const [pick, setPick] = useState(null);
   useEffect(() => {
     if (!token) return undefined;
     let alive = true;
-    const t = new Date(Date.now() + 864e5).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-    const url = useTomorrow ? `/api/plan-day?date=${t}` : '/api/jobber-today?crew=1';
+    const url = '/api/jobber-today?crew=1';
     // Show the last list this phone loaded today right away, then refresh it (slow signal = no wait).
     const ck = `review-jobs:${url}:${new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })}`;
     let had = false;
@@ -816,19 +814,16 @@ function ReviewJobs({ name: myName }) {
     if (!had) setSt((x) => ({ ...x, loading: true }));
     fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `Error ${r.status}`); return d; })
-      .then((d) => {
-        if (!useTomorrow) return d.stops || [];
-        const order = (x) => (x.allDay ? x.order ?? 9999 : -1);
-        return [...(d.visits || []), ...(d.assessments || [])]
-          .sort((a, b) => (a.allDay !== b.allDay ? (a.allDay ? -1 : 1) : a.allDay ? order(a) - order(b) : new Date(a.start) - new Date(b.start)))
-          .map((x) => ({ id: x.id, client: x.client || x.title, title: x.title, address: x.address, lat: x.lat, lng: x.lng, crew: x.crew || [], allDay: x.allDay, startAt: x.start, done: x.done }));
-      })
+      .then((d) => d.stops || [])
       .then((stops) => { try { localStorage.setItem(ck, JSON.stringify(stops)); } catch { /* ignore */ } if (alive) setSt({ loading: false, stops, error: null }); })
       .catch((e) => alive && !had && setSt({ loading: false, stops: [], error: e.message }));
     return () => { alive = false; };
-  }, [token, useTomorrow]);
+  }, [token]);
 
-  const name = myName;
+  // The crew only — not the owner.
+  const meFirst = (myName || '').split(' ')[0].toLowerCase();
+  const crewNames = [...new Set(st.stops.flatMap((x) => x.crew))].filter((c) => { const f = c.split(' ')[0].toLowerCase(); return f !== 'jude' && f !== meFirst; }).sort();
+  const name = isOwner ? pick : myName;
   const first = (name || '').split(' ')[0].toLowerCase();
   const mine = first ? st.stops.filter((x) => x.crew.some((c) => c.split(' ')[0].toLowerCase() === first)) : [];
   const groups = {};
@@ -843,14 +838,19 @@ function ReviewJobs({ name: myName }) {
   return (
     <div className="mb-2">
       <p className="pt-1 pb-1 text-sm font-black uppercase tracking-wider text-muted">Review jobs</p>
-      {teamView && (
-        <div className="flex flex-wrap gap-2 py-1">
-          {[['Today', false], ['Tomorrow', true]].map(([l, v]) => (
-            <button key={l} onClick={() => setTomorrow(v)}
-              className={`px-3 py-1 rounded-full text-sm font-semibold cursor-pointer ${tomorrow === v ? 'bg-amber-400 text-black' : 'bg-surface-alt text-primary'}`}>{l}</button>
+      {isOwner && crewNames.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 py-1">
+          <span className="text-sm font-bold text-secondary">Whose route?</span>
+          {crewNames.map((c) => (
+            <button key={c} onClick={() => setPick(c)}
+              className={`px-4 py-2 rounded-full text-base font-bold cursor-pointer ${pick === c ? 'bg-amber-400 text-black' : 'bg-surface-alt text-primary'}`}>{c.split(' ')[0]}</button>
           ))}
         </div>
       )}
+      {isOwner && !crewNames.length && st.loading && <p className="text-sm text-muted py-2">Loading today's jobs…</p>}
+      {isOwner && !crewNames.length && !st.loading && !st.error && <p className="text-sm text-muted py-2">No jobs today.</p>}
+      {isOwner && st.error && !crewNames.length && <p className="text-sm text-red-400 py-2">Couldn't load jobs. Check Jobber.</p>}
+      {isOwner && !pick ? null : <>
       {st.loading && <p className="text-sm text-muted py-2">Loading today's jobs…</p>}
       {st.error && <p className="text-sm text-red-400 py-2">Couldn't load jobs. Check Jobber.</p>}
       {!st.loading && !st.error && st.stops.length === 0 && <p className="text-sm text-muted py-2">No jobs today.</p>}
@@ -882,6 +882,7 @@ function ReviewJobs({ name: myName }) {
           </ol>
         </div>
       ))}
+      </>}
     </div>
   );
 }
