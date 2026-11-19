@@ -4,7 +4,7 @@ import { PlanOverlay, OutletMarks } from '../components/LightsMarkup';
 import { kindOf } from '../lib/lightsMaterials';
 import { DESIGNS } from '../lib/lightsDesigns';
 import { typeOf, extraMath } from '../lib/lightsExtras';
-import { strandsOfJob, groupRuns, groupTotal, groupPlan, fmt, wireOf, wireName, strandTotal, crewStrands, shrinkPhoto } from '../lib/strands';
+import { groupTotal, groupPlan, fmt, wireOf, wireName, strandTotal, crewStrands, shrinkPhoto } from '../lib/strands';
 import StrandSheet, { StrandNo } from '../components/StrandSheet';
 import { CrewDraw, CrewPhoto } from '../components/CrewStrandMap';
 
@@ -141,12 +141,11 @@ export default function LightsCrew() {
     setDrawPid('');
   };
   const crew = useMemo(() => crewStrands(crewMap, picUrl), [crewMap, localPics]); // eslint-disable-line react-hooks/exhaustive-deps
-  const useCrew = crew.strands.length > 0;
-  const planRuns = useMemo(() => strandsOfJob(job?.sides || []), [job]);
-  const planStrands = useMemo(() => groupRuns(planRuns, joins), [planRuns, joins]);
-  const strands = useCrew ? crew.strands : planStrands;
-  const runs = useCrew ? crew.strands.flatMap((x) => x.runs) : planRuns;
-  const strandSides = useCrew ? crew.sides : job?.sides || [];
+  // Only the strands the crew drew on their site photos — never the plan's lines.
+  const useCrew = true;
+  const strands = crew.strands;
+  const runs = crew.strands.flatMap((x) => x.runs);
+  const strandSides = crew.sides;
   const strandDone = (x) => x.runs.every((r) => doneMap[r.key]);
   const saveGroups = (g) => { setJoins(g); pendingGroups.current = g; queue({}); };
   // Join strand `other` onto strand `x` (same wire). Split one roof line back out to its own strand.
