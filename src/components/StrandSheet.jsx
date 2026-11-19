@@ -228,7 +228,7 @@ export default function StrandSheet({ strand, strands, idx, sides, jobWire, part
 
           {/* Hooks to */}
           {strand.crew ? (
-            <p className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-base"><b className="text-yellow-300">M</b> = male end (plugs in) · <b className="text-pink-400">F</b> = female end{sis.length > 1 ? ' · ➜ goes around to the next photo' : ''}{strand.open ? <span className="block text-yellow-300 font-semibold pt-1">Not finished — it goes ➜ off the photo. Draw where it keeps going.</span> : null}</p>
+            <p className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-base"><b className="text-yellow-300">M</b> = male end (plugs in) · <b className="text-pink-400">F</b> = female end{strand.runs.length > 1 ? ' · ➜ = keeps going, all parts add up to this one strand' : ''}{strand.open ? <span className="block text-yellow-300 font-semibold pt-1">Not finished — it ends in ➜. Draw where it keeps going, or tap the line and pick F.</span> : null}</p>
           ) : <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 space-y-2">
             <p className="text-sm font-bold uppercase tracking-wide text-white/60">Hooks to</p>
             {strand.power && <p className="text-base font-bold text-yellow-300">{strand.power.kind === 'outlet' ? '🔌 Plugs in at the outlet' : '⚡ Power comes in here'} — start here</p>}

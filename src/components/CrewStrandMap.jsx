@@ -158,14 +158,15 @@ export function CrewDraw({ photo, src, label, map, onSave, onClose, onDelete }) 
               </>
             ) : (<>
             <p className="text-base font-bold">
-              Strand {rankOf(cur.s)}: {cur.pts.length === 0 ? (cur.a === 'in' ? 'tap where it comes into this photo' : 'tap the male end (where it plugs in)') : 'keep tapping along the lights'}
+              Strand {rankOf(cur.s)}: {cur.pts.length === 0 ? (cur.a === 'in' ? 'tap where it picks back up' : 'tap the male end (where it plugs in)') : 'keep tapping along the lights'}
             </p>
             {cur.pts.length >= 2 && (
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={() => finish('female')} className={`${btn} text-black`} style={{ background: '#F472B6' }}>F · Ends here</button>
-                <button onClick={() => finish('out')} className={`${btn} bg-white text-black`}>➜ Next photo</button>
+                <button onClick={() => finish('out')} className={`${btn} bg-white text-black`}>➜ Keeps going</button>
               </div>
             )}
+            {cur.pts.length >= 2 && <p className="text-sm text-white/60">➜ = no F end yet. Then tap “Strand {rankOf(cur.s)} keeps going” here or on another photo — it all adds up as one strand.</p>}
             </>)}
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => setCur({ ...cur, pts: cur.pts.slice(0, -1) })} disabled={!cur.pts.length} className="h-12 rounded-xl bg-white/10 text-base font-bold disabled:opacity-30 cursor-pointer">↶ Undo</button>
@@ -181,10 +182,10 @@ export function CrewDraw({ photo, src, label, map, onSave, onClose, onDelete }) 
           </>
         ) : selLine ? (
           <>
-            <p className="text-base font-bold">Strand {rankOf(selLine.s)} <span className="text-white/60 font-normal">· {selLine.a === 'in' ? 'comes in from another photo' : 'M = plugs in'} · {selLine.b === 'out' ? 'goes ➜ to next photo' : selLine.b === 'female' ? 'F = ends here' : 'no end'}</span></p>
+            <p className="text-base font-bold">Strand {rankOf(selLine.s)} <span className="text-white/60 font-normal">· {selLine.a === 'in' ? 'continues from ➜' : 'M = plugs in'} · {selLine.b === 'out' ? '➜ keeps going' : selLine.b === 'female' ? 'F = ends here' : 'no end'}</span></p>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => save(lines.map((l) => (l.id === sel ? { ...l, b: 'female' } : l)))} className={`${btn} text-black ${selLine.b === 'female' ? '' : 'opacity-60'}`} style={{ background: '#F472B6' }}>F · Ends here</button>
-              <button onClick={() => save(lines.map((l) => (l.id === sel ? { ...l, b: 'out' } : l)))} className={`${btn} bg-white text-black ${selLine.b === 'out' ? '' : 'opacity-60'}`}>➜ Next photo</button>
+              <button onClick={() => save(lines.map((l) => (l.id === sel ? { ...l, b: 'out' } : l)))} className={`${btn} bg-white text-black ${selLine.b === 'out' ? '' : 'opacity-60'}`}>➜ Keeps going</button>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => save(lines.map((l) => (l.id === sel ? { ...l, pts: [...l.pts].reverse() } : l)))} className="h-12 rounded-xl bg-white/10 text-base font-bold cursor-pointer">⇄ Flip ends</button>
@@ -198,7 +199,7 @@ export function CrewDraw({ photo, src, label, map, onSave, onClose, onDelete }) 
             {open.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {open.map((s) => (
-                  <button key={s} onClick={() => setCur({ s, a: 'in', pts: [] })} className="h-14 px-4 rounded-2xl text-black text-base font-extrabold cursor-pointer" style={{ background: strandColor(rankOf(s)) }}>➜ Strand {rankOf(s)} keeps going here</button>
+                  <button key={s} onClick={() => { const end = [...lines].reverse().find((l) => l.s === s && l.b === 'out'); setCur({ s, a: 'in', pts: end ? [end.pts[end.pts.length - 1]] : [] }); }} className="h-14 px-4 rounded-2xl text-black text-base font-extrabold cursor-pointer" style={{ background: strandColor(rankOf(s)) }}>➜ Strand {rankOf(s)} keeps going here</button>
                 ))}
               </div>
             )}
@@ -207,7 +208,7 @@ export function CrewDraw({ photo, src, label, map, onSave, onClose, onDelete }) 
               <button onClick={() => setCur({ zip: true, pts: [] })} className={`${btn} text-black`} style={{ background: ZIP }}>┅ Zip cord</button>
             </div>
             <div className="flex items-center justify-between">
-              <p className="text-sm text-white/60">{lines.length ? 'Tap a line to change it.' : 'M = male · F = female · ➜ = keeps going · ┅ = zip cord'}</p>
+              <p className="text-sm text-white/60">{lines.length ? 'Tap a line to change it.' : 'M = male · F = female · ➜ = keeps going (same strand) · ┅ = zip cord'}</p>
               <button onClick={() => { if (sure !== 'photo') { setSure('photo'); return; } onDelete(); }}
                 className={`h-10 px-3 rounded-lg text-sm font-bold cursor-pointer ${sure === 'photo' ? 'bg-red-600' : 'text-red-300'}`}>{sure === 'photo' ? 'Tap again — delete photo' : 'Delete photo'}</button>
             </div>
