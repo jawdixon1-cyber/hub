@@ -207,23 +207,47 @@ export default function LightsCrew() {
             <img src="/holiday-logo.png" alt="Hey Jude's" className="h-9 w-auto" />
             <span className="rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide text-black" style={{ background: GREEN }}>Team view</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold leading-tight break-words capitalize">{job.client}</h1>
-          {job.address && (
-            <a href={`https://maps.apple.com/?q=${encodeURIComponent(job.address)}`} className="block text-base text-white/80 underline underline-offset-4">📍 {job.address}</a>
-          )}
+          {/* Page title: client + street; tap for directions */}
+          {(() => {
+            const [street] = (job.address || '').split(', ');
+            const inner = (
+              <>
+                <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight break-words"><span className="capitalize">{job.client}</span>{street && <span className="text-white/90"> · {street}</span>}</h1>
+              </>
+            );
+            return job.address ? <a href={`https://maps.apple.com/?q=${encodeURIComponent(job.address)}`} className="block active:opacity-70">{inner}</a> : inner;
+          })()}
           {(job.power || job.powerPhoto) && (
             <div className="flex items-center gap-3 rounded-xl border border-yellow-400/40 bg-yellow-400/10 p-3">
               {job.powerPhoto && <img src={job.powerPhoto} alt="Outlet" onClick={() => setBigImg(job.powerPhoto)} className="h-16 w-16 rounded-lg object-cover cursor-zoom-in" />}
               <p className="text-base"><span className="font-bold text-yellow-300">🔌 Power:</span> {job.power || 'see photo'}</p>
             </div>
           )}
-          {design && (
-            <div className="rounded-xl bg-white/10 px-3 py-2.5 text-base">💡 <span className="font-bold">Bulbs:</span> {job.style === 'custom' ? `Custom: ${job.customColor || 'ask Jude'}` : design.label}</div>
-          )}
         </header>
 
         {/* The plan (Jude's) — tap to open */}
         <Fold id="plan" title="🗺 The plan" sub={`${sides.length} section${sides.length === 1 ? '' : 's'}${job.extras.length ? ` · ${job.extras.length} extra${job.extras.length === 1 ? '' : 's'}` : ''}`} open={fold.plan} onToggle={toggleFold}>
+            {design && (
+              <div className="rounded-xl bg-white/10 px-3 py-2.5 text-base">💡 <span className="font-bold">Bulbs:</span> {job.style === 'custom' ? `Custom: ${job.customColor || 'ask Jude'}` : design.label}</div>
+            )}
+            {/* Materials first — what to load */}
+            <div className="flex items-baseline justify-between"><h3 className="text-lg font-extrabold">📦 Materials</h3><span className="text-sm text-white/60">{done} of {job.materials.length} loaded</span></div>
+          {groups.map(([label, items]) => (
+            <div key={label} className="rounded-2xl border border-white/10 overflow-hidden">
+              <p className="px-4 py-2.5 bg-white/[0.06] font-bold">{label}</p>
+              <div className="divide-y divide-white/10">
+                {items.map((m) => (
+                  <label key={m.id} className={`flex items-center gap-3 px-4 py-3 cursor-pointer ${checked[m.id] ? 'opacity-50' : ''}`}>
+                    <input type="checkbox" checked={!!checked[m.id]} onChange={(e) => setChecked((c) => ({ ...c, [m.id]: e.target.checked }))} className="w-6 h-6 accent-[#00DF00]" />
+                    {m.image ? <img src={m.image} alt="" loading="lazy" decoding="async" className="w-11 h-11 rounded-lg object-cover bg-white shrink-0" /> : <span className="w-11 h-11 rounded-lg bg-white/10 shrink-0" />}
+                    <span className={`flex-1 font-semibold leading-tight ${checked[m.id] ? 'line-through' : ''}`}>{m.name}{m.note && <span className="block text-xs font-normal text-white/60">{m.note}</span>}</span>
+                    <span className="shrink-0 text-lg font-extrabold tabular-nums">{m.qty}<span className="text-sm font-normal text-white/60"> {m.unit}</span></span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+          {!job.materials.length && <p className="text-white/60">No materials on this job yet.</p>}
             {/* Every section top to bottom, in order — just scroll. Tap one for full screen. */}
             {sides.map((sd, i) => (
               <div key={i} className="space-y-1.5">
@@ -255,31 +279,12 @@ export default function LightsCrew() {
             {!sides.length && <p className="text-white/60">No plan photos on this job.</p>}
         </Fold>
 
-        {/* Materials — tap to open */}
-        <Fold id="mats" title="📦 Materials" sub={`${done} of ${job.materials.length} loaded`} open={fold.mats} onToggle={toggleFold}>
-          {groups.map(([label, items]) => (
-            <div key={label} className="rounded-2xl border border-white/10 overflow-hidden">
-              <p className="px-4 py-2.5 bg-white/[0.06] font-bold">{label}</p>
-              <div className="divide-y divide-white/10">
-                {items.map((m) => (
-                  <label key={m.id} className={`flex items-center gap-3 px-4 py-3 cursor-pointer ${checked[m.id] ? 'opacity-50' : ''}`}>
-                    <input type="checkbox" checked={!!checked[m.id]} onChange={(e) => setChecked((c) => ({ ...c, [m.id]: e.target.checked }))} className="w-6 h-6 accent-[#00DF00]" />
-                    {m.image ? <img src={m.image} alt="" loading="lazy" decoding="async" className="w-11 h-11 rounded-lg object-cover bg-white shrink-0" /> : <span className="w-11 h-11 rounded-lg bg-white/10 shrink-0" />}
-                    <span className={`flex-1 font-semibold leading-tight ${checked[m.id] ? 'line-through' : ''}`}>{m.name}{m.note && <span className="block text-xs font-normal text-white/60">{m.note}</span>}</span>
-                    <span className="shrink-0 text-lg font-extrabold tabular-nums">{m.qty}<span className="text-sm font-normal text-white/60"> {m.unit}</span></span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          ))}
-          {!job.materials.length && <p className="text-white/60">No materials on this job yet.</p>}
-        </Fold>
-
         {/* Strands: crew photos + measuring */}
-        <section className="space-y-4">
-          <h2 className="text-xl font-extrabold">Strands</h2>
+        <section className="rounded-2xl border border-white/10 overflow-hidden">
+          <div className="px-4 py-4 bg-white/[0.05]"><span className="block text-xl font-extrabold">🧵 Strands</span><span className="block text-sm text-white/60">Photos → draw → measure</span></div>
+          <div className="divide-y divide-white/10">
             {/* Site photos: the crew draws the real strands here */}
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 space-y-3">
+            <div className="p-3 sm:p-4 space-y-3">
               <div>
                 <p className="text-base font-bold">📸 Strand photos</p>
                 <p className="text-sm text-white/60">Snap each side. Tap along each strand: <b className="text-white/80">M</b> where it plugs in, <b className="text-white/80">F</b> where it ends, <b className="text-white/80">➜</b> if it goes around the corner.</p>
@@ -309,7 +314,7 @@ export default function LightsCrew() {
               const next = strands.findIndex((x) => !strandDone(x));
               const ft = runs.reduce((a, r) => a + (Number(actualOf(r.key)) || 0), 0);
               return (
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 space-y-3">
+                <div className="p-3 sm:p-4 space-y-3">
                   <div className="flex items-baseline justify-between">
                     <p className="text-base font-bold">📏 {nDone} of {strands.length} strands done</p>
                     {ft > 0 && <p className="text-base font-bold tabular-nums">{fmt(ft)} ft</p>}
@@ -323,7 +328,7 @@ export default function LightsCrew() {
               );
             })()}
             {/* Strands (wires), in install order. Tap one to measure it. */}
-            <div className="space-y-2">
+            {strands.length > 0 && <div className="p-3 sm:p-4 space-y-2">
               
               {strands.map((x) => {
                 const t = groupTotal(x, (k) => parts[k]);
@@ -342,9 +347,9 @@ export default function LightsCrew() {
                   </button>
                 );
               })}
-            </div>
+            </div>}
             {useCrew && crew.zips.length > 0 && (
-              <div className="space-y-2">
+              <div className="p-3 sm:p-4 space-y-2">
                 <h3 className="text-lg font-extrabold">Zip cords <span className="text-sm font-normal text-white/60">no lights · optional ft</span></h3>
                 {crew.zips.map((z, i) => (
                   <label key={z.key} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
@@ -356,7 +361,8 @@ export default function LightsCrew() {
                 ))}
               </div>
             )}
-            {saveState && <p className={`text-sm font-semibold ${saveState === 'error' ? 'text-red-400' : 'text-white/70'}`}>{saveLabel(saveState)}</p>}
+            {saveState && <p className={`px-4 py-2.5 text-sm font-semibold ${saveState === 'error' ? 'text-red-400' : 'text-white/70'}`}>{saveLabel(saveState)}</p>}
+          </div>
         </section>
       </div>
 

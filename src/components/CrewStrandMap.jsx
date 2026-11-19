@@ -133,7 +133,7 @@ export function CrewDraw({ photo, src, label, map, onSave, onClose, onDelete }) 
   };
   const finish = (b) => {
     const id = map.seq || 0;
-    save([...lines, cur.zip ? { id, k: 'zip', s: 0, a: '', b: '', pts: cur.pts } : { id, s: cur.s, a: cur.a, b, pts: cur.pts }], id + 1);
+    save([...lines, cur.zip ? { id, k: 'zip', s: 0, a: '', b: '', pts: cur.pts } : { id, v: 2, s: cur.s, a: cur.a, b, pts: cur.pts }], id + 1);
     setCur(null);
   };
   const selLine = lines.find((l) => l.id === sel);

@@ -31,6 +31,39 @@ export function piecesOf(line, steep = 0.25) {
   return out;
 }
 
+// Crew-drawn lines (v2): fewer, smarter pieces so the crew measures what they can actually tape.
+//  · taps along one straight edge → one piece
+//  · up one side of a peak and down the other → ONE "peak" piece: tape the flat bottom corner to
+//    corner + one angle. Same pitch both sides (normal gable) → slope length = whole bottom ÷ cos(angle),
+//    no matter where the peak sits.
+export function crewPiecesOf(pts, steep = 0.5) {
+  const segs = [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    if (Math.hypot(dx, dy) < 1) continue;
+    const slope = Math.abs(dy) > steep * Math.max(Math.abs(dx), 1);
+    segs.push({ a, b, pts: [a, b], slope, dir: Math.atan2(dy, dx), up: dy < 0 });
+  }
+  // 1) straight-ish runs of taps → one piece
+  const straight = [];
+  segs.forEach((s) => {
+    const p = straight[straight.length - 1];
+    const turn = p && Math.abs(((s.dir - p.dir + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+    if (p && p.slope === s.slope && turn < 0.21) { p.b = s.b; p.pts.push(s.b); p.dir = Math.atan2(p.b.y - p.a.y, p.b.x - p.a.x); }
+    else straight.push({ ...s, pts: [...s.pts] });
+  });
+  // 2) slope going up, then slope coming down (same left/right direction) → one peak
+  const out = [];
+  straight.forEach((s) => {
+    const p = out[out.length - 1];
+    if (p && !p.peak && p.slope && s.slope && p.up && !s.up && Math.sign(p.b.x - p.a.x) === Math.sign(s.b.x - s.a.x)) {
+      out[out.length - 1] = { a: p.a, b: s.b, pts: [...p.pts, ...s.pts.slice(1)], mid: p.b, slope: true, peak: true };
+    } else out.push({ a: s.a, b: s.b, pts: s.pts, slope: s.slope, up: s.up });
+  });
+  return out;
+}
+
 // One section (photo) → strands with neighbors. startNo = number of the first strand in this section.
 export function strandsOfSide(side, si) {
   const w = side.w || 1600, h = side.h || 1200;
@@ -191,7 +224,7 @@ export function crewStrands(map, photoUrl) {
   }));
   const byS = new Map();
   photos.forEach((p, si) => p.lines.filter((l) => l.k !== 'zip').forEach((l, li) => {
-    const run = { key: `c${p.no}-${l.id}`, si, li, line: sides[si].lines[li], pts: l.pts, pieces: piecesOf({ pts: l.pts, mount: 'shingle' }, 0.5), power: null, neighbors: [], zips: [] };
+    const run = { key: `c${p.no}-${l.id}`, si, li, line: sides[si].lines[li], pts: l.pts, pieces: l.v >= 2 ? crewPiecesOf(l.pts) : piecesOf({ pts: l.pts, mount: 'shingle' }, 0.5), power: null, neighbors: [], zips: [] };
     if (!byS.has(l.s)) byS.set(l.s, []);
     byS.get(l.s).push(run);
   }));

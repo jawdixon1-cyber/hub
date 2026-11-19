@@ -68,7 +68,7 @@ function StrandPhoto({ side, si, strand, cur, wire, piece, label }) {
           </g>
         ))}
         {cur && cur.si === si && cur.pieces.length > 1 && cur.pieces.map((p, k) => {
-          const x = (p.a.x + p.b.x) / 2, y = (p.a.y + p.b.y) / 2;
+          const x = p.mid ? p.mid.x : (p.a.x + p.b.x) / 2, y = p.mid ? p.mid.y : (p.a.y + p.b.y) / 2;
           const on = k === piece;
           return (
             <g key={k}>
@@ -270,9 +270,10 @@ export default function StrandSheet({ strand, strands, idx, sides, jobWire, part
                       </div>
                       <span className="ml-auto text-2xl font-extrabold tabular-nums">{ft != null ? `${fmt(ft)} ft` : ''}</span>
                     </div>
+                    {r.pieces[k]?.peak && p.m === 's' && <p className="text-base font-bold text-yellow-300">▲ Peak: tape the flat bottom corner to corner (both sides together), one angle.</p>}
                     {p.m === 's' ? (
                       <div className="flex flex-wrap items-end gap-3">
-                        <label className="space-y-1"><span className="block text-sm text-white/70">Flat bottom, ft</span><Num value={p.run} onChange={(v) => set(r, k, { run: v })} placeholder="ft" /></label>
+                        <label className="space-y-1"><span className="block text-sm text-white/70">{r.pieces[k]?.peak ? 'Whole bottom, ft' : 'Flat bottom, ft'}</span><Num value={p.run} onChange={(v) => set(r, k, { run: v })} placeholder="ft" /></label>
                         <label className="space-y-1"><span className="block text-sm text-white/70">Angle °</span><Num value={p.deg} onChange={(v) => set(r, k, { deg: v })} placeholder="°" /></label>
                         <button onClick={() => { setFocus({ key: r.key, k }); setMeter({ key: r.key, k }); }} className="h-14 px-4 rounded-xl text-black text-base font-extrabold cursor-pointer" style={{ background: YELLOW }}>📱 Get angle</button>
                         {p.deg !== '' && Number(p.deg) > 0 && <span className="text-sm text-white/60 pb-1">≈ {pitchOf(Number(p.deg))}/12</span>}
