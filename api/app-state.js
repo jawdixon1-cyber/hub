@@ -384,6 +384,18 @@ export default async function handler(req, res) {
     if (req.query.key === 'lights-crew') {
       return handleLightsCrew(req, res);
     }
+    // GET ?key=lights-item-img&id=<supply id> → that material's picture (public; Jobber pulls it as the expense receipt).
+    if (req.query.key === 'lights-item-img') {
+      const iid = String(req.query.id || '');
+      if (!/^[a-z0-9-]{1,60}$/i.test(iid)) return res.status(404).end();
+      const { data } = await getSupabaseAdmin().from('app_state').select('value').eq('key', 'greenteam-lightsSupplies').maybeSingle();
+      const it = (Array.isArray(data?.value) ? data.value : []).find((x) => x.id === iid);
+      const m = String(it?.image || '').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+      if (!m) return res.status(404).end();
+      res.setHeader('Content-Type', m[1]);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.send(Buffer.from(m[2], 'base64'));
+    }
     if (req.query.key === 'lights-refer') {
       return handleLightsRefer(req, res);
     }

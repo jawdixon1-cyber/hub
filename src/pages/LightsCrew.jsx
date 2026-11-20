@@ -112,6 +112,7 @@ export default function LightsCrew() {
   const [crewMap, setCrewMap] = useState({ photos: [], seq: 0 });
   const [localPics, setLocalPics] = useState({}); // pid → data URL, just uploaded on this phone
   const [drawPid, setDrawPid] = useState('');
+  const [zipOpen, setZipOpen] = useState(''); // zip cord key whose photo + feet sheet is open
   const [upState, setUpState] = useState(''); // '', 'up', error text
   const picUrl = (pid, thumb = false) => localPics[pid] || `/api/app-state?key=lights-crew&token=${encodeURIComponent(token)}&cpic=${pid}${thumb ? '&t=1' : ''}`;
   const post = (body) => fetch(`/api/app-state?key=lights-crew&token=${encodeURIComponent(token)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -312,15 +313,19 @@ export default function LightsCrew() {
               const nDone = strands.filter(strandDone).length;
               const next = strands.findIndex((x) => !strandDone(x));
               const ft = runs.reduce((a, r) => a + (Number(actualOf(r.key)) || 0), 0);
+              // Zip cords need their feet too (they come out of stock).
+              const zips = useCrew ? crew.zips : [];
+              const zDone = zips.filter((z) => Number(actualOf(z.key)) > 0).length;
+              const total = strands.length + zips.length;
               return (
                 <div className="p-3 sm:p-4 space-y-3">
                   <div className="flex items-baseline justify-between">
-                    <p className="text-base font-bold">📏 {nDone} of {strands.length} strands done</p>
+                    <p className="text-base font-bold">📏 {nDone} of {strands.length} strands done{zips.length ? ` · ${zDone} of ${zips.length} zip cords` : ''}</p>
                     {ft > 0 && <p className="text-base font-bold tabular-nums">{fmt(ft)} ft</p>}
                   </div>
-                  <div className="h-2 rounded-full bg-white/10 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${(nDone / strands.length) * 100}%`, background: GREEN }} /></div>
+                  <div className="h-2 rounded-full bg-white/10 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${((nDone + zDone) / total) * 100}%`, background: GREEN }} /></div>
                   <button onClick={() => setOpen(strands[next >= 0 ? next : 0].id)} className="w-full h-14 rounded-xl text-black text-lg font-extrabold cursor-pointer" style={{ background: GREEN }}>
-                    {next < 0 ? 'All done ✓ — review' : nDone ? `Next: Strand ${strands[next].no} ›` : 'Start measuring · Strand 1 ›'}
+                    {next < 0 ? (zDone < zips.length ? `Strands done ✓ — measure ${zips.length - zDone} zip cord${zips.length - zDone === 1 ? '' : 's'} below` : 'All done ✓ — review') : nDone ? `Next: Strand ${strands[next].no} ›` : 'Start measuring · Strand 1 ›'}
                   </button>
                   {!useCrew && <p className="text-sm text-white/60">One wire across a few roof lines? Open a strand and tap <b className="text-white/80">＋ Join</b>.</p>}
                 </div>
@@ -349,15 +354,17 @@ export default function LightsCrew() {
             </div>}
             {useCrew && crew.zips.length > 0 && (
               <div className="p-3 sm:p-4 space-y-2">
-                <h3 className="text-lg font-extrabold">Zip cords <span className="text-sm font-normal text-white/60">no lights · optional ft</span></h3>
-                {crew.zips.map((z, i) => (
-                  <label key={z.key} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                    <span className="w-9 h-9 shrink-0 rounded-full text-black font-extrabold flex items-center justify-center" style={{ background: '#FB923C' }}>Z</span>
-                    <span className="flex-1 text-base font-bold">Zip cord {i + 1} <span className="text-white/60 font-normal">· photo {z.si + 1}</span></span>
-                    <input value={actualOf(z.key)} inputMode="decimal" placeholder="ft" onChange={(e) => setActual(z.key, e.target.value.replace(/[^0-9.]/g, ''))}
-                      className="w-24 h-12 rounded-xl border-2 border-white/20 bg-black px-2 text-xl font-extrabold text-center outline-none focus:border-[#FB923C]" />
-                  </label>
-                ))}
+                <h3 className="text-lg font-extrabold">Zip cords <span className="text-sm font-normal text-white/60">no lights · measure each one</span></h3>
+                {crew.zips.map((z, i) => {
+                  const zf = Number(actualOf(z.key)) > 0;
+                  return (
+                    <button key={z.key} onClick={() => setZipOpen(z.key)} className={`w-full flex items-center gap-3 rounded-xl border px-3 py-3 text-left cursor-pointer active:bg-white/10 ${zf ? 'border-[#00DF00]/40 bg-[#00DF00]/[0.06]' : 'border-yellow-400/50 bg-yellow-400/[0.06]'}`}>
+                      <span className="w-9 h-9 shrink-0 rounded-full text-black font-extrabold flex items-center justify-center" style={{ background: '#FB923C' }}>Z</span>
+                      <span className="flex-1 text-base font-bold">Zip cord {i + 1} <span className="text-white/60 font-normal">· photo {z.si + 1}</span></span>
+                      {zf ? <span className="shrink-0 text-lg font-extrabold tabular-nums">{actualOf(z.key)} ft</span> : <span className="shrink-0 text-base font-bold" style={{ color: '#FB923C' }}>Measure ›</span>}
+                    </button>
+                  );
+                })}
               </div>
             )}
             {saveState && <p className={`px-4 py-2.5 text-sm font-semibold ${saveState === 'error' ? 'text-red-400' : 'text-white/70'}`}>{saveLabel(saveState)}</p>}
@@ -387,6 +394,43 @@ export default function LightsCrew() {
             onJoin={(otherId) => joinStrands(x, otherId)} onSplit={splitRun}
             onPrev={() => setOpen(strands[Math.max(0, idx - 1)].id)} onNext={() => setOpen(strands[Math.min(strands.length - 1, idx + 1)].id)}
             onClose={() => setOpen('')} saveState={saveState} labelOf={saveLabel} />
+        );
+      })()}
+      {/* Zip cord: its photo (this zip lit up) + one big feet box */}
+      {zipOpen && (() => {
+        const zi = crew.zips.findIndex((z) => z.key === zipOpen);
+        const z = crew.zips[zi];
+        const ph = z && crewMap.photos[z.si];
+        if (!ph) return null;
+        const lid = Number(z.key.split('-').pop());
+        const ss = crew.strands;
+        const nextZ = crew.zips[zi + 1]; // just the next one, in order
+        return (
+          <div className="fixed inset-0 z-[60] bg-[#0b0b0d] text-white flex flex-col">
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
+              <span className="w-10 h-10 shrink-0 rounded-full text-black font-extrabold flex items-center justify-center" style={{ background: '#FB923C' }}>Z</span>
+              <p className="flex-1 text-xl font-extrabold">Zip cord {zi + 1} <span className="text-base font-normal text-white/60">· photo {z.si + 1}</span></p>
+              <button onClick={() => setZipOpen('')} className="w-12 h-12 rounded-xl bg-white/10 text-xl cursor-pointer">✕</button>
+            </div>
+            {/* Whole photo fits on screen (phone or computer) — no scrolling */}
+            <div className="flex-1 min-h-0 flex items-center justify-center p-2">
+              <div className="rounded-lg overflow-hidden" style={{ width: `min(100%, calc((100dvh - 290px) * ${(ph.w || 4) / (ph.h || 3)}))` }}>
+                <CrewPhoto src={picUrl(ph.pid)} w={ph.w} h={ph.h} lines={ph.lines} rankOf={(sv) => ss.find((x) => x.s === sv)?.no || 0} sel={lid} ftOf={(l) => Math.round((Number(actualOf(`${l.k === 'zip' ? 'zc' : 'c'}${ph.no}-${l.id}`)) || 0) * 10) / 10} />
+              </div>
+            </div>
+            <div className="mx-auto w-full max-w-xl border-t border-white/10 px-4 pt-3 pb-5 space-y-3">
+              <p className="text-sm text-white/60">No lights — just tape the cord from end to end.</p>
+              <label className="flex items-center gap-3">
+                <span className="text-base font-bold">Feet</span>
+                <input autoFocus value={actualOf(z.key)} inputMode="decimal" placeholder="ft" onChange={(e) => setActual(z.key, e.target.value.replace(/[^0-9.]/g, ''))}
+                  className="flex-1 h-14 rounded-xl border-2 border-white/20 bg-black px-3 text-2xl font-extrabold text-center outline-none focus:border-[#FB923C]" />
+              </label>
+              <button onClick={() => setZipOpen(nextZ ? nextZ.key : '')} className="w-full h-14 rounded-xl text-black text-lg font-extrabold cursor-pointer" style={{ background: GREEN }}>
+                {nextZ ? `Done · next zip cord ›` : 'Done ✓'}
+              </button>
+              {saveState && <p className={`text-sm font-semibold ${saveState === 'error' ? 'text-red-400' : 'text-white/70'}`}>{saveLabel(saveState)}</p>}
+            </div>
+          </div>
         );
       })()}
       {drawPid && (() => {

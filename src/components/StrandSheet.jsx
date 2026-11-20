@@ -42,7 +42,7 @@ export function StrandMarks({ marks, w, h }) {
 }
 
 // One photo with this strand's lines on it lit up (the one being measured brightest).
-function StrandPhoto({ side, si, strand, cur, wire, piece, label }) {
+function StrandPhoto({ side, si, strand, cur, wire, piece, label, ftOf = null }) {
   const w = side.w || 1600, h = side.h || 1200;
   const sw = Math.max(w, h) / 170;
   const r = Math.max(w, h) / 42;
@@ -65,6 +65,21 @@ function StrandPhoto({ side, si, strand, cur, wire, piece, label }) {
             <polyline points={P(x.pts)} fill="none" stroke={outline} strokeWidth={sw * 3.4} strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
             <polyline points={P(x.pts)} fill="none" stroke={wireHex(wire)} strokeWidth={sw * 2.2} strokeLinecap="round" strokeLinejoin="round" />
             {x.line.ends && <EndMarks pts={x.pts} a={x.line.ends.a} b={x.line.ends.b} w={w} h={h} color={wireHex(wire)} />}
+            {ftOf && (() => {
+              // This part's feet on its line ("?" until every piece is measured).
+              let bi = 1, bl = -1;
+              for (let i = 1; i < x.pts.length; i++) { const L = Math.hypot(x.pts[i].x - x.pts[i - 1].x, x.pts[i].y - x.pts[i - 1].y); if (L > bl) { bl = L; bi = i; } }
+              const cx = (x.pts[bi].x + x.pts[bi - 1].x) / 2, cy = (x.pts[bi].y + x.pts[bi - 1].y) / 2 + r * 1.4;
+              const ft = ftOf(x.key);
+              const label = ft != null ? `${fmt(ft)} ft` : '? ft';
+              const fw = r * 0.62 * label.length + r * 0.9;
+              return (
+                <g>
+                  <rect x={cx - fw / 2} y={cy - r * 0.75} width={fw} height={r * 1.5} rx={r * 0.45} fill={ft != null ? '#000' : YELLOW} opacity="0.9" />
+                  <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={r * 1.1} fontWeight="800" fill={ft != null ? '#fff' : '#000'}>{label}</text>
+                </g>
+              );
+            })()}
           </g>
         ))}
         {cur && cur.si === si && cur.pieces.length > 1 && cur.pieces.map((p, k) => {
@@ -179,7 +194,8 @@ export default function StrandSheet({ strand, strands, idx, sides, jobWire, part
   const [picking, setPicking] = useState(false);
   const wire = wireOf(strand, jobWire);
   const total = strands.length;
-  const curParts = (r) => { const p = partsOf(r.key); return p?.length === r.pieces.length ? p : blankParts(r); };
+  // Saved numbers always show, even if the line was drawn before pieces were grouped differently (peaks).
+  const curParts = (r) => { const p = partsOf(r.key); return p?.length ? p : blankParts(r); };
   const set = (r, k, patch) => onParts(r.key, curParts(r).map((p, j) => (j === k ? { ...p, ...patch } : p)));
   const tot = groupTotal(strand, (k) => curParts(strand.runs.find((r) => r.key === k)));
   const plan = groupPlan(strand);
@@ -208,14 +224,6 @@ export default function StrandSheet({ strand, strands, idx, sides, jobWire, part
       </div>
 
       <div className="mx-auto max-w-3xl pb-32">
-        <div className="sm:px-4 sm:pt-3 space-y-1">
-          {sis.map((si) => (
-            <div key={si} className="sm:rounded-2xl overflow-hidden">
-              <StrandPhoto side={sides[si]} si={si} strand={strand} cur={cur} wire={wire} piece={focus.k} label={sis.length > 1 ? secName(sides, si) : ''} />
-            </div>
-          ))}
-        </div>
-
         <div className="px-4 pt-4 space-y-4">
           <div className="flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-base font-bold">
@@ -246,7 +254,13 @@ export default function StrandSheet({ strand, strands, idx, sides, jobWire, part
           </div>}
 
           {/* Each roof line in this strand, its pieces */}
-          {strand.runs.map((r, ri) => (
+          {/* Each photo, then the part(s) of this strand on it — measure right under the picture */}
+          {sis.map((si) => (
+            <div key={si} className="space-y-3">
+              <div className="mx-auto rounded-xl overflow-hidden" style={{ width: `min(100%, calc(34dvh * ${(sides[si]?.w || 4) / (sides[si]?.h || 3)}))` }}>
+                <StrandPhoto side={sides[si]} si={si} strand={strand} cur={cur} wire={wire} piece={focus.k} label={sis.length > 1 ? secName(sides, si) : ''} ftOf={(k) => strandTotal(curParts(strand.runs.find((x) => x.key === k)))} />
+              </div>
+              {strand.runs.filter((r) => r.si === si).map((r) => { const ri = strand.runs.indexOf(r); return (
             <div key={r.key} className="space-y-3">
               <div className="flex items-center gap-2">
                 <p className="flex-1 text-sm font-bold uppercase tracking-wide text-white/60">
@@ -285,6 +299,8 @@ export default function StrandSheet({ strand, strands, idx, sides, jobWire, part
                 );
               })}
               {strand.runs.length > 1 && strandTotal(curParts(r)) != null && <p className="text-right text-sm text-white/60">this {strand.crew ? 'part' : 'roof line'}: <b className="text-white">{fmt(strandTotal(curParts(r)))} ft</b></p>}
+            </div>
+              ); })}
             </div>
           ))}
         </div>

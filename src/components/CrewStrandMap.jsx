@@ -47,7 +47,7 @@ function arrowIn(p, q, r, color) {
 }
 
 // One photo with every strand drawn on it (thumbnails + the draw screen).
-export function CrewPhoto({ src, w, h, lines, rankOf, sel = null, cur = null, onTap, svgRef }) {
+export function CrewPhoto({ src, w, h, lines, rankOf, sel = null, cur = null, onTap, svgRef, ftOf = null }) {
   const sw = Math.max(w, h) / 220;
   return (
     <div className="relative">
@@ -60,7 +60,7 @@ export function CrewPhoto({ src, w, h, lines, rankOf, sel = null, cur = null, on
             <g key={l.id} opacity={sel != null && !on ? 0.45 : 1}>
               <polyline points={P(l.pts)} fill="none" stroke="#000" strokeWidth={sw * (on ? 3.4 : 2.6)} strokeLinecap="round" strokeLinejoin="round" opacity="0.8" />
               <polyline points={P(l.pts)} fill="none" stroke={ZIP} strokeWidth={sw * (on ? 2 : 1.5)} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={`${sw * 2.5} ${sw * 2}`} />
-              <StrandTag pts={l.pts} no="Z" color={ZIP} w={w} h={h} />
+              <StrandTag pts={l.pts} no="Z" color={ZIP} w={w} h={h} ft={ftOf ? ftOf(l) : null} />
             </g>
           );
           const c = strandColor(rankOf(l.s));
@@ -69,7 +69,7 @@ export function CrewPhoto({ src, w, h, lines, rankOf, sel = null, cur = null, on
               <polyline points={P(l.pts)} fill="none" stroke="#000" strokeWidth={sw * (on ? 4.4 : 3.4)} strokeLinecap="round" strokeLinejoin="round" opacity="0.8" />
               <polyline points={P(l.pts)} fill="none" stroke={c} strokeWidth={sw * (on ? 2.8 : 2)} strokeLinecap="round" strokeLinejoin="round" />
               <EndMarks pts={l.pts} a={l.a} b={l.b} w={w} h={h} color={c} />
-              <StrandTag pts={l.pts} no={rankOf(l.s)} color={c} w={w} h={h} />
+              <StrandTag pts={l.pts} no={rankOf(l.s)} color={c} w={w} h={h} ft={ftOf ? ftOf(l) : null} />
             </g>
           );
         })}
@@ -84,7 +84,7 @@ export function CrewPhoto({ src, w, h, lines, rankOf, sel = null, cur = null, on
     </div>
   );
 }
-function StrandTag({ pts, no, color, w, h }) {
+function StrandTag({ pts, no, color, w, h, ft = null }) {
   // Label in the middle of the line's longest piece.
   let best = 1, bl = -1;
   for (let i = 1; i < pts.length; i++) { const L = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); if (L > bl) { bl = L; best = i; } }
@@ -94,6 +94,17 @@ function StrandTag({ pts, no, color, w, h }) {
     <g>
       <circle cx={x} cy={y} r={r} fill={color} stroke="#000" strokeWidth={r / 5} />
       <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={r * 1.1} fontWeight="900" fill="#000">{no}</text>
+      {ft != null && (() => {
+        // Feet for this line, in a pill just under the number.
+        const label = ft ? `${ft} ft` : '? ft';
+        const fw = r * 0.62 * label.length + r * 0.8, fy = y + r * 1.25;
+        return (
+          <g>
+            <rect x={x - fw / 2} y={fy} width={fw} height={r * 1.3} rx={r * 0.4} fill={ft ? '#000' : '#FACC15'} opacity="0.85" />
+            <text x={x} y={fy + r * 0.65} textAnchor="middle" dominantBaseline="central" fontSize={r * 1.0} fontWeight="800" fill={ft ? '#fff' : '#000'}>{label}</text>
+          </g>
+        );
+      })()}
     </g>
   );
 }

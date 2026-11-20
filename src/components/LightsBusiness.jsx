@@ -4,10 +4,12 @@ import { useAppStore } from '../store/AppStoreContext';
 import { Link } from 'react-router-dom';
 import { PlanOverlay, OutletMarks } from './LightsMarkup';
 import { supabase } from '../lib/supabase';
-import { STARTER_SUPPLIES, STYLE_LABEL, quoteMaterials, quoteFeet, packPlan } from '../lib/lightsMaterials';
+import { STARTER_SUPPLIES, STYLE_LABEL, quoteMaterials, quoteFeet, packPlan, kindOf } from '../lib/lightsMaterials';
 import { listQuotes, getQuote, patchQuoteMeta, openCrewView, referLinks, referInbox, makeReferLink, markReferAdded } from '../lib/lightsStore';
 import { useJobberList, nameKey } from '../lib/jobberLights';
 import { LIGHTS_INSTALL_TARGET } from '../lib/weeklyBonus';
+import { CrewPhoto } from './CrewStrandMap';
+import { crewStrands } from '../lib/strands';
 
 // The business side of Christmas lights, shown inside the Lights page:
 //  - "quotes": every saved lights quote — sent / won / installed / lost,
@@ -946,15 +948,108 @@ const planLoading = new Map();
 // Load a quote's plan once (shared by every job card + the Jobs-tab preload, all in parallel).
 // getQuote uses this browser's saved copy when it's current (instant); otherwise downloads the photos.
 const actualCache = new Map(); // crew's measured feet (Team view) per quote
+const expenseTimers = new Map(); // job id → pending Jobber materials-expense update
+// Keys of the strands/zip cords still drawn on the crew's site photos. A deleted line's feet stay saved,
+// so only count keys that are still drawn. null = no crew map.
+const crewLiveKeys = (map) => {
+  const photos = map?.photos || [];
+  if (!photos.length) return null;
+  const live = new Set(); const strands = new Set();
+  photos.forEach((p) => (p.lines || []).forEach((l) => { live.add(`${l.k === 'zip' ? 'zc' : 'c'}${p.no}-${l.id}`); if (l.k !== 'zip') strands.add(l.s); }));
+  return { live, strands: strands.size, lines: [...live].filter((k) => k.startsWith('c')) };
+};
 function loadPlan(quoteId) {
   if (!planLoading.has(quoteId)) {
     planLoading.set(quoteId, Promise.all([
       getQuote(quoteId).then((q) => { planCache.set(quoteId, (q?.angles || []).filter((a) => a.plain && (a.lines || []).length)); }).catch(() => { planCache.set(quoteId, []); }),
-      supabase.from('app_state').select('value').eq('key', `lq-actual:${quoteId}`).maybeSingle()
-        .then(({ data }) => { actualCache.set(quoteId, data?.value || null); }).catch(() => {}),
+      Promise.all([
+        supabase.from('app_state').select('value').eq('key', `lq-actual:${quoteId}`).maybeSingle(),
+        supabase.from('app_state').select('value').eq('key', `lq-crewmap:${quoteId}`).maybeSingle(),
+      ]).then(([{ data }, { data: m }]) => { actualCache.set(quoteId, data?.value ? { ...data.value, crewMap: m?.value || null } : null); }).catch(() => {}),
     ]));
   }
   return planLoading.get(quoteId);
+}
+// After install: the whole job's money — sold, discount, materials, labor (who, which days, hours, pay) and labor %.
+const fmtHrs = (h) => `${Math.floor(h)}h ${String(Math.round((h % 1) * 60)).padStart(2, '0')}m`;
+function JobSummary({ jobId, rev, matCost, mats = {}, items = [] }) {
+  const [d, setD] = useState(null);
+  const [showMats, setShowMats] = useState(false);
+  const [showLabor, setShowLabor] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/jobber-data?action=lights-job-summary&jobId=${encodeURIComponent(jobId)}`)
+      .then(async (r) => { const x = await r.json().catch(() => ({})); if (!r.ok) throw new Error(x.error || `Error ${r.status}`); return x; })
+      .then((x) => live && setD(x)).catch((e) => live && setErr(e.message));
+    return () => { live = false; };
+  }, [jobId]);
+  if (err) return <p className="text-xs text-red-400">Couldn’t load labor from Jobber: {err}</p>;
+  if (!d) return <p className="text-xs text-muted">Loading labor from Jobber…</p>;
+  const ents = d.entries || [];
+  const hrs = ents.reduce((t, e) => t + e.hours, 0);
+  const labor = ents.reduce((t, e) => t + (e.cost || 0), 0);
+  const noRate = [...new Set(ents.filter((e) => e.cost == null).map((e) => e.name))];
+  const profit = rev - matCost - labor;
+  const pct = (x) => (rev > 0 ? `${Math.round((x / rev) * 100)}%` : '—');
+  const days = [...new Set(ents.map((e) => e.day))];
+  const dayName = (k) => new Date(`${k}T12:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const row = (label, val, cls = '') => <div className={`flex justify-between gap-3 ${cls}`}><span>{label}</span><span className="tabular-nums">{val}</span></div>;
+  return (
+    <div className="rounded-lg border border-border-default bg-card p-3 space-y-3 text-sm text-secondary">
+      <div className="space-y-1">
+        {d.subtotal != null && d.discount > 0 && row('Sold for', money(d.subtotal))}
+        {d.subtotal != null && d.discount > 0 && row(`Discount (${Math.round((d.discount / d.subtotal) * 100)}%)`, `− ${money(d.discount)}`, 'text-yellow-300')}
+        {row('Job brought in', money(rev), 'font-semibold text-primary')}
+        <button onClick={() => setShowMats((v) => !v)} className="w-full text-left cursor-pointer hover:text-primary">
+          {row(<span className="underline decoration-dotted">{showMats ? '▾' : '▸'} Materials</span>, `− ${money(matCost)} · ${pct(matCost)}`)}
+        </button>
+        {showMats && (
+          <div className="ml-4 rounded-md bg-surface-alt/60 px-2.5 py-1.5 space-y-0.5 text-xs">
+            {Object.entries(mats).filter(([, q]) => n(q) > 0).map(([id, q]) => {
+              const it = items.find((x) => x.id === id) || { name: 'Removed item', cost: 0, unit: '' };
+              return (
+                <div key={id} className="flex justify-between gap-3">
+                  <span className="truncate">{it.name}</span>
+                  <span className="shrink-0 tabular-nums">{n(q)} {it.unit} × ${n(it.cost).toFixed(2)} = <b className="text-primary">${(n(q) * n(it.cost)).toFixed(2)}</b></span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <button onClick={() => setShowLabor((v) => !v)} className="w-full text-left cursor-pointer hover:text-primary">
+          {row(<span className="underline decoration-dotted">{showLabor ? '▾' : '▸'} Labor · {fmtHrs(hrs)}</span>, `− ${money(labor)} · ${pct(labor)}`, labor / (rev || 1) > 0.3 ? 'text-red-400' : '')}
+        </button>
+        <div className="border-t border-border-default pt-1">{row('Left after materials + labor', `${money(profit)} · ${pct(profit)}`, `font-bold text-base ${profit >= 0 ? 'text-brand-text' : 'text-red-400'}`)}</div>
+      </div>
+      {showLabor && <div>
+        <p className="text-xs font-bold uppercase tracking-wide text-muted mb-1">Labor · {fmtHrs(hrs)} · {labor > 0 && hrs > 0 ? `${money(labor / hrs)}/hr avg` : ''}</p>
+        {!ents.length && <p className="text-xs text-muted">No time clocked to this job in Jobber.</p>}
+        {days.map((k) => {
+          const de = ents.filter((e) => e.day === k);
+          const people = [...new Set(de.map((e) => e.name))];
+          return (
+            <div key={k} className="py-1 border-b border-border-default last:border-b-0">
+              <p className="text-xs font-semibold text-primary">{dayName(k)}</p>
+              {people.map((nm) => {
+                const pe = de.filter((e) => e.name === nm);
+                const h = pe.reduce((t, e) => t + e.hours, 0);
+                const c = pe.some((e) => e.cost == null) ? null : pe.reduce((t, e) => t + e.cost, 0);
+                return (
+                  <div key={nm} className="flex justify-between gap-3 text-xs">
+                    <span>{nm}{pe.some((e) => e.ticking) ? ' · ⏱ still clocked in' : ''}</span>
+                    <span className="tabular-nums">{fmtHrs(h)} · {c == null ? 'no rate' : `${money(c)} paid`}{pe[0].rate ? <span className="text-muted"> (@ ${pe[0].rate}/hr)</span> : ''}</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        {noRate.length > 0 && <p className="text-[11px] text-yellow-300 pt-1">No pay rate on the Team page for {noRate.join(', ')} — not counted.</p>}
+        <p className="text-[11px] text-muted pt-1">Hourly pay only (Jobber timesheets × Payroll rates) — lights bonus not included.</p>
+      </div>}
+    </div>
+  );
 }
 function JobPlan({ quoteId }) {
   const [, bump] = useState(0);
@@ -972,6 +1067,10 @@ function JobPlan({ quoteId }) {
   const act = actualCache.get(quoteId);
   const measured = (() => {
     if (!act?.actual || !Object.keys(act.actual).length) return null;
+    // Strands the crew drew on their own site photos ("c…" keys): just the total — there's no plan line to compare.
+    const lk = crewLiveKeys(act.crewMap);
+    const crewKs = Object.keys(act.actual).filter((k) => /^c\d/.test(k) && Number(act.actual[k]) > 0 && (!lk || lk.live.has(k)));
+    if (crewKs.length) return { crew: true, count: crewKs.length, actual: crewKs.reduce((t, k) => t + Number(act.actual[k]), 0), plan: 0, off: [] };
     let plan = 0; let actual = 0; let count = 0; const off = [];
     sides.forEach((sd, si) => (sd.lines || []).forEach((l, li) => {
       const v = act.actual[`${si}-${li}`]; if (v == null || v === '') return;
@@ -982,9 +1081,9 @@ function JobPlan({ quoteId }) {
   })();
   return (
     <div className="space-y-2">
-    {measured && (
+    {measured && measured.count > 0 && (
       <div className={`rounded-lg px-3 py-2 text-sm ${measured.off.length ? 'bg-yellow-500/10 text-yellow-300' : 'bg-emerald-500/10 text-emerald-300'}`}>
-        📏 Crew measured {measured.count} line{measured.count === 1 ? '' : 's'}: <b>{Math.round(measured.actual * 10) / 10} ft</b> actual vs <b>{Math.round(measured.plan * 10) / 10} ft</b> plan
+        📏 Crew measured {measured.count} {measured.crew ? 'strand part' : 'line'}{measured.count === 1 ? '' : 's'}: <b>{Math.round(measured.actual * 10) / 10} ft</b>{measured.crew ? '' : <> actual vs <b>{Math.round(measured.plan * 10) / 10} ft</b> plan</>}
         {measured.off.length > 0 && <span className="block text-xs">Off 5+ ft — {measured.off.join(' · ')}</span>}
       </div>
     )}
@@ -1499,17 +1598,130 @@ export default function LightsBusiness({ view, onOpen = null }) {
     const usedOf = (j) => j.saved.actual || j.saved.materials || {};
     const moveStock = (mats, dir) => setItems((list) => (list || []).map((x) => (n(mats[x.id])
       ? { ...x, onHand: n(x.onHand) - dir * n(mats[x.id]), used: Math.max(0, n(x.used) + dir * n(mats[x.id])) } : x)));
+    // Materials that went up → one "Christmas lights materials" expense on the Jobber job (itemized, at your costs).
+    // Made on install, updated when a number is fixed, deleted on Undo install. Hub-only jobs skip it.
+    const inJobber = (j) => !j.hubOnly && !j.saved?.hubOnly && !String(j.id).startsWith('hub-');
+    // One expense per material on the Jobber job (title = the item, its picture as the receipt), at your costs.
+    // ids = { itemId: expenseId } already made for this job → edited; items no longer used → deleted.
+    const IMG_BASE = 'https://hub.heyjudeslawncare.com'; // Jobber has to be able to reach the picture
+    const syncExpense = (j, mats) => {
+      if (!inJobber(j)) return;
+      const items2 = Object.entries(mats || {}).filter(([, q]) => n(q) > 0).map(([id, q]) => {
+        const it = itemById(id) || { name: 'Item', cost: 0, unit: '' };
+        return { key: id, title: it.name, total: n(q) * n(it.cost), description: `${n(q)} ${it.unit || ''} × $${n(it.cost).toFixed(2)} — from the Hub (Christmas Lights)`, receiptUrl: it.image ? `${IMG_BASE}/api/app-state?key=lights-item-img&id=${encodeURIComponent(id)}` : '' };
+      });
+      clearTimeout(expenseTimers.get(j.id));
+      expenseTimers.set(j.id, setTimeout(() => {
+        const existing = { ...(j.saved?.jobberExpenseIds || {}) };
+        fetch('/api/jobber-data?action=lights-job-expense', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId: j.id, items: items2, existing }),
+        }).then(async (r) => { const x = await r.json().catch(() => ({})); if (!r.ok) throw new Error(x.error || `Error ${r.status}`); return x; })
+          .then((x) => {
+            patchJob(j, { jobberExpenseIds: x.expenseIds || {} });
+            if (x.errors?.length) alert(`Some materials didn't make it onto the Jobber job:\n${x.errors.join('\n')}`);
+          })
+          .catch((e) => alert(`Couldn't put the materials on the Jobber job: ${e.message}`));
+      }, Object.keys(j.saved?.jobberExpenseIds || {}).length ? 1500 : 0));
+    };
     const finishInstall = (j, actual) => {
       moveStock(actual, 1);
       patchJob(j, { installed: true, installedAt: new Date().toISOString(), actual });
+      syncExpense(j, actual);
       setInstalling(null);
     };
-    const undoInstall = (j) => { moveStock(usedOf(j), -1); patchJob(j, { installed: false, installedAt: null, actual: null }); };
+    // Mark installed: start from the crew's Team-view measurements (fresh from the Hub), else the plan.
+    // Lights feet → bulbs, socket wire and clips (O clips for peaks stay as planned); zip cord feet → zip cord.
+    // Everything else (plugs, timer…) stays as planned. All of it is editable before stock comes off.
+    const startInstall = async (j) => {
+      const planned = { ...(j.saved.materials || {}) };
+      const q = jobQuote(j);
+      let act = null; let lk = null; let built = null;
+      if (q?.id) {
+        try {
+          const [{ data }, { data: m }, { data: pics }] = await Promise.all([
+            supabase.from('app_state').select('value').eq('key', `lq-actual:${q.id}`).maybeSingle(),
+            supabase.from('app_state').select('value').eq('key', `lq-crewmap:${q.id}`).maybeSingle(),
+            supabase.from('app_state').select('key, t:value->>thumb').like('key', `lq-crewpic:${q.id}:%`),
+          ]);
+          act = data?.value?.actual || null; lk = crewLiveKeys(m?.value);
+          // What the crew built: their site photos with the strands drawn on them, + feet per strand.
+          if (m?.value?.photos?.length) {
+            const src = Object.fromEntries((pics || []).map((r) => [r.key.split(':').pop(), r.t]));
+            const cs = crewStrands(m.value, (pid) => src[pid] || '');
+            const rank = new Map(cs.strands.map((x) => [x.s, x.no]));
+            built = {
+              photos: m.value.photos.map((ph, i) => ({ ...ph, i, src: src[ph.pid] || '' })),
+              rank,
+              ft: act || {},
+              strands: cs.strands.map((x) => ({ no: x.no, ft: x.runs.reduce((t, r) => t + (Number(act?.[r.key]) || 0), 0), missing: x.runs.some((r) => !(Number(act?.[r.key]) > 0)) })),
+              zips: cs.zips.map((z, i) => ({ no: i + 1, ft: Number(act?.[z.key]) || 0 })),
+            };
+            const lines = m.value.photos.flatMap((ph) => ph.lines || []);
+            const zipN = lines.filter((l) => l.k === 'zip').length;
+            const mEnds = lines.filter((l) => l.k !== 'zip' && l.a === 'male').length;
+            const fEnds = lines.filter((l) => l.k !== 'zip' && l.b === 'female').length;
+            built.plugs = { male: mEnds + zipN, female: fEnds + zipN, mEnds, fEnds, zipN };
+          }
+        } catch { act = null; }
+      }
+      // Only lines still drawn count (a deleted line's feet stay saved).
+      if (act && lk) act = Object.fromEntries(Object.entries(act).filter(([k]) => !/^(c|zc)\d/.test(k) || lk.live.has(k)));
+      const fill = crewFill(act, planned);
+      if (fill && lk) fill.info.unmeasured = lk.lines.filter((k) => !(Number(act?.[k]) > 0)).length;
+      // Plugs from what the crew drew: every M end = 1 male, every F end = 1 female, every zip cord = 1 of each.
+      if (built?.plugs) {
+        const draft = fill ? fill.draft : { ...planned };
+        const setPlug = (re, not, qty) => {
+          const ids = Object.keys(draft).filter((id) => { const nm = itemById(id)?.name || ''; return re.test(nm) && !(not && not.test(nm)); });
+          if (!ids.length) return;
+          ids.forEach((id, i) => { draft[id] = String(i === 0 ? qty : 0); });
+        };
+        setPlug(/\bmale\b/i, /female/i, built.plugs.male);
+        setPlug(/female/i, null, built.plugs.female);
+        setInstalling({ id: j.id, planned, says: { ...draft }, draft, crew: fill ? fill.info : { lightFt: 0, zipFt: 0, planFt: 0 }, built });
+        return;
+      }
+      setInstalling({ id: j.id, planned, says: fill ? { ...fill.draft } : null, draft: fill ? fill.draft : planned, crew: fill ? fill.info : null, built });
+    };
+    const crewFill = (act, planned) => {
+      if (!act) return null;
+      const ks = Object.keys(act);
+      const crewKs = ks.filter((k) => /^c\d/.test(k)); // strands drawn on the crew's site photos
+      const lightFt = (crewKs.length ? crewKs : ks.filter((k) => /^\d/.test(k))).reduce((t, k) => t + n(act[k]), 0);
+      const zipFt = ks.filter((k) => (crewKs.length ? /^zc\d/ : /^z\d/).test(k)).reduce((t, k) => t + n(act[k]), 0);
+      if (!lightFt && !zipFt) return null;
+      const draft = { ...planned };
+      const spread = (test, total) => {
+        const ids = Object.keys(draft).filter((id) => test(itemById(id)) && n(draft[id]) > 0);
+        const sum = ids.reduce((t, id) => t + n(draft[id]), 0);
+        if (!ids.length || !(total > 0)) return;
+        let left = Math.ceil(total);
+        ids.forEach((id, i) => { const v = i === ids.length - 1 ? left : Math.round((Math.ceil(total) * n(draft[id])) / sum); draft[id] = String(Math.max(0, v)); left -= v; });
+      };
+      if (lightFt > 0) ['bulb', 'wire'].forEach((k) => spread((it) => it && kindOf(it) === k, lightFt));
+      if (lightFt > 0) spread((it) => it && kindOf(it) === 'clip' && !/\bo\s*clips?\b/i.test(it.name), lightFt);
+      if (zipFt > 0) spread((it) => it && /zip/i.test(it.name), zipFt);
+      const planFt = Object.keys(planned).filter((id) => kindOf(itemById(id) || {}) === 'bulb').reduce((t, id) => t + n(planned[id]), 0);
+      return { draft, info: { lightFt: Math.round(lightFt * 10) / 10, zipFt: Math.round(zipFt * 10) / 10, planFt } };
+    };
+    const undoInstall = (j) => {
+      moveStock(usedOf(j), -1);
+      const ids = [...Object.values(j.saved?.jobberExpenseIds || {}), j.saved?.jobberExpenseId].filter(Boolean);
+      patchJob(j, { installed: false, installedAt: null, actual: null, jobberExpenseId: null, jobberExpenseIds: null });
+      if (ids.length) {
+        clearTimeout(expenseTimers.get(j.id));
+        fetch('/api/jobber-data?action=lights-job-expense', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ removeIds: ids }) })
+          .then((r) => { if (!r.ok) throw new Error(`Error ${r.status}`); })
+          .catch((e) => alert(`Couldn't remove the materials expense from the Jobber job — delete it there by hand. (${e.message})`));
+      }
+    };
     // Fix a number after the fact: stock moves by the difference only.
     const setActual = (j, id, qty) => {
       const prev = usedOf(j); const delta = n(qty) - n(prev[id]);
       if (delta) moveStock({ [id]: delta }, 1);
       patchJob(j, { actual: { ...prev, [id]: qty } });
+      if (j.saved?.installed) syncExpense(j, { ...prev, [id]: qty });
     };
 
     const WRAP = [['pics', '📸 After pics'], ['review', '⭐ Asked for a review'], ['sign', '🪧 Yard sign'], ['fb', '📣 Facebook post'], ['hangers', '🚪 Door hangers on neighbors']];
@@ -1650,21 +1862,58 @@ export default function LightsBusiness({ view, onOpen = null }) {
       const draft = installing.draft;
       return (
         <div className="rounded-lg border border-border-brand bg-brand-light/40 p-3 space-y-2">
-          <p className="text-sm font-semibold text-primary">What did you actually use? <span className="text-xs font-normal text-muted">Stock comes off by these numbers.</span></p>
+          <p className="text-base font-bold text-primary">Confirm this looks right <span className="text-xs font-normal text-muted">· what the crew built, then what came out of stock</span></p>
+          {installing.built && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {installing.built.photos.map((ph) => (
+                  <div key={ph.pid} className="relative rounded-lg overflow-hidden bg-black">
+                    {ph.src ? <CrewPhoto src={ph.src} w={ph.w} h={ph.h} lines={ph.lines} rankOf={(sv) => installing.built.rank.get(sv) || 0} ftOf={(l) => Math.round((Number(installing.built.ft[`${l.k === 'zip' ? 'zc' : 'c'}${ph.no}-${l.id}`]) || 0) * 10) / 10} />
+                      : <div className="aspect-[4/3] grid place-items-center text-xs text-muted">Photo {ph.i + 1}</div>}
+                    <span className="absolute top-1 left-1 rounded bg-black/75 px-1.5 py-0.5 text-[11px] font-bold text-white">Photo {ph.i + 1}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {installing.built.strands.map((x) => (
+                  <span key={x.no} className={`rounded-md px-2 py-0.5 text-xs font-semibold ${x.missing ? 'bg-yellow-500/15 text-yellow-300' : 'bg-surface-alt text-primary'}`}>Strand {x.no} · {x.ft ? `${Math.round(x.ft * 10) / 10} ft` : '—'}{x.missing ? ' (not all measured)' : ''}</span>
+                ))}
+                {installing.built.zips.map((z) => (
+                  <span key={`z${z.no}`} className="rounded-md px-2 py-0.5 text-xs font-semibold bg-orange-500/10 text-orange-300">Zip {z.no} · {z.ft ? `${z.ft} ft` : 'no ft'}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="text-sm font-semibold text-primary pt-1">What did you actually use? <span className="text-xs font-normal text-muted">Stock comes off by the last column — add any waste there.</span></p>
+          <div className="flex items-center gap-2.5 text-[11px] font-bold uppercase tracking-wide text-muted">
+            <span className="w-7" /><span className="flex-1" />
+            <span className="w-16 text-right">Planned</span>
+            <span className="w-16 text-right text-emerald-300">Crew says</span>
+            <span className="w-20 text-right text-primary">Using</span>
+            <span className="w-10" />
+          </div>
+          {installing.crew ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-md bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-300">
+              <span className="flex-1">📏 Filled from the crew’s measurements: <b>{installing.crew.lightFt} ft</b> of lights{installing.crew.planFt ? ` (plan ${installing.crew.planFt})` : ''}{installing.crew.zipFt ? <>, <b>{installing.crew.zipFt} ft</b> zip cord</> : ''}. {installing.crew.unmeasured ? <b className="text-yellow-300"> {installing.crew.unmeasured} drawn line{installing.crew.unmeasured === 1 ? '' : 's'} not measured yet.</b> : ''} {installing.built?.plugs ? ` Plugs counted from the drawing: ${installing.built.plugs.male} male (${installing.built.plugs.mEnds} M ends + ${installing.built.plugs.zipN} zip cords), ${installing.built.plugs.female} female (${installing.built.plugs.fEnds} F ends + ${installing.built.plugs.zipN} zip cords).` : ''} Timer and the rest are as planned. Fix anything before it comes out of stock.</span>
+              <button onClick={() => setInstalling({ ...installing, draft: { ...installing.planned }, crew: null })} className="underline cursor-pointer">Use plan numbers</button>
+            </div>
+          ) : <p className="text-[11px] text-muted">No crew measurements yet — these are the planned numbers.</p>}
           {groupSupplies(Object.keys(draft).map((id) => itemById(id) || { id, name: 'Removed item' })).flatMap(([, , its]) => its).map((it) => (
             <div key={it.id} className="flex items-center gap-2.5">
               {it.image ? <img src={it.image} alt="" className="w-7 h-7 rounded object-cover bg-white" /> : <span className="w-7 h-7 rounded bg-surface-alt" />}
               <span className="flex-1 text-sm text-primary truncate">{it.name}</span>
-              <span className="text-[11px] text-muted">planned {n(j.saved.materials?.[it.id])}</span>
-              <input value={draft[it.id]} inputMode="decimal" onChange={(e) => setInstalling({ id: j.id, draft: { ...draft, [it.id]: e.target.value.replace(/[^0-9.]/g, '') } })}
+              {/* Planned · what the crew's measurements say · what you're putting in (add waste here) */}
+              <span className="w-16 text-right text-xs text-muted tabular-nums">{n(installing.planned?.[it.id] ?? j.saved.materials?.[it.id])}</span>
+              <span className="w-16 text-right text-xs font-semibold text-emerald-300 tabular-nums">{installing.says ? n(installing.says[it.id]) : '—'}</span>
+              <input value={draft[it.id]} inputMode="decimal" onChange={(e) => setInstalling({ ...installing, draft: { ...draft, [it.id]: e.target.value.replace(/[^0-9.]/g, '') } })}
                 className="w-20 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary text-right" />
               <span className="w-10 text-xs text-muted">{it.unit}</span>
             </div>
           ))}
           <div className="flex items-center justify-end gap-2 pt-1">
-            <MaterialPicker items={items.filter((x) => !(x.id in draft))} onPick={(id) => setInstalling({ id: j.id, draft: { ...draft, [id]: '' } })} />
+            <MaterialPicker items={items.filter((x) => !(x.id in draft))} onPick={(id) => setInstalling({ ...installing, draft: { ...draft, [id]: '' } })} />
             <button onClick={() => setInstalling(null)} className="text-xs text-muted hover:text-primary cursor-pointer">Cancel</button>
-            <button onClick={() => finishInstall(j, Object.fromEntries(Object.entries(draft).filter(([, v]) => n(v))))} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">✓ Installed — take it out of stock</button>
+            <button onClick={() => finishInstall(j, Object.fromEntries(Object.entries(draft).filter(([, v]) => n(v))))} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold cursor-pointer">✓ Looks right — installed, take it out of stock</button>
           </div>
         </div>
       );
@@ -1742,6 +1991,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
                     </p>
                   );
                 })()}
+                {!j.saved.hubOnly && !String(j.id).startsWith('hub-') && <JobSummary jobId={j.id} rev={j.saved.revenue != null && j.saved.revenue !== '' ? n(j.saved.revenue) : n(j.total)} matCost={cost} mats={usedOf(j)} items={items} />}
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {WRAP.map(([k, label]) => (k === 'pics'
                     ? <span key={k} className={`px-2 py-1 rounded-md text-xs font-semibold ${w.pics ? 'bg-emerald-500/20 text-emerald-300' : 'bg-surface-alt text-muted'}`}>{w.pics ? '✓' : '○'} {label}</span>
@@ -1799,11 +2049,8 @@ export default function LightsBusiness({ view, onOpen = null }) {
               })()}
             </div>
             <div className="flex items-center gap-2">
-              {stage === 'ready' && installing?.id !== j.id && (
-                <button onClick={() => setInstalling({ id: j.id, draft: { ...(j.saved.materials || {}) } })} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">Mark installed</button>
-              )}
-              {(stage === 'stock' || stage === 'schedule') && installing?.id !== j.id && (
-                <button onClick={() => setInstalling({ id: j.id, draft: { ...(j.saved.materials || {}) } })} className="text-xs text-muted hover:text-primary underline cursor-pointer">Mark installed</button>
+              {['materials', 'schedule', 'stock', 'ready'].includes(stage) && installing?.id !== j.id && (
+                <button onClick={() => startInstall(j)} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold cursor-pointer">✓ Mark installed</button>
               )}
               <button onClick={toggle} className="text-xs text-muted hover:text-primary underline cursor-pointer">{open ? 'Hide' : 'Materials'}</button>
             </div>
@@ -1872,6 +2119,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
             const isOpen = openJob === j.id;
             const inst = jobVisits(j).inst;
             const [label, tone] = NEED[stage];
+            const done = stage === 'wrap' || stage === 'takedown' || stage === 'done';
             return (
               <div key={j.id} className={`rounded-xl border bg-card ${isOpen ? 'border-border-brand' : 'border-border-default'}`}>
                 <div className="flex items-center">
@@ -1899,7 +2147,19 @@ export default function LightsBusiness({ view, onOpen = null }) {
                   <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-bold ${tone}`}>{label}</span>
                 </button>
                 </div>
-                {isOpen && <div className="border-t border-border-subtle">{card(j, stage)}</div>}
+                {isOpen && !done && <div className="border-t border-border-subtle">{card(j, stage)}</div>}
+                {/* Installed jobs open in a popup: the summary, wrap-up and what went up */}
+                {isOpen && done && (
+                  <div className="fixed inset-0 z-50 bg-black/60 flex items-start sm:items-center justify-center p-0 sm:p-6" onClick={() => setOpenJob('')}>
+                    <div className="w-full sm:max-w-2xl max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto rounded-none sm:rounded-2xl border border-border-default bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border-subtle bg-card px-4 py-3">
+                        <p className="flex-1 text-lg font-bold text-primary">{j.clientName} <span className="text-sm font-normal text-muted">{j.hubOnly ? '🏠 not in Jobber' : `#${j.jobNumber}`}</span></p>
+                        <button onClick={() => setOpenJob('')} className="w-9 h-9 rounded-lg bg-surface-alt text-lg cursor-pointer">✕</button>
+                      </div>
+                      {card(j, stage)}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           };
@@ -1922,7 +2182,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
           return (
             <>
               {group('upcoming', 'Upcoming', 'Soonest install first — the tag says what each one needs', tag(['materials', 'schedule', 'stock', 'ready']), false)}
-              {group('installed', '🎉 Installed', 'Wrap-up and takedowns', tag(['wrap', 'takedown']), true)}
+              {group('installed', '🎉 Installed', 'Newest install on top', tag(['wrap', 'takedown']).sort(([a], [b]) => instAt(b) - instAt(a)), true)}
               {group('done', 'Completed', '', tag(['done']), true)}
             </>
           );

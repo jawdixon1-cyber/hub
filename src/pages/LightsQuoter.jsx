@@ -170,7 +170,7 @@ export default function LightsQuoter() {
   const [count, setCount] = useState(EMPTY_COUNT);
   const [params, setParams] = useSearchParams();
   // Main views: all quotes (default), one quote, supplies
-  const [view, setView] = useState(() => params.get('view') || (params.get('q') ? 'quote' : 'quotes'));
+  const [view, setView] = useState(() => params.get('view') || (params.get('q') ? 'quote' : 'jobs'));
   const [editing, setEditing] = useState(() => !!params.get('q')); // Quotes tab: gallery vs one open quote
   const [wstep, setWstep] = useState(() => { const st = (params.get('q') && Math.min(12, Math.max(1, Number(params.get('step')) || 1))) || 1; return st === 8 ? 9 : st; }); // quote wizard step; a reload stays on it (?step=)
   const goStep = (n) => { setWstep(n);
@@ -922,7 +922,12 @@ export default function LightsQuoter() {
         return (
           <div className="rounded-xl border border-border-default bg-card p-4 space-y-4">
             <StepHead n={8} title="Materials" sub="Each thing your plan needs, with the items for it right under it." />
-            {planLocked && <p className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-300">🔒 Plan locked — materials are locked too. Unlock at the top of this step (or uncheck the job) to change them.</p>}
+            {planLocked && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2">
+                <p className="text-sm text-yellow-300">🔒 Plan locked — materials are locked too.</p>
+                <button onClick={() => setPlanLocked(false)} className="shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer bg-surface-alt text-primary hover:bg-surface">Unlock</button>
+              </div>
+            )}
             <div className={planLocked ? 'pointer-events-none select-none opacity-80' : ''}>
             <QuoteMaterialsCard part="materials" quoteId={savedId} groups={groups} value={materials} onChange={matSet} notes={matNotes} onNotes={setMatNotes} wire={wire} onWire={wireSet} power={power} onPower={setPower} quote={{ feet, style, count, strands: strandCount, materials, wire, mountFt, runs: runsOf(angles, wire), zips: zipsOf(angles), peaks: angles.reduce((t, x) => t + (x.peaks || []).length, 0) }} />
             </div>

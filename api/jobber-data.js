@@ -1802,6 +1802,109 @@ async function handleHubSync(req, res) {
   }
 }
 
+
+// ── One lights job's money after install: price + discount (from its Jobber quote) and labor
+// (its own timesheets × each person's Payroll rate). GET ?action=lights-job-summary&jobId=…
+async function handleLightsJobSummary(req, res) {
+  const jobId = String(req.query.jobId || '');
+  if (!/^[A-Za-z0-9=]+$/.test(jobId)) return res.status(400).json({ error: 'jobId required' });
+  try {
+    const d = await jobberQuery(`{ job(id: "${jobId}") { jobNumber total quote { quoteNumber amounts { subtotal discountAmount total } }
+      timeSheetEntries(first: 100) { nodes { startAt endAt finalDuration ticking user { name { full } } } } } }`);
+    const job = d.job;
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    // Same rates Payroll uses: Team page (greenteam-permissions → payRate). Owner is paid by draw.
+    const PAID_BY_DRAW = new Set(['jawdixon1@gmail.com']);
+    const { data: perm } = await getSupabaseAdmin().from('app_state').select('value').eq('key', 'greenteam-permissions').maybeSingle();
+    const team = Object.entries(perm?.value || {})
+      .filter(([email]) => !PAID_BY_DRAW.has(email.toLowerCase()))
+      .map(([, v]) => ({ name: String(v.name || '').trim().toLowerCase(), rate: Number(v.payRate) || 0 }))
+      .filter((t) => t.name && t.rate > 0);
+    const rateFor = (full) => {
+      const f = String(full || '').trim().toLowerCase();
+      const r = team.find((x) => x.name === f) || team.find((x) => x.name.split(' ')[0] === f.split(' ')[0]);
+      return r ? r.rate : null;
+    };
+    const day = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const entries = (job.timeSheetEntries?.nodes || []).map((e) => {
+      const secs = e.finalDuration || (e.endAt ? (new Date(e.endAt) - new Date(e.startAt)) / 1000 : (Date.now() - new Date(e.startAt)) / 1000);
+      const name = e.user?.name?.full || 'Unknown';
+      const hours = Math.round((secs / 3600) * 100) / 100;
+      const rate = rateFor(name);
+      return { name, day: day(e.startAt), start: e.startAt, end: e.endAt, ticking: !!e.ticking, hours, rate, cost: rate == null ? null : Math.round(hours * rate * 100) / 100 };
+    }).sort((a, b) => a.start.localeCompare(b.start));
+    const a = job.quote?.amounts || {};
+    return res.json({ jobNumber: job.jobNumber, total: job.total, subtotal: a.subtotal ?? null, discount: a.discountAmount ?? null, quoteNumber: job.quote?.quoteNumber || null, entries });
+  } catch (err) {
+    if (String(err.message).includes('Throttled')) return res.status(429).json({ error: 'Jobber needs a moment — try again.', code: 'THROTTLED' });
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+
+// ── Lights job materials → one Expense on the Jobber job (made when it's marked installed, kept in sync
+// when the numbers are fixed, deleted on Undo install). POST ?action=lights-job-expense
+// Body: { jobId, total, description, date } (+ expenseId to update it) or { expenseId, remove: true }.
+async function handleLightsJobExpense(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  const b = req.body || {};
+  const id = (v) => /^[A-Za-z0-9=]+$/.test(String(v || ''));
+  try {
+    // Per material: { jobId, items: [{ key, title, description, total, receiptUrl }], existing: { key: expenseId } }
+    // → one expense per item (edit if it exists, else create with its picture as the receipt); old ones not listed are deleted.
+    if (Array.isArray(b.items)) {
+      if (!id(b.jobId)) return res.status(400).json({ error: 'jobId required' });
+      const existing = b.existing && typeof b.existing === 'object' ? b.existing : {};
+      const out = {}; const errors = [];
+      const date = b.date || new Date().toISOString();
+      for (const it of b.items.slice(0, 40)) {
+        const input = { title: String(it.title || 'Material').slice(0, 200), description: String(it.description || '').slice(0, 1000), total: Math.round(Number(it.total || 0) * 100) / 100, date };
+        const ex = existing[it.key];
+        if (id(ex)) {
+          const d = await jobberQuery(`mutation($id: EncodedId!, $input: ExpenseEditInput!) { expenseEdit(expenseId: $id, input: $input) { expense { id } userErrors { message } } }`, { id: ex, input }).catch(() => null);
+          if (d?.expenseEdit?.expense?.id && !(d.expenseEdit.userErrors || []).length) { out[it.key] = d.expenseEdit.expense.id; continue; }
+        }
+        const create = (extra) => jobberQuery(`mutation($input: ExpenseCreateInput!) { expenseCreate(input: $input) { expense { id } userErrors { message } } }`, { input: { ...input, linkedJobId: b.jobId, ...extra } });
+        // With its picture as the receipt; if Jobber can't fetch the picture, make it without one.
+        let d = /^https:\/\//.test(String(it.receiptUrl || '')) ? await create({ receiptUrl: it.receiptUrl }).catch(() => null) : null;
+        if (!d?.expenseCreate?.expense?.id) d = await create({}).catch((e) => ({ err: e.message }));
+        if (d?.expenseCreate?.expense?.id) out[it.key] = d.expenseCreate.expense.id;
+        else errors.push(`${input.title}: ${d?.err || d?.expenseCreate?.userErrors?.[0]?.message || 'failed'}`);
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      for (const [k, ex] of Object.entries(existing)) {
+        if (!(k in out) && id(ex)) await jobberQuery(`mutation($id: EncodedId!) { expenseDelete(expenseId: $id) { userErrors { message } } }`, { id: ex }).catch(() => {});
+      }
+      return res.json({ expenseIds: out, errors });
+    }
+    if (Array.isArray(b.removeIds)) {
+      for (const ex of b.removeIds.filter(id).slice(0, 40)) await jobberQuery(`mutation($id: EncodedId!) { expenseDelete(expenseId: $id) { userErrors { message } } }`, { id: ex }).catch(() => {});
+      return res.json({ ok: true });
+    }
+    if (b.remove) {
+      if (!id(b.expenseId)) return res.status(400).json({ error: 'expenseId required' });
+      const d = await jobberQuery(`mutation($id: EncodedId!) { expenseDelete(expenseId: $id) { userErrors { message } } }`, { id: b.expenseId });
+      const ue = d.expenseDelete?.userErrors || [];
+      return ue.length ? res.status(400).json({ error: ue[0].message }) : res.json({ ok: true });
+    }
+    if (!id(b.jobId) || !(Number(b.total) >= 0)) return res.status(400).json({ error: 'jobId and total required' });
+    const input = { title: 'Christmas lights materials', description: String(b.description || '').slice(0, 4000), total: Math.round(Number(b.total) * 100) / 100, date: b.date || new Date().toISOString() };
+    if (id(b.expenseId)) {
+      const d = await jobberQuery(`mutation($id: EncodedId!, $input: ExpenseEditInput!) { expenseEdit(expenseId: $id, input: $input) { expense { id } userErrors { message } } }`, { id: b.expenseId, input });
+      const ue = d.expenseEdit?.userErrors || [];
+      if (!ue.length) return res.json({ expenseId: d.expenseEdit.expense.id });
+      // Deleted in Jobber? Make a new one below.
+    }
+    const d = await jobberQuery(`mutation($input: ExpenseCreateInput!) { expenseCreate(input: $input) { expense { id } userErrors { message } } }`, { input: { ...input, linkedJobId: b.jobId } });
+    const ue = d.expenseCreate?.userErrors || [];
+    if (ue.length) return res.status(400).json({ error: ue[0].message });
+    return res.json({ expenseId: d.expenseCreate.expense.id });
+  } catch (err) {
+    if (String(err.message).includes('Throttled')) return res.status(429).json({ error: 'Jobber needs a moment — try again.', code: 'THROTTLED' });
+    return res.status(500).json({ error: err.message });
+  }
+}
+
 // ── Router ──
 
 // ── Plans: every client we've done a job for, read live from Jobber ──
@@ -2141,6 +2244,8 @@ export default async function handler(req, res) {
     if (action === 'ytd-revenue') return handleYTDRevenue(req, res);
     if (action === 'recurring-summary') return handleRecurringSummary(req, res);
     if (action === 'plans') return handlePlans(req, res);
+    if (action === 'lights-job-summary') return handleLightsJobSummary(req, res);
+    if (action === 'lights-job-expense') return handleLightsJobExpense(req, res);
     if (action === 'lights-quote-create') return handleLightsQuoteCreate(req, res);
     if (action === 'lights-quote-preview') return handleLightsQuotePreview(req, res);
     return res.status(400).json({ error: 'action param required: status | crew-status | clients | labor | ytd-revenue' });

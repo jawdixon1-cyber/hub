@@ -144,7 +144,8 @@ export const wireOf = (s, jobWire) => WIRE[s.line.color] ? s.line.color : WIRE[j
 export const wireHex = (k) => (WIRE[k] || WIRE.white)[1];
 export const wireName = (k) => (WIRE[k] || WIRE.white)[0];
 
-export const blankParts = (s) => s.pieces.map((p) => (p.slope ? { m: 's', run: '', deg: '' } : { m: 't', ft: '' }));
+// New pieces always start as Flat (the crew taps Slope when it is one).
+export const blankParts = (s) => s.pieces.map(() => ({ m: 't', ft: '' }));
 export function strandTotal(parts) {
   if (!parts?.length) return null;
   const fts = parts.map(pieceFeet);

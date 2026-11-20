@@ -193,6 +193,7 @@ export default function PlanCampaigns({ clients, setNote, audiences, planNotes }
 
 const GROUPS = [
   { id: 'season', label: 'Next season', hint: 'season ended + 📅 + people you added' },
+  { id: 'lights', label: 'Lights', hint: 'Christmas lights next year' },
   { id: 'one-time', label: 'One-time', hint: 'one-off jobs, never on a plan' },
   { id: 'plan', label: 'On a plan', hint: 'current recurring clients' },
   { id: 'cancelled', label: 'Cancelled', hint: 'plans that ended for a reason' },

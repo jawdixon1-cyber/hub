@@ -121,7 +121,7 @@ export default function Plans() {
   const pickFromJobber = (r) => {
     if (clients.some((c) => c.clientId === r.id)) {
       // Already here: just put them on next season and open their row.
-      setNote(r.id, { nextSeason: true });
+      setNote(r.id, adding.list === 'lights' ? { lights: true } : { nextSeason: true });
       setAdding(null); setFilter('all'); setSearch(r.name); setOpenId(r.id);
       return;
     }
@@ -132,7 +132,7 @@ export default function Plans() {
     if (!name) return;
     const id = adding.pickedId || `m${Date.now()}`;
     setPlanManual((all) => [...(all || []), { id, name, phone: adding.phone.trim(), note: adding.note.trim(), createdAt: new Date().toISOString() }]);
-    setNote(id, { nextSeason: true, ...(adding.note.trim() ? { note: adding.note.trim() } : {}) });
+    setNote(id, { ...(adding.list === 'lights' ? { lights: true } : { nextSeason: true }), ...(adding.note.trim() ? { note: adding.note.trim() } : {}) });
     setAdding(null);
   };
   const removePerson = (id) => {
@@ -154,6 +154,7 @@ export default function Plans() {
       noreason: ended.filter((c) => !planNotes[c.clientId]?.reason).length,
       season: live.filter((c) => (c.kind === 'ended' && planNotes[c.clientId]?.reason === 'Season ended') || planNotes[c.clientId]?.nextSeason).length,
       cancelled: ended.filter((c) => planNotes[c.clientId]?.reason && planNotes[c.clientId].reason !== 'Season ended').length,
+      lights: live.filter((c) => planNotes[c.clientId]?.lights).length,
       reach: clients.filter((c) => c.kind !== 'plan' && !planNotes[c.clientId]?.dnc && planNotes[c.clientId]?.takeBack !== 'no').length,
     };
   }, [clients, planNotes]);
@@ -184,7 +185,8 @@ export default function Plans() {
       if (c.clientId === openId) return true;
       // Do-not-contact people stay in their normal group (with a red tag) so the stats are complete,
       // but never on the Next season call list. Campaigns leave them out too.
-      if (n.dnc && filter === 'season') return false;
+      if (n.dnc && (filter === 'season' || filter === 'lights')) return false;
+      if (filter === 'lights' && !n.lights) return false;
       if (['plan', 'ended', 'one-time'].includes(filter) && c.kind !== filter) return false;
       if (filter === 'reach' && (c.kind === 'plan' || n.dnc || n.takeBack === 'no')) return false;
       if (filter === 'dnc' && !n.dnc) return false;
@@ -208,12 +210,13 @@ export default function Plans() {
 
   // Who each campaign group covers. Do-not-contact people are never in any of them.
   const audiences = useMemo(() => {
-    const a = { plan: [], season: [], 'one-time': [], cancelled: [] };
+    const a = { plan: [], season: [], lights: [], 'one-time': [], cancelled: [] };
     for (const c of clients) {
       const n = planNotes[c.clientId] || {};
       if (n.dnc) continue;
       if (c.kind === 'plan') a.plan.push(c);
       if ((c.kind === 'ended' && n.reason === 'Season ended') || n.nextSeason) a.season.push(c);
+      if (n.lights) a.lights.push(c);
       if (c.kind === 'one-time') a['one-time'].push(c);
       if (c.kind === 'ended' && n.reason && n.reason !== 'Season ended') a.cancelled.push(c);
     }
@@ -266,7 +269,7 @@ export default function Plans() {
         <div className="mb-4 space-y-3">
           {[
             ['Plans', [['plan', 'On a plan', counts.plan, 'text-[#4d7c0f]'], ['season', 'Next season', counts.season, 'text-emerald-700'], ['cancelled', 'Cancelled', counts.cancelled, 'text-slate-700']]],
-            ['Other', [['one-time', 'One-time', counts.oneTime, 'text-slate-700'], ['dnc', 'Do not contact', counts.dnc, 'text-red-600']]],
+            ['Other', [['lights', '🎄 Lights · next year', counts.lights, 'text-red-700'], ['one-time', 'One-time', counts.oneTime, 'text-slate-700'], ['dnc', 'Do not contact', counts.dnc, 'text-red-600']]],
           ].map(([group, boxes]) => (
             <div key={group}>
               <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">{group}</p>
@@ -307,7 +310,7 @@ export default function Plans() {
       )}
 
       {tab === 'clients' && <div className="mb-3 flex flex-wrap items-center gap-2">
-        {filter === 'season' && <button onClick={() => setAdding(adding ? null : { name: '', phone: '', note: '' })} className="inline-flex items-center gap-1.5 rounded-lg border bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50">
+        {(filter === 'season' || filter === 'lights') && <button onClick={() => setAdding(adding && adding.list === filter ? null : { name: '', phone: '', note: '', list: filter })} className="inline-flex items-center gap-1.5 rounded-lg border bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50">
           <UserPlus size={14} /> Add person
         </button>}
         <div className="relative ml-auto w-full sm:w-64">
@@ -316,9 +319,9 @@ export default function Plans() {
         </div>
       </div>}
 
-      {tab === 'clients' && filter === 'season' && adding && (
+      {tab === 'clients' && (filter === 'season' || filter === 'lights') && adding && (
         <div className="mb-3 rounded-xl border bg-white p-4">
-          <p className="mb-2 text-sm font-bold">Add someone to reach out to next season</p>
+          <p className="mb-2 text-sm font-bold">{adding.list === 'lights' ? 'Add someone to reach out to about Christmas lights next year' : 'Add someone to reach out to next season'}</p>
           <p className="mb-2 text-xs text-slate-500">Start typing a name to search Jobber, or just type someone new.</p>
           <div className="grid gap-2 sm:grid-cols-[1fr_180px]">
             <div className="relative">
@@ -342,7 +345,7 @@ export default function Plans() {
           </div>
           <input value={adding.note} onChange={(e) => setAdding({ ...adding, note: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && savePerson()} placeholder="Note (what they want, address, etc.)" className="mt-2 w-full rounded-lg border px-3 py-2 text-sm" />
           <div className="mt-2 flex gap-2">
-            <button onClick={savePerson} disabled={!adding.name.trim()} className="rounded-lg bg-[#4d7c0f] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Add to next season</button>
+            <button onClick={savePerson} disabled={!adding.name.trim()} className="rounded-lg bg-[#4d7c0f] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{adding.list === 'lights' ? 'Add to Lights' : 'Add to next season'}</button>
             <button onClick={() => setAdding(null)} className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100">Cancel</button>
           </div>
         </div>
@@ -423,6 +426,10 @@ export default function Plans() {
                         📅 {n.nextSeason ? 'On the next-season list' : 'Reach out next season'}
                       </button>
                     )}
+                    <button onClick={() => setNote(c.clientId, { lights: !n.lights })}
+                      className={`ml-2 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold ${n.lights ? 'border-red-700 bg-red-50 text-red-800' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                      🎄 {n.lights ? 'On the Lights list' : 'Reach out about lights next year'}
+                    </button>
                     {c.kind !== 'plan' && (
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-slate-500">Would you take them back?</span>

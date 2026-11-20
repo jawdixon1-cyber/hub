@@ -149,7 +149,7 @@ const OPERATIONS_ITEMS = [
 
 const OWNER_TOOLS_PINNED = [
   { id: 'sales', path: '/sales', label: 'Quoter', icon: Calculator },
-  { id: 'lights', path: '/lights-quoter', label: 'Lights', icon: Lightbulb },
+  { id: 'lights', path: '/lights-quoter', label: 'Christmas Lights', icon: Lightbulb },
   { id: 'plans', path: '/client-base', label: 'Client Base', icon: Repeat },
   { id: 'social', path: '/social', label: 'Social media', icon: Video },
 ];
