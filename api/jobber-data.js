@@ -1854,7 +1854,15 @@ async function handleLightsJobExpense(req, res) {
     // → one expense per item (edit if it exists, else create with its picture as the receipt); old ones not listed are deleted.
     if (Array.isArray(b.items)) {
       if (!id(b.jobId)) return res.status(400).json({ error: 'jobId required' });
-      const existing = b.existing && typeof b.existing === 'object' ? b.existing : {};
+      const existing = b.existing && typeof b.existing === 'object' ? { ...b.existing } : {};
+      // Self-healing: the Hub's own expenses already on this job (marked in the description) match by title,
+      // so a lost link never makes duplicates — and stale ones get cleaned up below.
+      const MARK = 'from the Hub (Christmas Lights)';
+      const onJob = await jobberQuery(`{ job(id: "${b.jobId}") { expenses(first: 100) { nodes { id title description } } } }`).then((x) => x.job?.expenses?.nodes || []).catch(() => []);
+      const hubOnJob = onJob.filter((e) => String(e.description || '').includes(MARK));
+      const known = new Set(Object.values(existing));
+      for (const it of b.items) if (!id(existing[it.key])) { const m = hubOnJob.find((e) => e.title === it.title && !known.has(e.id)); if (m) { existing[it.key] = m.id; known.add(m.id); } }
+      hubOnJob.forEach((e) => { if (!known.has(e.id)) { existing[`_stale_${e.id}`] = e.id; known.add(e.id); } });
       const out = {}; const errors = [];
       const date = b.date || new Date().toISOString();
       for (const it of b.items.slice(0, 40)) {
@@ -1878,7 +1886,12 @@ async function handleLightsJobExpense(req, res) {
       return res.json({ expenseIds: out, errors });
     }
     if (Array.isArray(b.removeIds)) {
-      for (const ex of b.removeIds.filter(id).slice(0, 40)) await jobberQuery(`mutation($id: EncodedId!) { expenseDelete(expenseId: $id) { userErrors { message } } }`, { id: ex }).catch(() => {});
+      // Plus every Hub-made expense on the job (in case a link was lost).
+      if (id(b.jobId)) {
+        const onJob = await jobberQuery(`{ job(id: "${b.jobId}") { expenses(first: 100) { nodes { id description } } } }`).then((x) => x.job?.expenses?.nodes || []).catch(() => []);
+        onJob.filter((e) => String(e.description || '').includes('from the Hub (Christmas Lights)')).forEach((e) => { if (!b.removeIds.includes(e.id)) b.removeIds.push(e.id); });
+      }
+      for (const ex of b.removeIds.filter(id).slice(0, 60)) await jobberQuery(`mutation($id: EncodedId!) { expenseDelete(expenseId: $id) { userErrors { message } } }`, { id: ex }).catch(() => {});
       return res.json({ ok: true });
     }
     if (b.remove) {

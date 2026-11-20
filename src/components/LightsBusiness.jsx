@@ -1709,9 +1709,9 @@ export default function LightsBusiness({ view, onOpen = null }) {
       moveStock(usedOf(j), -1);
       const ids = [...Object.values(j.saved?.jobberExpenseIds || {}), j.saved?.jobberExpenseId].filter(Boolean);
       patchJob(j, { installed: false, installedAt: null, actual: null, jobberExpenseId: null, jobberExpenseIds: null });
-      if (ids.length) {
+      if (inJobber(j)) {
         clearTimeout(expenseTimers.get(j.id));
-        fetch('/api/jobber-data?action=lights-job-expense', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ removeIds: ids }) })
+        fetch('/api/jobber-data?action=lights-job-expense', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ removeIds: ids, jobId: j.id }) })
           .then((r) => { if (!r.ok) throw new Error(`Error ${r.status}`); })
           .catch((e) => alert(`Couldn't remove the materials expense from the Jobber job — delete it there by hand. (${e.message})`));
       }
@@ -1934,7 +1934,10 @@ export default function LightsBusiness({ view, onOpen = null }) {
               <span className="w-10 text-xs text-muted">{it.unit}</span>
             </div>
           ))}
-          <div className="flex justify-end"><button onClick={() => undoInstall(j)} className="text-[11px] text-muted hover:text-red-400 underline cursor-pointer">Undo install (puts it all back in stock)</button></div>
+          <div className="flex items-center justify-between gap-2">
+            {/* Add something that went up but wasn't on the list (e.g. black wire instead of white) */}
+            <MaterialPicker items={items.filter((x) => !(x.id in used))} onPick={(id) => setActual(j, id, '0')} />
+            <button onClick={() => undoInstall(j)} className="text-[11px] text-muted hover:text-red-400 underline cursor-pointer">Undo install (puts it all back in stock)</button></div>
         </div>
       );
     };
