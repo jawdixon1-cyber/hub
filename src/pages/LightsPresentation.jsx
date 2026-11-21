@@ -254,7 +254,7 @@ export default function LightsPresentation({ share = false }) {
   const takedownOn = q?.takedownDate ? new Date(`${q.takedownDate}T12:00:00`).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }) : '';
   const installOn = q?.installDate ? new Date(`${q.installDate}T12:00:00`).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }) : '';
   const today = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
-  const name = (q?.client || '').trim();
+  const name = (q?.client || '').replace(/\(.*?\)/g, '').trim(); // "Greg Maxwell (front + garage)" → "Greg Maxwell"
   const last0 = name ? name.split(/\s+/).slice(-1)[0] : '';
   const last = last0 ? last0[0].toUpperCase() + last0.slice(1) : ''; // "maxwell" → "Maxwell"
   const chosen = PLANS.find((p) => p.years === plan) || PLANS[0];
