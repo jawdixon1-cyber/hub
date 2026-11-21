@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Sparkles, Check, X, RefreshCw, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import { ChevronLeft, ChevronRight, Sparkles, Check, X, RefreshCw, Trash2, List } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -83,9 +86,9 @@ export default function Plan({ embedded = false }) {
     ...Object.values(data.lists).flat(),
   ].filter((x) => x && !x.done && x.text);
   const pullOld = () => save((d) => {
-    const have = d.notes || '';
-    const lines = [...new Set(oldItems.map((x) => x.text.trim()))].filter((t) => !have.includes(t));
-    return { ...d, notesImported: true, notes: [have.trimEnd(), lines.join('\n')].filter(Boolean).join('\n') };
+    const have = d.notesHtml ?? textToHtml(d.notes || '');
+    const lines = [...new Set(oldItems.map((x) => x.text.trim()))].filter((t) => !have.includes(esc(t)));
+    return { ...d, notesImported: true, notesHtml: have + textToHtml(lines.join('\n')) };
   });
 
   // ── habits ──
@@ -197,7 +200,7 @@ export default function Plan({ embedded = false }) {
       <Section title="Notes" right={!data.notesImported && oldItems.length > 0 && (
         <button onClick={pullOld} className="text-xs font-semibold text-muted hover:text-brand cursor-pointer">+ Pull in {oldItems.length} old items</button>
       )}>
-        <NoteBox value={data.notes || ''} onChange={(v) => save((d) => ({ ...d, notes: v }))} />
+        <NoteEditor html={data.notesHtml ?? textToHtml(data.notes || '')} onChange={(h) => save((d) => ({ ...d, notesHtml: h }))} />
       </Section>
 
       <Section title="Habits">
@@ -251,18 +254,42 @@ function Box({ on, onClick }) {
 
 
 
-// Plain auto-growing note, like Apple Notes. Keeps its own text while typing so a cloud
-// refresh never yanks the cursor; picks up changes from other devices when not focused.
-function NoteBox({ value, onChange }) {
-  const [v, setV] = useState(value);
-  const [focused, setFocused] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => { const el = ref.current; if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } }, [v, value]);
+// The note is saved as HTML (notesHtml) so it can hold bold, lists, headings. The older
+// plain-text note (notes) is kept and shown as the starting point until the first edit.
+const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const textToHtml = (t) => (t ? t.split('\n').map((l) => `<p>${esc(l)}</p>`).join('') : '');
+
+// Apple Notes-style editor: Cmd+B bold, Cmd+I italic, "- " starts a bullet list, "# " a heading.
+// Only takes outside changes while you're not typing in it, so a cloud refresh can't eat your words.
+function NoteEditor({ html, onChange }) {
+  const [, force] = useState(0);
+  const editor = useEditor({
+    extensions: [StarterKit.configure({ heading: { levels: [2, 3] } }), Placeholder.configure({ placeholder: 'Start typing…' })],
+    content: html,
+    onUpdate: ({ editor: e }) => onChange(e.getHTML()),
+    onSelectionUpdate: () => force((n) => n + 1),
+    onTransaction: () => force((n) => n + 1),
+    editorProps: { attributes: { class: 'plan-note focus:outline-none min-h-[8rem] text-[15px] leading-relaxed text-primary' } },
+  });
+  useEffect(() => {
+    if (editor && !editor.isFocused && html !== editor.getHTML()) editor.commands.setContent(html, { emitUpdate: false });
+  }, [html, editor]);
+  const btn = (on, label, run, title) => (
+    <button type="button" title={title} onMouseDown={(e) => { e.preventDefault(); run(); }}
+      className={`min-w-7 h-7 px-1.5 rounded-md text-sm cursor-pointer ${on ? 'bg-brand/20 text-primary' : 'text-muted hover:text-primary hover:bg-surface-alt'}`}>{label}</button>
+  );
   return (
-    <textarea ref={ref} value={focused ? v : value} rows={6} placeholder="Start typing…"
-      onFocus={() => { setV(value); setFocused(true); }} onBlur={() => setFocused(false)}
-      onChange={(e) => { setV(e.target.value); onChange(e.target.value); }}
-      className="w-full bg-transparent text-[15px] leading-relaxed text-primary outline-none resize-none placeholder:text-muted/50 overflow-hidden" />
+    <div>
+      {editor && (
+        <div className="flex items-center gap-0.5 mb-1 -ml-1.5">
+          {btn(editor.isActive('bold'), <b>B</b>, () => editor.chain().focus().toggleBold().run(), 'Bold (⌘B)')}
+          {btn(editor.isActive('italic'), <i className="font-serif">I</i>, () => editor.chain().focus().toggleItalic().run(), 'Italic (⌘I)')}
+          {btn(editor.isActive('heading', { level: 2 }), <span className="font-bold">Aa</span>, () => editor.chain().focus().toggleHeading({ level: 2 }).run(), 'Heading')}
+          {btn(editor.isActive('bulletList'), <List size={15} />, () => editor.chain().focus().toggleBulletList().run(), 'Bullet list')}
+        </div>
+      )}
+      <EditorContent editor={editor} />
+    </div>
   );
 }
 
