@@ -37,6 +37,13 @@ export function useAppStore(selector) {
   return useStore(store, selector);
 }
 
+// Same as useAppStore, but returns undefined outside the provider (public, no-login pages).
+const emptyStore = { getState: () => ({}), subscribe: () => () => {}, getInitialState: () => ({}) };
+export function useAppStoreOptional(selector) {
+  const store = useContext(AppStoreContext);
+  return useStore(store || emptyStore, store ? selector : () => undefined);
+}
+
 // Access the raw store — exposes hydrateFromCloud for force-refreshing from Supabase
 // without going through setters (which would write back).
 export function useStoreHandle() {

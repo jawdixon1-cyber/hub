@@ -315,6 +315,14 @@ function App() {
       </Suspense>
     );
   }
+  // Client presentation: one lights quote's Present page from a secret link — no login, nothing else reachable.
+  if (loc.pathname.startsWith('/present/')) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#0b0b0d]" />}>
+        <Routes><Route path="/present/:token" element={<LightsPresentation share />} /></Routes>
+      </Suspense>
+    );
+  }
   if (loc.pathname.startsWith('/crew/')) {
     return (
       <Suspense fallback={<div className="min-h-screen bg-[#0b0b0d]" />}>

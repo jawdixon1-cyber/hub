@@ -192,6 +192,108 @@ async function handleLightsRefer(req, res) {
   return res.json({ ok: true, submissions: history(), leaderboard: leaderboard() });
 }
 
+// ── Lights client presentation (no login) ──
+// GET /api/app-state?key=lights-present&token=… → ONLY what the Present page shows for that one quote
+// (no phone/email/address, no crew link, no other quotes). Pictures come one at a time with &img=…
+// POST { years, addonIds } → records what they picked in lq-yes:<id> (the quote itself is never touched).
+async function handleLightsPresent(req, res) {
+  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  const token = String(req.query.token || '');
+  if (!/^[A-Za-z0-9_-]{20,}$/.test(token)) return res.status(404).json({ error: 'Not found' });
+  const db = getSupabaseAdmin();
+  const { data: metaRow, error } = await db.from('app_state').select('key, value, org_id')
+    .like('key', 'lq-meta:%').eq('value->>presentToken', token).maybeSingle();
+  if (error) return res.status(500).json({ error: 'Lookup failed' });
+  if (!metaRow) return res.status(404).json({ error: 'Not found' });
+  const q = metaRow.value;
+  const id = metaRow.key.slice('lq-meta:'.length);
+  const org = metaRow.org_id ? { org_id: metaRow.org_id } : {};
+
+  if (req.method === 'POST') {
+    const years = [1, 2, 3].includes(Number(req.body?.years)) ? Number(req.body.years) : 1;
+    const addonIds = (Array.isArray(req.body?.addonIds) ? req.body.addonIds : []).map(String).filter((x) => /^[A-Za-z0-9_-]{1,60}$/.test(x)).slice(0, 20);
+    const { error: e } = await db.from('app_state').upsert({ key: `lq-yes:${id}`, value: { years, addonIds, at: new Date().toISOString() }, ...org }, { onConflict: 'key' });
+    if (e) return res.status(500).json({ error: 'Could not save' });
+    return res.json({ ok: true });
+  }
+
+  const { data: baRow } = await db.from('app_state').select('value').eq('key', `lq-ba:${id}`).maybeSingle();
+  const ba = baRow?.value || {};
+  const sendImg = (dataUrl) => {
+    const m = /^data:(image\/[a-z+]+);base64,(.+)$/s.exec(String(dataUrl || ''));
+    if (!m) return res.status(404).end();
+    res.setHeader('Content-Type', m[1]);
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    return res.status(200).send(Buffer.from(m[2], 'base64'));
+  };
+  // One picture: side:<n> (house photo) · prev:<n> (mockup) · night · k:<name> (before/after or add-on photo of THIS quote)
+  if (req.query.img != null) {
+    const im = String(req.query.img);
+    let path = null;
+    if (/^side:\d{1,2}$/.test(im)) path = `p:value->angles->${Number(im.slice(5))}->>plain`;
+    else if (/^prev:\d{1,2}$/.test(im)) path = `p:value->previews->${Number(im.slice(5))}->>image`;
+    else if (im === 'night') path = 'p:value->>nightPhoto';
+    if (path) {
+      const { data: ph } = await db.from('app_state').select(path).eq('key', `lq-data:${id}`).maybeSingle();
+      return sendImg(ph?.p);
+    }
+    if (/^k:[A-Za-z0-9_-]{1,80}$/.test(im)) {
+      const { data: ph } = await db.from('app_state').select('value').eq('key', `lq-img:${id}:${im.slice(2)}`).maybeSingle();
+      return sendImg(ph?.value?.src);
+    }
+    return res.status(404).end();
+  }
+
+  // The plan without photos, cached by the photos row's timestamp. Read one side at a time —
+  // a big quote's whole photos row is too slow to pull at once.
+  const [{ data: stampRow }, { data: cacheRow }] = await Promise.all([
+    db.from('app_state').select('updated_at').eq('key', `lq-data:${id}`).maybeSingle(),
+    db.from('app_state').select('value').eq('key', `lq-presentplan:${id}`).maybeSingle(),
+  ]);
+  const stamp = String(stampRow?.updated_at || '');
+  let plan = cacheRow?.value && cacheRow.value.stamp === stamp && stamp ? cacheRow.value : null;
+  if (!plan) {
+    // One side at a time (in parallel the database times out on big quotes); stop at the first empty slot.
+    const pick = async (sel) => {
+      const { data, error: e } = await db.from('app_state').select(sel).eq('key', `lq-data:${id}`).maybeSingle();
+      if (e) throw e;
+      return data;
+    };
+    const sides = [];
+    for (let i = 0; i < 30; i++) {
+      const a = await pick(`w:value->angles->${i}->w, h:value->angles->${i}->h, lines:value->angles->${i}->lines, jumps:value->angles->${i}->jumps, outlets:value->angles->${i}->outlets, inlines:value->angles->${i}->inlines, show:value->angles->${i}->show`);
+      if (!a || a.w == null) break;
+      sides.push({ ai: i, w: a.w, h: a.h, lines: a.lines || [], jumps: a.jumps || [], outlets: a.outlets || [], inlines: a.inlines || [], show: !!a.show });
+    }
+    let previews = 0;
+    while (previews < 20 && (await pick(`x:value->previews->${previews}->id`))?.x != null) previews++;
+    const counts = { night: (await pick('n:value->nightPhoto'))?.n };
+    plan = { stamp, sides, previews, night: !!counts.night };
+    if (stamp) await db.from('app_state').upsert({ key: `lq-presentplan:${id}`, value: plan, ...org }, { onConflict: 'key' });
+  }
+  const url = (im) => `/api/app-state?key=lights-present&token=${encodeURIComponent(token)}&img=${encodeURIComponent(im)}&v=${encodeURIComponent(stamp)}`;
+  const kUrl = (k) => (typeof k === 'string' && k.startsWith(`lq-img:${id}:`) ? url(`k:${k.slice(`lq-img:${id}:`.length)}`) : '');
+  const { data: suppliesRow } = await db.from('app_state').select('value').eq('key', 'greenteam-lightsSupplies').maybeSingle();
+  const mats = q.materials && typeof q.materials === 'object' ? q.materials : {};
+  const supplies = (Array.isArray(suppliesRow?.value) ? suppliesRow.value : []).filter((x) => mats[x.id])
+    .map((x) => ({ id: x.id, name: x.name, image: x.image ? `/api/app-state?key=lights-item-img&id=${encodeURIComponent(x.id)}` : '' }));
+  return res.json({
+    q: {
+      client: q.client || '', quoted: q.quoted || '', total: q.total || 0, installDate: q.installDate || '', takedownDate: q.takedownDate || '',
+      materials: mats,
+      angles: plan.sides.map((s) => ({ ...s, plain: url(`side:${s.ai}`) })),
+      previews: Array.from({ length: plan.previews }, (_, i) => ({ image: url(`prev:${i}`) })),
+      nightPhoto: plan.night ? url('night') : '',
+    },
+    ba: {
+      heroY: ba.heroY, adjust: ba.adjust, perks: ba.perks || [], offers: ba.offers || [],
+      pairs: (ba.pairs || []).map((x) => ({ label: x.label || '', before: kUrl(x.before), after: kUrl(x.after) })).filter((x) => x.before && x.after),
+      addons: (ba.addons || []).map((x) => ({ id: x.id, label: x.label, sub: x.sub, price: x.price, strands: x.strands, on: x.on, photo: kUrl(x.photo) })),
+    },
+    supplies,
+  });
+}
+
 // ── Lights crew view ──
 // GET /api/app-state?key=lights-crew&token=… → only what the crew needs for that one job.
 async function handleLightsCrew(req, res) {
@@ -383,6 +485,10 @@ export default async function handler(req, res) {
     // Crew view (no login): one lights job's plan + materials, by its secret crew token. No prices.
     if (req.query.key === 'lights-crew') {
       return handleLightsCrew(req, res);
+    }
+    // Client presentation (no login): one quote's Present page by its secret share token.
+    if (req.query.key === 'lights-present') {
+      return handleLightsPresent(req, res);
     }
     // GET ?key=lights-item-img&id=<supply id> → that material's picture (public; Jobber pulls it as the expense receipt).
     if (req.query.key === 'lights-item-img') {

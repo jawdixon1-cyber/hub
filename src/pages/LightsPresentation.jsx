@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getQuote } from '../lib/lightsStore';
 import { supabase } from '../lib/supabase';
-import { useAppStore } from '../store/AppStoreContext';
+import { useAppStoreOptional } from '../store/AppStoreContext';
 import { DESIGNS } from '../lib/lightsDesigns';
 import { PlanOverlay, OutletMarks } from '../components/LightsMarkup';
 
@@ -130,19 +130,25 @@ function Confetti() {
   );
 }
 
-export default function LightsPresentation() {
-  const { id } = useParams();
+// `share` = the client's own link (/present/:token, no login): everything loads from the token,
+// only this quote's page is reachable, and "Light up my home" just records their pick.
+export default function LightsPresentation({ share = false }) {
+  const { id: routeId, token } = useParams();
+  const id = share ? '' : routeId;
   const navigate = useNavigate();
   const [q, setQ] = useState(null);
   const [failed, setFailed] = useState(false);
   const [big, setBig] = useState('');
   const [plan, setPlan] = useState(3);
   const [yes, setYes] = useState(false);
-  const supplies = useAppStore((st) => st.lightsSupplies) || [];
+  const storeSupplies = useAppStoreOptional((st) => st.lightsSupplies);
+  const [shareSupplies, setShareSupplies] = useState([]);
+  const supplies = (share ? shareSupplies : storeSupplies) || [];
 
   useEffect(() => {
+    if (share) return;
     getQuote(id).then((d) => (d ? setQ(d) : setFailed(true))).catch(() => setFailed(true));
-  }, [id]);
+  }, [id, share]);
   // Extra before/after pairs (their own row so the Quoter never overwrites them): [{ label, before, after }]
   const [pairs, setPairs] = useState([]);
   // Optional add-ons (e.g. wrapped trees): [{ id, label, sub, photo, price, strands, on }] — they can take them out to lower the price.
@@ -157,6 +163,13 @@ export default function LightsPresentation() {
   const [jq, setJq] = useState({ state: '' });
   const makeJobberQuote = async () => {
     setYes(true);
+    if (share) { // client's link: just let Jude know what they picked
+      fetch(`/api/app-state?key=lights-present&token=${encodeURIComponent(token)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ years: plan, addonIds: addons.filter((x) => addOn[x.id]).map((x) => x.id) }),
+      }).catch(() => {});
+      return;
+    }
     if (jq.state === 'making' || jq.state === 'done') return;
     setJq({ state: 'making' });
     try {
@@ -171,7 +184,25 @@ export default function LightsPresentation() {
       setJq({ state: 'done', ...d });
     } catch (e) { setJq({ state: 'error', error: e.message }); }
   }; // free extras for this client: [{ title, sub }]
+  // Client's link: the server sends only this quote's page (pictures as links, one per image).
   useEffect(() => {
+    if (!share) return;
+    fetch(`/api/app-state?key=lights-present&token=${encodeURIComponent(token)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(({ q: sq, ba = {}, supplies: sup = [] }) => {
+        setQ(sq); setShareSupplies(sup);
+        const a0 = (ba.addons || []).filter((x) => Number(x.price) > 0);
+        setAddons(a0); setAddOn(Object.fromEntries(a0.map((x) => [x.id, x.on !== false])));
+        setPerks((ba.perks || []).filter((x) => x.title));
+        setBump(Number(ba.adjust) || 0);
+        if (ba.heroY !== undefined && ba.heroY !== '' && ba.heroY !== null) setHeroY(Number(ba.heroY));
+        setOffers((ba.offers || []).filter((x) => x.on !== false && Number(x.amount) > 0));
+        setPairs(ba.pairs || []);
+      })
+      .catch(() => setFailed(true));
+  }, [share, token]);
+  useEffect(() => {
+    if (share) return;
     // lq-ba:<id> is small (labels, prices, strands). Each picture is its own lq-img:<id>:<name> row, fetched together.
     (async () => {
       const { data } = await supabase.from('app_state').select('value').eq('key', `lq-ba:${id}`).maybeSingle();
@@ -194,15 +225,15 @@ export default function LightsPresentation() {
       setPairs((v.pairs || []).map((x) => ({ ...x, before: src(x.before), after: src(x.after) })).filter((x) => x.before && x.after));
       setAddons(a0.map((x) => ({ ...x, photo: src(x.photo) })));
     })().catch(() => {});
-  }, [id]);
+  }, [id, share]);
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') (big ? setBig('') : yes ? setYes(false) : navigate(-1));
+      if (e.key === 'Escape') (big ? setBig('') : yes ? setYes(false) : share ? null : navigate(-1));
       if (big && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) document.getElementById(e.key === 'ArrowRight' ? 'hj-next' : 'hj-prev')?.click();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [big, yes, navigate]);
+  }, [big, yes, navigate, share]);
 
   const sides = (q?.angles || []).filter((a) => a.plain);
   const lined = sides.filter((a) => (a.lines || []).length);
@@ -224,7 +255,8 @@ export default function LightsPresentation() {
   const installOn = q?.installDate ? new Date(`${q.installDate}T12:00:00`).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }) : '';
   const today = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   const name = (q?.client || '').trim();
-  const last = name ? name.split(/\s+/).slice(-1)[0] : '';
+  const last0 = name ? name.split(/\s+/).slice(-1)[0] : '';
+  const last = last0 ? last0[0].toUpperCase() + last0.slice(1) : ''; // "maxwell" → "Maxwell"
   const chosen = PLANS.find((p) => p.years === plan) || PLANS[0];
   const chosenPer = price * (1 - chosen.off);
   // Every photo for the side rail + viewer: mockups first, then their house photos.
@@ -238,7 +270,7 @@ export default function LightsPresentation() {
       {/* Top bar */}
       <div className="sticky top-0 z-20 flex items-center justify-between px-6 py-3 bg-[#0b0b0d]/85 backdrop-blur">
         <img src="/holiday-logo.png" alt="Hey Jude's" className="h-11 w-auto" />
-        <button onClick={() => navigate(-1)} className="text-sm text-white/40 hover:text-white cursor-pointer">✕</button>
+        {!share && <button onClick={() => navigate(-1)} className="text-sm text-white/40 hover:text-white cursor-pointer">✕</button>}
       </div>
 
       {!q && <p className="text-center text-white/60 py-32">{failed ? 'Could not load this quote.' : 'Loading…'}</p>}
@@ -522,7 +554,8 @@ export default function LightsPresentation() {
           <div onClick={() => setYes(false)} className="fixed inset-0 z-[75] bg-black/80 backdrop-blur flex items-center justify-center p-6">
             <div onClick={(e) => e.stopPropagation()} className="max-w-lg w-full rounded-3xl p-10 text-center space-y-4 shadow-2xl" style={{ background: RED }}>
               <img src="/holiday-logo.png" alt="" className="h-16 w-auto mx-auto" />
-              <h2 className="text-4xl font-extrabold">You're on the list! 🎉</h2>
+              <h2 className="text-4xl font-extrabold">{share ? 'Great choice! 🎉' : "You're on the list! 🎉"}</h2>
+              {share && <p className="text-lg font-semibold">Jude will send your official quote to approve and lock in your spot.</p>}
               <p className="text-lg text-white/90">{chosen.label} · {money(chosenPer)}{chosen.years === 1 ? '' : '/yr'}</p>
               {pickedAddons.length > 0 && <p className="text-white/80">Including {pickedAddons.map((x) => x.label.toLowerCase()).join(' + ')}</p>}
               {offerLines.length > 0 && <p className="text-white/80">🎁 {offerLines.map((o) => o.label || 'Special offer').join(' + ')} applied</p>}
