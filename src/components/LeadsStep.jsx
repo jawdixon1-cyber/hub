@@ -1,0 +1,202 @@
+import { useCallback, useEffect, useState } from 'react';
+import { RefreshCw, MessageSquare, ExternalLink, X } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+
+// Leads you're working: Jobber requests + quotes, sorted into what needs you.
+// Overdue → Need to contact → Assessments scheduled → Quotes out.
+const SERVICES = [
+  ['🎄 Christmas lights', /christmas|light/i],
+  ['🍃 Leaves', /leaf|leaves|cleanup|clean-up|debris/i],
+  ['🌳 Bushes', /bush|hedge|shrub|tree|palm|trim/i],
+  ['🌱 Aeration', /aerat|overseed|seed/i],
+  ['🪴 Beds / mulch', /bed|mulch|pine|straw|landscap|plant/i],
+  ['🌿 Mowing', /mow|lawn|grass|turf/i],
+];
+// Whichever service they mention FIRST wins ("mowing ... trimming saplings" = mowing, "Bushes and leaf removal" = bushes).
+const serviceOf = (t) => {
+  let best = null; let at = Infinity;
+  if (/permanent|year.?round/i.test(String(t || ''))) return '💡 Permanent lights';
+  for (const [name, re] of SERVICES) { const i = String(t || '').search(re); if (i >= 0 && i < at) { at = i; best = name; } }
+  return best;
+};
+// Within each section (except dated ones: Overdue + Assessments go by date): Christmas/permanent lights first, then bushes, then leaves, then everything else (order kept otherwise).
+const RANK = { '🎄': 0, '💡': 0, '🌳': 1, '🍃': 2 };
+const rankOf = (x) => RANK[serviceOf(`${x.title} ${x.need || ''}`)?.split(' ')[0]] ?? 3;
+const byService = (items) => items.map((x, i) => [x, i]).sort(([a, i], [b, j]) => (a.dim ? 1 : 0) - (b.dim ? 1 : 0) || rankOf(a) - rankOf(b) || i - j).map(([x]) => x);
+const daysAgo = (iso) => (iso ? Math.max(0, Math.floor((Date.now() - new Date(iso)) / 864e5)) : null);
+const when = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(', 12:00 AM', '');
+const money = (n) => `$${Math.round(n).toLocaleString()}`;
+const CACHE = 'hub-leads-cache';
+
+export default function LeadsStep() {
+  const { session } = useAuth();
+  const token = session?.access_token || '';
+  const [state, setState] = useState(() => {
+    try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); if (c) return { ...c, loading: true, error: null }; } catch { /* ignore */ }
+    return { requests: [], quotes: [], loading: true, error: null };
+  });
+
+  const load = useCallback(async (refresh) => {
+    if (!token) return;
+    setState((s) => ({ ...s, loading: true, error: null }));
+    try {
+      const r = await fetch(`/api/jobber-data?action=leads${refresh ? '&refresh=1' : ''}`, { headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || `Error ${r.status}`);
+      setState({ requests: d.requests || [], quotes: d.quotes || [], loading: false, error: null });
+      try { localStorage.setItem(CACHE, JSON.stringify({ requests: d.requests || [], quotes: d.quotes || [] })); } catch { /* full */ }
+    } catch (e) { setState((s) => ({ ...s, loading: false, error: e.message })); }
+  }, [token]);
+  useEffect(() => { load(false); }, [load]);
+
+  // Your Quo texts + calls, to see who you've reached out to (matched by phone number).
+  const [quo, setQuo] = useState(() => { try { return JSON.parse(localStorage.getItem('hub-leads-quo') || 'null') || []; } catch { return []; } });
+  const leadPhones = state.requests.filter((r) => r.status === 'new' && r.phone).map((r) => r.phone).join(',');
+  useEffect(() => {
+    if (!token || !leadPhones) return;
+    fetch('/api/quo?action=contacts', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ phones: leadPhones.split(',') }) })
+      .then((r) => r.json()).then((d) => {
+        if (!d.results) return;
+        setQuo(d.results);
+        try { localStorage.setItem('hub-leads-quo', JSON.stringify(d.results)); } catch { /* full */ }
+      }).catch(() => {});
+  }, [token, leadPhones]);
+  const last10 = (p) => String(p || '').replace(/\D/g, '').slice(-10);
+  // Since the request came in: did you text/call them, and did they answer?
+  const contactOf = (r) => {
+    const th = quo.find((t) => last10(t.phone) && last10(t.phone) === last10(r.phone));
+    const since = new Date(r.createdAt).getTime() - 864e5;
+    const msgs = (th?.messages || []).filter((m) => new Date(m.at).getTime() >= since);
+    const mine = msgs.filter((m) => m.dir === 'outgoing');
+    if (!mine.length) return { state: 'none' };
+    const last = msgs[msgs.length - 1];
+    const lastMine = mine[mine.length - 1];
+    if (last.dir === 'incoming') return { state: 'replied', tries: mine.length, days: daysAgo(last.at) };
+    const unanswered = msgs.filter((m) => m.dir === 'outgoing' && !msgs.some((x) => x.dir === 'incoming' && new Date(x.at) > new Date(m.at)));
+    // Different days you reached out with no answer: the "not committed" signal.
+    const dayCount = new Set(unanswered.map((m) => new Date(m.at).toLocaleDateString('en-CA'))).size;
+    const calls = unanswered.filter((m) => m.call).length;
+    return { state: 'noreply', tries: unanswered.length, calls, texts: unanswered.length - calls, dayCount, days: daysAgo(lastMine.at), lastAt: lastMine.at };
+  };
+
+  // Let go: archives the request in Jobber (Undo unarchives it). Hidden here right away.
+  const [gone, setGone] = useState({});
+  const [undo, setUndo] = useState(null);
+  const archive = (x, back) => fetch('/api/jobber-data?action=lead-archive', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ requestId: x.id, undo: back }) })
+    .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`); });
+  const doLetGo = (x) => {
+    setGone((g) => ({ ...g, [x.id]: true }));
+    setUndo(x);
+    archive(x, false).catch((e) => {
+      setGone((g) => { const n = { ...g }; delete n[x.id]; return n; });
+      setUndo(null);
+      setState((s) => ({ ...s, error: `Couldn't archive ${x.client} in Jobber: ${e.message}` }));
+    });
+  };
+  const undoLetGo = () => {
+    const x = undo;
+    if (!x) return;
+    setUndo(null);
+    archive(x, true).then(() => {
+      setGone((g) => { const n = { ...g }; delete n[x.id]; return n; });
+      load(true);
+    }).catch((e) => setState((s) => ({ ...s, error: `Couldn't unarchive ${x.client} in Jobber: ${e.message}` })));
+  };
+  const isToday = (iso) => iso && new Date(iso).toDateString() === new Date().toDateString();
+
+  const reqs = state.requests.filter((r) => !gone[r.id]);
+  const overdue = reqs.filter((r) => r.status === 'overdue').sort((a, b) => new Date(a.assessmentAt) - new Date(b.assessmentAt));
+  const toContact = reqs.filter((r) => r.status === 'new').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // longest waiting first
+  const scheduled = reqs.filter((r) => ['today', 'upcoming', 'unscheduled'].includes(r.status) || (r.assessmentAt && !r.assessed && r.status !== 'overdue' && r.status !== 'new'))
+    .sort((a, b) => new Date(a.assessmentAt || 8.64e15) - new Date(b.assessmentAt || 8.64e15));
+  const changes = state.quotes.filter((q) => q.status === 'changes_requested');
+  const drafts = state.quotes.filter((q) => q.status === 'draft');
+  const out = state.quotes.filter((q) => q.status === 'awaiting_response').sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt));
+
+  const groups0 = [
+    ...['none', 'replied', 'noreply'].map((st) => ({ key: `contact-${st}`, title: { none: 'Requests · haven\'t reached out', replied: 'Requests · they replied, your move', noreply: 'Requests · reached out, no reply' }[st], hint: { none: 'call or text these first, longest waiting first', replied: '', noreply: 'try again or let go' }[st], tone: st === 'none' ? 'red' : st === 'replied' ? 'amber' : 'blue', items: toContact.map((r) => ({ ...r, contact: contactOf(r) })).filter((r) => r.contact.state === st).map((r) => ({ ...r, kind: 'req', line: '', age: daysAgo(r.createdAt), ageLabel: 'waiting' })) })),
+    { key: 'contact-old', hidden: true, title: 'Requests · need to contact', hint: 'new requests, longest waiting first', tone: 'amber', items: toContact.map((r) => ({ ...r, kind: 'req', line: '', age: daysAgo(r.createdAt), ageLabel: 'waiting' })) },
+    { key: 'overdue', byDate: true, title: 'Overdue', hint: 'assessment date passed, not done', tone: 'red', items: overdue.map((r) => ({ ...r, kind: 'req', line: r.assessmentAt ? `Assessment was ${when(r.assessmentAt)}` : '', age: daysAgo(r.assessmentAt), ageLabel: 'late' })) },
+    { key: 'scheduled', byDate: true, title: 'Assessments scheduled', tone: 'green', items: scheduled.map((r) => ({ ...r, kind: 'req', line: r.assessmentAt ? when(r.assessmentAt) : 'No date yet', age: null })) },
+    { key: 'out', title: 'Quotes out · pending', hint: 'follow up after 3 days', tone: 'blue', items: out.map((q) => ({ ...q, kind: 'quote', age: daysAgo(q.sentAt), ageLabel: 'since sent' })) },
+    { key: 'changes', title: 'Quote changes requested', tone: 'amber', items: changes.map((q) => ({ ...q, kind: 'quote', age: daysAgo(q.sentAt || q.createdAt), ageLabel: '' })) },
+    { key: 'drafts', title: 'Quotes not sent yet', tone: 'amber', items: drafts.map((q) => ({ ...q, kind: 'quote', age: daysAgo(q.createdAt), ageLabel: 'in draft' })) },
+  ];
+  // Already tried today with no reply: nothing to do until tomorrow — sink to the bottom.
+  const noreply = groups0.find((g) => g.key === 'contact-noreply');
+  const triedToday = noreply.items.filter((x) => isToday(x.contact.lastAt));
+  noreply.items = [...noreply.items.filter((x) => !isToday(x.contact.lastAt)), ...triedToday.map((x) => ({ ...x, dim: true }))];
+  const groups = groups0;
+  const toDo = groups.filter((g) => ['contact-none', 'contact-replied', 'contact-noreply', 'overdue'].includes(g.key)).reduce((n, g) => n + g.items.length, 0) - triedToday.length;
+  const toneCls = { red: 'text-red-600 dark:text-red-400', amber: 'text-amber-600 dark:text-amber-400', green: 'text-emerald-700 dark:text-emerald-300', blue: 'text-sky-700 dark:text-sky-300', muted: 'text-muted' };
+
+  return (
+    <section className="border-y border-card-border bg-card">
+      <div className="flex items-center justify-between gap-2 px-4 pt-2">
+        <span className={`text-sm font-black ${toDo ? 'text-primary' : 'text-emerald-700 dark:text-emerald-300'}`}>{state.loading && !reqs.length ? '' : toDo ? `${toDo} to do` : 'All caught up ✓'}{triedToday.length > 0 && <span className="ml-2 text-xs font-semibold text-muted">+ {triedToday.length} tried today</span>}</span>
+        <button onClick={() => load(true)} disabled={state.loading} title="Refresh from Jobber" className="p-1.5 rounded-lg text-muted hover:text-primary cursor-pointer disabled:opacity-50">
+          <RefreshCw size={14} className={state.loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+      {undo && (
+        <div className="mx-4 mt-2 flex items-center justify-between gap-2 rounded-lg bg-surface-alt px-3 py-2 text-sm">
+          <span>Archived <b>{undo.client}</b> in Jobber</span>
+          <button onClick={undoLetGo} className="font-bold text-brand underline cursor-pointer">Undo</button>
+        </div>
+      )}
+      {state.error && <p className="px-4 py-2 text-sm font-bold text-rose-500">{state.error}</p>}
+      <div className="px-4 py-3 max-w-4xl">
+        {groups.filter((g) => !g.hidden && g.items.length).map((g) => (
+          <div key={g.key} className={`mb-6 min-w-0 ${g.dim ? 'opacity-60' : ''}`}>
+            <p className={`text-[11px] font-black uppercase tracking-[0.15em] ${toneCls[g.tone]}`}>{g.title} · {g.items.length}</p>
+            {g.hint && <p className="text-[11px] text-muted mb-1">{g.hint}</p>}
+            <div className="divide-y divide-card-border">
+              {(g.byDate ? g.items : byService(g.items)).map((x) => {
+                const svc = serviceOf(`${x.title} ${x.need || ''}`);
+                const stale = g.key === 'out' && x.age >= 3;
+                return (
+                  <div key={x.id} className={`flex items-center gap-3 py-2 ${x.dim ? 'opacity-50' : ''}`} title={x.dim ? 'Tried today, nothing to do until tomorrow' : undefined}>
+                    <span className={`w-10 h-10 shrink-0 flex items-center justify-center text-3xl leading-none ${svc?.startsWith('🎄') ? 'rounded-full bg-[#B3121F]/10 ring-1 ring-[#B3121F]/30' : svc?.startsWith('💡') ? 'rounded-full bg-amber-400/15 ring-1 ring-amber-500/40' : ''}`} title={svc ? svc.split(' ').slice(1).join(' ') : 'Service not known yet'}>{svc ? svc.split(' ')[0] : '❔'}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-primary truncate">
+                        {x.client}{x.kind === 'quote' && <span className="ml-1 font-semibold text-muted">#{x.number} · {money(x.total)}</span>}
+                      </p>
+                      <p className="text-xs text-muted truncate">
+                        {x.line || x.need || x.title || <span className="italic">No details, check Jobber</span>}
+                      </p>
+                      {x.kind === 'req' && x.contact && (() => {
+                        const h = Math.floor((Date.now() - new Date(x.createdAt)) / 36e5);
+                        const old = h < 48 ? `${h}h` : `${Math.floor(h / 24)}d`;
+                        const last = x.contact.days === 0 ? 'today' : `${x.contact.days}d ago`;
+                        const c = x.contact;
+                        return (
+                          <p className="mt-0.5 text-xs">
+                            {c.state === 'none' && <span className="font-black text-red-600 dark:text-red-400">Not contacted · waiting {old}</span>}
+                            {c.state === 'noreply' && <><span className="font-black text-primary">{c.tries} {c.tries === 1 ? 'try' : 'tries'}</span><span className="text-muted"> · {c.dayCount} {c.dayCount === 1 ? 'day' : 'days'} · last {last} · requested {old} ago</span></>}
+                            {c.state === 'replied' && <span className="font-black text-amber-600 dark:text-amber-400">They replied {last}</span>}
+                          </p>
+                        );
+                      })()}
+                      {x.age != null && !(x.kind === 'req' && x.contact) && (
+                        <p className={`text-[11px] font-bold ${x.age >= 3 || stale ? 'text-amber-600 dark:text-amber-400' : 'text-muted'}`}>
+                          {x.age === 0 ? 'today' : `${x.age}d`} {x.ageLabel}{stale ? ' · follow up' : ''}
+                        </p>
+                      )}
+                    </div>
+                    {x.phone && <a href={`openphone://message?number=${encodeURIComponent(`+1${last10(x.phone)}`)}`} title={`Text ${x.phone} in Quo`} className="shrink-0 p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface-alt"><MessageSquare size={14} /></a>}
+                    {x.kind === 'req' && x.contact?.state === 'noreply' && (
+                      <button onClick={() => doLetGo(x)} title="Let go: archive this request in Jobber" className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold text-muted hover:text-red-600 hover:bg-surface-alt cursor-pointer"><X size={12} />Let go</button>
+                    )}
+                    {x.kind === 'req' && /^(🎄|💡)/.test(svc || '') && <a href={`/lights-estimate?client=${encodeURIComponent(x.client)}&phone=${encodeURIComponent(x.phone || '')}`} title="Make a price-range page for them" className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-white bg-[#B3121F] hover:brightness-110">$ Range</a>}
+                    {x.url && <a href={x.url} target="_blank" rel="noopener noreferrer" title="Open in Jobber" className="shrink-0 p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface-alt"><ExternalLink size={14} /></a>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {!state.loading && groups.every((g) => !g.items.length) && <p className="text-sm text-muted">No open leads.</p>}
+      </div>
+    </section>
+  );
+}

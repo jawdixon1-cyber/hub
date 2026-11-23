@@ -1,4 +1,5 @@
 import { jobberQuery, jobberStatus, forceRefresh, JobberDisconnectedError } from '../lib/jobberClient.js';
+import { syncJobberClientToQuo } from '../lib/quoContactSync.js';
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
 
 // ── Pay Rate Overrides (actual pay, not Jobber billing rate) ──
@@ -65,7 +66,8 @@ async function handleAllClients(req, res) {
   let cursor = null, hasNext = true;
   while (hasNext) {
     const after = cursor ? `, after: "${cursor}"` : '';
-    const data = await jobberQuery(`{ clients(first: 100${after}) { nodes { id firstName lastName companyName phones { number } emails { address } billingAddress { street1 street2 city province postalCode } tags { nodes { label } } isLead createdAt updatedAt } pageInfo { hasNextPage endCursor } } }`);
+    // Jobber refills its rate limit over a few seconds — on Throttled, wait and try the page again.
+    const data = await jobberQueryRetry(`{ clients(first: 100${after}) { nodes { id firstName lastName companyName phones { number } emails { address } billingAddress { street1 street2 city province postalCode } tags(first: 10) { nodes { label } } isLead createdAt updatedAt } pageInfo { hasNextPage endCursor } } }`);
     all.push(...(data.clients?.nodes || []));
     hasNext = data.clients?.pageInfo?.hasNextPage || false;
     cursor = data.clients?.pageInfo?.endCursor || null;
@@ -1950,6 +1952,102 @@ export function planMoney(j) {
   return { freq, monthly, perVisit };
 }
 
+// Jobber refills its rate limit over a few seconds: on Throttled, wait and try again (up to ~18 s).
+async function jobberQueryRetry(q, vars) {
+  for (let t = 0; ; t++) {
+    try { return await jobberQuery(q, vars); } catch (e) {
+      if (t >= 6 || !/Throttled/.test(e.message)) throw e;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+}
+// The client list is also saved in the database, so every device opens it instantly and a
+// slow/throttled Jobber never shows an empty page (it shows the last good list instead).
+// Leads: open requests (new / overdue / assessment scheduled) + quotes waiting on the client.
+let leadsCache = { at: 0, data: null };
+// Start of Day Leads "Let go": archive the request in Jobber (undo = unarchive). Owner only.
+async function handleLeadArchive(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  const db = getSupabaseAdmin();
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const { data: who } = token ? await db.auth.getUser(token) : { data: null };
+  if (who?.user?.user_metadata?.role !== 'owner') return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const id = String(req.body?.requestId || '');
+  if (!id || id.length > 200) return res.status(400).json({ error: 'requestId required' });
+  const m = req.body?.undo ? 'requestUnarchive' : 'requestArchive';
+  try {
+    const d = await jobberQuery(`mutation($id: EncodedId!) { ${m}(requestId: $id) { userErrors { message } } }`, { id });
+    const err = d?.[m]?.userErrors?.[0]?.message;
+    if (err) return res.status(422).json({ error: err });
+    leadsCache = { at: 0, data: null };
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+}
+const formAnswerCache = {};
+async function handleLeads(req, res) {
+  // Owner only: names + phone numbers of people who reached out.
+  const db = getSupabaseAdmin();
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const { data: who } = token ? await db.auth.getUser(token) : { data: null };
+  if (who?.user?.user_metadata?.role !== 'owner') return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  if (leadsCache.data && req.query.refresh !== '1' && Date.now() - leadsCache.at < 3 * 60 * 1000) return res.json({ ...leadsCache.data, cached: true });
+  try {
+    const d = await jobberQueryRetry(`{
+      requests(first: 80) { nodes { id title createdAt requestStatus jobberWebUri
+        client { id name phones { number } } assessment { startAt completedAt } } }
+      aq: quotes(first: 40, filter: { status: awaiting_response }) { nodes { id quoteNumber title sentAt createdAt quoteStatus jobberWebUri client { name phones { number } } amounts { total } } }
+      cq: quotes(first: 20, filter: { status: changes_requested }) { nodes { id quoteNumber title sentAt createdAt quoteStatus jobberWebUri client { name phones { number } } amounts { total } } }
+      dq: quotes(first: 20, filter: { status: draft }) { nodes { id quoteNumber title sentAt createdAt quoteStatus jobberWebUri client { name phones { number } } amounts { total } } }
+    }`);
+    const phone = (c) => c?.phones?.[0]?.number || '';
+    const requests = d.requests.nodes.filter((r) => !['archived', 'converted'].includes(r.requestStatus)).map((r) => ({
+      id: r.id, status: r.requestStatus, createdAt: r.createdAt, title: r.title || '', client: r.client?.name || 'Unknown', phone: phone(r.client),
+      assessmentAt: r.assessment?.startAt || null, assessed: !!r.assessment?.completedAt, url: r.jobberWebUri,
+    }));
+    const quotes = [...d.aq.nodes, ...d.cq.nodes, ...d.dq.nodes].map((q) => ({
+      id: q.id, number: q.quoteNumber, status: q.quoteStatus, sentAt: q.sentAt, createdAt: q.createdAt, title: q.title || '',
+      client: q.client?.name || 'Unknown', phone: phone(q.client), total: Number(q.amounts?.total) || 0, url: q.jobberWebUri,
+    }));
+    // Website-form requests have no title: read "What do you need done?" from the form
+    // (one small aliased query for just those; answers never change, so they're kept in memory).
+    const missing = requests.filter((r) => !r.title && !(r.id in formAnswerCache)).slice(0, 12);
+    if (missing.length) {
+      const q = missing.map((r, i) => `r${i}: request(id: "${r.id}") { requestDetails { form { sections(first: 6) { nodes { items(first: 15) { nodes { label ... on FormTextInput { answer } } } } } } } }`).join('\n');
+      const fd = await jobberQueryRetry(`{ ${q} }`).catch(() => null);
+      missing.forEach((r, i) => {
+        const items = (fd?.[`r${i}`]?.requestDetails?.form?.sections?.nodes || []).flatMap((sec) => sec.items?.nodes || []);
+        const need = items.find((it) => /need|service|interested|help/i.test(it.label || '') && String(it.answer || '').trim());
+        formAnswerCache[r.id] = need ? String(need.answer).trim() : '';
+      });
+    }
+    requests.forEach((r) => { if (!r.title && formAnswerCache[r.id]) r.need = formAnswerCache[r.id]; });
+    leadsCache = { at: Date.now(), data: { requests, quotes } };
+    // Catch-up for missed webhooks: anyone with an open request who isn't a Quo contact yet gets added.
+    const openClients = new Map(d.requests.nodes.filter((r) => !['archived', 'converted'].includes(r.requestStatus) && r.client?.id).map((r) => [r.client.id, phone(r.client)]));
+    const quoSync = [];
+    for (const [id, ph] of [...openClients].slice(0, 40)) quoSync.push(await syncJobberClientToQuo(id, ph).catch((e) => ({ error: e.message })));
+    const addedToQuo = quoSync.filter((x) => x?.created).map((x) => x.name);
+    if (addedToQuo.length) console.log('[Leads] added to Quo:', addedToQuo.join(', '));
+    res.json({ requests, quotes, addedToQuo });
+  } catch (e) {
+    if (leadsCache.data) return res.json({ ...leadsCache.data, stale: true });
+    res.status(502).json({ error: e.message });
+  }
+}
+
+const PLANS_KEY = 'jobber-plans-cache';
+async function readSavedPlans() {
+  try { const { data } = await getSupabaseAdmin().from('app_state').select('value').eq('key', PLANS_KEY).maybeSingle(); return data?.value || null; } catch { return null; }
+}
+async function savePlans(data) {
+  try {
+    const db = getSupabaseAdmin();
+    const { data: org } = await db.from('app_state').select('org_id').eq('key', 'greenteam-lightsOrders').maybeSingle();
+    await db.from('app_state').upsert({ key: PLANS_KEY, value: data, ...(org?.org_id ? { org_id: org.org_id } : {}), updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  } catch (e) { console.warn('[plans] save failed', e.message); }
+}
 let plansCache = null; // { data, time }
 const PLANS_TTL = 10 * 60 * 1000;
 const fmtAddress = (a) => {
@@ -1960,11 +2058,16 @@ const fmtAddress = (a) => {
 
 async function handlePlans(req, res) {
   if (plansCache && req.query.refresh !== '1' && Date.now() - plansCache.time < PLANS_TTL) return res.json(plansCache.data);
+  const saved = plansCache ? null : await readSavedPlans();
+  if (saved && req.query.refresh !== '1' && Date.now() - new Date(saved.updatedAt || 0).getTime() < PLANS_TTL) {
+    plansCache = { data: saved, time: new Date(saved.updatedAt).getTime() };
+    return res.json(saved);
+  }
   try {
     const jobs = [];
     let after = null;
     do {
-      const data = await jobberQuery(`{ jobs(first: 50${after ? `, after: "${after}"` : ''}, ) { nodes { id jobNumber title jobType jobStatus startAt endAt completedAt total billingType lineItems(first: 10) { nodes { quantity totalPrice } } client { id name emails { address primary } phones { number primary } billingAddress { street1 street2 city province postalCode } } property { address { street1 street2 city province postalCode } } visitSchedule { recurrenceSchedule { friendly } } invoiceSchedule { scheduleSummary } } pageInfo { hasNextPage endCursor } } }`);
+      const data = await jobberQueryRetry(`{ jobs(first: 50${after ? `, after: "${after}"` : ''}, ) { nodes { id jobNumber title jobType jobStatus startAt endAt completedAt total billingType lineItems(first: 10) { nodes { quantity totalPrice } } client { id name emails { address primary } phones { number primary } billingAddress { street1 street2 city province postalCode } } property { address { street1 street2 city province postalCode } } visitSchedule { recurrenceSchedule { friendly } } invoiceSchedule { scheduleSummary } } pageInfo { hasNextPage endCursor } } }`);
       jobs.push(...(data.jobs?.nodes || []));
       after = data.jobs?.pageInfo?.hasNextPage ? data.jobs.pageInfo.endCursor : null;
       if (after) await new Promise((r) => setTimeout(r, 300));
@@ -2015,9 +2118,12 @@ async function handlePlans(req, res) {
     }).sort((a, b) => a.name.localeCompare(b.name));
     const data = { clients, updatedAt: new Date().toISOString() };
     plansCache = { data, time: Date.now() };
+    await savePlans(data);
     return res.json(data);
   } catch (err) {
     if (plansCache) return res.json(plansCache.data);
+    const last = saved || await readSavedPlans();
+    if (last) return res.json({ ...last, stale: true }); // Jobber busy: show the last good list
     if (err.code === 'JOBBER_DISCONNECTED') return res.status(401).json({ error: err.message, code: 'JOBBER_DISCONNECTED' });
     if (err.message?.includes('Throttled')) return res.status(429).json({ error: 'Jobber needs a moment — try again.', code: 'THROTTLED' });
     return res.status(500).json({ error: err.message });
@@ -2257,6 +2363,8 @@ export default async function handler(req, res) {
     if (action === 'ytd-revenue') return handleYTDRevenue(req, res);
     if (action === 'recurring-summary') return handleRecurringSummary(req, res);
     if (action === 'plans') return handlePlans(req, res);
+    if (action === 'leads') return handleLeads(req, res);
+    if (action === 'lead-archive') return handleLeadArchive(req, res);
     if (action === 'lights-job-summary') return handleLightsJobSummary(req, res);
     if (action === 'lights-job-expense') return handleLightsJobExpense(req, res);
     if (action === 'lights-quote-create') return handleLightsQuoteCreate(req, res);

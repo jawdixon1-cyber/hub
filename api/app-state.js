@@ -294,6 +294,467 @@ async function handleLightsPresent(req, res) {
   });
 }
 
+// ── Lights price-range estimate (client link /estimate/:token, no login) ──
+// le-meta:<id> = { token, client, address, low, high, lines, … } · le-img:<id>:<photo|warm|multi> = { src }
+// GET → only what the page shows (first name, range, picture links; no phone/notes) · &img=photo|warm|multi → that picture
+// POST { color } → records "yes, get my exact quote" in le-yes:<id> (the estimate itself is never touched).
+async function handleLightsEstimate(req, res) {
+  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  const token = String(req.query.token || '');
+  if (!/^[A-Za-z0-9_-]{20,}$/.test(token)) return res.status(404).json({ error: 'Not found' });
+  const db = getSupabaseAdmin();
+  const { data: row, error } = await db.from('app_state').select('key, value, org_id, updated_at')
+    .like('key', 'le-meta:%').eq('value->>token', token).maybeSingle();
+  if (error) return res.status(500).json({ error: 'Lookup failed' });
+  if (!row || row.value?.off) return res.status(404).json({ error: 'Not found' });
+  const e = row.value;
+  const id = row.key.slice('le-meta:'.length);
+  if (req.method === 'POST' && req.body?.view) {
+    const ua = String(req.headers['user-agent'] || '');
+    if (/bot|crawl|spider|preview|facebookexternalhit|whatsapp|slack|telegram|curl/i.test(ua)) return res.json({ ok: true });
+    const device = /iphone/i.test(ua) ? 'iPhone' : /ipad/i.test(ua) ? 'iPad' : /android/i.test(ua) ? 'Android' : /mac os/i.test(ua) ? 'Mac' : /windows/i.test(ua) ? 'Windows' : 'Other';
+    const { data: vr } = await db.from('app_state').select('value').eq('key', `le-views:${id}`).maybeSingle();
+    const now = new Date().toISOString();
+    const prev = vr?.value || {};
+    const value = { count: (prev.count || 0) + 1, first: prev.first || now, last: now, list: [...(prev.list || []), { at: now, device }].slice(-50) };
+    await db.from('app_state').upsert({ key: `le-views:${id}`, value, ...(row.org_id ? { org_id: row.org_id } : {}) }, { onConflict: 'key' });
+    return res.json({ ok: true });
+  }
+  if (req.method === 'POST') {
+    const color = ['warm', 'multi'].includes(req.body?.color) ? req.body.color : '';
+    const { error: w } = await db.from('app_state').upsert({ key: `le-yes:${id}`, value: { color, at: new Date().toISOString() }, ...(row.org_id ? { org_id: row.org_id } : {}) }, { onConflict: 'key' });
+    if (w) return res.status(500).json({ error: 'Could not save' });
+    return res.json({ ok: true });
+  }
+  if (req.query.img != null) {
+    const im = String(req.query.img);
+    if (!['photo', 'warm', 'multi'].includes(im)) return res.status(404).end();
+    const { data: ph } = await db.from('app_state').select('value').eq('key', `le-img:${id}:${im}`).maybeSingle();
+    const m = /^data:(image\/[a-z+]+);base64,(.+)$/s.exec(String(ph?.value?.src || ''));
+    if (!m) return res.status(404).end();
+    res.setHeader('Content-Type', m[1]);
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    return res.status(200).send(Buffer.from(m[2], 'base64'));
+  }
+  const v = encodeURIComponent(String(e.imgStamp || row.updated_at || ''));
+  const url = (im) => `/api/app-state?key=lights-estimate&token=${encodeURIComponent(token)}&img=${im}&v=${v}`;
+  const { data: yes } = await db.from('app_state').select('value').eq('key', `le-yes:${id}`).maybeSingle();
+  return res.json({
+    first: String(e.client || '').trim().split(/\s+/)[0] || '',
+    street: String(e.address || '').split(',')[0].trim(),
+    low: Number(e.low) || 0, high: Number(e.high) || 0,
+    photo: e.has?.photo ? url('photo') : '', warm: e.has?.warm ? url('warm') : '', multi: e.has?.multi ? url('multi') : '',
+    said: yes?.value?.at ? { color: yes.value.color || '' } : null,
+  });
+}
+
+// ── /estimate/<token> → the live heyjudeslawncare.com/lights/ page, with its bottom "get a quote"
+// section swapped for THIS client's house + rough price range. (Always matches the current landing page.)
+const SITE = 'https://heyjudeslawncare.com';
+let lightsPageCache = { at: 0, html: '' };
+const escHtml = (t) => String(t || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Estimate page order (built for people who already asked for a price): trust first, their price last.
+// Cuts the "ER visits / ladder" section (that one talks DIYers out of doing it themselves).
+// Leaves the page as-is if the site's section markers ever change.
+function reorderEstimateSections(html) {
+  const marks = ['<!-- 3. THE HOOK', '<!-- 1b. THE FEAR', '<!-- 2. CONTRAST', '<!-- 2b. PROOF', '<!-- 7. PROOF', '<!-- 7b. MEET JUDE', '<!-- 8. LOCK YOUR PRICE', '<!-- 9. FAQ', '<section class="final" id="quote">'];
+  const at = marks.map((m) => html.indexOf(m));
+  if (at.some((i) => i < 0) || at.some((i, k) => k && i <= at[k - 1])) return html;
+  const part = (k) => html.slice(at[k], at[k + 1]);
+  const [hook, , contrast, close, proofMore, meet, plans, faq] = marks.slice(0, -1).map((_, k) => part(k));
+  const split = proofMore.indexOf('<section style="padding:10px 0 0">');
+  const proof = split > 0 ? proofMore.slice(0, split) : proofMore;
+  const more = split > 0 ? proofMore.slice(split) : '';
+  const jobs = `<!-- REAL JOBS (Hub) -->
+  <section style="padding-top:10px">
+    <div class="wrap">
+      <div class="sec-head rv"><h2>Real jobs we&#8217;ve done this season.</h2><p>Real photos. No AI.</p></div>
+      <div class="hje-jobs">
+        <figure><img src="${SITE}/wp-content/uploads/2026/11/hero-real-install.jpg" alt="A home we lit in cool white and blue" loading="lazy"><span>📷 Real install</span></figure>
+        <figure><img src="/lights-jobs/job-3.jpg" alt="A home we lit in warm white this season, with our yard sign" loading="lazy"><span>📷 Real install</span></figure>
+        <figure><img src="/lights-jobs/job-1.jpg" alt="A home we lit in cool white this season" loading="lazy"><span>📷 Real install</span></figure>
+      </div>
+    </div>
+  </section>
+  <style>
+    .hje-jobs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .hje-jobs figure{position:relative;margin:0;border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,.1);aspect-ratio:4/3;background:#000}
+    .hje-jobs img,.hje-jobs video{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
+    .hje-jobs span{position:absolute;left:10px;top:10px;background:#f6f3ee;color:#07090f;font:700 12px Poppins,system-ui,sans-serif;padding:5px 9px;border-radius:999px}
+    @media (max-width:700px){.hje-jobs{grid-template-columns:1fr}}
+  </style>
+`;
+  return html.slice(0, at[0]) + [proof, jobs, contrast, hook, close, meet, more, plans, faq].join('\n') + html.slice(at[at.length - 1]);
+}
+async function handleEstimatePage(req, res) {
+  const token = String(req.query.token || '');
+  const db = getSupabaseAdmin();
+  const row = /^[A-Za-z0-9_-]{20,}$/.test(token)
+    ? (await db.from('app_state').select('key, value, updated_at').like('key', 'le-meta:%').eq('value->>token', token).maybeSingle()).data : null;
+  if (!row || row.value?.off) return res.status(404).send('<!doctype html><meta name="viewport" content="width=device-width"><p style="font-family:sans-serif;padding:40px;text-align:center">This link is no longer active.</p>');
+  const e = row.value;
+  if (!lightsPageCache.html || Date.now() - lightsPageCache.at > 10 * 60e3) {
+    const r = await fetch(`${SITE}/lights/`).catch(() => null);
+    const page = r?.ok ? await r.text() : '';
+    if (page.includes('id="quote"')) lightsPageCache = { at: Date.now(), html: page };
+  }
+  let html = lightsPageCache.html;
+  if (!html) return res.status(502).send('Could not load the page. Try again in a minute.');
+
+  const tok = encodeURIComponent(token);
+  const v = encodeURIComponent(String(e.imgStamp || row.updated_at || ''));
+  const img = (k) => (e.has?.[k] ? `/api/app-state?key=lights-estimate&amp;token=${tok}&amp;img=${k}&amp;v=${v}` : '');
+  const traced = (Array.isArray(e.lines) ? e.lines : []).filter((l) => Array.isArray(l.points) && l.points.length > 1);
+  const linesSvg = traced.length ? `<svg class="hje-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none">${traced.map((l) => `<polyline points="${l.points.map((q) => `${Number(q.x) || 0},${Number(q.y) || 0}`).join(' ')}" />`).join('')}</svg>` : '';
+  const looks = [['photo', 'Your roofline'], ['warm', 'Warm white'], ['multi', 'Multicolor']].filter(([k]) => img(k));
+  const first = escHtml(String(e.client || '').trim().split(/\s+/)[0]);
+  const street = escHtml(String(e.address || '').split(',')[0].trim());
+  const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-US')}`;
+  const pics = looks.length ? `<div class="hje-pic">${looks.map(([k, label], i) => `<figure data-look="${k}"${i ? ' hidden' : ''}><img src="${img(k)}" alt="${label}">${k === 'photo' ? linesSvg : ''}${k === 'photo' ? '' : '<span class="hje-badge">✨ Mockup preview</span>'}</figure>`).join('')}</div>
+        ${looks.length > 1 ? `<div class="hje-tabs">${looks.map(([k, label], i) => `<button type="button" data-look="${k}"${i ? '' : ' class="on"'}>${label}</button>`).join('')}</div>` : ''}
+        ${img('warm') || img('multi') ? '<p class="hje-small">Mockup made from a photo of your house, to give you an idea. Your real design is planned to the foot.</p>' : ''}` : '';
+  // Bottom bar: no price up top (it's the payoff at the end) — just point them to it.
+  const sticky = `<div class="hje-sticky" hidden><div><b>Your rough estimate is ready</b><span>Based on a photo of your house · scroll down to see it</span></div><button type="button" class="btn btn-go hje-yes2">See it ↓</button></div>`;
+  const section = `<section class="final" id="quote">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <h2>${first ? `${first}, here's your house.` : "Here's your house."}</h2>
+        ${street ? `<p>📍 ${street}</p>` : ''}
+      </div>
+      <div class="box rv"><div class="box-in hje">
+        ${pics}
+        <div class="hje-range">
+          <div class="hje-card">
+            <p class="hje-eyebrow">Your rough estimate</p>
+            <p class="hje-price">${money(e.low)} – ${money(e.high)}</p>
+            <p class="hje-rough">From a photo · not a quote</p>
+            <p class="hje-card-h hje-sub">Everything included</p>
+            <ul class="hje-incl">${['Commercial-grade lights', 'Full plan before you buy', 'Install', 'Maintenance', 'Storage', 'Jan. takedown guarantee', 'Hidden, color-matched wire', 'Fully insured ($1M)'].map((t) => `<li>${t}</li>`).join('')}</ul>
+            <p class="hje-trust">★★★★★ <b>5.0</b> · 195 Google reviews</p>
+            <button type="button" class="btn btn-go hje-yes">Schedule my free design consultation →</button>
+            <p class="hje-after">At your consultation we bring light samples, measure your roof, show you a detailed mockup and go over your exact price.</p>
+          </div>
+          <div class="hje-done" hidden><p class="hje-big">You're on the list! 🎄</p><p>Jude will text you to pick a time for your design consultation.</p></div>
+        </div>
+      </div></div>
+    </div>
+  </section>
+  <style>
+    #quote .box,#quote .box-in{background:transparent!important;box-shadow:none!important;border:0!important;padding:0!important}
+    .hje{display:flex;flex-direction:column;gap:14px;text-align:center;color:#f6f3ee}
+    .hje-pic img{box-shadow:0 10px 40px rgba(0,0,0,.5)}
+    .hje-pic img{width:100%;display:block;border-radius:14px}
+    .hje-pic figure{position:relative;margin:0}
+    #quote .hje-rough{display:inline-block;background:rgba(255,207,107,.12);border:1px solid rgba(255,207,107,.45);color:#ffcf6b;font-weight:700;font-size:13px;border-radius:999px;padding:5px 12px;margin:0 auto 14px!important}
+    #quote .hje-incl li::before{content:'✓'!important;display:block!important;position:absolute;left:0;top:0;color:#00DF00;font-weight:900;background:none!important;width:auto!important;height:auto!important}
+    #quote .hje-incl li::after{display:none!important}
+    .hje-card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:22px 18px;margin:0 auto 14px;max-width:560px;text-align:center}
+    .hje-card-next{border:2px solid rgba(0,223,0,.45);background:linear-gradient(180deg,rgba(0,223,0,.08),rgba(0,223,0,.02))}
+    #quote .hje-card-h{font-weight:900;font-size:22px;line-height:1.2;margin:0 0 16px!important;text-align:center!important;color:#f6f3ee}
+    #quote .hje-card .hje-price{margin:6px 0 10px}
+    #quote .hje-card .hje-rough{margin:0!important}
+    #quote .hje-card-h.hje-sub{font-size:18px;margin:22px 0 12px!important;padding-top:20px;border-top:1px solid rgba(255,255,255,.1)}
+    #quote .hje-incl{list-style:none;padding:0;margin:0 auto 14px!important;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;text-align:left}
+    #quote .hje-incl li{position:relative;padding-left:24px;font-size:15px;font-weight:600;color:#f6f3ee;line-height:1.3}
+    @media (max-width:520px){#quote .hje-incl{grid-template-columns:1fr;max-width:290px}.hje-steps{grid-template-columns:1fr!important}}
+    #quote .hje-trust{font-size:13px;opacity:.8;margin:0!important;text-align:center!important;color:#f6f3ee}
+    #quote .hje-card .hje-yes{margin-top:20px!important}
+    #quote .hje-after{font-size:13px!important;opacity:.75;margin:12px auto 0!important;max-width:420px!important;text-align:center!important;line-height:1.5;color:#f6f3ee}
+    .hje-steps{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .hje-steps div{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.25);border-radius:12px;padding:12px;text-align:left;font-size:15px;font-weight:600;line-height:1.3;color:#f6f3ee}
+    .hje-steps b{font-size:18px}
+    .hje-lines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+    .hje-lines polyline{fill:none;stroke:#ffcf6b;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;filter:drop-shadow(0 0 4px rgba(255,207,107,.8))}
+    .hje-pic figure[hidden]{display:none}
+    .hje-badge{position:absolute;left:12px;top:12px;background:rgba(7,9,15,.82);color:#f6f3ee;font:700 12px Poppins,system-ui,sans-serif;padding:6px 10px;border-radius:999px}
+    .hje-badge.real{background:#f6f3ee;color:#07090f}
+    .hje-tabs{display:flex;gap:8px}
+    .hje-tabs button{flex:1;border-radius:999px;padding:10px;font:700 14px Poppins,system-ui,sans-serif;cursor:pointer;background:transparent;color:inherit;border:1px solid rgba(127,127,127,.4)}
+    .hje-tabs button{color:#f6f3ee!important}
+    .hje-tabs button.on{background:#B3121F;color:#fff;border-color:#B3121F}
+    .hje-small{font-size:12px;opacity:.7;margin:0}
+    .hje-range{padding:6px 0 4px}
+    .hje-eyebrow{font-size:12px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#ffcf6b;margin:0}
+    .hje-price{font-size:clamp(34px,8vw,52px);font-weight:900;margin:6px 0}
+    #quote .hje-note{font-size:13px!important;opacity:.7;max-width:480px!important;margin:0 auto 24px!important;text-align:center!important;line-height:1.5}
+    #quote .box::before,#quote .box::after,#quote .box-in::before,#quote .box-in::after{display:none!important}
+    .hje-yes{width:100%;border:0;cursor:pointer;font-size:18px}
+    .hje-yes[hidden],.hje-done[hidden]{display:none}
+    .hje-big{font-size:20px;font-weight:800;margin:0 0 4px}
+    .hje-done{background:rgba(0,180,0,.12);border-radius:12px;padding:14px}
+    .hje-plan{font-weight:800;font-size:18px;margin:4px 0 2px}
+    .hje-sticky{position:fixed;left:0;right:0;bottom:0;z-index:9999;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:rgba(7,9,15,.94);color:#f6f3ee;border-top:1px solid rgba(255,255,255,.12);font-family:Poppins,system-ui,sans-serif}
+    .hje-sticky[hidden]{display:none}
+    .hje-sticky div{display:flex;flex-direction:column;line-height:1.15}
+    .hje-sticky b{font-size:17px}
+    .hje-sticky span{font-size:11px;opacity:.7}
+    .hje-sticky button{border:0;cursor:pointer;white-space:nowrap;padding:12px 16px}
+    .sec-head p.two,.sec-head .two{white-space:normal!important;text-wrap:balance}
+    .hje-tier{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;opacity:.6;margin:0 0 6px}
+    @media (max-width:520px){.hero .lead{font-size:16px!important}.hero h1.hje-h1{font-size:34px!important;line-height:1.08!important}}
+    .hje-sticky b{white-space:nowrap}
+    @media (max-width:520px){.hje-sticky b{font-size:14px;white-space:normal}.hje-sticky span{font-size:11px}.hje-sticky button{font-size:14px!important;padding:12px 14px!important}}
+    #quote{scroll-margin-top:70px;background:none!important}
+    .hje-herobadge{position:absolute;right:16px;top:78px;z-index:3;background:#f6f3ee;color:#07090f;font:700 12px Poppins,system-ui,sans-serif;padding:6px 10px;border-radius:999px}
+    .tri{align-items:stretch!important}
+    .tri>.col{height:auto!important;align-self:stretch!important}
+  </style>
+  ${sticky}
+  <script>
+  (function(){
+    var root=document.getElementById('quote'); if(!root) return;
+    var api='/api/app-state?key=lights-estimate&token=${tok}';
+    root.querySelectorAll('.hje-tabs button').forEach(function(b){b.addEventListener('click',function(){
+      root.querySelectorAll('.hje-tabs button').forEach(function(x){x.classList.toggle('on',x===b)});
+      root.querySelectorAll('.hje-pic figure').forEach(function(im){im.hidden=im.dataset.look!==b.dataset.look});
+    })});
+    var yes=root.querySelector('.hje-yes'), done=root.querySelector('.hje-done');
+    var bar=document.querySelector('.hje-sticky'), yes2=bar&&bar.querySelector('.hje-yes2'), said=false;
+    function showDone(){said=true;yes.hidden=true;done.hidden=false;if(bar)bar.hidden=true}
+    function tick(){if(!bar||said)return;var r=root.getBoundingClientRect();bar.hidden=r.bottom>0&&r.top<window.innerHeight}
+    document.addEventListener('scroll',tick,{passive:true,capture:true}); window.addEventListener('resize',tick); tick();
+    if(yes2)yes2.addEventListener('click',function(){root.scrollIntoView({behavior:'smooth'})});
+    yes.addEventListener('click',function(){
+      var on=root.querySelector('.hje-tabs button.on'); yes.disabled=true; yes.textContent='Sending…';
+      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({color:on&&on.dataset.look!=='photo'?on.dataset.look:''})})
+        .then(function(r){if(!r.ok)throw 0;showDone()}).catch(function(){location.href='sms:+18039027447'});
+    });
+    fetch(api).then(function(r){return r.json()}).then(function(j){if(j&&j.said)showDone()}).catch(function(){});
+    if(/[?&]preview=1/.test(location.search)){
+      var pv=document.createElement('div'); pv.textContent='Preview: this visit is not counted as them opening it';
+      pv.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;background:#ffcf6b;color:#111;font:700 13px system-ui;text-align:center;padding:6px';
+      document.body.appendChild(pv);
+    } else {
+      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({view:1})}).catch(function(){});
+    }
+  })();
+  </script>`;
+
+  // site files live on heyjudeslawncare.com; this page is served from the Hub (rewrite BEFORE adding our own /api links)
+  html = html.replace(/(src|href|poster|action)="\/(?!\/)/g, `$1="${SITE}/`)
+    .replace(/srcset="[^"]*"/g, (m) => m.replace(/(srcset="|,\s*)\/(?!\/)/g, `$1${SITE}/`))
+    .replace(/url\((['"]?)\/(?!\/)/g, `url($1${SITE}/`)
+    .replace(/<script[^>]*(stats\.wp\.com|bilmur|jetpack-stats)[\s\S]*?<\/script>/g, '')
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${first ? `${first}'s` : 'Your'} Christmas lights · Hey Jude's</title><meta name="robots" content="noindex,nofollow">`)
+    .replace(/<link rel="canonical"[^>]*>/, '')
+    // their page already has their price: drop the site's "Get my free design / Call us" buttons + sticky bar
+    .replace(/\s*All you do is contact us\./, '')
+    // comparison cards: say who each box is
+    .replace('on your roof — in SC and NC, it can land on you.', () => 'on your roof — in SC and NC, they can hold you liable 💸')
+    .replace('<h2>Not just lights on a roof.</h2>', () => '<h2>What&#8217;s included.</h2>')
+    .replace('<h3>Just hung</h3>', () => '<p class="hje-tier">Most companies</p><h3>Just hung</h3>')
+    .replace('<h3>Full service</h3>', () => '<p class="hje-tier">Some companies</p><h3>Full service</h3>')
+    .replace('<p class="plus">Full service, plus</p>', () => '<p class="plus">World-class service</p>')
+    .replace('Most companies hang lights. Some do full service. We do full service, plus.', () => 'Most companies hang lights. Some do full service. We do world-class service.')
+    .replace('Read all our Google reviews', () => 'Read all Google reviews')
+    .replace('We provide the lights, design, hang, maintain, take down, store them, and more.', () => 'We provide the lights, design, hang, maintain, take down, store them &amp; more.')
+    .replace('<div class="bg" role="img" aria-label="A home we lit in cool white and blue"></div>', (m) => (img('photo')
+      ? `<div class="bg" role="img" aria-label="Your house" style="background-image:url('${img('photo').replace(/&amp;/g, '&')}')!important"></div>`
+      : m))
+    .replace('<h1>Your house, lit up for Christmas.</h1>', (m) => (img('photo') && first ? `<h1 class="hje-h1" style="text-wrap:balance">${first}, let&#8217;s make your home a winter wonderland.</h1>` : m))
+    // "Full service, plus" says what we DO (tight wires, plan first, insured, 5.0★); the other columns lose their ✗ lines
+    .replace(/<ul class="rich">[\s\S]*?<\/ul>/, () => `<ul class="rich">
+            <li><b>📐 Full plan before you buy</b><span>Every bulb mapped — you see it before you pay</span></li>
+            <li><b>🎯 Hidden, color-matched wire</b><span>No cords showing — just clean light</span></li>
+            <li><b>🛡️ Fully insured</b><span>$1M liability coverage</span></li>
+            <li><b>⭐ Perfect 5.0★ rating</b><span>195 Google reviews</span></li>
+            <li><b>🗓️ Jan. takedown guarantee</b><span>Down in January or your money back — weather permitting</span></li>
+          </ul>`)
+    .replace(/(<h3>Just hung<\/h3>\s*<ul>[\s\S]*?)<\/ul>/, (m, head) => `${head.replace(/\s*<li class="n">[^<]*<\/li>/g, '')}</ul>`)
+    .replace('before you spend&nbsp;a&nbsp;dime.', () => 'before you commit.')
+    .replace('<h2>Lock in your price.</h2>', () => '<h2>What if you do a multi-year agreement?</h2>')
+    // "Full service" column: just the 3 ✓s, then "some companies aren't, we are"
+    .replace(/(<h3>Full service<\/h3>\s*<ul>[\s\S]*?)<li class="n">Sometimes not insured<\/li>\s*<li class="n">Hard to reach<\/li>\s*<\/ul>/, (m, head) => `${head.replace(/<li class="y">Design<\/li>[\s\S]*<li class="y">Take down &amp; store<\/li>/, ['Design', 'Install', 'Maintain', 'Take down', 'Store'].map((t) => `<li class="y">${t}</li>`).join('\n            '))}</ul>`)
+    .replace(/<!-- 9b\. SIGN DEAL -->\s*<section[\s\S]*?<\/section>/, '') // door hanger / yard sign $50 off (asks them to use the form)
+    .replace(/<div class="sticky" id="hjl-sticky">[\s\S]*?<\/div>/, '')
+    .replace(/<a class="btn [^"]*"[^>]*>[\s\S]*?<\/a>/g, (m) => (/google\.com/.test(m) ? m : ''))
+    .replace(/<div class="ctas">\s*<\/div>/g, '') // hero buttons are gone; drop their empty row (it left a big gap)
+    .replace(/<section class="final" id="quote">[\s\S]*?<\/section>/, () => section) // their house + range at the bottom
+    // the plan + before/after up top is another client's — say so (their own house is at the bottom)
+    .replace('<span class="tag">Before</span><span class="tag r">After</span>', () => '<span class="tag">Before · AI night view</span><span class="tag r">After · AI mockup</span>')
+    .replace('Get a plan and mockup during your quote.', () => 'A real client&#8217;s plan and mockup from their design consultation.')
+    .replace('<span class="tag">The plan</span>', () => '<span class="tag">Real client · the plan</span>')
+    // 5. FAQ: they already have a price, so "it depends" becomes "why a range"
+    .replace(/<details><summary>How much does it cost\?<\/summary><p>[\s\S]*?<\/p><\/details>/, '<details open><summary>Why a range and not one price?</summary><p>We measured your roofline from a photo, so for now it&#8217;s a range. At your free design consultation we measure your roof, show you samples and a detailed mockup, and give you one exact price for everything: lights, install, maintenance, takedown and storage. Multi-year plans save 5&#8211;10%.</p></details>');
+  html = reorderEstimateSections(html);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'private, no-store');
+  return res.status(200).send(html);
+}
+
+// ── /lights-start → short "get my rough estimate" form for C9 roofline leads (no login) ──
+// Submitting creates (or reuses, by phone) the Jobber client + a Christmas Lights request, and drops a
+// ready-to-build estimate into the Hub's Lights estimate page (le-meta:<id> with form:true, photo in le-img).
+const LIGHTS_FORM_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Free Christmas lights estimate · Hey Jude's</title><meta name="robots" content="noindex">
+<meta property="og:title" content="Get your rough Christmas lights estimate 🎄"><meta property="og:description" content="1 minute. Jude sends you a rough price with a picture of your house.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#07090f;color:#f6f3ee;font-family:Poppins,system-ui,sans-serif}
+.w{max-width:520px;margin:0 auto;padding:22px 16px 40px}
+.logo{height:46px;display:block;margin:0 auto 18px}
+h1{font-size:30px;line-height:1.1;font-weight:900;margin:0 0 8px;text-align:center}
+.sub{color:#a9b0bf;text-align:center;margin:0 0 22px;font-size:15px}
+.card{background:#111621;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:18px;margin-bottom:14px}
+label.f{display:block;font-weight:700;font-size:14px;margin:0 0 6px}
+input[type=text],input[type=tel],input[type=email],select{width:100%;background:#07090f;color:#f6f3ee;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:13px 12px;font:16px Poppins,system-ui,sans-serif;margin-bottom:12px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.q{font-weight:800;font-size:17px;margin:0 0 4px}.qs{color:#a9b0bf;font-size:13px;margin:0 0 12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips label{flex:1 1 40%;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:12px 8px;font-weight:700;cursor:pointer;user-select:none}
+.chips input{display:none}.chips input:checked+span{color:#07090f}.chips label:has(input:checked){background:#00DF00;border-color:#00DF00;color:#07090f}
+.photo{display:flex;align-items:center;justify-content:center;gap:8px;border:2px dashed rgba(255,255,255,.25);border-radius:14px;padding:16px;font-weight:700;cursor:pointer;text-align:center}
+.thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}.thumbs:empty{display:none}.thumbs div{position:relative}.thumbs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block}.thumbs button{position:absolute;top:3px;right:3px;width:22px;height:22px;padding:0;margin:0;border-radius:50%;background:rgba(0,0,0,.7);color:#fff;font-size:13px;line-height:22px}
+button{width:100%;border:0;border-radius:14px;background:#00DF00;color:#04170a;font:800 18px Poppins,system-ui,sans-serif;padding:16px;cursor:pointer;margin-top:6px}
+button:disabled{opacity:.6}
+.err{color:#ff6b6b;font-weight:700;text-align:center;min-height:20px}
+.done{text-align:center;padding:30px 10px}.done h2{font-size:26px;margin:0 0 8px}
+.hp{position:absolute;left:-9999px}
+</style></head><body><div class="w">
+<img class="logo" src="https://heyjudeslawncare.com/wp-content/uploads/2026/11/hey-judes-holiday-logo.png" alt="Hey Jude's">
+<div id="form">
+<h1>Get your rough Christmas lights estimate 🎄</h1>
+<p class="sub">Takes 1 minute. Jude sends you a rough price with a picture of your house.</p>
+<div class="card">
+<div class="row"><div><label class="f" for="n">First name</label><input id="n" type="text" autocomplete="given-name" placeholder="First"></div>
+<div><label class="f" for="ln">Last name</label><input id="ln" type="text" autocomplete="family-name" placeholder="Last"></div></div>
+<label class="f" for="p">Mobile phone</label><input id="p" type="tel" inputmode="numeric" autocomplete="tel" placeholder="803-555-1234">
+<label class="f" for="em">Email</label><input id="em" type="email" autocomplete="email" placeholder="you@email.com">
+<label class="f" for="s">Street address</label><input id="s" type="text" autocomplete="street-address" placeholder="123 Main St">
+<div class="row"><div><label class="f" for="c">City</label><input id="c" type="text" autocomplete="address-level2" placeholder="Rock Hill"></div>
+<div style="flex:.5"><label class="f" for="st">State</label><select id="st"><option>SC</option><option>NC</option></select></div>
+<div style="flex:.7"><label class="f" for="z">Zip</label><input id="z" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="29730"></div></div>
+<input class="hp" id="hp" type="text" tabindex="-1" autocomplete="off">
+</div>
+<div class="card"><p class="q">Which sides of the roofline?</p><p class="qs">C9 bulbs along the roofline. Pick every side you want lit.</p>
+<div class="chips" id="sides">
+<label><input type="checkbox" value="Front" checked><span>Front</span></label><label><input type="checkbox" value="Left side"><span>Left side</span></label>
+<label><input type="checkbox" value="Right side"><span>Right side</span></label><label><input type="checkbox" value="Back"><span>Back</span></label></div></div>
+<div class="card"><p class="q">Preferred mockup color</p><p class="qs">We&#8217;ll show your house lit up in this color.</p>
+<div class="chips" id="color">
+<label><input type="radio" name="col" value="Warm white" checked><span>Warm white</span></label><label><input type="radio" name="col" value="Multicolor"><span>Multicolor</span></label>
+<label><input type="radio" name="col" value="Not sure"><span>Not sure</span></label></div></div>
+<div class="card"><p class="q">Photos of your house <span style="font-weight:600;color:#a9b0bf">(optional)</span></p><p class="qs">Front first, then any other sides you picked (up to 4). Try to fit the <b>whole side</b> in each photo, so stand back or across the street.</p>
+<div class="thumbs" id="thumbs"></div>
+<label class="photo" id="ph"><span id="phl">📷 Add photos</span><input id="pf" type="file" accept="image/*" multiple hidden></label></div>
+<p class="err" id="err"></p>
+<button id="go">Send me my rough estimate →</button>
+</div>
+<div id="ok" class="done" hidden><h2>Got it! 🎄</h2><p class="sub">Jude will text you your rough estimate soon, with a picture of your house and everything that's included.</p></div>
+</div>
+<script>
+(function(){
+  var photos=[];
+  function $(i){return document.getElementById(i)}
+  function draw(){
+    $('thumbs').innerHTML=photos.map(function(p,i){return '<div><img src="'+p+'" alt=""><button type="button" data-i="'+i+'">×</button></div>'}).join('');
+    $('phl').textContent=photos.length?(photos.length<4?'📷 Add more':'Max 4 photos'):'📷 Add photos';
+  }
+  $('p').addEventListener('input',function(){
+    var d=this.value.replace(/\\D/g,''); if(d.length===11&&d[0]==='1') d=d.slice(1); d=d.slice(0,10);
+    this.value=d.length>6?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.length>3?d.slice(0,3)+'-'+d.slice(3):d;
+  });
+  $('thumbs').addEventListener('click',function(e){var i=e.target.getAttribute('data-i'); if(i!==null){photos.splice(+i,1);draw();}});
+  function shrink(f){return new Promise(function(ok){var r=new FileReader(); r.onload=function(){ var im=new Image(); im.onload=function(){
+      var k=Math.min(1,1400/Math.max(im.width,im.height)), c=document.createElement('canvas');
+      c.width=Math.round(im.width*k); c.height=Math.round(im.height*k); c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+      ok(c.toDataURL('image/jpeg',.78)); }; im.onerror=function(){ok('')}; im.src=r.result; }; r.readAsDataURL(f);});}
+  $('pf').addEventListener('change',function(){
+    var fs=[].slice.call(this.files||[]).slice(0,4-photos.length); this.value='';
+    Promise.all(fs.map(shrink)).then(function(a){photos=photos.concat(a.filter(Boolean)).slice(0,4);draw();});
+  });
+  $('go').addEventListener('click',function(){
+    var b=this, d={ first:$('n').value.trim(), last:$('ln').value.trim(), email:$('em').value.trim(), phone:$('p').value.trim(), street:$('s').value.trim(), city:$('c').value.trim(), state:$('st').value, zip:$('z').value.trim(),
+      sides:[].slice.call(document.querySelectorAll('#sides input:checked')).map(function(x){return x.value}),
+      color:(document.querySelector('#color input:checked')||{}).value||'', photos:photos, hp:$('hp').value };
+    var digits=d.phone.replace(/\\D/g,'');
+    if(!d.first||!d.last||digits.length<10||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(d.email)||!d.street||!d.city){ $('err').textContent='Please fill in your name, phone, email and address.'; return; }
+    if(!d.sides.length){ $('err').textContent='Pick at least one side.'; return; }
+    $('err').textContent=''; b.disabled=true; b.textContent='Sending…';
+    fetch('/api/app-state?key=lights-form',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
+      .then(function(r){return r.json().then(function(j){ if(!r.ok) throw new Error(j.error||'Something went wrong'); return j; })})
+      .then(function(){ $('form').hidden=true; $('ok').hidden=false; window.scrollTo(0,0); })
+      .catch(function(e){ $('err').textContent=e.message+' You can also text Jude at (803) 843-0699.'; b.disabled=false; b.textContent='Send me my rough estimate →'; });
+  });
+})();
+</script></body></html>`;
+
+async function handleLightsForm(req, res) {
+  if (req.method === 'GET') {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300');
+    return res.status(200).send(LIGHTS_FORM_HTML);
+  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  const b = req.body || {};
+  if (b.hp) return res.json({ ok: true }); // bot filled the hidden field
+  const clean = (v, n = 120) => String(v || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n);
+  const firstName = clean(b.first, 40); const lastName = clean(b.last, 40); const name = `${firstName} ${lastName}`.trim(); const email = clean(b.email, 120).toLowerCase(); const street = clean(b.street); const city = clean(b.city, 60);
+  const state = ['SC', 'NC'].includes(b.state) ? b.state : 'SC'; const zip = clean(b.zip, 10);
+  const digits = String(b.phone || '').replace(/\D/g, '').slice(-10);
+  const sides = (Array.isArray(b.sides) ? b.sides : []).filter((x) => ['Front', 'Left side', 'Right side', 'Back'].includes(x));
+  const color = ['Warm white', 'Multicolor', 'Not sure'].includes(b.color) ? b.color : 'Not sure';
+  const photos = (Array.isArray(b.photos) ? b.photos : [b.photo]).map(String)
+    .filter((x) => /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(x) && x.length < 2_500_000).slice(0, 4);
+  const photo = photos[0] || '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Please enter a valid email.' });
+  if (!firstName || !lastName || digits.length !== 10 || !street || !city || !sides.length) return res.status(400).json({ error: 'Please fill in your name, phone and address.' });
+
+  const pretty = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  const title = `Christmas Lights · C9 roofline · ${sides.join(', ')} · ${color}`;
+  let clientId = ''; let propertyId = ''; let requestUrl = ''; let jobberError = '';
+  try {
+    const { jobberQuery } = await import('../lib/jobberClient.js');
+    const found = await jobberQuery(`query($s:String){ clients(first:10, searchTerm:$s){ nodes{ id firstName lastName isArchived phones{ number } emails{ address } properties{ id } } } }`, { s: digits });
+    // Reuse a client ONLY when the phone AND the first + last name match. One phone can sit on several
+    // clients (a spouse, a landlord, Jude's own number on a client as a 2nd contact), so phone alone isn't enough.
+    const norm = (v) => String(v || '').toLowerCase().replace(/[^a-z]/g, '');
+    const match = (found?.clients?.nodes || []).find((c) => !c.isArchived
+      && norm(c.firstName) === norm(firstName) && norm(c.lastName) === norm(lastName)
+      && (c.phones || []).some((p) => String(p.number).replace(/\D/g, '').slice(-10) === digits));
+    if (match) {
+      clientId = match.id; propertyId = match.properties?.[0]?.id || '';
+      // Only ADD what's missing (their email); never change what's already on the client.
+      if (!(match.emails || []).some((e) => String(e.address).toLowerCase() === email)) {
+        await jobberQuery(`mutation($id:EncodedId!,$i:ClientEditInput!){ clientEdit(clientId:$id, input:$i){ userErrors{ message } } }`,
+          { id: clientId, i: { emailsToAdd: [{ address: email, primary: !(match.emails || []).length, description: 'MAIN' }] } }).catch(() => null);
+      }
+    }
+    else {
+      const made = await jobberQuery(`mutation($i:ClientCreateInput!){ clientCreate(input:$i){ client{ id properties{ id } } userErrors{ message } } }`, { i: {
+        firstName, lastName,
+        phones: [{ number: pretty, primary: true, smsAllowed: true, description: 'MOBILE' }],
+        emails: [{ address: email, primary: true, description: 'MAIN' }],
+        properties: [{ address: { street1: street, city, province: state, postalCode: zip || undefined, country: 'United States' } }],
+      } });
+      const errs = made?.clientCreate?.userErrors || [];
+      if (errs.length) throw new Error(errs.map((e) => e.message).join('; '));
+      clientId = made.clientCreate.client.id; propertyId = made.clientCreate.client.properties?.[0]?.id || '';
+    }
+    const rq = await jobberQuery(`mutation($i:RequestCreateInput!){ requestCreate(input:$i){ request{ id jobberWebUri } userErrors{ message } } }`, { i: {
+      clientId, ...(propertyId ? { propertyId } : {}), title,
+    } });
+    const rErrs = rq?.requestCreate?.userErrors || [];
+    if (rErrs.length) throw new Error(rErrs.map((e) => e.message).join('; '));
+    requestUrl = rq.requestCreate.request.jobberWebUri || '';
+  } catch (err) {
+    jobberError = String(err.message || err).slice(0, 300); // still save the lead in the Hub below
+  }
+
+  const db = getSupabaseAdmin();
+  const { data: orgRow } = await db.from('app_state').select('org_id').like('key', 'lq-meta:%').not('org_id', 'is', null).limit(1).maybeSingle();
+  const org = orgRow?.org_id ? { org_id: orgRow.org_id } : {};
+  const id = `le-${Date.now()}`;
+  const address = `${street}, ${city}, ${state}${zip ? ` ${zip}` : ''}`;
+  // first photo = the one the estimate reads; the rest are extra angles Jude can switch to in the builder
+  for (const [i, src] of photos.entries()) await db.from('app_state').upsert({ key: `le-img:${id}:${i ? `x${i}` : 'photo'}`, value: { src }, ...org }, { onConflict: 'key' });
+  const meta = { id, client: name, phone: pretty, email, address, sides, color, lines: [], notes: '', confidence: '', has: { photo: !!photo }, extraPhotos: Math.max(0, photos.length - 1),
+    form: true, jobberRequestUrl: requestUrl, jobberError, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), imgStamp: Date.now() };
+  const { error } = await db.from('app_state').upsert({ key: `le-meta:${id}`, value: meta, ...org }, { onConflict: 'key' });
+  if (error && !requestUrl) return res.status(500).json({ error: 'Could not send. Try again.' });
+  return res.json({ ok: true });
+}
+
 // ── Lights crew view ──
 // GET /api/app-state?key=lights-crew&token=… → only what the crew needs for that one job.
 async function handleLightsCrew(req, res) {
@@ -485,6 +946,17 @@ export default async function handler(req, res) {
     // Crew view (no login): one lights job's plan + materials, by its secret crew token. No prices.
     if (req.query.key === 'lights-crew') {
       return handleLightsCrew(req, res);
+    }
+    // C9 roofline lead form (no login): /lights-start.
+    if (req.query.key === 'lights-form') {
+      return handleLightsForm(req, res);
+    }
+    // Lights price-range estimate (no login): /estimate/:token.
+    if (req.query.key === 'estimate-page') {
+      return handleEstimatePage(req, res);
+    }
+    if (req.query.key === 'lights-estimate') {
+      return handleLightsEstimate(req, res);
     }
     // Client presentation (no login): one quote's Present page by its secret share token.
     if (req.query.key === 'lights-present') {

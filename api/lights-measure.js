@@ -52,6 +52,8 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not set on the Hub server.' });
   }
 
+  if (req.body?.mode === 'estimate') return estimateFromPhoto(req, res);
+
   const angles = Array.isArray(req.body?.angles) ? req.body.angles : [];
   const content = [];
   angles.forEach((a, i) => {
@@ -103,5 +105,68 @@ Only report feet that are written on the photo; never estimate a length. If a nu
       return res.status(502).json({ error: `Claude API error ${err.status}: ${err.message}` });
     }
     return res.status(500).json({ error: err.message || 'Something went wrong reading the photos.' });
+  }
+}
+
+// ── Price-range estimate from ONE plain house photo (no markings) ──
+// Used by the Lights Estimate page: Claude eyeballs the rooflines a standard
+// install would light, guesses feet from things of known size, and rates each.
+const EST_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['lines', 'notes', 'confidence'],
+  properties: {
+    lines: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['label', 'feet', 'level', 'reason', 'points'],
+        properties: {
+          label: { type: 'string', description: 'Short name, e.g. "Front 1st-story gutter"' },
+          points: {
+            type: 'array',
+            description: 'Where this run is on the photo: 2 or more points traced along the roof edge, start to end (add a point at each corner). x = 0 (left edge) to 1000 (right edge), y = 0 (top) to 1000 (bottom).',
+            items: { type: 'object', additionalProperties: false, required: ['x', 'y'], properties: { x: { type: 'integer' }, y: { type: 'integer' } } },
+          },
+          feet: { type: 'number', description: 'Estimated length in feet, whole number' },
+          level: { type: 'string', enum: ['easy', 'medium', 'hard'] },
+          reason: { type: 'string', description: 'One short sentence on why this level' },
+        },
+      },
+    },
+    notes: { type: 'string', description: 'What you could not see (e.g. sides/back hidden) or are unsure about. Empty string if none.' },
+    confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+  },
+};
+
+async function estimateFromPhoto(req, res) {
+  const photo = imageBlock(req.body?.photo);
+  if (!photo) return res.status(400).json({ error: 'Add a house photo.' });
+  const client = new Anthropic();
+  try {
+    const response = await client.beta.messages.create({
+      model: 'claude-opus-5-5',
+      max_tokens: 8000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'high', format: { type: 'json_schema', schema: EST_SCHEMA } },
+      messages: [{ role: 'user', content: [photo, { type: 'text', text: `This is a photo of a house a client wants Christmas lights on. Give a rough estimate for a price range (not a final quote).
+
+List the roofline runs a standard Hey Jude's install would light that are VISIBLE in this photo: front gutter lines / eaves and gable (rake) edges, dormers, and porch rooflines. Never ridge caps. Don't light trees, bushes or windows.
+
+Estimate each run's length in feet using things of known size: a 1-car garage door is about 9 ft wide and a 2-car door 16 ft, a front door about 3 ft wide and 7 ft tall, a story is about 9-10 ft, a car about 15 ft long. Round to whole feet.
+
+${RULES}
+
+Light the full standard roofline even if the photo has dots or lines drawn on it (ignore any markings). The photo has a magenta grid drawn on it: lines every 100 units, numbered along the top (x) and left (y) edges, 0 at the top-left and 1000 at the right/bottom edge. The grid is only for measuring; it is not part of the house. For each run, give "points" in that grid, traced exactly on the roof edge where the bulbs would sit (the gutter line or the edge of the shingles), never in the sky or trees above the roof. Use the grid lines and their numbers to read each point's x and y carefully, and add a point at every corner or peak. Only list what you can see in this photo; mention hidden sides in "notes". Never mention prices. Set confidence low if the photo is far away, blurry, at a sharp angle or partly blocked.` }] }],
+    });
+    if (response.stop_reason === 'refusal') return res.status(422).json({ error: 'Claude declined to read this photo. Try another photo.' });
+    const text = response.content.find((b) => b.type === 'text')?.text;
+    if (!text) return res.status(502).json({ error: 'No answer came back. Try again.' });
+    return res.status(200).json(JSON.parse(text));
+  } catch (err) {
+    if (err instanceof Anthropic.APIError) return res.status(502).json({ error: `Claude API error ${err.status}: ${err.message}` });
+    return res.status(500).json({ error: err.message || 'Something went wrong reading the photo.' });
   }
 }

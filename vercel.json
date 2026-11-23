@@ -4,6 +4,8 @@
     { "source": "/api/gmail-callback", "destination": "/api/gmail?action=callback" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/refer/:token", "destination": "/api/app-state?key=refer-page&token=:token" },
+    { "source": "/estimate/:token", "destination": "/api/app-state?key=estimate-page&token=:token" },
+    { "source": "/lights-start", "destination": "/api/app-state?key=lights-form" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {

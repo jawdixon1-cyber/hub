@@ -1,0 +1,315 @@
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { buildShowPrompt } from '../lib/lightsPrompt';
+import { Camera, Copy, Check, Sparkles, Trash2, Plus, ExternalLink, MapPin, Download } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { priceOf, prices, EST_RATES, toJpeg, withGrid, fileToDataUrl, listEstimates, getEstimateImages, saveEstimate, removeEstimate, estimateUrl } from '../lib/lightsEstimate';
+
+// Lights price-range estimate: house photo → Claude guesses the roofline feet → range + 2 mockups (made in Jude's ChatGPT) → private link.
+const money = (n) => `$${Math.round(n).toLocaleString()}`;
+const when = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const ago = (iso) => { const m = Math.round((Date.now() - new Date(iso)) / 6e4); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
+const BLANK = { client: '', phone: '', address: '', lines: [], notes: '', confidence: '' };
+const LEVELS = ['easy', 'medium', 'hard'];
+const DRAFT_KEY = 'hub-lights-estimate-draft';
+const FORM_URL = 'https://hub.heyjudeslawncare.com/lights-start'; // the C9 roofline lead form (text this to people asking for a price)
+const LEVEL_COLOR = { easy: '#22c55e', medium: '#f59e0b', hard: '#ef4444' };
+// Spot for a run's number badge: the middle of its traced line.
+const midOf = (pts) => {
+  if (!pts?.length) return null;
+  if (pts.length === 1) return pts[0];
+  const seg = pts.slice(1).map((b, i) => ({ a: pts[i], b, d: Math.hypot(b.x - pts[i].x, b.y - pts[i].y) }));
+  let left = seg.reduce((t, x) => t + x.d, 0) / 2;
+  for (const g of seg) { if (left <= g.d) { const k = g.d ? left / g.d : 0; return { x: g.a.x + (g.b.x - g.a.x) * k, y: g.a.y + (g.b.y - g.a.y) * k }; } left -= g.d; }
+  return pts[pts.length - 1];
+};
+
+async function post(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+  return j;
+}
+
+export default function LightsEstimate() {
+  const { orgId } = useAuth();
+  const [list, setList] = useState([]);
+  const [params] = useSearchParams();
+  // Work in progress survives a refresh (kept on this computer until you start a new one).
+  const [draft] = useState(() => {
+    try {
+      const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+      const ph = String(params.get('phone') || '').replace(/\D/g, '').slice(-10);
+      // Opened from a different lead's $ Range button → start fresh for them.
+      if (d && (!ph || String(d.est?.phone || '').replace(/\D/g, '').slice(-10) === ph)) return d;
+    } catch { /* ignore */ }
+    return null;
+  });
+  const [est, setEst] = useState(() => draft?.est || ({ ...BLANK, client: params.get('client') || '', phone: params.get('phone') || '', address: params.get('address') || '' }));
+  const [imgs, setImgs] = useState(() => draft?.imgs || {}); // photo / warm / multi data URLs
+  const [dirtyImgs, setDirtyImgs] = useState(() => draft?.dirtyImgs || {});
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ est, imgs, dirtyImgs })); }
+      catch { try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ est, imgs: {}, dirtyImgs: {} })); } catch { /* full */ } }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [est, imgs, dirtyImgs]);
+  const [busy, setBusy] = useState(''); // 'read' | 'warm' | 'multi' | 'save'
+  const [err, setErr] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [confirmDel, setConfirmDel] = useState('');
+  const [formCopied, setFormCopied] = useState(false);
+  const [hot, setHot] = useState(-1); // run highlighted on the photo
+
+  const refresh = () => listEstimates().then(setList).catch((e) => setErr(e.message));
+  useEffect(() => { refresh(); }, []);
+
+  const setImg = (k, v) => { setImgs((m) => ({ ...m, [k]: v })); setDirtyImgs((m) => ({ ...m, [k]: v })); };
+  const rate = { ...prices(), ...EST_RATES, ...(est.rates || {}) };
+  const p = priceOf(est.lines, est.rates);
+  const setRate = (k, v) => setEst((e) => ({ ...e, rates: { ...(e.rates || {}), [k]: v.replace(/[^\d.]/g, '') } }));
+
+  const open = async (e) => {
+    setErr(''); setEst(e); setImgs({}); setDirtyImgs({});
+    setImgs(await getEstimateImages(e.id));
+  };
+  const startNew = () => { setErr(''); setEst(BLANK); setImgs({}); setDirtyImgs({}); };
+
+  const pickPhoto = async (file) => {
+    if (!file) return;
+    setErr('');
+    try { setImg('photo', await toJpeg(await fileToDataUrl(file))); setImg('warm', ''); setImg('multi', ''); } catch (e) { setErr(e.message); }
+  };
+
+  // Paste a screenshot (⌘V) anywhere on the page = house photo.
+  useEffect(() => {
+    const onPaste = (e) => { const f = [...(e.clipboardData?.files || [])].find((x) => x.type.startsWith('image/')); if (f) { e.preventDefault(); if (slot) putMockup(slot, f); else pickPhoto(f); } };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  });
+
+  const read = async () => {
+    setBusy('read'); setErr('');
+    try {
+      const r = await post('/api/lights-measure', { mode: 'estimate', photo: await withGrid(imgs.photo) });
+      setEst((e) => ({ ...e, lines: r.lines.map((l) => ({ label: l.label, feet: Math.round(l.feet), level: l.level, points: l.points || [] })), notes: r.notes, confidence: r.confidence }));
+    } catch (e) { setErr(e.message); }
+    setBusy('');
+  };
+
+  // Mockups are made in Jude's own ChatGPT: copy the prompt + download the photo, then drop the results back here.
+  const [slot, setSlot] = useState(''); // mockup box that ⌘V pastes into
+  const [copiedPrompt, setCopiedPrompt] = useState('');
+  const copyPrompt = async (k) => { await navigator.clipboard.writeText(buildShowPrompt(k, '', 1)); setCopiedPrompt(k); setTimeout(() => setCopiedPrompt(''), 2500); };
+  const putMockup = async (k, file) => { if (!file) return; try { setImg(k, await toJpeg(await fileToDataUrl(file))); } catch (e) { setErr(e.message); } };
+
+  const save = async () => {
+    setBusy('save'); setErr('');
+    try {
+      const saved = await saveEstimate({ ...est, low: p.low, high: p.high, est: p.est, feet: p.total }, dirtyImgs, orgId);
+      setEst(saved); setDirtyImgs({}); refresh();
+      return saved;
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(''); }
+  };
+
+  // Saves if needed, then opens their page in preview mode (not counted as an open).
+  const openPreview = async () => {
+    const w = window.open('', '_blank'); // open now so the browser doesn't block it after the save
+    const saved = Object.keys(dirtyImgs).length || !est.token ? await save() : est;
+    if (!saved?.token) { w?.close(); return; }
+    if (w) w.location.href = `/estimate/${saved.token}?preview=1`;
+    else window.location.href = `/estimate/${saved.token}?preview=1`;
+  };
+
+  const copyLink = async () => {
+    const saved = Object.keys(dirtyImgs).length || !est.token ? await save() : est;
+    if (!saved?.token) return;
+    await navigator.clipboard.writeText(estimateUrl(saved.token));
+    setCopied(true); setTimeout(() => setCopied(false), 2500);
+  };
+
+  const editLine = (i, patch) => setEst((e) => ({ ...e, lines: e.lines.map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
+  const phone10 = String(est.phone || '').replace(/\D/g, '').slice(-10);
+  const field = 'w-full rounded-lg border border-card-border bg-surface px-3 py-2 text-sm text-primary';
+
+  return (
+    <div className="max-w-5xl mx-auto p-4 space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-black text-primary">🎄 Lights estimate</h1>
+          <p className="text-xs text-muted">One photo → price range + mockups → private link to text them. Range is −10% / +15% of your quoter $/ft ({money(rate.minimum)} min).</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={async () => { await navigator.clipboard.writeText(FORM_URL); setFormCopied(true); setTimeout(() => setFormCopied(false), 2500); }} title={FORM_URL} className="flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer">{formCopied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy form link</>}</button>
+          <a href="/lights-start" target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary"><ExternalLink size={14} /> Form</a>
+          <button onClick={startNew} className="flex items-center gap-1 rounded-lg bg-[#B3121F] px-3 py-2 text-sm font-bold text-white cursor-pointer"><Plus size={14} /> New</button>
+        </div>
+      </div>
+
+      {err && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm font-bold text-rose-500">{err}</p>}
+
+      <div className="grid gap-4 md:grid-cols-[1fr_280px]">
+        <div className="space-y-4 min-w-0">
+          {/* 1. Who */}
+          {est.form && (
+            <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-primary">
+              <b>📝 From the form:</b> {(est.sides || []).join(', ') || 'Front'} · {est.color || 'Not sure'}
+              {est.jobberRequestUrl ? <a href={est.jobberRequestUrl} target="_blank" rel="noreferrer" className="ml-2 font-semibold text-sky-600 dark:text-sky-400">Jobber request ↗</a> : est.jobberError ? <span className="ml-2 text-rose-500">Jobber request failed: {est.jobberError}</span> : null}
+              {(est.sides || []).some((x) => x !== 'Front') && <p className="mt-1 text-xs text-muted">They want more than the front: add the other sides' runs by hand (Claude only sees the photo).</p>}
+            </div>
+          )}
+          <div className="rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-3">
+            <input className={field} placeholder="Client name" value={est.client} onChange={(e) => setEst({ ...est, client: e.target.value })} />
+            <input className={field} placeholder="Phone" value={est.phone} onChange={(e) => setEst({ ...est, phone: e.target.value })} />
+            <input className={field} placeholder="Address" value={est.address} onChange={(e) => setEst({ ...est, address: e.target.value })} />
+          </div>
+
+          {/* 2. Photo */}
+          <div className="rounded-xl border border-card-border bg-card p-4 space-y-3" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); pickPhoto([...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith('image/'))); }}>
+            {!imgs.photo && <p className="text-xs text-muted">Drag a photo here, paste a screenshot (⌘V), or tap Add house photo.</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1.5 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer">
+                <Camera size={15} /> {imgs.photo ? 'Change photo' : 'Add house photo'}
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => pickPhoto(e.target.files?.[0])} />
+              </label>
+              {est.address && (
+                <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(est.address)}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm font-semibold text-sky-600 dark:text-sky-400">
+                  <MapPin size={14} /> Street View (screenshot the front)
+                </a>
+              )}
+              {imgs.photo && <button onClick={read} disabled={!!busy} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50"><Sparkles size={14} /> {busy === 'read' ? 'Reading roofline…' : est.lines.length ? 'Re-read photo' : 'Estimate from photo'}</button>}
+            </div>
+            {imgs.photo && (
+              <div className="relative rounded-lg overflow-hidden bg-black">
+                <img src={imgs.photo} alt="" className="w-full block" />
+                <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+                  {est.lines.map((l, i) => (l.points?.length > 1 ? (
+                    <polyline key={i} points={l.points.map((q) => `${q.x},${q.y}`).join(' ')} fill="none" stroke={LEVEL_COLOR[l.level] || '#fff'} strokeWidth={hot === i ? 7 : 4} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" opacity={hot === -1 || hot === i ? 1 : 0.35} />
+                  ) : null))}
+                </svg>
+                {est.lines.map((l, i) => { const m = midOf(l.points); return m ? (
+                  <button key={i} onMouseEnter={() => setHot(i)} onMouseLeave={() => setHot(-1)} onClick={() => setHot(hot === i ? -1 : i)}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full px-1.5 py-0.5 text-[11px] font-black text-white shadow cursor-pointer whitespace-nowrap"
+                    style={{ left: `${m.x / 10}%`, top: `${m.y / 10}%`, background: LEVEL_COLOR[l.level] || '#333', outline: hot === i ? '2px solid white' : 'none' }}>
+                    <span className="inline-flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-white/90 text-[10px] leading-4 text-center" style={{ color: LEVEL_COLOR[l.level] || '#333' }}>{i + 1}</span>{l.feet} ft</span>
+                  </button>
+                ) : null; })}
+              </div>
+            )}
+            {['x1', 'x2', 'x3'].some((k) => imgs[k]) && (
+              <div>
+                <p className="text-[11px] text-muted mb-1">Their other photos. Tap one to use it as the main photo:</p>
+                <div className="flex gap-2">
+                  {['x1', 'x2', 'x3'].filter((k) => imgs[k]).map((k) => (
+                    <button key={k} onClick={() => { const main = imgs.photo; setImg('photo', imgs[k]); setImg(k, main); }} className="w-20 h-20 rounded-lg overflow-hidden ring-1 ring-card-border cursor-pointer"><img src={imgs[k]} alt="" className="w-full h-full object-cover" /></button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {est.lines.some((l) => l.points?.length > 1) && <p className="text-[11px] text-muted">Each tag = <b>run #</b> (white circle, matches the list below) + <b>feet of lights</b>. Lines are where Claude thinks each run is. <span style={{ color: LEVEL_COLOR.easy }}>■</span> easy <span style={{ color: LEVEL_COLOR.medium }}>■</span> medium <span style={{ color: LEVEL_COLOR.hard }}>■</span> hard</p>}
+          </div>
+
+          {/* 3. Lines */}
+          {est.lines.length > 0 && (
+            <div className="rounded-xl border border-card-border bg-card p-4 space-y-2">
+              <p className="text-[11px] font-black uppercase tracking-[0.15em] text-muted">Roofline · {p.total} ft {est.confidence && <span className={est.confidence === 'low' ? 'text-amber-600' : ''}>· {est.confidence} confidence</span>}</p>
+              {est.lines.map((l, i) => (
+                <div key={i} className="flex items-center gap-2" onMouseEnter={() => setHot(i)} onMouseLeave={() => setHot(-1)}>
+                  <span className="w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-[11px] font-black text-white" style={{ background: LEVEL_COLOR[l.level] || '#333' }}>{i + 1}</span>
+                  <input className={`${field} !w-auto min-w-0 flex-1`} value={l.label} onChange={(e) => editLine(i, { label: e.target.value })} />
+                  <input className={`${field} !w-16 shrink-0 text-right`} inputMode="numeric" value={l.feet} onChange={(e) => editLine(i, { feet: Number(e.target.value.replace(/\D/g, '')) || 0 })} />
+                  <span className="text-xs text-muted">ft</span>
+                  <select className={`${field} !w-24 shrink-0`} value={l.level} onChange={(e) => editLine(i, { level: e.target.value })}>{LEVELS.map((x) => <option key={x}>{x}</option>)}</select>
+                  <button onClick={() => setEst((e) => ({ ...e, lines: e.lines.filter((_, j) => j !== i) }))} className="p-1.5 text-muted hover:text-rose-500 cursor-pointer"><Trash2 size={14} /></button>
+                </div>
+              ))}
+              <button onClick={() => setEst((e) => ({ ...e, lines: [...e.lines, { label: 'Extra run', feet: 20, level: 'easy' }] }))} className="text-sm font-semibold text-sky-600 dark:text-sky-400 cursor-pointer">+ Add a run</button>
+              {est.notes && <p className="text-xs text-muted italic">{est.notes}</p>}
+            </div>
+          )}
+
+          {/* 4. Mockups */}
+          {imgs.photo && (
+            <div className="rounded-xl border border-card-border bg-card p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-black uppercase tracking-[0.15em] text-muted">Mockups · made in your ChatGPT</p>
+                <a href={imgs.photo} download={`${(est.client || 'house').replace(/[^a-z0-9]+/gi, '-')}-photo.jpg`} className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary"><Download size={14} /> Download photo</a>
+              </div>
+              <p className="text-xs text-muted">1. Download the photo · 2. Copy a prompt, paste it in ChatGPT with the photo · 3. Drag the result into its box (or click the box, then ⌘V).</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {['warm', 'multi'].map((k) => (
+                  <div key={k} className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-primary">{k === 'warm' ? 'Warm white' : 'Multicolor'}</p>
+                      <button onClick={() => copyPrompt(k)} className="flex items-center gap-1 text-xs font-semibold text-sky-600 dark:text-sky-400 cursor-pointer">{copiedPrompt === k ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy prompt</>}</button>
+                    </div>
+                    <div onClick={() => setSlot(k)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); putMockup(k, [...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith('image/'))); }}
+                      className={`block rounded-lg cursor-pointer ${slot === k ? 'ring-2 ring-sky-500' : ''}`}>
+                      {imgs[k] ? <img src={imgs[k]} alt="" className="w-full rounded-lg" /> : <div className="aspect-video rounded-lg border-2 border-dashed border-card-border bg-surface-alt flex items-center justify-center text-center px-3 text-xs text-muted">{slot === k ? 'Press ⌘V to paste, or drop the image here' : 'Drop ChatGPT image here'}</div>}
+                    </div>
+                    <label className="mr-3 text-xs font-semibold text-sky-600 dark:text-sky-400 cursor-pointer">Choose file<input type="file" accept="image/*" className="hidden" onChange={(e) => putMockup(k, e.target.files?.[0])} /></label>
+                    {imgs[k] && <button onClick={() => setImg(k, '')} className="text-xs font-semibold text-muted hover:text-rose-500 cursor-pointer">Remove</button>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Price + link */}
+        <div className="space-y-3">
+          <div className="rounded-xl border border-card-border bg-card p-4 space-y-2 md:sticky md:top-4">
+            <p className="text-[11px] font-black uppercase tracking-[0.15em] text-muted">Their range</p>
+            <p className="text-3xl font-black text-primary">{est.lines.length ? `${money(p.low)}–${money(p.high)}` : '—'}</p>
+            {est.lines.length > 0 && (
+              <div className="text-xs text-muted space-y-0.5 tabular-nums">
+                {LEVELS.map((lv) => (
+                  <p key={lv} className="flex justify-between gap-2"><span className="flex items-center gap-1"><span style={{ color: LEVEL_COLOR[lv] }}>■</span> {lv} {p.feet[lv]} ft × $<input value={rate[lv]} onChange={(e) => setRate(lv, e.target.value)} inputMode="decimal" className="w-10 rounded border border-card-border bg-surface px-1 text-primary text-right" />/ft</span><span>{money(p.feet[lv] * Number(rate[lv]))}</span></p>
+                ))}
+                <p className="flex justify-between gap-2 border-t border-card-border pt-0.5 font-bold text-primary"><span>Estimate{p.est > p.feet.easy * rate.easy + p.feet.medium * rate.medium + p.feet.hard * rate.hard ? ` (${money(rate.minimum)} min)` : ''}</span><span>{money(p.est)}</span></p>
+                <p className="flex items-center gap-1">Minimum $<input value={rate.minimum} onChange={(e) => setRate('minimum', e.target.value)} inputMode="decimal" className="w-12 rounded border border-card-border bg-surface px-1 text-primary text-right" /></p>
+                <p>Range = −10% / +15%. Default $7 / $9 / $10 per ft; edits here only change this estimate.</p>
+              </div>
+            )}
+            <button onClick={save} disabled={busy === 'save' || !est.client} className="w-full rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer disabled:opacity-50">{busy === 'save' ? 'Saving…' : 'Save'}</button>
+            <button onClick={copyLink} disabled={!est.client || !est.lines.length || !!busy} className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50">{copied ? <><Check size={14} /> Link copied</> : <><Copy size={14} /> Copy client link</>}</button>
+            <button onClick={openPreview} disabled={!est.client || !est.lines.length || !!busy} className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50"><ExternalLink size={14} /> Preview their page</button>
+            <p className="-mt-1 text-center text-[11px] text-muted">Preview doesn't count as them opening it</p>
+            {est.token && (() => {
+              const vw = list.find((x) => x.id === est.id)?.views;
+              if (!vw?.count) return <p className="text-center text-xs text-muted">👀 Not opened yet</p>;
+              return (
+                <div className="rounded-lg bg-sky-500/10 px-3 py-2 text-xs text-primary">
+                  <p className="font-bold">👀 Opened {vw.count}× · last {ago(vw.last)}</p>
+                  <div className="mt-1 max-h-32 overflow-auto text-muted">{[...vw.list].reverse().map((x) => <p key={x.at}>{when(x.at)} · {x.device}</p>)}</div>
+                </div>
+              );
+            })()}
+            {est.token && phone10.length === 10 && <a href={`openphone://message?number=%2B1${phone10}`} className="block text-center text-sm font-semibold text-sky-600 dark:text-sky-400">Open their Quo chat</a>}
+            {est.said && <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm font-bold text-emerald-700 dark:text-emerald-300">✅ They want the exact quote{est.said.color ? ` (${est.said.color === 'warm' ? 'warm white' : 'multicolor'})` : ''}</p>}
+          </div>
+
+          <div className="rounded-xl border border-card-border bg-card p-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.15em] text-muted mb-1">Saved</p>
+            {!list.length && <p className="text-xs text-muted">None yet.</p>}
+            <div className="divide-y divide-card-border">
+              {list.map((e) => (
+                <div key={e.id} className="flex items-center gap-2 py-1.5">
+                  <button onClick={() => open(e)} className={`min-w-0 flex-1 text-left cursor-pointer ${est.id === e.id ? 'font-black' : ''}`}>
+                    <p className="text-sm text-primary truncate">{e.said ? '✅ ' : e.form && !e.token ? '📝 ' : ''}{e.client || 'No name'}</p>
+                    <p className="text-xs text-muted">{e.low ? `${money(e.low)}–${money(e.high)}` : ''}{e.views?.count ? ` · 👀 ${e.views.count}× · ${ago(e.views.last)}` : e.token ? ' · not opened' : ''}</p>
+                  </button>
+                  {confirmDel === e.id
+                    ? <button onClick={() => { setConfirmDel(''); removeEstimate(e, orgId).then(() => { if (est.id === e.id) startNew(); refresh(); }); }} className="rounded bg-red-600 px-1.5 py-0.5 text-[11px] font-semibold text-white cursor-pointer">Remove?</button>
+                    : <button onClick={() => setConfirmDel(e.id)} title="Remove (their link stops working)" className="p-1 text-muted hover:text-rose-500 cursor-pointer"><Trash2 size={13} /></button>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

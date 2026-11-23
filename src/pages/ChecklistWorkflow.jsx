@@ -7,6 +7,7 @@ const RouteMapInner = lazy(() => import('../components/RouteMapInner'));
 
 const WeatherStep = lazy(() => import('../components/WeatherStep'));
 const QuoTextsStep = lazy(() => import('../components/QuoTextsStep'));
+const LeadsStep = lazy(() => import('../components/LeadsStep'));
 const EmailStep = lazy(() => import('../components/EmailStep'));
 const JobberStep = lazy(() => import('../components/JobberStep'));
 const PersonalStep = lazy(() => import('../components/PersonalStep'));
@@ -355,7 +356,9 @@ export default function ChecklistWorkflow() {
 
   const titleParts = parseLinks(item.text);
   // Steps with a big live panel (the Quo inbox) get the full width; the step list collapses to the top bar.
-  const wide = ownerMode && !isTeam && ['texts', 'email', 'jobber', 'personal', 'plan'].includes(item.panel);
+  // Owner checklists: step pills across the top on every step (same look on every step).
+  const top = ownerMode && !isTeam;
+  const wide = top && ['texts', 'email', 'jobber', 'personal', 'plan', 'imessage', 'personal-email', 'schedule', 'followups', 'leads'].includes(item.panel);
 
   // Short label for the step list (strip markdown links, trim to ~25 chars).
   const shortLabel = (t) => {
@@ -369,9 +372,9 @@ export default function ChecklistWorkflow() {
     : null;
 
   return (
-    <div className={`px-4 sm:px-6 py-6 max-w-6xl mx-auto grid grid-cols-1 ${wide ? '' : 'lg:grid-cols-[260px_1fr]'} gap-6`}>
+    <div className={`${top ? "-mx-4 sm:-mx-6 -mt-4 sm:-mt-8 max-w-none gap-0" : "px-4 sm:px-6 py-6 max-w-6xl gap-6"} mx-auto grid grid-cols-1 ${top ? '' : 'lg:grid-cols-[260px_1fr]'}`}>
       {/* Top progress bar: replaces the side stepper on small screens, and on wide steps (Quo inbox) */}
-      <div className={wide ? '' : 'lg:hidden'}>
+      <div className={top ? 'px-4 sm:px-6 pt-3 pb-2' : 'lg:hidden'}>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted">
             {sectionLabel || (kind === 'end' ? 'End of Day · 5 PM' : kind === 'team-start' ? 'Start of Day' : kind === 'team-end' ? 'End of Day' : kind === 'team-today' ? 'Today' : 'Start of Day · 8 AM')} · {idx + 1}/{total}
@@ -384,7 +387,7 @@ export default function ChecklistWorkflow() {
             <Pencil size={14} />
           </button>
         </div>
-        {wide ? (
+        {top ? (
           // Wide steps: the step list as a row of chips (checks, current, next).
           <div className="flex gap-1.5 overflow-x-auto pb-1">
             {steps.map((s, i) => {
@@ -417,7 +420,7 @@ export default function ChecklistWorkflow() {
       </div>
 
       {/* Side stepper — desktop only */}
-      <aside className={`hidden ${wide ? '' : 'lg:block'} lg:sticky lg:top-4 lg:self-start`}>
+      <aside className={`hidden ${top ? '' : 'lg:block'} lg:sticky lg:top-4 lg:self-start`}>
         <div className="rounded-2xl border border-card-border bg-card p-3">
           <div className="flex items-center justify-between px-2 pt-1 pb-2">
             <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted">
@@ -480,9 +483,9 @@ export default function ChecklistWorkflow() {
       </aside>
 
       {/* Main step content */}
-      <div className="min-w-0">
+      <div className={`min-w-0 ${top && !wide ? 'px-4 sm:px-6 pt-4 max-w-5xl' : ''}`}>
       {/* Step title — tap to rename */}
-      <div className="flex items-start justify-between gap-3 mb-4">
+      <div className={`${wide ? 'hidden' : 'flex'} items-start justify-between gap-3 mb-4`}>
         <EditableTitle
           value={item.text}
           onSave={(t) => setList(list.map((i) => i.id === item.id ? { ...i, text: t } : i))}
@@ -555,6 +558,60 @@ export default function ChecklistWorkflow() {
             className="mt-3 text-[11px] font-bold text-muted hover:text-primary cursor-pointer"
           >
             Remove personal inbox from this step
+          </button>
+        </div>
+      )}
+      {ownerMode && !isTeam && item.panel === 'imessage' && (
+        <div className="mb-6">
+          <Suspense fallback={<p className="text-sm text-tertiary">Loading…</p>}>
+            <QuoTextsStep source="imessage" />
+          </Suspense>
+          <button
+            onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: undefined } : i))}
+            className="mt-3 text-[11px] font-bold text-muted hover:text-primary cursor-pointer"
+          >
+            Remove iMessage from this step
+          </button>
+        </div>
+      )}
+      {ownerMode && !isTeam && item.panel === 'personal-email' && (
+        <div className="mb-6">
+          <Suspense fallback={<p className="text-sm text-tertiary">Loading…</p>}>
+            <EmailStep scope="personal" />
+          </Suspense>
+          <button
+            onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: undefined } : i))}
+            className="mt-3 text-[11px] font-bold text-muted hover:text-primary cursor-pointer"
+          >
+            Remove personal Gmail from this step
+          </button>
+        </div>
+      )}
+      {ownerMode && !isTeam && item.panel === 'leads' && (
+        <div className="mb-6">
+          <Suspense fallback={<p className="text-sm text-tertiary">Loading leads…</p>}>
+            <LeadsStep />
+          </Suspense>
+        </div>
+      )}
+      {ownerMode && !isTeam && item.panel === 'followups' && (
+        <div className="mb-6">
+          <Suspense fallback={<p className="text-sm text-tertiary">Loading…</p>}>
+            <QuoTextsStep mode="followups" />
+          </Suspense>
+        </div>
+      )}
+      {ownerMode && !isTeam && item.panel === 'schedule' && (
+        <div className="mb-6">
+          <Suspense fallback={<p className="text-sm text-tertiary">Loading schedule…</p>}>
+            <p className="mb-3 text-sm text-secondary">Set a phone timer for each <b>Schedule</b> item. <b>All day</b> items have no set time: just check them off when done.</p>
+            <PlanPage embedded hideHabits />
+          </Suspense>
+          <button
+            onClick={() => setList(list.map((i) => i.id === item.id ? { ...i, panel: undefined } : i))}
+            className="mt-3 text-[11px] font-bold text-muted hover:text-primary cursor-pointer"
+          >
+            Remove the schedule from this step
           </button>
         </div>
       )}
@@ -698,14 +755,14 @@ export default function ChecklistWorkflow() {
       )}
 
       {/* Empty state if no SOP and no sub-items */}
-      {ownerMode && !sop.trim() && subItems.length === 0 && (
+      {ownerMode && !sop.trim() && subItems.length === 0 && !wide && (
         <p className="text-xs text-muted mb-5">
           <Link to={`/checklist/${kind}/${item.id}`} className="hover:text-primary">+ Add instructions</Link>
         </p>
       )}
 
       {/* Action bar */}
-      <div className="sticky bottom-4 z-10 flex items-center gap-2">
+      <div className={`sticky z-10 flex items-center gap-2 ${wide ? 'bottom-0 bg-surface px-4 sm:px-6 py-2 border-t border-card-border' : 'bottom-4'}`}>
         <button
           onClick={prev}
           disabled={idx === 0}

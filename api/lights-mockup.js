@@ -4,7 +4,7 @@
 // (Claude reads photos but doesn't generate images, so this uses OpenAI's
 // image edit endpoint with the key the receipt scanner already uses.)
 
-import { NIGHT_PROMPT, buildPrompt } from '../src/lib/lightsPrompt.js';
+import { NIGHT_PROMPT, buildPrompt, buildShowPrompt } from '../src/lib/lightsPrompt.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '12mb' } }, maxDuration: 180 };
 
@@ -15,11 +15,12 @@ export default async function handler(req, res) {
 
   const { image, design, custom, mode } = req.body || {};
   const m = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(image || '');
-  if (!m) return res.status(400).json({ error: 'Send the guide photo as a data URL.' });
+  if (!m) return res.status(400).json({ error: 'Send the photo as a data URL.' });
 
   const form = new FormData();
   form.append('model', process.env.OPENAI_IMAGE_MODEL || 'chatgpt-image-latest');
-  form.append('prompt', mode === 'night' ? NIGHT_PROMPT : buildPrompt(design, custom));
+  // mode 'show': plain photo, no guide lines — light every visible gutter/eave/gable edge (Lights Estimate page).
+  form.append('prompt', mode === 'night' ? NIGHT_PROMPT : mode === 'show' ? buildShowPrompt(design, custom, 1) : buildPrompt(design, custom));
   form.append('image', new Blob([Buffer.from(m[2], 'base64')], { type: m[1] }), `house.${m[1].split('/')[1]}`);
   form.append('size', 'auto');
   form.append('quality', process.env.OPENAI_IMAGE_QUALITY || 'medium');

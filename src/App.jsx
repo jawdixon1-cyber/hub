@@ -73,6 +73,7 @@ const ChecklistTrackerPage = lazy(() => import('./pages/ChecklistTrackerPage'));
 const Quoting = lazy(() => import('./pages/Quoting'));
 const LightsQuoter = lazy(() => import('./pages/LightsQuoter'));
 const LightsPresentation = lazy(() => import('./pages/LightsPresentation'));
+const LightsEstimate = lazy(() => import('./pages/LightsEstimate'));
 const LightsCrew = lazy(() => import('./pages/LightsCrew'));
 const LightsRefer = lazy(() => import('./pages/LightsRefer'));
 const DailyChecklist = lazy(() => import('./pages/DailyChecklist'));
@@ -1194,6 +1195,7 @@ function AppShell() {
                 <Route path="/sales" element={<Sales />} />
                 <Route path="/lights-quoter" element={ownerMode ? <LightsQuoter /> : <Navigate to="/" replace />} />
                 <Route path="/lights-presentation/:id" element={ownerMode ? <LightsPresentation /> : <Navigate to="/" replace />} />
+                <Route path="/lights-estimate" element={ownerMode ? <LightsEstimate /> : <Navigate to="/" replace />} />
                 <Route path="/lights-supplies" element={<Navigate to="/lights-quoter?view=supplies" replace />} />
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/clients/new" element={<NewClient />} />
