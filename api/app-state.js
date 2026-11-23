@@ -562,7 +562,7 @@ async function handleEstimatePage(req, res) {
     .replace('</head>', () => {
       const host = req.headers['x-forwarded-host'] || req.headers.host || 'hub.heyjudeslawncare.com';
       const prevImg = heroImg ? `https://${host}${heroImg}` : `${SITE}/wp-content/uploads/2026/11/lights-share.jpg`;
-      const t = first ? `${first}, here's your Christmas lights mockup 🎄` : 'Your Christmas lights mockup 🎄';
+      const t = first ? `${first}, here's your Christmas lights rough estimate 🎄` : 'Your Christmas lights rough estimate 🎄';
       return `<meta property="og:type" content="website"><meta property="og:title" content="${escHtml(t)}"><meta property="og:description" content="Your rough estimate from Hey Jude's">`
         + `<meta property="og:image" content="${prevImg}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${prevImg}"></head>`;
     })
