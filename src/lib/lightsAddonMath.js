@@ -12,3 +12,12 @@ export const addonTotals = (list) => {
   });
   return t;
 };
+
+// An add-on with strands is always priced strands × $/strand (so a stale price can't stick);
+// one without strands (wreath, garland…) keeps the price typed in.
+export const PER_STRAND = 40;
+export const addonPrice = (a, perStrand = PER_STRAND) => {
+  const n = Number(a?.strands) || 0; const per = Number(perStrand) > 0 ? Number(perStrand) : PER_STRAND;
+  return n > 0 ? n * per : Number(a?.price) || 0;
+};
+export const pricedAddons = (list, perStrand) => (list || []).map((a) => ({ ...a, price: addonPrice(a, perStrand) }));

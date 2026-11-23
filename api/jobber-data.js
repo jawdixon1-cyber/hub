@@ -1,3 +1,4 @@
+import { pricedAddons } from '../src/lib/lightsAddonMath.js';
 import { jobberQuery, jobberStatus, forceRefresh, JobberDisconnectedError } from '../lib/jobberClient.js';
 import { syncJobberClientToQuo } from '../lib/quoContactSync.js';
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
@@ -2204,7 +2205,7 @@ function lqWireLabel(meta, angles) {
 function buildLqQuote({ meta, ba, base, years, addonIds, angles }) {
   const baRow = { value: ba };
   const wanted = new Set(Array.isArray(addonIds) ? addonIds.map(String) : []);
-  const addons = (baRow?.value?.addons || []).filter((a) => Number(a.price) > 0 && wanted.has(String(a.id)));
+  const addons = pricedAddons(baRow?.value?.addons, baRow?.value?.perStrand).filter((a) => Number(a.price) > 0 && wanted.has(String(a.id)));
   const perks = (baRow?.value?.perks || []).filter((p) => p.title);
   // Offers (same math as the Present page): % is of roofline + kept add-ons.
   const full = base + addons.reduce((t, a) => t + Number(a.price), 0);
@@ -2269,7 +2270,7 @@ export async function handleLightsQuotePreview(req, res) {
   const discountRate = LQ_OFF[years] || 0;
   const discount = Math.round(subtotal * discountRate) / 100;
   const total = Math.round((subtotal - discount) * 100) / 100;
-  const allAddons = (baRow?.value?.addons || []).filter((a) => Number(a.price) > 0).map((a) => ({ id: String(a.id), label: a.label, price: Number(a.price) }));
+  const allAddons = pricedAddons(baRow?.value?.addons, baRow?.value?.perStrand).filter((a) => Number(a.price) > 0).map((a) => ({ id: String(a.id), label: a.label, price: Number(a.price) }));
   return res.json({
     title: '🎄✨Christmas Magic Makeover',
     lineItems: lineItems.map((li) => ({ name: li.name, description: li.description || '', quantity: li.quantity, unitPrice: li.unitPrice })),

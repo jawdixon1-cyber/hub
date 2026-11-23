@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { getExtrasMeta, getImages, saveExtrasMeta, saveImage } from '../lib/lightsStore';
 import { useAppStore } from '../store/AppStoreContext';
-import { addonTotals } from '../lib/lightsAddonMath';
+import { addonTotals, addonPrice, pricedAddons, PER_STRAND } from '../lib/lightsAddonMath';
 
 // Quoter → "Add-ons for the client": optional extras (trees, doors, garages…) shown on the Present page
 // as cards they can take out to lower the price, plus free perks (e.g. gutter cleaning) in the Hey Jude's box.
 // When they say yes, the add-ons they kept go on the Jobber quote. Saved to lq-ba:<id> (not the quote
 // rows, so the Quoter's autosave can't overwrite them); photos are separate lq-img rows.
 
-const PER_STRAND = 40; // default $ per strand — editable per quote
 // One-tap add-ons. `items` = what it uses from Material ("strands" = follows the Strands box).
 const QUICK = [
   { icon: '🎄', label: 'Wreath', sub: '24" lit wreath with a red bow', price: 250, strands: 0, items: [{ id: 'wreath-24', qty: 1 }, { id: 'item-1794520055870', qty: 1 }] },
@@ -49,8 +48,9 @@ export default function LightsAddons({ quoteId, onMaterials = null }) {
     let off = false;
     getExtrasMeta(quoteId).then(async (v) => {
       if (off) return;
-      const a = Array.isArray(v.addons) ? v.addons : [];
-      aRef.current = a; sRef.current = Number(v.perStrand) > 0 ? Number(v.perStrand) : PER_STRAND;
+      sRef.current = Number(v.perStrand) > 0 ? Number(v.perStrand) : PER_STRAND;
+      const a = pricedAddons(Array.isArray(v.addons) ? v.addons : [], sRef.current);
+      aRef.current = a;
       setAddons(a); setPerStrandState(sRef.current);
       loadedFor.current = quoteId;
       const m = await getImages(a.map((x) => x.photo)).catch(() => ({}));
@@ -94,7 +94,7 @@ export default function LightsAddons({ quoteId, onMaterials = null }) {
   if (!quoteId) return <p className="text-sm text-muted">Pick the client first so the quote saves — then you can add add-ons.</p>;
   if (addons === null) return <p className="text-sm text-muted">Loading add-ons…</p>;
 
-  const total = addons.reduce((t, x) => t + (Number(x.price) || 0), 0);
+  const total = addons.reduce((t, x) => t + addonPrice(x, perStrand), 0);
   const box = 'rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:border-brand';
   const input = `w-full ${box}`;
 
@@ -134,15 +134,14 @@ export default function LightsAddons({ quoteId, onMaterials = null }) {
                   Strands
                   <input type="number" min="0" inputMode="numeric" value={x.strands ?? ''} onChange={(e) => { const n = e.target.value === '' ? '' : Number(e.target.value); edit(x.id, { strands: n, ...(Number(n) > 0 && Number(perStrand) > 0 ? { price: Number(n) * Number(perStrand) } : {}) }); }} className={`${box} w-20`} />
                 </label>
-                <label className="flex items-center gap-1.5 text-sm text-secondary whitespace-nowrap">
-                  Price $
-                  <input type="number" min="0" inputMode="decimal" value={x.price ?? ''} onChange={(e) => edit(x.id, { price: e.target.value === '' ? '' : Number(e.target.value) })} className={`${box} w-24`} />
-                </label>
-                {suggested > 0 && Number(x.price) !== suggested && (
-                  <button onClick={() => edit(x.id, { price: suggested })} className="rounded-lg border border-border-default px-2.5 py-1.5 text-xs text-secondary hover:text-primary cursor-pointer">
-                    = {x.strands} × ${Number(perStrand) || 0} ({money(suggested)})
-                  </button>
-                )}
+                {suggested > 0
+                  ? <span className="text-sm text-secondary whitespace-nowrap">× ${Number(perStrand) || 0} = <b className="text-primary">{money(suggested)}</b></span>
+                  : (
+                    <label className="flex items-center gap-1.5 text-sm text-secondary whitespace-nowrap">
+                      Price $
+                      <input type="number" min="0" inputMode="decimal" value={x.price ?? ''} onChange={(e) => edit(x.id, { price: e.target.value === '' ? '' : Number(e.target.value) })} className={`${box} w-24`} />
+                    </label>
+                  )}
                 <label className="ml-auto flex items-center gap-1.5 text-sm text-secondary cursor-pointer">
                   <input type="checkbox" checked={x.on !== false} onChange={(e) => edit(x.id, { on: e.target.checked })} />
                   Starts added
@@ -166,7 +165,7 @@ export default function LightsAddons({ quoteId, onMaterials = null }) {
                 <button onClick={() => edit(x.id, { items: [...(x.items || []), { id: supplies.find((sp) => /mini/i.test(sp.name))?.id || supplies[0]?.id || '', qty: (x.items || []).length ? 1 : 'strands' }] })}
                   className="rounded-lg border border-dashed border-border-default px-2 py-1 text-xs text-secondary hover:text-primary cursor-pointer">+ material</button>
               </div>
-              {!(Number(x.price) > 0) && <p className="text-xs text-red-400">Needs a price to show on the Present page.</p>}
+              {!(addonPrice(x, perStrand) > 0) && <p className="text-xs text-red-400">Needs a price to show on the Present page.</p>}
             </div>
           </div>
         );

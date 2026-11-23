@@ -1,4 +1,4 @@
-import { addonTotals } from '../src/lib/lightsAddonMath.js';
+import { addonTotals, pricedAddons } from '../src/lib/lightsAddonMath.js';
 import { Buffer } from 'node:buffer';
 // Server-side proxy for app_state + team auth + GHL — bypasses RLS using service role key
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
@@ -291,7 +291,7 @@ async function handleLightsPresent(req, res) {
     ba: {
       heroY: ba.heroY, adjust: ba.adjust, perks: ba.perks || [], offers: ba.offers || [],
       pairs: (ba.pairs || []).map((x) => ({ label: x.label || '', before: kUrl(x.before), after: kUrl(x.after) })).filter((x) => x.before && x.after),
-      addons: (ba.addons || []).map((x) => ({ id: x.id, label: x.label, sub: x.sub, price: x.price, strands: x.strands, on: x.on, photo: kUrl(x.photo) })),
+      addons: pricedAddons(ba.addons, ba.perStrand).map((x) => ({ id: x.id, label: x.label, sub: x.sub, price: x.price, strands: x.strands, on: x.on, photo: kUrl(x.photo) })),
     },
     supplies,
   });

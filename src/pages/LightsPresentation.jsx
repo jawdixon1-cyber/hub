@@ -4,7 +4,7 @@ import { getQuote } from '../lib/lightsStore';
 import { supabase } from '../lib/supabase';
 import { useAppStoreOptional } from '../store/AppStoreContext';
 import { DESIGNS } from '../lib/lightsDesigns';
-import { addonTotals } from '../lib/lightsAddonMath';
+import { addonTotals, pricedAddons } from '../lib/lightsAddonMath';
 import { PlanOverlay, OutletMarks } from '../components/LightsMarkup';
 
 // Client-facing presentation for one lights quote — shown full screen on the
@@ -209,7 +209,7 @@ export default function LightsPresentation({ share = false }) {
       const { data } = await supabase.from('app_state').select('value').eq('key', `lq-ba:${id}`).maybeSingle();
       const v = data?.value || {};
       // Prices first (add-ons, bump, offers, perks) — so the plan prices are right immediately…
-      const a0 = (v.addons || []).filter((x) => Number(x.price) > 0);
+      const a0 = pricedAddons(v.addons, v.perStrand).filter((x) => Number(x.price) > 0);
       setAddons(a0.map((x) => ({ ...x, photo: '' }))); setAddOn(Object.fromEntries(a0.map((x) => [x.id, x.on !== false])));
       setPerks(Array.isArray(v.perks) ? v.perks.filter((x) => x.title) : []);
       setBump(Number(v.adjust) || 0);
