@@ -180,9 +180,8 @@ export default async function handler(req, res) {
 
   // Jobber sync is paused. We accept the request (so Jobber doesn't see failures
   // and retry forever) but skip the upsert. Re-enable with JOBBER_SYNC_ENABLED=true.
-  if (process.env.JOBBER_SYNC_ENABLED !== 'true') {
-    return res.status(200).json({ paused: true });
-  }
+  // (Visit/job sync can be paused with JOBBER_SYNC_ENABLED; new clients/requests -> Quo always runs.)
+  const syncPaused = process.env.JOBBER_SYNC_ENABLED !== 'true';
 
   const rawBody = await readRawBody(req);
   const sig = req.headers['x-jobber-hmac-sha256'];
@@ -212,7 +211,8 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabaseAdmin();
     let result;
-    if (topic.startsWith('VISIT_')) result = await handleVisit(supabase, topic, itemId);
+    if (syncPaused && (topic.startsWith('VISIT_') || topic.startsWith('JOB_'))) result = { paused: true };
+    else if (topic.startsWith('VISIT_')) result = await handleVisit(supabase, topic, itemId);
     else if (topic.startsWith('JOB_')) result = await handleJob(supabase, topic, itemId);
     else if (topic === 'CLIENT_CREATE' || topic === 'CLIENT_UPDATE') result = await syncJobberClientToQuo(itemId);
     else if (topic === 'REQUEST_CREATE') result = await syncJobberRequestToQuo(itemId);
