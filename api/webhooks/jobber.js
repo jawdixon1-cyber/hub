@@ -6,6 +6,7 @@
 //   1. In your Jobber developer dashboard, create webhooks for:
 //        VISIT_CREATE, VISIT_UPDATE, VISIT_DESTROY,
 //        JOB_CREATE,   JOB_UPDATE,   JOB_DESTROY
+//        CLIENT_CREATE, CLIENT_UPDATE, REQUEST_CREATE  (-> new people copied into Quo contacts)
 //   2. Set callback URL to: https://hub.heyjudeslawncare.com/api/webhooks/jobber
 //   3. Copy the signing secret into JOBBER_WEBHOOK_SECRET env var on Vercel.
 //
@@ -16,6 +17,7 @@
 import crypto from 'crypto';
 import { getSupabaseAdmin } from '../../lib/supabaseAdmin.js';
 import { jobberQuery, JobberDisconnectedError } from '../../lib/jobberClient.js';
+import { syncJobberClientToQuo, syncJobberRequestToQuo } from '../../lib/quoContactSync.js';
 
 export const config = { api: { bodyParser: false } };
 
@@ -212,6 +214,8 @@ export default async function handler(req, res) {
     let result;
     if (topic.startsWith('VISIT_')) result = await handleVisit(supabase, topic, itemId);
     else if (topic.startsWith('JOB_')) result = await handleJob(supabase, topic, itemId);
+    else if (topic === 'CLIENT_CREATE' || topic === 'CLIENT_UPDATE') result = await syncJobberClientToQuo(itemId);
+    else if (topic === 'REQUEST_CREATE') result = await syncJobberRequestToQuo(itemId);
     else result = { skipped: topic };
 
     console.log(`[Jobber Webhook] ${topic} ${itemId}:`, result);
