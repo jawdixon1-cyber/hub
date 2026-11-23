@@ -409,13 +409,14 @@ async function handleEstimatePage(req, res) {
   const img = (k) => (e.has?.[k] ? `/api/app-state?key=lights-estimate&amp;token=${tok}&amp;img=${k}&amp;v=${v}` : '');
   const traced = (Array.isArray(e.lines) ? e.lines : []).filter((l) => Array.isArray(l.points) && l.points.length > 1);
   const linesSvg = traced.length ? `<svg class="hje-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none">${traced.map((l) => `<polyline points="${l.points.map((q) => `${Number(q.x) || 0},${Number(q.y) || 0}`).join(' ')}" />`).join('')}</svg>` : '';
-  const looks = [['photo', 'Your roofline'], ['warm', 'Warm white'], ['multi', 'Multicolor']].filter(([k]) => img(k));
+  const looks = [['photo', 'Your roofline']].filter(([k]) => img(k));
+  const heroImg = img('warm') || img('multi') || img('photo'); // mockup across the top when there is one
   const first = escHtml(String(e.client || '').trim().split(/\s+/)[0]);
   const street = escHtml(String(e.address || '').split(',')[0].trim());
   const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-US')}`;
   const pics = looks.length ? `<div class="hje-pic">${looks.map(([k, label], i) => `<figure data-look="${k}"${i ? ' hidden' : ''}><img src="${img(k)}" alt="${label}">${k === 'photo' ? linesSvg : ''}${k === 'photo' ? '' : '<span class="hje-badge">✨ Mockup preview</span>'}</figure>`).join('')}</div>
         ${looks.length > 1 ? `<div class="hje-tabs">${looks.map(([k, label], i) => `<button type="button" data-look="${k}"${i ? '' : ' class="on"'}>${label}</button>`).join('')}</div>` : ''}
-        ${img('warm') || img('multi') ? '<p class="hje-small">Mockup made from a photo of your house, to give you an idea. Your real design is planned to the foot.</p>' : ''}` : '';
+        <p class="hje-small">Here&#8217;s your house and what this estimate is based on: the lit rooflines are traced in gold.</p>` : '';
   // Bottom bar: no price up top (it's the payoff at the end) — just point them to it.
   const sticky = `<div class="hje-sticky" hidden><div><b>Your rough estimate is ready</b><span>Based on a photo of your house · scroll down to see it</span></div><button type="button" class="btn btn-go hje-yes2">See it ↓</button></div>`;
   const smsTo = '+18039027447'; // Biz # in Quo
@@ -564,10 +565,10 @@ async function handleEstimatePage(req, res) {
     .replace('Most companies hang lights. Some do full service. We do full service, plus.', () => 'Most companies hang lights. Some do full service. We do world-class service.')
     .replace('Read all our Google reviews', () => 'Read all Google reviews')
     .replace('We provide the lights, design, hang, maintain, take down, store them, and more.', () => 'We provide the lights, design, hang, maintain, take down, store them &amp; more.')
-    .replace('<div class="bg" role="img" aria-label="A home we lit in cool white and blue"></div>', (m) => (img('photo')
-      ? `<div class="bg" role="img" aria-label="Your house" style="background-image:url('${img('photo').replace(/&amp;/g, '&')}')!important"></div>`
+    .replace('<div class="bg" role="img" aria-label="A home we lit in cool white and blue"></div>', (m) => (heroImg
+      ? `<div class="bg" role="img" aria-label="Your house" style="background-image:url('${heroImg.replace(/&amp;/g, '&')}')!important"></div>`
       : m))
-    .replace('<h1>Your house, lit up for Christmas.</h1>', (m) => (img('photo') && first ? `<h1 class="hje-h1" style="text-wrap:balance">${first}, let&#8217;s make your home a winter wonderland.</h1>` : m))
+    .replace('<h1>Your house, lit up for Christmas.</h1>', (m) => (heroImg && first ? `<h1 class="hje-h1" style="text-wrap:balance">${first}, let&#8217;s make your home a winter wonderland.</h1>` : m))
     // "Full service, plus" says what we DO (tight wires, plan first, insured, 5.0★); the other columns lose their ✗ lines
     .replace(/<ul class="rich">[\s\S]*?<\/ul>/, () => `<ul class="rich">
             <li><b>📐 Full plan before you buy</b><span>Every bulb mapped — you see it before you pay</span></li>
