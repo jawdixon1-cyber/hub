@@ -158,7 +158,7 @@ export default function LightsEstimate() {
       <div className="flex items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-black text-primary">🎄 Lights estimate</h1>
-          <p className="text-xs text-muted">One photo → price range + mockups → private link to text them. Range is −10% / +15% of your quoter $/ft ({money(rate.minimum)} min).</p>
+          <p className="text-xs text-muted">One photo → price range + mockups → private link to text them. Range is −10% / +10% of your quoter $/ft ({money(rate.minimum)} min).</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={async () => { await navigator.clipboard.writeText(FORM_URL); setFormCopied(true); setTimeout(() => setFormCopied(false), 2500); }} title={FORM_URL} className="flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer">{formCopied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy form link</>}</button>
@@ -343,7 +343,7 @@ export default function LightsEstimate() {
                 ))}
                 <p className="flex justify-between gap-2 border-t border-card-border pt-0.5 font-bold text-primary"><span>Estimate{p.est > p.feet.easy * rate.easy + p.feet.medium * rate.medium + p.feet.hard * rate.hard ? ` (${money(rate.minimum)} min)` : ''}</span><span>{money(p.est)}</span></p>
                 <p className="flex items-center gap-1">Minimum $<input value={rate.minimum} onChange={(e) => setRate('minimum', e.target.value)} inputMode="decimal" className="w-12 rounded border border-card-border bg-surface px-1 text-primary text-right" /></p>
-                <p>Range = −10% / +15%. Default $7 / $9 / $10 per ft; edits here only change this estimate.</p>
+                <p>Range = −10% / +10%. Default $7 / $9 / $10 per ft; edits here only change this estimate.</p>
               </div>
             )}
             <button onClick={save} disabled={busy === 'save' || !est.client} className="w-full rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer disabled:opacity-50">{busy === 'save' ? 'Saving…' : 'Save'}</button>

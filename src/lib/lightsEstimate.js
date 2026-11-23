@@ -8,7 +8,7 @@ const DEFAULT_PRICES = { easy: '6', medium: '8', hard: '10', minimum: '600' };
 // Default $/ft for estimates (Jude 2026-11-23); the $600 minimum still comes from the Lights Quoter.
 export const EST_RATES = { easy: '7', medium: '9', hard: '10' };
 export const LOW = 0.9;
-export const HIGH = 1.15;
+export const HIGH = 1.1;
 
 export function prices() {
   try { return { ...DEFAULT_PRICES, ...JSON.parse(localStorage.getItem(PRICES_KEY) || '{}') }; } catch { return DEFAULT_PRICES; }
