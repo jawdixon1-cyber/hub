@@ -446,7 +446,7 @@ async function handleEstimatePage(req, res) {
               <a class="btn btn-go hje-yes" href="${sms(smsYes)}">✅ Accept</a>
               <div class="hje-choice2">
                 <a class="hje-no" href="${sms(smsRevise)}"><span>Revise scope</span><small>Add or remove areas to change the price</small></a>
-                <a class="hje-no" href="${sms(smsNo)}"><span>Decline</span><small>No follow-up messages</small></a>
+                <a class="hje-no" href="${sms(smsNo)}"><span>Decline</span><small>Opt out · no follow-up messages</small></a>
               </div>
             </div>
             <p class="hje-small" style="margin-top:10px">Each button opens a text to Jude, already written. Just hit send.</p>
@@ -554,6 +554,15 @@ async function handleEstimatePage(req, res) {
     .replace(/<script[^>]*(stats\.wp\.com|bilmur|jetpack-stats)[\s\S]*?<\/script>/g, '')
     .replace(/<title>[^<]*<\/title>/, () => `<title>${first ? `${first}'s` : 'Your'} Christmas lights · Hey Jude's</title><meta name="robots" content="noindex,nofollow">`)
     .replace(/<link rel="canonical"[^>]*>/, '')
+    // text-message link preview = THEIR mockup (or photo) + their name
+    .replace(/<meta (property|name)="(og:[a-z_:]+|twitter:[a-z0-9_:]+)"[^>]*>\s*/g, '')
+    .replace('</head>', () => {
+      const host = req.headers['x-forwarded-host'] || req.headers.host || 'hub.heyjudeslawncare.com';
+      const prevImg = heroImg ? `https://${host}${heroImg}` : `${SITE}/wp-content/uploads/2026/11/lights-share.jpg`;
+      const t = first ? `${first}, here's your Christmas lights mockup 🎄` : 'Your Christmas lights mockup 🎄';
+      return `<meta property="og:type" content="website"><meta property="og:title" content="${escHtml(t)}"><meta property="og:description" content="Your rough estimate from Hey Jude's">`
+        + `<meta property="og:image" content="${prevImg}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${prevImg}"></head>`;
+    })
     // their page already has their price: drop the site's "Get my free design / Call us" buttons + sticky bar
     .replace(/\s*All you do is contact us\./, '')
     // comparison cards: say who each box is
