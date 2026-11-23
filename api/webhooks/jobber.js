@@ -15,6 +15,7 @@
 // Header X-Jobber-Hmac-SHA256 is base64(HMAC-SHA256(secret, rawBody))
 
 import crypto from 'crypto';
+import { waitUntil } from '@vercel/functions';
 import { getSupabaseAdmin } from '../../lib/supabaseAdmin.js';
 import { jobberQuery, JobberDisconnectedError } from '../../lib/jobberClient.js';
 import { syncJobberClientToQuo, syncJobberRequestToQuo } from '../../lib/quoContactSync.js';
@@ -219,18 +220,24 @@ export default async function handler(req, res) {
   // ACK immediately so Jobber doesn't retry while we work.
   // We still process synchronously because Vercel kills work after the response on Hobby —
   // on Pro this is fine; if processing exceeds 10s, switch to background queue.
+  // New clients/requests -> Quo: answer Jobber now (it needs a reply within 1 second), do the work right after.
+  if (['CLIENT_CREATE', 'CLIENT_UPDATE', 'REQUEST_CREATE'].includes(topic)) {
+    const work = (topic === 'REQUEST_CREATE' ? syncJobberRequestToQuo(itemId) : syncJobberClientToQuo(itemId))
+      .then((result) => logHit({ topic, itemId, result }))
+      .catch((err) => logHit({ topic, itemId, error: err.message }));
+    waitUntil(work);
+    return res.status(200).json({ ok: true, topic, queued: true });
+  }
+
   try {
     const supabase = getSupabaseAdmin();
     let result;
     if (syncPaused && (topic.startsWith('VISIT_') || topic.startsWith('JOB_'))) result = { paused: true };
     else if (topic.startsWith('VISIT_')) result = await handleVisit(supabase, topic, itemId);
     else if (topic.startsWith('JOB_')) result = await handleJob(supabase, topic, itemId);
-    else if (topic === 'CLIENT_CREATE' || topic === 'CLIENT_UPDATE') result = await syncJobberClientToQuo(itemId);
-    else if (topic === 'REQUEST_CREATE') result = await syncJobberRequestToQuo(itemId);
     else result = { skipped: topic };
 
     console.log(`[Jobber Webhook] ${topic} ${itemId}:`, result);
-    if (!topic.startsWith('VISIT_') && !topic.startsWith('JOB_')) await logHit({ topic, itemId, result });
     return res.status(200).json({ ok: true, topic, ...result });
   } catch (err) {
     if (err instanceof JobberDisconnectedError || err.code === 'JOBBER_DISCONNECTED') {
