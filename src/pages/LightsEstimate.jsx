@@ -120,7 +120,29 @@ export default function LightsEstimate() {
   // Mockups are made in Jude's own ChatGPT: copy the prompt + download the photo, then drop the results back here.
   const [slot, setSlot] = useState(''); // mockup box that ⌘V pastes into
   const [copiedPrompt, setCopiedPrompt] = useState('');
-  const copyPrompt = async (k) => { await navigator.clipboard.writeText(buildShowPrompt(k, '', 1)); setCopiedPrompt(k); setTimeout(() => setCopiedPrompt(''), 2500); };
+  const hasLines = est.lines.some((l) => l.points?.length > 1);
+  // ChatGPT gets 2 photos: the clean one (it edits this) + the same photo with the runs drawn in magenta (where the lights go).
+  const GUIDE_NOTE = `
+
+I'm attaching 2 photos of the same house: the clean photo (edit this one) and a lines photo where every roofline that gets lights is traced in bright magenta. Put the lights exactly on those magenta lines and nowhere else. Leave every roofline without a magenta line dark. No magenta in the result.`;
+  const copyPrompt = async (k) => { await navigator.clipboard.writeText(buildShowPrompt(k, '', 1) + (hasLines ? GUIDE_NOTE : '')); setCopiedPrompt(k); setTimeout(() => setCopiedPrompt(''), 2500); };
+  const fileBase = (est.client || 'house').replace(/[^a-z0-9]+/gi, '-');
+  const downloadLines = () => new Promise((ok) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+      g.strokeStyle = '#ff00ff'; g.lineWidth = Math.max(4, Math.round(img.width / 180)); g.lineCap = 'round'; g.lineJoin = 'round';
+      for (const l of est.lines) {
+        if (!(l.points?.length > 1)) continue;
+        g.beginPath();
+        l.points.forEach((q, i) => { const x = (q.x / 1000) * c.width; const y = (q.y / 1000) * c.height; if (i) g.lineTo(x, y); else g.moveTo(x, y); });
+        g.stroke();
+      }
+      const a = document.createElement('a'); a.href = c.toDataURL('image/jpeg', 0.92); a.download = `${fileBase}-lines.jpg`; a.click(); ok();
+    };
+    img.src = imgs.photo;
+  });
   const putMockup = async (k, file) => { if (!file) return; try { setImg(k, await toJpeg(await fileToDataUrl(file))); } catch (e) { setErr(e.message); } };
 
   const save = async () => {
@@ -308,9 +330,12 @@ export default function LightsEstimate() {
             <div className="rounded-xl border border-card-border bg-card p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[11px] font-black uppercase tracking-[0.15em] text-muted">Mockups · made in your ChatGPT</p>
-                <a href={imgs.photo} download={`${(est.client || 'house').replace(/[^a-z0-9]+/gi, '-')}-photo.jpg`} className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary"><Download size={14} /> Download photo</a>
+                <div className="flex flex-wrap gap-2">
+                  <a href={imgs.photo} download={`${fileBase}-photo.jpg`} className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary"><Download size={14} /> Photo</a>
+                  <button onClick={downloadLines} disabled={!hasLines} title={hasLines ? 'Same photo with the lights runs drawn in magenta' : 'Click Estimate from photo first'} className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer disabled:opacity-50"><Download size={14} /> Photo with lines</button>
+                </div>
               </div>
-              <p className="text-xs text-muted">1. Download the photo · 2. Copy a prompt, paste it in ChatGPT with the photo · 3. Drag the result into its box (or click the box, then ⌘V).</p>
+              <p className="text-xs text-muted">1. Download both photos · 2. Copy a prompt and paste it in ChatGPT with both photos · 3. Drag the result into its box (or click the box, then ⌘V).</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 {['warm', 'multi'].map((k) => (
                   <div key={k} className="space-y-1.5">
