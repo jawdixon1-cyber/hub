@@ -168,6 +168,21 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
     finally { setBusy(''); }
   };
 
+  // Once a link exists, price changes save themselves so the client's page always shows the current range.
+  const [autoSaved, setAutoSaved] = useState('');
+  useEffect(() => {
+    if (!est.id || !est.token || !est.lines.length) return undefined;
+    const t = setTimeout(async () => {
+      try {
+        const saved = await saveEstimate({ ...est, low: p.low, high: p.high, est: p.est, feet: p.total }, {}, orgId);
+        setEst((cur) => ({ ...cur, low: saved.low, high: saved.high, updatedAt: saved.updatedAt }));
+        setAutoSaved(`Saved · their page shows ${money(p.low)}–${money(p.high)}`); refresh();
+      } catch (e) { setErr(`Auto-save failed: ${e.message}`); }
+    }, 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [est.lines, est.rates]);
+
   // Saves if needed, then opens their page in preview mode (not counted as an open).
   const openPreview = async () => {
     const w = window.open('', '_blank'); // open now so the browser doesn't block it after the save
@@ -387,6 +402,7 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
             <button onClick={copyLink} disabled={!est.client || !est.lines.length || !!busy} className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50">{copied ? <><Check size={14} /> Link copied</> : <><Copy size={14} /> Copy client link</>}</button>
             <button onClick={openPreview} disabled={!est.client || !est.lines.length || !!busy} className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50"><ExternalLink size={14} /> Preview their page</button>
             <p className="-mt-1 text-center text-[11px] text-muted">Preview doesn't count as them opening it</p>
+            {est.token && autoSaved && <p className="text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400">✓ {autoSaved}</p>}
             {est.token && (() => {
               const vw = list.find((x) => x.id === est.id)?.views;
               if (!vw?.count) return <p className="text-center text-xs text-muted">👀 Not opened yet</p>;
