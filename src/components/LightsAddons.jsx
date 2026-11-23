@@ -71,7 +71,12 @@ export default function LightsAddons({ quoteId, onMaterials = null }) {
     }, 700);
   };
   const setA = (fn) => { aRef.current = fn(aRef.current); setAddons(aRef.current); queueSave(); onMaterials?.(addonTotals(aRef.current)); };
-  const setPerStrand = (n) => { sRef.current = Number(n) || 0; setPerStrandState(n); queueSave(); };
+  // Changing $/strand re-prices every add-on that has strands (price = strands × $/strand).
+  const setPerStrand = (n) => {
+    sRef.current = Number(n) || 0; setPerStrandState(n);
+    if (sRef.current > 0) setA((list) => list.map((x) => (Number(x.strands) > 0 ? { ...x, price: Number(x.strands) * sRef.current } : x)));
+    else queueSave();
+  };
   const edit = (id, patch) => setA((list) => list.map((x) => (x.id === id ? { ...x, ...patch } : x)));
 
   const upload = async (id, file) => {
@@ -127,7 +132,7 @@ export default function LightsAddons({ quoteId, onMaterials = null }) {
               <div className="flex items-center gap-2 flex-wrap">
                 <label className="flex items-center gap-1.5 text-sm text-secondary">
                   Strands
-                  <input type="number" min="0" inputMode="numeric" value={x.strands ?? ''} onChange={(e) => edit(x.id, { strands: e.target.value === '' ? '' : Number(e.target.value) })} className={`${box} w-20`} />
+                  <input type="number" min="0" inputMode="numeric" value={x.strands ?? ''} onChange={(e) => { const n = e.target.value === '' ? '' : Number(e.target.value); edit(x.id, { strands: n, ...(Number(n) > 0 && Number(perStrand) > 0 ? { price: Number(n) * Number(perStrand) } : {}) }); }} className={`${box} w-20`} />
                 </label>
                 <label className="flex items-center gap-1.5 text-sm text-secondary whitespace-nowrap">
                   Price $

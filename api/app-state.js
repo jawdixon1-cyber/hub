@@ -1,3 +1,4 @@
+import { addonTotals } from '../src/lib/lightsAddonMath.js';
 import { Buffer } from 'node:buffer';
 // Server-side proxy for app_state + team auth + GHL — bypasses RLS using service role key
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
@@ -274,7 +275,9 @@ async function handleLightsPresent(req, res) {
   const url = (im) => `/api/app-state?key=lights-present&token=${encodeURIComponent(token)}&img=${encodeURIComponent(im)}&v=${encodeURIComponent(stamp)}`;
   const kUrl = (k) => (typeof k === 'string' && k.startsWith(`lq-img:${id}:`) ? url(`k:${k.slice(`lq-img:${id}:`.length)}`) : '');
   const { data: suppliesRow } = await db.from('app_state').select('value').eq('key', 'greenteam-lightsSupplies').maybeSingle();
-  const mats = q.materials && typeof q.materials === 'object' ? q.materials : {};
+  // Roofline materials + what the add-ons that start added use (bush/tree mini strands…)
+  const mats = { ...(q.materials && typeof q.materials === 'object' ? q.materials : {}) };
+  Object.entries(addonTotals(ba.addons)).forEach(([k, n]) => { mats[k] = (Number(mats[k]) || 0) + n; });
   const supplies = (Array.isArray(suppliesRow?.value) ? suppliesRow.value : []).filter((x) => mats[x.id])
     .map((x) => ({ id: x.id, name: x.name, image: x.image ? `/api/app-state?key=lights-item-img&id=${encodeURIComponent(x.id)}` : '' }));
   return res.json({

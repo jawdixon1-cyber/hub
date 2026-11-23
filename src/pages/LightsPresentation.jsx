@@ -4,6 +4,7 @@ import { getQuote } from '../lib/lightsStore';
 import { supabase } from '../lib/supabase';
 import { useAppStoreOptional } from '../store/AppStoreContext';
 import { DESIGNS } from '../lib/lightsDesigns';
+import { addonTotals } from '../lib/lightsAddonMath';
 import { PlanOverlay, OutletMarks } from '../components/LightsMarkup';
 
 // Client-facing presentation for one lights quote — shown full screen on the
@@ -257,7 +258,10 @@ export default function LightsPresentation({ share = false }) {
   const offerLines = offers.map((o) => ({ ...o, off: o.kind === 'free' ? 0 : o.kind === '%' ? fullPrice * Number(o.amount) / 100 : Number(o.amount) }));
   const offerOff = Math.min(fullPrice, offerLines.reduce((t, o) => t + o.off, 0));
   const price = fullPrice - offerOff;
-  const parts = Object.entries(q?.materials || {})
+  // Their products: roofline materials + what the add-ons they kept use (bush/tree mini strands…)
+  const allMats = { ...(q?.materials || {}) };
+  if (!share) Object.entries(addonTotals(pickedAddons)).forEach(([k, n]) => { allMats[k] = (Number(allMats[k]) || 0) + n; });
+  const parts = Object.entries(allMats)
     .map(([mid, qty]) => ({ it: supplies.find((x) => x.id === mid), qty: Number(qty) || 0 }))
     .filter((x) => x.it && x.qty > 0);
   const takedownOn = q?.takedownDate ? new Date(`${q.takedownDate}T12:00:00`).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }) : '';
