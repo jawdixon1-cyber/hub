@@ -223,7 +223,10 @@ export default async function handler(req, res) {
   // on Pro this is fine; if processing exceeds 10s, switch to background queue.
   // New clients/requests -> Quo: answer Jobber now (it needs a reply within 1 second), do the work right after.
   if (['CLIENT_CREATE', 'CLIENT_UPDATE', 'REQUEST_CREATE'].includes(topic)) {
-    const work = (topic === 'REQUEST_CREATE' ? syncJobberRequestToQuo(itemId) : syncJobberClientToQuo(itemId))
+    // A new request fires CLIENT_CREATE and REQUEST_CREATE together: let the request one go first,
+    // then the client one finds them already in Quo (no duplicate contacts).
+    const later = (ms) => new Promise((ok) => setTimeout(ok, ms));
+    const work = (topic === 'REQUEST_CREATE' ? syncJobberRequestToQuo(itemId) : later(12000).then(() => syncJobberClientToQuo(itemId, '', true)))
       .then((result) => logHit({ topic, itemId, result }))
       .catch((err) => logHit({ topic, itemId, error: err.message }));
     waitUntil(work);
