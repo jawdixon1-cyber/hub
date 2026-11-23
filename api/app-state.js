@@ -442,13 +442,12 @@ async function handleEstimatePage(req, res) {
             <p class="hje-trust">★★★★★ <b>5.0</b> · 195 Google reviews</p>
             <p class="hje-after">Ready for the next step? At your free design consultation we bring light samples, measure your roof, show you a detailed mockup and go over your exact price.</p>
             <div class="hje-choice">
-              <button type="button" class="btn btn-go hje-yes">✅ Accept</button>
-              <button type="button" class="hje-no">Decline</button>
+              <a class="btn btn-go hje-yes" href="${sms(smsYes)}">✅ Accept</a>
+              <a class="hje-no" href="${sms(smsNo)}">Decline</a>
             </div>
             <p class="hje-small" style="margin-top:10px">Either button opens a text to Jude, already written. Just hit send.</p>
           </div>
-          <div class="hje-done" hidden><p class="hje-big">You're on the list! 🎄</p><p>Hit send on the text and Jude will reply to pick a time for your design consultation.</p><p style="margin-top:10px"><a class="hje-sms" href="${sms(smsYes)}">Text didn't open? Tap here</a> · or text (803) 902-7447</p></div>
-          <div class="hje-done hje-done-no" hidden><p class="hje-big">Thanks for letting us know!</p><p><a class="hje-sms" href="${sms(smsNo)}">Text didn't open? Tap here</a> · If anything changes, text Jude at (803) 902-7447.</p></div>
+          
         </div>
       </div></div>
     </div>
@@ -495,8 +494,8 @@ async function handleEstimatePage(req, res) {
     .hje-yes{width:100%;border:0;cursor:pointer;font-size:18px}
     .hje-yes[hidden],.hje-done[hidden],.hje-no[hidden]{display:none}
     .hje-choice{display:flex;gap:10px;margin-top:18px}
-    #quote .hje-choice .hje-yes{flex:2;margin:0!important}
-    #quote .hje-no{flex:1;background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:14px;color:#f6f3ee;font:700 16px Poppins,system-ui,sans-serif;cursor:pointer;padding:14px}
+    #quote .hje-choice .hje-yes{flex:2;margin:0!important;display:flex;align-items:center;justify-content:center;text-decoration:none}
+    #quote .hje-no{flex:1;display:flex;align-items:center;justify-content:center;text-decoration:none;background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:14px;color:#f6f3ee;font:700 16px Poppins,system-ui,sans-serif;cursor:pointer;padding:14px}
     #quote .hje-sms{color:#ffcf6b;font-weight:700}
     .hje-choice[hidden]{display:none}
     .hje-big{font-size:20px;font-weight:800;margin:0 0 4px}
@@ -527,25 +526,11 @@ async function handleEstimatePage(req, res) {
       root.querySelectorAll('.hje-tabs button').forEach(function(x){x.classList.toggle('on',x===b)});
       root.querySelectorAll('.hje-pic figure').forEach(function(im){im.hidden=im.dataset.look!==b.dataset.look});
     })});
-    var yes=root.querySelector('.hje-yes'), no=root.querySelector('.hje-no'), done=root.querySelector('.hje-done:not(.hje-done-no)'), doneNo=root.querySelector('.hje-done-no');
-    var bar=document.querySelector('.hje-sticky'), yes2=bar&&bar.querySelector('.hje-yes2'), said=false;
-    var choice=root.querySelector('.hje-choice');
-    function showDone(){said=true;choice.hidden=true;done.hidden=false;doneNo.hidden=true;if(bar)bar.hidden=true}
-    function showNo(){said=true;choice.hidden=true;doneNo.hidden=false;done.hidden=true;if(bar)bar.hidden=true}
-    function tick(){if(!bar||said)return;var r=root.getBoundingClientRect();bar.hidden=r.bottom>0&&r.top<window.innerHeight}
+    var bar=document.querySelector('.hje-sticky'), yes2=bar&&bar.querySelector('.hje-yes2');
+    function tick(){if(!bar)return;var r=root.getBoundingClientRect();bar.hidden=r.bottom>0&&r.top<window.innerHeight}
     document.addEventListener('scroll',tick,{passive:true,capture:true}); window.addEventListener('resize',tick); tick();
     if(yes2)yes2.addEventListener('click',function(){root.scrollIntoView({behavior:'smooth'})});
     var pv=/[?&]preview=1/.test(location.search);
-    yes.addEventListener('click',function(){
-      var on=root.querySelector('.hje-tabs button.on');
-      if(!pv) fetch(api,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({color:on&&on.dataset.look!=='photo'?on.dataset.look:''})}).catch(function(){});
-      showDone(); location.href=${JSON.stringify(sms(smsYes))};
-    });
-    no.addEventListener('click',function(){
-      if(!pv) fetch(api,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({decline:true})}).catch(function(){});
-      showNo(); location.href=${JSON.stringify(sms(smsNo))};
-    });
-    fetch(api).then(function(r){return r.json()}).then(function(j){if(j&&j.said)showDone(); else if(j&&j.declined)showNo();}).catch(function(){});
     if(pv){
       var pvb=document.createElement('div'); pvb.textContent='Preview: this visit is not counted as them opening it';
       pvb.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;background:#ffcf6b;color:#111;font:700 13px system-ui;text-align:center;padding:6px';
