@@ -55,7 +55,7 @@ export function computeLights(days, leadId) {
     const lead = leadWorked ? r2(install * LIGHTS_LEAD_PCT) : 0;
     const warnings = [];
     if (install > 0 && !minutes) warnings.push('Enter who worked lights this day: the bonus is split by lights hours.');
-    if (install > 0 && minutes && !leadWorked) warnings.push(leadId ? 'Ethan has no lights hours this day, so no lead bonus.' : 'No team member named Ethan, so no lead bonus.');
+    if (install > 0 && minutes && !leadWorked) warnings.push(leadId ? 'The lead has no lights hours this day, so no lead bonus.' : 'No lead picked, so no lead bonus.');
     // A day with any install value is an install day; lights hours with no install (takedown, service) are removal.
     out.push({ date: d, kind: install > 0 ? 'install' : 'removal', jobs: jobs.map((j) => j.name), revenue, cogs, install, minutes, byPerson: mins, pct, pool, shares, leadId: leadWorked ? leadId : null, lead, warnings });
   }
@@ -133,7 +133,9 @@ export function computeWeek({ weekEnding, row, weeks, people, jobs, targetPct, f
   const cogs = Object.values(days).reduce((s, d) => s + (Number(d.cogs) || 0), 0) + fees;
 
   // Christmas lights come out of the lawn math: their revenue, COGS (and fees) and hours.
-  const leadId = [...people, ...Object.entries(row?.people || {}).map(([id, e]) => ({ id, name: e.name }))].find((p) => LIGHTS_LEAD.test(p.name || ''))?.id || null;
+  // The working lead: whoever is picked for this week (people[id].lights_lead), else Ethan.
+  const picked = Object.entries(row?.people || {}).find(([, e]) => e?.lights_lead)?.[0];
+  const leadId = picked || [...people, ...Object.entries(row?.people || {}).map(([id, e]) => ({ id, name: e.name }))].find((p) => LIGHTS_LEAD.test(p.name || ''))?.id || null;
   const lightsDays = weekEnding >= LIGHTS_PLAN_FROM ? computeLights(days, leadId) : [];
   const lightsRevenue = r2(lightsDays.reduce((s, x) => s + x.revenue, 0));
   const lightsCogs = r2(lightsDays.reduce((s, x) => s + x.cogs, 0));

@@ -84,7 +84,29 @@ function stamp(iso) {
 const hasBlanks = (s) => /\[[^\]]+\]/.test(s || '');
 
 // source: 'quo' (business line) or 'imessage' (Jude's own phone, via the Messages app on his Mac).
-export default function QuoTextsStep({ source = 'quo' }) {
+// Follow-up stats for one thread: what they want, how often they've reached out,
+// how many times you've tried since they last answered, and a priority score.
+const SERVICES = [
+  ['🌲 Christmas lights', /christmas|lights?\b|holiday/i, 3],
+  ['🍃 Leaves', /leaf|leaves|cleanup|clean up|blow/i, 2.5],
+  ['🌱 Aeration', /aerat|overseed|seed/i, 2],
+  ['🌳 Bushes', /bush|hedge|shrub|trim/i, 2],
+  ['🌿 Mowing', /mow|lawn|grass|cut/i, 1.5],
+];
+function followStats(t) {
+  const msgs = t.messages || [];
+  // What they asked about: their own words first (your texts mention lights in the signature), then call summaries.
+  const theirText = msgs.filter((m) => m.dir === 'incoming').map((m) => m.text || '').join(' ') + ' ' + (t.lastCall?.summary || []).join(' ');
+  const svc = SERVICES.find(([, re]) => re.test(theirText));
+  const theirs = msgs.filter((m) => m.dir === 'incoming');
+  const lastTheirs = theirs.length ? new Date(theirs[theirs.length - 1].at) : new Date(0);
+  const tries = msgs.filter((m) => m.dir === 'outgoing' && new Date(m.at) > lastTheirs).length;
+  const days = Math.max(0, Math.floor((Date.now() - new Date(t.lastAt)) / 864e5));
+  const score = (svc?.[2] || 1) * 2 + Math.min(theirs.length, 6) * 0.5 - tries * 0.8 - days * 0.05;
+  return { service: svc?.[0] || null, theirs: theirs.length, tries, days, score, gaveUp: tries >= 4 };
+}
+
+export default function QuoTextsStep({ source = 'quo', mode = 'inbox' }) {
   const isIM = source === 'imessage';
   const base = isIM ? '/api/imessage' : '/api/quo';
   const { session } = useAuth();
@@ -155,11 +177,20 @@ export default function QuoTextsStep({ source = 'quo' }) {
     const probablyDone = open.filter((t) => t.kind === 'reply' && drafts[t.id]?.needsReply === false).sort(byRecent);
     const followUp = open.filter((t) => needsFollowUp(t)).sort(byRecent);
     const waitingOn = open.filter((t) => t.kind === 'waiting' && !needsFollowUp(t)).sort(byRecent);
+    // Follow-ups mode: everyone you're waiting on (last 30 days), best leads first.
+    if (mode === 'followups') {
+      const waiting = open.filter((t) => t.kind === 'waiting' && daysSince(t.lastAt) <= 30)
+        .map((t) => ({ t, s: followStats(t) })).sort((a, b) => b.s.score - a.s.score);
+      return [
+        { key: 'followup', title: 'Follow up · best first', items: waiting.filter((x) => !x.s.gaveUp).map((x) => x.t) },
+        { key: 'gaveup', title: 'Tried 4+ times · let go?', items: waiting.filter((x) => x.s.gaveUp).map((x) => x.t), bulk: true },
+      ];
+    }
+    // Inbox mode: only what needs you now. Follow-ups live in their own step.
+    void followUp; void waitingOn;
     return [
       { key: 'reply', title: 'Needs reply', items: reply },
-      { key: 'followup', title: 'Follow-up due', items: followUp },
       { key: 'done', title: 'Probably no reply needed', items: probablyDone, bulk: true },
-      { key: 'waiting', title: 'Waiting on them', items: waitingOn },
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.threads, hidden, handled, drafts]);
@@ -223,14 +254,14 @@ export default function QuoTextsStep({ source = 'quo' }) {
 
   return (
     <ApiContext.Provider value={token}>
-    <section className="rounded-3xl border border-card-border bg-card overflow-hidden">
-      <div className="grid grid-cols-1 md:grid-cols-[250px_1fr] md:h-[calc(100vh-330px)] md:min-h-[460px]">
+    <section className="border-y border-card-border bg-card overflow-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-[250px_1fr] md:h-[calc(100vh-210px)] md:min-h-[420px]">
 
         {/* ── Left: the list ── */}
         <aside className="min-w-0 border-b md:border-b-0 md:border-r border-card-border flex flex-col min-h-0 max-h-72 md:max-h-none">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-card-border">
             <p className="text-sm font-black text-primary flex-1">
-              {state.loading ? 'Checking Quo…' : replyCount ? `${replyCount} to reply` : 'All replied'}
+              {state.loading ? 'Checking Quo…' : mode === 'followups' ? `${order.length} to follow up` : replyCount ? `${replyCount} to reply` : 'All replied'}
               {cleared > 0 && <span className="text-muted font-bold"> · {cleared} cleared</span>}
             </p>
             <button onClick={load} disabled={state.loading} title="Check for new texts"
@@ -251,7 +282,7 @@ export default function QuoTextsStep({ source = 'quo' }) {
                   )}
                 </div>
                 {g.items.map((t) => (
-                  <ListRow key={t.id} t={t} active={selected?.id === t.id} followUp={needsFollowUp(t)}
+                  <ListRow key={t.id} t={t} stats={mode === 'followups' ? followStats(t) : null} active={selected?.id === t.id} followUp={mode !== 'followups' && needsFollowUp(t)}
                     drafting={drafts[t.id]?.loading} onClick={() => setSelectedId(t.id)} />
                 ))}
               </div>
@@ -292,7 +323,7 @@ export default function QuoTextsStep({ source = 'quo' }) {
   );
 }
 
-function ListRow({ t, active, followUp, drafting, onClick }) {
+function ListRow({ t, stats, active, followUp, drafting, onClick }) {
   const isCall = t.viaCall;
   return (
     <button onClick={onClick}
@@ -308,6 +339,12 @@ function ListRow({ t, active, followUp, drafting, onClick }) {
         {followUp && <span className="font-black text-amber-400">Follow-up · </span>}
         {isCall && '📞 '}{lastLine(t)}
       </p>
+      {stats && (
+        <p className="mt-0.5 text-[11px] text-muted">
+          {stats.service && <span className="mr-1 rounded bg-brand/15 px-1.5 py-px font-bold text-brand-text">{stats.service}</span>}
+          they reached out {stats.theirs}× · <b className={stats.tries >= 3 ? 'text-amber-500' : ''}>you tried {stats.tries}×</b> · {stats.days}d
+        </p>
+      )}
       {drafting && <p className="text-[10px] text-brand font-bold mt-0.5">Drafting…</p>}
     </button>
   );
@@ -543,7 +580,7 @@ export function Composer({ draft, setText, onRedraft, onSend, placeholder = 'Typ
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
           placeholder={loading ? 'Writing a draft…' : placeholder}
           rows={3}
           className={`w-full bg-surface-alt border-2 border-brand/40 focus:border-brand rounded-2xl px-4 py-3 ${compact ? 'text-sm' : 'text-base'} text-primary outline-none resize-none`}

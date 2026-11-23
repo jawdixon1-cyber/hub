@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
-import { personalAccount, isPersonal, imapInbox, imapThread, imapArchive, imapSend } from '../lib/gmailImap.js';
+import { personalAccount, isPersonal, imapInbox, imapThread, imapArchive, imapTrash, imapLabels, imapTag, imapSend } from '../lib/gmailImap.js';
 
 // Gmail for the Work email step (owner only).
 //   GET  /api/gmail?action=accounts            → connected inboxes
@@ -150,6 +150,24 @@ function bucket(t, me) {
   return 'reply';
 }
 
+/* ── Jude's own Gmail labels ("1 Jude", "2 Waiting", "3 Returns", "4 Newsletters"): match by word ── */
+const TAGS = [['jude', /\bjude\b/i], ['waiting', /waiting/i], ['returns', /return/i], ['receipts', /^\W*\d*\s*receipts?$/i], ['newsletters', /newsletter/i]];
+const pickTags = (names) => TAGS.map(([key, re]) => ({ key, name: names.find((n) => re.test(n)) })).filter((x) => x.name);
+const RETURNS = /\breturns?\b|\brma\b|return label|refund/i;
+// Free rule-based suggestion (no AI): which of your labels this email probably belongs in.
+function suggestTag(row, b) {
+  if (RETURNS.test(`${row.subject} ${row.snippet}`)) return 'returns';
+  if (b === 'waiting') return 'waiting';
+  if (b === 'money') return 'receipts';
+  if (b === 'archive') return 'newsletters';
+  if (b === 'reply') return 'jude';
+  return null;
+}
+const withTags = (row, b, tags, has) => {
+  const key = suggestTag(row, b);
+  return { tags: has, suggest: tags.find((x) => x.key === key)?.name || null };
+};
+
 /* ── handlers ── */
 async function handleAccounts(req, res, db) {
   const { data } = await db.from('app_state').select('key, value').like('key', `${ACCT}%`);
@@ -210,7 +228,13 @@ async function handleCallback(req, res, db) {
 
 export async function handleInbox(req, res, db) {
   const account = String(req.query?.account || '').toLowerCase();
-  const { threads = [] } = await gmail(db, account, '/threads?labelIds=INBOX&maxResults=75');
+  const [{ threads = [] }, { labels: allLabels = [] }] = await Promise.all([
+    gmail(db, account, '/threads?labelIds=INBOX&maxResults=75'),
+    gmail(db, account, '/labels').catch(() => ({ labels: [] })),
+  ]);
+  const userLabels = allLabels.filter((l) => l.type === 'user');
+  const tags = pickTags(userLabels.map((l) => l.name));
+  const nameById = Object.fromEntries(userLabels.map((l) => [l.id, l.name]));
   const meta = await pool(threads, 8, (th) => gmail(db, account,
     `/threads/${th.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe`));
   const out = [];
@@ -235,11 +259,26 @@ export async function handleInbox(req, res, db) {
       unsubscribe: t.messages.some((m) => !!header(m, 'List-Unsubscribe')),
     };
     row.bucket = bucket(row, account);
+    Object.assign(row, withTags(row, row.bucket, tags, labels.map((id) => nameById[id]).filter((n) => tags.some((x) => x.name === n))));
     delete row.labels;
     out.push(row);
   }
   out.sort((a, b) => new Date(b.at) - new Date(a.at));
-  res.json({ threads: out, failed: meta.filter((m) => m?.error).length });
+  res.json({ threads: out, tags: tags.map((x) => x.name), failed: meta.filter((m) => m?.error).length });
+}
+
+// Add or remove one of your labels on threads: { account, ids, name, remove }.
+async function handleTag(req, res, db) {
+  const { account, ids, name, remove } = req.body || {};
+  const list = (Array.isArray(ids) ? ids : []).filter((x) => /^[0-9a-f]+$/i.test(x)).slice(0, 200);
+  if (!list.length || !name) return res.status(400).json({ error: 'ids and name required' });
+  const acct = String(account).toLowerCase();
+  const { labels = [] } = await gmail(db, acct, '/labels');
+  const label = labels.find((l) => l.name === name);
+  if (!label) return res.status(404).json({ error: `No Gmail label named "${name}"` });
+  const body = JSON.stringify(remove ? { removeLabelIds: [label.id] } : { addLabelIds: [label.id] });
+  const r = await pool(list, 6, (id) => gmail(db, acct, `/threads/${id}/modify`, { method: 'POST', body }));
+  res.json({ ok: true, failed: r.filter((x) => x?.error).length });
 }
 
 async function handleThread(req, res, db) {
@@ -274,6 +313,15 @@ async function handleArchive(req, res, db, undo) {
   if (!list.length) return res.status(400).json({ error: 'ids required' });
   const body = JSON.stringify(undo ? { addLabelIds: ['INBOX'] } : { removeLabelIds: ['INBOX'] });
   const r = await pool(list, 6, (id) => gmail(db, String(account).toLowerCase(), `/threads/${id}/modify`, { method: 'POST', body }));
+  res.json({ ok: true, failed: r.filter((x) => x?.error).length });
+}
+
+// Trash = Gmail's Trash (emptied after 30 days); untrash puts it back.
+async function handleTrash(req, res, db, undo) {
+  const { account, ids } = req.body || {};
+  const list = (Array.isArray(ids) ? ids : []).filter((x) => /^[0-9a-f]+$/i.test(x)).slice(0, 200);
+  if (!list.length) return res.status(400).json({ error: 'ids required' });
+  const r = await pool(list, 6, (id) => gmail(db, String(account).toLowerCase(), `/threads/${id}/${undo ? 'untrash' : 'trash'}`, { method: 'POST' }));
   res.json({ ok: true, failed: r.filter((x) => x?.error).length });
 }
 
@@ -371,18 +419,22 @@ export default async function handler(req, res) {
 
     const action = req.query?.action;
     const account = String(req.query?.account || req.body?.account || '').toLowerCase();
-    if (['inbox', 'thread', 'archive', 'unarchive', 'send'].includes(action) && !/^[^@\s]+@[^@\s]+$/.test(account)) {
+    if (['inbox', 'thread', 'archive', 'unarchive', 'trash', 'untrash', 'tag', 'send'].includes(action) && !/^[^@\s]+@[^@\s]+$/.test(account)) {
       return res.status(400).json({ error: 'account required' });
     }
     if (action === 'accounts' && req.method === 'GET') return await handleAccounts(req, res, db);
     if (action === 'connect' && req.method === 'GET') return await handleConnect(req, res, db, who.user);
     if (isPersonal(account)) {
       if (action === 'inbox' && req.method === 'GET') {
-        const threads = (await imapInbox()).map((t) => { const b = bucket(t, account); const { labels, ...rest } = t; return { ...rest, bucket: b }; });
-        return res.json({ threads, failed: 0 });
+        const [rows, names] = await Promise.all([imapInbox(), imapLabels().catch(() => [])]);
+        const tags = pickTags(names);
+        const threads = rows.map((t) => { const b = bucket(t, account); const { labels, gl = [], ...rest } = t; return { ...rest, bucket: b, ...withTags(t, b, tags, gl.filter((n) => tags.some((x) => x.name === n))) }; });
+        return res.json({ threads, tags: tags.map((x) => x.name), failed: 0 });
       }
       if (action === 'thread' && req.method === 'GET') return res.json(await imapThread(String(req.query?.id || '')));
       if ((action === 'archive' || action === 'unarchive') && req.method === 'POST') return res.json(await imapArchive((req.body?.ids || []).map(String).slice(0, 200), action === 'unarchive'));
+      if (action === 'tag' && req.method === 'POST') return res.json(await imapTag((req.body?.ids || []).map(String).slice(0, 200), String(req.body?.name || ''), !!req.body?.remove));
+      if ((action === 'trash' || action === 'untrash') && req.method === 'POST') return res.json(await imapTrash((req.body?.ids || []).map(String).slice(0, 200), action === 'untrash'));
       if (action === 'send' && req.method === 'POST') {
         const { to, subject, inReplyTo, references, content } = req.body || {};
         if (!to || !String(content || '').trim() || /[\r\n]/.test(`${to}${subject}${inReplyTo}${references}`)) return res.status(400).json({ error: 'Bad message' });
@@ -393,6 +445,8 @@ export default async function handler(req, res) {
     if (action === 'thread' && req.method === 'GET') return await handleThread(req, res, db);
     if (action === 'archive' && req.method === 'POST') return await handleArchive(req, res, db, false);
     if (action === 'unarchive' && req.method === 'POST') return await handleArchive(req, res, db, true);
+    if (action === 'tag' && req.method === 'POST') return await handleTag(req, res, db);
+    if ((action === 'trash' || action === 'untrash') && req.method === 'POST') return await handleTrash(req, res, db, action === 'untrash');
     if (action === 'draft' && req.method === 'POST') return await handleDraft(req, res);
     if (action === 'send' && req.method === 'POST') return await handleSend(req, res, db);
     return res.status(400).json({ error: 'Unknown action' });

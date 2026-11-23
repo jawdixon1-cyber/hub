@@ -241,7 +241,16 @@ export default function LightsPresentation({ share = false }) {
   const hero = mockups[0] || sides[0]?.plain || '';
   // Before = the house at night with no lights (from ChatGPT) — falls back to the daytime photo.
   const before = q?.nightPhoto || sides.find((a) => a.show)?.plain || sides[0]?.plain || '';
-  const roof = Number(q?.quoted) || Number(q?.total) || 0;
+  // On Jude's own screen: price straight from the feet × his $/ft (same math as the Quoter's Difficulty step),
+  // so a $/ft or difficulty change shows here right away. The client's link uses the saved total.
+  const livePrice = (() => {
+    if (share || !q?.feet || (q.extras || []).length || Number(q.strands) > 0) return 0;
+    let pr = { easy: 6, medium: 8, hard: 10, minimum: 600 };
+    try { pr = { ...pr, ...JSON.parse(localStorage.getItem('lights-quoter-prices-v2') || '{}') }; } catch { /* defaults */ }
+    const roofOnly = ['easy', 'medium', 'hard'].reduce((t, k) => t + (Number(q.feet[k]) || 0) * (Number(pr[k]) || 0), 0);
+    return roofOnly > 0 ? Math.max(roofOnly, Number(pr.minimum) || 0) : 0;
+  })();
+  const roof = Number(q?.quoted) || livePrice || Number(q?.total) || 0;
   const basePrice = roof > 0 ? roof + bump : 0; // + any price bump (folded in, not shown separately)
   const pickedAddons = addons.filter((x) => addOn[x.id]);
   const fullPrice = basePrice > 0 ? basePrice + pickedAddons.reduce((t, x) => t + Number(x.price), 0) : 0;

@@ -92,3 +92,31 @@ The result should look like a real photograph of a professional holiday lighting
 
 Make ${count} separate images — one for each house photo, each exactly once — all looking like the same night and the same install. Don't combine them into one image and don't add any text or labels.` : ''} Use your image generator, not code.`;
 }
+
+// Show-image prompt: ChatGPT edits ONE photo (the show photo Jude picks) and gets EVERY side's
+// lines photo as the bulb map, so rooflines planned on other sides still get lit when they
+// show up in this shot. Jude's original wording otherwise.
+//   show: side number of the show photo · guideSides: side numbers that have a lines photo
+export function buildShowImagePrompt(design, custom, show, guideSides = [], extras = []) {
+  const others = guideSides.filter((n) => n !== show);
+  const guideNote = guideSides.length ? `
+
+I'm attaching:
+- show-photo-side${show}: the clean photo — this is the ONLY photo you edit
+- ${guideSides.map((n) => `lines-side${n}`).join(', ')}: our bulb map for ${guideSides.length > 1 ? 'every side of the house' : 'the house'}${others.length ? (guideSides.includes(show) ? ` (side ${show} plus the other sides, shot from other angles)` : ' (shot from other angles than the show photo)') : ''}
+
+In each lines photo, every run is drawn in its own color, with a short bar where it starts and ends, a dot for every single bulb (12 inches apart), and a label with its bulb count (e.g. "25 bulbs"). Use ALL the lines photos together to know exactly which rooflines get lights. If a run from any lines photo is visible in the show photo — even from a different angle, partly hidden, or at the edge — light it in the show photo with the same number of bulbs. Any roofline that has no run on any lines photo stays dark.` : '';
+  return `Edit the uploaded house photo (show-photo-side${show}) to create a photorealistic nighttime exterior image showing a professional Christmas light installation.${guideNote}
+
+Use the show photo as the exact reference and keep the house, rooflines, landscaping, camera angle, and composition unchanged.
+
+Install ${lightsFor(design, custom)} ${guideSides.length ? 'exactly where the lines photos show bulbs' : 'along all visible gutter lines, eaves, and gable edges'}, spacing the bulbs evenly about 12 inches apart, every bulb facing the same way — straight out from the house toward the street, all uniform, none tilted, sideways or crooked — so the glow shines back onto the house. Keep all ridge caps completely bare with no lights.${design === 'warm' && !custom?.trim() ? ' Use a clean, bright warm-white color temperature — not too yellow, matching real-world C9 warm white lights.' : ' Keep the color pattern perfectly regular — never break the order.'}
+
+${extras.length ? `ALSO LIGHT THESE (marked with numbered green circles in the lines photos) with matching mini lights, wrapped neatly and evenly, if they're in the show photo:\n${extras.join('\n')}\nOnly these — no other bushes, trees, columns or railings get lights. No green circles or numbers in the result.\n\n` : ''}Do not light any other trees or bushes — keep landscaping minimal and tasteful, leaving most bushes and trees unlit. No lights on cars.
+
+Maintain realistic nighttime/dusk lighting, with natural exposure, accurate shadows, and the glow from the lights softly illuminating the house and immediate surroundings.
+
+Do not add, remove, or alter any architectural elements, landscaping, or objects. No dots, bars, colored lines, labels or numbers in the result — just the real lights. Remove any on-screen overlays or text boxes (like a Street View label).
+
+The result should look like a real photograph of a professional holiday lighting installation, suitable for a customer mockup. Make exactly ONE image — the show photo lit up. Don't edit or return the lines photos. Use your image generator, not code.`;
+}

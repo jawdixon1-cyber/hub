@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, Check, CheckCheck, SkipForward, Archive, Inbox, Mail, Plus, ExternalLink, ChevronDown } from 'lucide-react';
+import { RefreshCw, Check, CheckCheck, SkipForward, Archive, Inbox, Mail, Plus, ExternalLink, ChevronDown, Trash2 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Composer } from './QuoTextsStep';
@@ -84,11 +84,16 @@ export default function EmailStep({ scope = 'work' }) {
   const load = useCallback(async () => {
     if (!account) return;
     const id = ++loadId.current;
-    setState((s) => ({ ...s, loading: true, error: null, reconnect: false }));
+    // Last inbox for this account (this browser): show it instantly, then refresh in the background.
+    const cacheKey = `hub-inbox-cache-${account}`;
+    let cached = null;
+    try { cached = JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch { /* ignore */ }
+    setState((s) => ({ ...s, loading: true, error: null, reconnect: false, ...(cached?.threads && !s.threads.length ? { threads: cached.threads, tags: cached.tags || [] } : {}) }));
     try {
       const d = await api('inbox', { query: { account } });
       if (id !== loadId.current) return;
-      setState({ loading: false, error: null, setup: false, reconnect: false, threads: d.threads || [] });
+      setState({ loading: false, error: null, setup: false, reconnect: false, threads: d.threads || [], tags: d.tags || [] });
+      try { localStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), threads: d.threads || [], tags: d.tags || [] })); } catch { /* full or blocked */ }
       const cache = readDrafts();
       const restored = {};
       for (const t of d.threads || []) { const c = cache[draftKey(t)]; if (c) restored[t.id] = { ...c, loading: false }; }
@@ -136,23 +141,31 @@ export default function EmailStep({ scope = 'work' }) {
     setSelectedId((order[i + 1] || order[i - 1] || null)?.id || null);
   };
 
-  const archive = async (list, label) => {
+  const archive = async (list, label, how = 'archive') => {
     if (list.length === 1) goNext(list[0]);
-    setGone((g) => ({ ...g, ...Object.fromEntries(list.map((t) => [t.id, 'archived'])) }));
+    setGone((g) => ({ ...g, ...Object.fromEntries(list.map((t) => [t.id, how === 'trash' ? 'deleted' : 'archived'])) }));
     setCleared((n) => n + list.length);
-    setUndo({ ids: list.map((t) => t.id), label });
-    try { await api('archive', { body: { account, ids: list.map((t) => t.id) } }); }
-    catch (e) { setState((s) => ({ ...s, error: `Archive failed: ${e.message}` })); }
+    setUndo({ ids: list.map((t) => t.id), label, how });
+    try { await api(how, { body: { account, ids: list.map((t) => t.id) } }); }
+    catch (e) { setState((s) => ({ ...s, error: `${how === 'trash' ? 'Delete' : 'Archive'} failed: ${e.message}` })); }
   };
   const undoArchive = async () => {
     const u = undo; setUndo(null);
     if (!u) return;
     setGone((g) => { const n = { ...g }; u.ids.forEach((id) => delete n[id]); return n; });
     setCleared((n) => Math.max(0, n - u.ids.length));
-    try { await api('unarchive', { body: { account, ids: u.ids } }); }
+    try { await api(u.how === 'trash' ? 'untrash' : 'unarchive', { body: { account, ids: u.ids } }); }
     catch (e) { setState((s) => ({ ...s, error: `Undo failed: ${e.message}` })); }
   };
   useEffect(() => { if (!undo) return; const t = setTimeout(() => setUndo(null), 8000); return () => clearTimeout(t); }, [undo]);
+
+  // Your Gmail labels: tap to add / remove (the suggested one is highlighted).
+  const toggleTag = async (t, name) => {
+    const has = (t.tags || []).includes(name);
+    setState((s) => ({ ...s, threads: s.threads.map((x) => (x.id === t.id ? { ...x, tags: has ? (x.tags || []).filter((n) => n !== name) : [...(x.tags || []), name] } : x)) }));
+    try { await api('tag', { body: { account, ids: [t.id], name, remove: has } }); }
+    catch (e) { setState((s) => ({ ...s, error: `Label failed: ${e.message}` })); }
+  };
 
   const draftFor = async (t) => {
     const msgs = threadCache[t.id]?.messages;
@@ -231,7 +244,7 @@ export default function EmailStep({ scope = 'work' }) {
   const th = selected ? threadCache[selected.id] : null;
 
   return (
-    <section className="rounded-3xl border border-card-border bg-card overflow-hidden relative">
+    <section className="border-y border-card-border bg-card overflow-hidden relative">
       {/* Account bar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-card-border overflow-x-auto">
         {accounts.map((a) => (
@@ -246,12 +259,12 @@ export default function EmailStep({ scope = 'work' }) {
         {notice && <span className="text-xs font-bold text-amber-400 ml-2">{notice} <button onClick={() => setNotice(null)} className="underline cursor-pointer">ok</button></span>}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] md:h-[calc(100vh-370px)] md:min-h-[440px]">
+      <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] md:h-[calc(100vh-210px)] md:min-h-[420px]">
         {/* Left: list */}
         <aside className="min-w-0 border-b md:border-b-0 md:border-r border-card-border flex flex-col min-h-0 max-h-72 md:max-h-none">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-card-border">
             <p className="text-sm font-black text-primary flex-1">
-              {state.loading ? 'Checking Gmail…' : replyCount ? `${replyCount} to reply` : 'All replied'}
+              {state.loading && !state.threads.length ? 'Checking Gmail…' : replyCount ? `${replyCount} to reply` : 'All replied'}
               {cleared > 0 && <span className="text-muted font-bold"> · {cleared} cleared</span>}
             </p>
             <button onClick={load} disabled={state.loading} title="Check for new email"
@@ -281,7 +294,7 @@ export default function EmailStep({ scope = 'work' }) {
                       </p>
                       <span className="shrink-0 text-[11px] text-muted">{ago(t.at)}</span>
                     </div>
-                    <p className="text-xs text-primary/80 truncate">{t.subject}</p>
+                    <p className="text-xs text-primary/80 truncate">{(t.tags || []).length > 0 && <span className="mr-1 rounded bg-surface-alt px-1 py-px text-[10px] font-bold text-muted">{t.tags[0]}</span>}{t.subject}</p>
                     <p className="text-xs text-muted truncate">{t.snippet}</p>
                   </button>
                 ))}
@@ -305,7 +318,7 @@ export default function EmailStep({ scope = 'work' }) {
             </div>
           )}
           {selected ? (
-            <EmailPane key={selected.id} t={selected} th={th} account={account}
+            <EmailPane key={selected.id} t={selected} th={th} account={account} tags={state.tags || []} onTag={(name) => toggleTag(selected, name)}
               draft={drafts[selected.id]}
               setText={(text) => {
                 setDrafts((d) => ({ ...d, [selected.id]: { ...(d[selected.id] || {}), text } }));
@@ -314,6 +327,7 @@ export default function EmailStep({ scope = 'work' }) {
               onRedraft={() => draftFor(selected)}
               onSend={(text) => send(selected, text)}
               onArchive={() => archive([selected], 'Archived')}
+              onDelete={() => archive([selected], 'Deleted (in Trash 30 days)', 'trash')}
               onSkip={order.length > 1 ? () => goNext(selected) : null} />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-muted">
@@ -338,7 +352,7 @@ function Card({ children }) {
   return <section className="rounded-3xl border border-card-border bg-card p-5 sm:p-6">{children}</section>;
 }
 
-function EmailPane({ t, th, account, draft, setText, onRedraft, onSend, onArchive, onSkip }) {
+function EmailPane({ t, th, account, tags = [], onTag, draft, setText, onRedraft, onSend, onArchive, onDelete, onSkip }) {
   const scroller = useRef(null);
   const [expanded, setExpanded] = useState({});
   useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [th?.messages?.length]);
@@ -351,11 +365,35 @@ function EmailPane({ t, th, account, draft, setText, onRedraft, onSend, onArchiv
         <div className="min-w-0">
           <p className="text-lg font-black text-primary leading-snug">{t.subject}</p>
           <p className="text-xs text-muted">{t.bucket === 'waiting' ? `You replied last · ${t.contact}` : t.fromName} · {stamp(t.at)}</p>
+          {tags.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {tags.map((name) => {
+                const on = (t.tags || []).includes(name);
+                const sug = !on && t.suggest === name;
+                return (
+                  <button key={name} onClick={() => onTag?.(name)} title={on ? 'Remove this Gmail label' : sug ? 'Suggested: tap to add this Gmail label' : 'Add this Gmail label'}
+                    className={`rounded-full px-2.5 py-1 text-xs font-bold cursor-pointer border ${on ? 'bg-black text-white border-black dark:bg-white dark:text-black dark:border-white' : sug ? 'border-brand text-brand-text bg-brand/10 ring-2 ring-brand/30' : 'border-card-border text-muted hover:text-primary'}`}>
+                    {on ? '✓ ' : sug ? '✨ ' : ''}{name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
-        <a href={gmailLink} target="_blank" rel="noopener noreferrer" title="Open in Gmail"
-          className="shrink-0 inline-flex items-center gap-1 text-xs font-bold text-muted hover:text-primary px-2 py-1 rounded-lg hover:bg-surface-alt">
-          <ExternalLink size={12} /> Gmail
-        </a>
+        <div className="shrink-0 flex items-center gap-1.5">
+          <button onClick={onArchive} title="Archive in Gmail (still in All Mail). Nothing is sent."
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-sm font-bold text-white hover:bg-emerald-700 cursor-pointer">
+            <Archive size={15} /> Archive
+          </button>
+          <button onClick={onDelete} title="Delete: moves it to Gmail's Trash (gone for good after 30 days). Undo right after."
+            className="inline-flex items-center gap-1.5 rounded-xl border border-red-300 dark:border-red-500/40 px-3 py-2 text-sm font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer">
+            <Trash2 size={15} /> Delete
+          </button>
+          <a href={gmailLink} target="_blank" rel="noopener noreferrer" title="Open in Gmail (to delete, etc.)"
+            className="inline-flex items-center gap-1 text-xs font-bold text-muted hover:text-primary px-2 py-2 rounded-lg hover:bg-surface-alt">
+            <ExternalLink size={12} /> Gmail
+          </a>
+        </div>
       </div>
 
       <div ref={scroller} className="flex-1 min-h-[200px] overflow-y-auto px-5 py-4 space-y-3">
@@ -387,6 +425,10 @@ function EmailPane({ t, th, account, draft, setText, onRedraft, onSend, onArchiv
             <button onClick={onArchive} title="Archive in Gmail. Nothing is sent."
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl hover:bg-surface-alt hover:text-emerald-400 cursor-pointer">
               <Archive size={13} /> Archive
+            </button>
+            <button onClick={onDelete} title="Move to Gmail's Trash (gone for good after 30 days)."
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl hover:bg-surface-alt hover:text-red-500 cursor-pointer">
+              <Trash2 size={13} /> Delete
             </button>
             {onSkip && (
               <button onClick={onSkip} title="Leave it in the inbox and go to the next one"

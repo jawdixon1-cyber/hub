@@ -3,9 +3,9 @@
  * unfinished jobs. The page turns that into wages, labor %, and the bonus
  * (see lib/weeklyBonus.js for the rule). Everything you type is a draft
  * until "Save week"; the bonus math updates live as you go. */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, Loader2, Lock, Plus, Save, Trash2, Unlock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { parseTime, minutesToHMM, minutesToDecimal } from '../lib/weeklyTime';
@@ -108,7 +108,8 @@ function arrowNav(e) {
 /* ─── draft ⇄ db ─── */
 function draftFromRow(row, week, people) {
   return {
-    days: Object.fromEntries(weekDays(week).map((d) => { const e = row?.days?.[d]; return [d, { npNotes: { ...(e?.np_notes || {}) }, revenue: e?.revenue ? String(e.revenue) : '', cogs: e?.cogs ? String(e.cogs) : '', hours: e?.prod_minutes ? minutesToHMM(e.prod_minutes) : '', np: Object.fromEntries(Object.entries(e?.np_minutes || {}).map(([pid, m]) => [pid, minutesToHMM(m)])), lights: Object.fromEntries(Object.entries(e?.lights_minutes || {}).map(([pid, m]) => [pid, minutesToHMM(m)])), jobs: (e?.jobs || []).map((j) => ({ name: j.name || '', revenue: j.revenue ? String(j.revenue) : '', cogs: j.cogs ? String(j.cogs) : '', ...(j.jobberId ? { jobberId: j.jobberId } : {}), ...(j.split ? { split: j.split } : {}), ...(j.fixed ? { fixed: j.fixed } : {}) })) }]; })),
+    days: Object.fromEntries(weekDays(week).map((d) => { const e = row?.days?.[d]; return [d, { ...(e?.locked ? { locked: true } : {}), npNotes: { ...(e?.np_notes || {}) }, revenue: e?.revenue ? String(e.revenue) : '', cogs: e?.cogs ? String(e.cogs) : '', hours: e?.prod_minutes ? minutesToHMM(e.prod_minutes) : '', np: Object.fromEntries(Object.entries(e?.np_minutes || {}).map(([pid, m]) => [pid, minutesToHMM(m)])), lights: Object.fromEntries(Object.entries(e?.lights_minutes || {}).map(([pid, m]) => [pid, minutesToHMM(m)])), jobs: (e?.jobs || []).map((j) => ({ name: j.name || '', revenue: j.fixed && visitOverride(j.name) ? String(overrideValue(visitOverride(j.name), j.fixed)) : j.revenue ? String(j.revenue) : '', cogs: j.cogs ? String(j.cogs) : '', ...(j.jobberId ? { jobberId: j.jobberId } : {}), ...(j.split ? { split: j.split } : {}), ...(j.fixed ? { fixed: j.fixed } : {}) })) }]; })),
+    lightsLead: Object.entries(row?.people || {}).find(([, e]) => e?.lights_lead)?.[0] || '',
     hours: Object.fromEntries(people.map((p) => { const e = row?.people?.[p.id]; const total = e?.total_minutes ?? ((e?.prod_minutes || 0) + (e?.np_minutes || 0)); return [p.id, { total: total ? minutesToHMM(total) : '', np: e?.np_minutes ? minutesToHMM(e.np_minutes) : '' }]; })),
     extras: Object.entries(row?.people || {}).flatMap(([pid, e]) => (e.extras || []).filter((x) => !x.review).map((x) => ({ pid, reason: x.reason || '', amount: x.amount ? String(x.amount) : '' }))),
     reviews: Object.values(Object.entries(row?.people || {}).reduce((acc, [pid, e]) => {
@@ -149,7 +150,15 @@ function fixedOf(v) {
   const per = visitsPerMonth && months ? Math.round(visitsPerMonth * months * 100) / 100 : 0;
   return { of, per, visits: b.visits || '', invoices: b.invoices || '' };
 }
-const perVisit = (f) => (f.per ? String(Math.round((f.of / f.per) * 100) / 100) : String(f.of));
+// Clients whose plan price covers more than the visits: a set $/visit instead of price ÷ visits.
+const VISIT_VALUE = [
+  { match: /jane\s+elmore/i, per: 221, why: '$665/mo × 12 = $7,980 − $1,200 aeration & overseeding − $1,200 bushes; the rest spread over the visits' },
+  // `of` = the monthly amount that's really for the visits (the rest pays for a separate job).
+  { match: /kyle\s+turner/i, of: 629.33, why: '$729.33/mo × 12 − $1,200 for the big leaf cleanup = $629.33/mo for the visits' },
+];
+const visitOverride = (name) => VISIT_VALUE.find((x) => x.match.test(name || ''));
+const overrideValue = (o, f) => (o.per != null ? o.per : Math.round(((o.of) / (f?.per || 1)) * 100) / 100);
+const perVisit = (f, name) => { const o = visitOverride(name); if (o) return String(overrideValue(o, f)); return f.per ? String(Math.round((f.of / f.per) * 100) / 100) : String(f.of); };
 const periodOf = (f) => (/^yearly/i.test(f.invoices) ? 'yr' : /^monthly/i.test(f.invoices) ? 'mo' : 'period');
 function rowFromDraft(draft, people, week, crew, orgId, jobMinutes = {}) {
   const days = {};
@@ -176,7 +185,7 @@ function rowFromDraft(draft, people, week, crew, orgId, jobMinutes = {}) {
     // revenue/COGS are already their sums (see setDayJobs).
     const jobs = (e.jobs || []).filter((j) => j.name?.trim() || num(j.revenue) || num(j.cogs)).map((j) => ({ name: j.name.trim(), revenue: num(j.revenue), cogs: num(j.cogs), ...(j.jobberId ? { jobberId: j.jobberId } : {}), ...(j.split ? { split: j.split } : {}), ...(j.fixed ? { fixed: j.fixed } : {}) }));
     const npNotes = Object.fromEntries(Object.entries(e.npNotes || {}).map(([pid, v]) => [pid, (v || '').trim()]).filter(([, v]) => v));
-    if (r || c || m || jobs.length || Object.keys(np).length || Object.keys(lights).length || Object.keys(npNotes).length) days[d] = { revenue: r, cogs: c, prod_minutes: m, ...(Object.keys(npNotes).length ? { np_notes: npNotes } : {}), ...(jobs.length ? { jobs } : {}), ...(Object.keys(np).length ? { np_minutes: np } : {}), ...(Object.keys(lights).length ? { lights_minutes: lights } : {}) }; // per-day crew hours (all clocked time) are for the day breakdown only
+    if (e.locked || r || c || m || jobs.length || Object.keys(np).length || Object.keys(lights).length || Object.keys(npNotes).length) days[d] = { ...(e.locked ? { locked: true } : {}), revenue: r, cogs: c, prod_minutes: m, ...(Object.keys(npNotes).length ? { np_notes: npNotes } : {}), ...(jobs.length ? { jobs } : {}), ...(Object.keys(np).length ? { np_minutes: np } : {}), ...(Object.keys(lights).length ? { lights_minutes: lights } : {}) }; // per-day crew hours (all clocked time) are for the day breakdown only
   }
   const ppl = {};
   for (const p of people) {
@@ -191,7 +200,7 @@ function rowFromDraft(draft, people, week, crew, orgId, jobMinutes = {}) {
       ...(draft.extras || []).filter((x) => x.pid === p.id && (num(x.amount) || x.reason?.trim())).map((x) => ({ reason: x.reason.trim(), amount: num(x.amount) })),
       ...(draft.reviews || []).flatMap((r) => ['leader', 'helper'].filter((role) => r[role] === p.id).map((role) => ({ reason: reviewReason(role, r.client), amount: REVIEW_PAY[role], review: { id: r.id, role, client: r.client.trim() } }))),
     ];
-    if (total || np || p.active || extras.length) ppl[p.id] = { total_minutes: total, prod_minutes: prod, np_minutes: np, ...(lights ? { lights_minutes: lights } : {}), rate: Number(p.hourly_rate) || 0, name: p.name, ...(extras.length ? { extras } : {}) };
+    if (total || np || p.active || extras.length) ppl[p.id] = { total_minutes: total, prod_minutes: prod, np_minutes: np, ...(lights ? { lights_minutes: lights } : {}), rate: Number(p.hourly_rate) || 0, name: p.name, ...(extras.length ? { extras } : {}), ...(draft.lightsLead === p.id ? { lights_lead: true } : {}) };
   }
   return { org_id: orgId, week_ending: week, crew, days, people: ppl, employer_taxes: num(draft.taxes), notes: draft.notes?.trim() || null };
 }
@@ -273,8 +282,21 @@ export default function WeeklyLog() {
   // general time (drive, load, gas) split by job hours, ÷ the line's revenue. Owner (paid by draw) = $0.
   const payOf = (n) => { const k = (x) => (x || '').trim().toLowerCase(); const p = people.find((x) => k(x.name) === k(n)) || people.find((x) => k(x.name).split(' ')[0] === k(n).split(' ')[0]); return p && !PAID_BY_DRAW.has(p.id) ? Number(p.hourly_rate) || 0 : 0; };
   // The day's general clock time (drive, load, gas) as rows: two guys on the same stretch share one row.
-  const genBlocks = (d) => {
-    const es = [...(dayLabor[d]?.entries || [])].filter((x) => x.startAt).sort((a, b) => a.startAt.localeCompare(b.startAt));
+  // Two crews on one day (lawn + lights): each person belongs to the lawn crew if they clocked on any
+  // lawn job that day, else the lights crew. Their general time (drive, load) goes with their crew.
+  const isLawnLine = (j) => !isLightsJob(j.name) && j.name !== 'Timesheet-only';
+  const dayJobs = (d) => draft?.days?.[d]?.jobs || [];
+  const splitDay = (d) => { const js = dayJobs(d); return js.some((j) => isLightsJob(j.name)) && js.some(isLawnLine); };
+  const crewOfName = (d) => {
+    const lawn = new Set();
+    dayJobs(d).forEach((j) => { const v = j.jobberId && visitLabor[j.jobberId]; if (v && isLawnLine(j)) Object.keys(v.byPerson).forEach((n) => lawn.add(n)); });
+    return (n) => (lawn.has(n) ? 'lawn' : 'lights');
+  };
+  const crewOfJob = (d, j) => { if (isLightsJob(j.name)) return 'lights'; if (isLawnLine(j)) return 'lawn';
+    const v = j.jobberId && visitLabor[j.jobberId]; const of = crewOfName(d); return v && Object.keys(v.byPerson).some((n) => of(n) === 'lawn') ? 'lawn' : 'lights'; };
+  const genBlocks = (d, crew) => {
+    const inCrew = crew ? crewOfName(d) : null;
+    const es = [...(dayLabor[d]?.entries || [])].filter((x) => x.startAt && (!inCrew || inCrew(x.name) === crew)).sort((a, b) => a.startAt.localeCompare(b.startAt));
     const out = [];
     for (const x of es) {
       const st = new Date(x.startAt).getTime(); const en = x.endAt ? new Date(x.endAt).getTime() : st + x.hours * 3600000;
@@ -287,16 +309,39 @@ export default function WeeklyLog() {
   };
   // Table order: jobs and general blocks by clock time; jobs with no clock time go last, in their saved order.
   const dayRows = (d, jobs) => {
-    const timed = [], untimed = [];
-    jobs.forEach((j, i) => { const at = j.jobberId && visitLabor[j.jobberId]?.firstAt; (at ? timed : untimed).push({ j, i, t: at ? new Date(at).getTime() : 0 }); });
-    genBlocks(d).forEach((g, k) => timed.push({ gen: g, key: `g${k}`, t: g.start }));
-    return [...timed.sort((a, b) => a.t - b.t), ...untimed];
+    const part = (crew) => {
+      const timed = [], untimed = [];
+      jobs.forEach((j, i) => { if (crew && crewOfJob(d, j) !== crew) return; const at = j.jobberId && visitLabor[j.jobberId]?.firstAt; (at ? timed : untimed).push({ j, i, t: at ? new Date(at).getTime() : 0 }); });
+      genBlocks(d, crew).forEach((g, k) => timed.push({ gen: g, key: `g${crew || ''}${k}`, t: g.start }));
+      return [...timed.sort((a, b) => a.t - b.t), ...untimed];
+    };
+    if (!splitDay(d)) return part(null);
+    return ['lawn', 'lights'].flatMap((c) => [{ head: c, key: `h${c}` }, ...part(c)]);
+  };
+  // One crew's totals for a split day: revenue, mats, man-hours (jobs + its general time), labor %.
+  const crewTotal = (d, jobs, crew) => {
+    const mine = jobs.filter((j) => crewOfJob(d, j) === crew);
+    const ls = mine.map((j) => [j, jobLabor(d, j)]).filter(([, L]) => L);
+    const rev = mine.reduce((t, j) => t + num(j.revenue), 0), cogs = mine.reduce((t, j) => t + num(j.cogs), 0);
+    const mins = ls.reduce((t, [, L]) => t + L.jobMins, 0) + Math.round(genBlocks(d, crew).reduce((t, g) => t + g.mins, 0));
+    const priced = ls.filter(([, L]) => L.pct != null);
+    const cost = priced.reduce((t, [, L]) => t + L.cost, 0), base = priced.reduce((t, [j]) => t + num(j.revenue) - num(j.cogs), 0);
+    const of = crewOfName(d); const who = new Set();
+    mine.forEach((j) => { const v = j.jobberId && visitLabor[j.jobberId]; if (v) Object.keys(v.byPerson).forEach((n) => { if (of(n) === crew) who.add(n.split(' ')[0]); }); });
+    return { rev, cogs, mins, pct: base > 0 ? Math.round((cost / base) * 100) : null, who: [...who] };
   };
   const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const jobLabor = (d, j) => {
     const v = j.jobberId && visitLabor[j.jobberId]; const rev = num(j.revenue);
     if (!v) return null;
-    const dl = dayLabor[d] || { jobHours: 0, general: {} };
+    const dl0 = dayLabor[d] || { jobHours: 0, general: {} };
+    // On a two-crew day, a job only carries its own crew's general time, spread over that crew's jobs.
+    let dl = dl0;
+    if (splitDay(d)) {
+      const c = crewOfJob(d, j), of = crewOfName(d);
+      const jobHours = dayJobs(d).filter((x) => crewOfJob(d, x) === c).reduce((t, x) => t + (visitLabor[x.jobberId]?.hours || 0), 0);
+      dl = { jobHours, general: Object.fromEntries(Object.entries(dl0.general).filter(([n]) => of(n) === c)) };
+    }
     const own = Object.entries(v.byPerson).reduce((t, [n, x]) => t + (Number(x?.hours ?? x) || 0) * payOf(n), 0);
     const gen = Object.entries(dl.general).reduce((t, [n, h]) => t + h * payOf(n), 0);
     const part = dl.jobHours > 0 ? v.hours / dl.jobHours : 0; // this job's slice of the day's general time
@@ -439,15 +484,24 @@ export default function WeeklyLog() {
       const kept = [];
       const opened = [];
       for (const d of only ? [only] : wk) {
+        if (draft.days[d]?.locked) continue; // checked and locked: never touched by a pull
         const crewMin = Math.round((data[d]?.labor?.totalHours || 0) * 60);
         if (crewMin && !draft.days[d]?.hours) { setDay(d, 'hours')({ target: { value: minutesToHMM(crewMin) } }); hoursFilled++; }
         const visits = data[d]?.visits || [];
         if (!visits.length) continue;
-        // A lights-only day: everyone's whole clocked time that day (job + general: loading, driving,
-        // cleanup) is lights time. Mixed lawn + lights days are typed by hand — Jobber can't split them.
-        if (visits.every((v) => isLightsJob(v.title))) {
+        // Lights hours, per person, on any day with a lights job:
+        //  - no lawn job that day → their whole clocked time (job + general: loading, driving, cleanup,
+        //    untagged timesheets) is lights time;
+        //  - lawn + lights that day → only their hours on lights jobs; their general time stays lawn
+        //    (so lawn bonuses are never overpaid).
+        if (visits.some((v) => isLightsJob(v.title))) {
+          const lawnVisits = visits.filter((v) => !isLightsJob(v.title) && v.title !== 'Timesheet-only');
           for (const [n, v] of Object.entries(data[d]?.labor?.byPerson || {})) {
-            const p = personFor(n), m = Math.round((v.hours || 0) * 60);
+            const p = personFor(n);
+            const onJobs = (list) => list.reduce((s, x) => s + (x.labor?.byPerson?.[n]?.hours || 0), 0);
+            const lawnH = onJobs(lawnVisits);
+            const h = lawnH > 0 ? onJobs(visits.filter((x) => isLightsJob(x.title))) : (v.hours || 0);
+            const m = Math.round(h * 60);
             if (p && m && !draft.days[d]?.lights?.[p.id]) { setDayLights(d, p.id)({ target: { value: minutesToHMM(m) } }); lightsFilled++; }
           }
         }
@@ -459,7 +513,7 @@ export default function WeeklyLog() {
           jobberId: v.id,
           // Our visit titles already carry the client ("Jane Doe - Lawn"), so use them as is.
           name: v.title?.trim() || (v.client !== 'Unknown' ? v.client : '') || '',
-          revenue: fixedOf(v) ? perVisit(fixedOf(v)) : v.jobTotal ? String(num(v.jobTotal)) : '',
+          revenue: fixedOf(v) ? perVisit(fixedOf(v), v.title) : v.jobTotal ? String(num(v.jobTotal)) : '',
           cogs: v.jobExpenses ? String(num(v.jobExpenses)) : '',
           ...(splitOf(v) ? { split: splitOf(v) } : {}),
           ...(fixedOf(v) ? { fixed: fixedOf(v) } : {}),
@@ -477,7 +531,7 @@ export default function WeeklyLog() {
             // Already-pulled fixed-price jobs: tag them, and swap in the per-visit price only if the
             // line still shows the full period price (so anything you typed yourself is left alone).
             const fx = !j.fixed && fixedOf(v);
-            if (fx) out = { ...out, fixed: fx, ...(num(j.revenue) === fx.of && fx.per ? { revenue: perVisit(fx) } : {}) };
+            if (fx) out = { ...out, fixed: fx, ...((num(j.revenue) === fx.of && fx.per) || visitOverride(j.name) ? { revenue: perVisit(fx, j.name) } : {}) };
             return out;
           });
           const ids = new Set(tagged.map((j) => j.jobberId));
@@ -513,6 +567,8 @@ export default function WeeklyLog() {
       setPulling(false);
     }
   };
+  const [peekDay, setPeekDay] = useState({}); // locked days are collapsed; d → true while you peek at one
+  const toggleDayLock = (d) => { setPeekDay((x) => ({ ...x, [d]: false })); touch(); setDraft((f) => ({ ...f, days: { ...f.days, [d]: { ...EMPTY_DAY, ...f.days[d], locked: !f.days[d]?.locked } } })); };
   const setDayLights = (d, pid) => (e) => { touch(); setDraft((f) => ({ ...f, days: { ...f.days, [d]: { ...EMPTY_DAY, ...f.days[d], lights: { ...(f.days[d]?.lights || {}), [pid]: e.target.value } } } })); };
   // Non-prod note per person per day; pid null = clear them all.
   const setDayNpNote = (d, pid) => (e) => { touch(); setDraft((f) => ({ ...f, days: { ...f.days, [d]: { ...EMPTY_DAY, ...f.days[d], npNotes: pid == null ? {} : { ...(f.days[d]?.npNotes || {}), [pid]: e.target.value } } } })); };
@@ -606,6 +662,7 @@ export default function WeeklyLog() {
   if (!db || !draft) return <div className="flex items-center gap-2 p-6 text-slate-500 dark:text-neutral-400"><Loader2 className="animate-spin" size={18} /> Loading…</div>;
 
   const calc = live.ok ? live.calc : null;
+  const leadName = (people.find((p) => p.id === calc?.lights?.leadId)?.name || "Lead").split(" ")[0];
   const t = calc?.totals;
   // We don't work Sundays: hide that row unless it already has something on it.
   const days = weekDays(week).filter((d, i) => {
@@ -681,29 +738,35 @@ export default function WeeklyLog() {
                   {/* one card per day: entries on the left, the end-of-day score on the right */}
                   <div className="space-y-6">
                     {stats.map(({ d, e, rev, np, prod, rph, jobs }) => {
-                      const open = true; const fromJobs = jobs.length > 0; const tn = TONES[toneOf(rph, goal)];
+                      const open = !e.locked || !!peekDay[d]; const fromJobs = jobs.length > 0; const tn = TONES[toneOf(rph, goal)];
                       return (
                         <div key={d} id={`day-${d}`} className={`scroll-mt-24 overflow-hidden rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#141414] ${d === today ? 'ring-2 ring-[#B0FF03]' : ''}`}>
                           {/* One box per day: name + Pull on top, the jobs, then totals, crew hours and the rev/hr score at the bottom. */}
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
                             <span className="text-lg font-black">{weekdayOf(d)}</span><span className="text-sm text-slate-500 dark:text-neutral-400">{monthDayOf(d)}</span>
                             {d === today && <span className="rounded-full bg-[#B0FF03] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-900">Today</span>}
-                            <button onClick={() => pullFromJobber(d)} disabled={!!pulling} title={`Pull ${fmtDay(d)} from Jobber`} aria-label={`Pull ${fmtDay(d)} from Jobber`} className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 dark:border-white/10 px-2 py-1 text-[11px] font-semibold text-slate-500 dark:text-neutral-400 hover:bg-slate-50 dark:hover:bg-white/[0.03] hover:text-slate-900 dark:hover:text-white disabled:opacity-50">
+                            <button onClick={() => pullFromJobber(d)} disabled={!!pulling || !!e.locked} title={`Pull ${fmtDay(d)} from Jobber`} aria-label={`Pull ${fmtDay(d)} from Jobber`} className="inline-flex items-center gap-0.5 rounded-md border border-slate-200 dark:border-white/10 px-2 py-1 text-[11px] font-semibold text-slate-500 dark:text-neutral-400 hover:bg-slate-50 dark:hover:bg-white/[0.03] hover:text-slate-900 dark:hover:text-white disabled:opacity-50">
                                   {pulling === d ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                                 </button>
+                            {e.locked && <span className="text-xs text-slate-500 dark:text-neutral-400">{fmt(rev)} in{rph != null ? <> · <b className={TONES[toneOf(rph, goal)].text}>{fmt0(rph)}</b>/man-hr</> : ''}</span>}
+                            {e.locked && <button onClick={() => setPeekDay((x) => ({ ...x, [d]: !x[d] }))} className="ml-auto inline-flex items-center gap-0.5 rounded-md px-2 py-1 text-xs font-semibold text-slate-500 dark:text-neutral-400 hover:bg-slate-50 dark:hover:bg-white/[0.03]">{peekDay[d] ? 'Hide' : 'Show'} <ChevronDown size={13} className={peekDay[d] ? 'rotate-180' : ''} /></button>}
+                            <button onClick={() => toggleDayLock(d)} disabled={closed} title={e.locked ? 'Locked: checked and done. Pulls skip this day and nothing can be edited. Click to unlock.' : 'Lock this day once you\'ve checked it: pulls skip it and nothing can be edited.'}
+                              className={`${e.locked ? '' : 'ml-auto '}inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-bold ${e.locked ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'border border-slate-300 dark:border-white/15 text-slate-600 dark:text-neutral-300 hover:bg-slate-50 dark:hover:bg-white/[0.03]'}`}>
+                              {e.locked ? <><Lock size={13} /> Checked · locked</> : <><Unlock size={13} /> Lock day</>}
+                            </button>
                           </div>
-                          {(() => { const L = calc?.lights?.days.find((x) => x.date === d); if (!L) return null;
+                          {(() => { const L = calc?.lights?.days.find((x) => x.date === d); if (!L || !open) return null;
                             return (
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-slate-200 dark:border-white/10 px-3 py-2 text-xs text-slate-700 dark:text-neutral-200">
                                 <span className="font-bold text-[#B3121F]">🎄 Lights</span>
                                 <span>{fmt(L.install)} installed ·</span>
                                 <span>{L.pool > 0 ? <>crew bonus <b>{fmt(L.pool)}</b> ({(L.pct * 100).toFixed(0)}%)</> : 'no crew bonus (under $2,000)'}</span>
-                                {L.lead > 0 && <span>· Ethan <b>+{fmt(L.lead)}</b></span>}
+                                {L.lead > 0 && <span>· {leadName} <b>+{fmt(L.lead)}</b></span>}
                                 {L.warnings.map((w) => <span key={w} className="rounded bg-amber-100 dark:bg-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-900 dark:text-amber-300">{w}</span>)}
                               </div>
                             ); })()}
                           {open && (
-                            <div>
+                            <fieldset disabled={!!e.locked} className={`m-0 min-w-0 border-0 p-0 ${e.locked ? 'opacity-90' : ''}`}>
                       {/* Job lines as a table: one row per job, plain cells, flags in the Notes column. */}
                       <div className="overflow-x-auto border-t border-slate-200 dark:border-white/10">
                         <div className="min-w-[760px] divide-y divide-slate-100 dark:divide-white/5">
@@ -712,9 +775,18 @@ export default function WeeklyLog() {
                             <div className="px-2 py-2 text-right" title="Man-hours: time clocked on the job in Jobber + its share of the day's general time (split by job time)">Time</div><div className="px-2 py-2 text-right" title="Wages for the job + its share of drive/general time ÷ revenue. Goal 30% or less.">Labor</div>
                             <div className="px-2 py-2">Notes</div><div />
                           </div>
-                          {dayRows(d, jobs).map((row) => { if (row.gen) { const g = row.gen; return (
+                          {dayRows(d, jobs).map((row) => { if (row.head) { const T = crewTotal(d, jobs, row.head); const lt = row.head === 'lights'; return (
+                          <div key={row.key} className={`grid grid-cols-[minmax(0,1fr)_7rem_6rem_4rem_4.5rem_minmax(0,15rem)_2rem] items-center border-t-2 ${lt ? 'border-[#B3121F]/40 bg-red-50 dark:bg-red-500/10' : 'border-[#4d7c0f]/40 bg-lime-50 dark:bg-lime-500/10'} text-sm font-bold tabular-nums`}>
+                            <div className={`flex items-center gap-2 px-1 py-2 ${lt ? 'text-[#B3121F]' : 'text-[#4d7c0f]'}`}><span className="inline-block w-11 shrink-0 text-right font-bold tabular-nums not-italic text-slate-800 dark:text-neutral-100">{minutesToHMM(T.mins)}</span><span>{lt ? '🎄 Lights crew' : '🌱 Lawn crew'}<span className="ml-2 text-xs font-semibold text-slate-500 dark:text-neutral-400">{T.who.join(', ')}</span></span></div>
+                            <div className="px-3 py-2 text-right">{fmt(T.rev)}</div>
+                            <div className="px-3 py-2 text-right">{T.cogs ? fmt(T.cogs) : <span className="text-slate-300 dark:text-neutral-600">—</span>}</div>
+                            <div className="px-2 py-2 text-right" title="Man-hours: this crew's job time + its own general (drive/load) time">{minutesToHMM(T.mins)}</div>
+                            <div className="px-2 py-2 text-right" title="This crew's wages (jobs + its own drive time) ÷ (revenue − mats)">{T.pct == null ? '—' : <span className={T.pct <= (lt ? Math.round(LIGHTS_INSTALL_TARGET * 100) : laborGoal) ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-400'}>{T.pct}%</span>}</div>
+                            <div className="px-2 py-2 text-xs font-semibold text-slate-500 dark:text-neutral-400">{T.mins > 0 && T.rev > 0 ? `${fmt0(T.rev / (T.mins / 60))}/man-hr` : ''}</div><div />
+                          </div>); }
+                            if (row.gen) { const g = row.gen; return (
                           <div key={row.key} className="grid grid-cols-[minmax(0,1fr)_7rem_6rem_4rem_4.5rem_minmax(0,15rem)_2rem] items-center bg-slate-50/60 dark:bg-white/[0.02] text-slate-500 dark:text-neutral-400" title="General clock time in Jobber (not on a job): drive, load, gas. Its wages are split into the jobs' labor % by job time.">
-                            <div className="px-3 py-1.5 text-xs italic">🚚 General · {clock(g.start)}–{clock(g.end)} · {[...g.people].join(', ')}</div>
+                            <div className="flex items-center gap-2 px-1 py-1.5 text-xs italic"><span className="inline-block w-11 shrink-0 text-right font-bold tabular-nums not-italic text-slate-800 dark:text-neutral-100">{minutesToHMM(Math.round(g.mins))}</span><span>🚚 General · {clock(g.start)}–{clock(g.end)} · {[...g.people].join(', ')}</span></div>
                             <div /><div />
                             <div className="px-2 text-right text-xs tabular-nums">{minutesToHMM(Math.round(g.mins))}</div>
                             <div className="px-2 text-right text-xs tabular-nums">{fmt0(g.cost)}</div>
@@ -723,7 +795,7 @@ export default function WeeklyLog() {
                             const { j, i } = row; const L = jobLabor(d, j); const p = L?.pct != null ? Math.round(L.pct) : null; const g = isLightsInstall(j.name) ? Math.round(LIGHTS_INSTALL_TARGET * 100) : laborGoal; /* lights installs: 14% goal */ const fx = j.fixed || fixedJobs[j.jobberId]; const full = fx?.per && num(j.revenue) === fx.of;
                             return (
                           <div key={i} className="group grid grid-cols-[minmax(0,1fr)_7rem_6rem_4rem_4.5rem_minmax(0,15rem)_2rem] items-center hover:bg-slate-50/70 dark:hover:bg-white/[0.03]">
-                            <div className="px-1 py-0.5"><div className="flex items-center">{(() => { const ty = visitType[j.jobberId]; const ic = /jude'?s house/i.test(j.name) ? ['🏠', "Jude's house — counts as a job"] : isLightsJob(j.name) ? ['🎄', 'Christmas lights'] : ty === 'RECURRING' ? ['🌱', 'Lawn / maintenance plan (recurring)'] : ty === 'ONE_OFF' ? ['🛠️', 'One-time job'] : null; return <span className="w-6 shrink-0 text-center text-sm" title={ic?.[1]}>{ic?.[0] || ''}</span>; })()}<input className={tcell.replace('text-right', 'text-left')} placeholder="Job / client" value={j.name} onChange={(ev) => setDayJobs(d, (js) => js.map((x, k) => (k === i ? { ...x, name: ev.target.value } : x)))} /></div>{(() => { const v = j.jobberId && visitLabor[j.jobberId]; if (!v) return null; const ps = Object.entries(v.byPerson).filter(([, x]) => x?.firstAt); if (!ps.length) return null; const span = (x) => `${clock(new Date(x.firstAt).getTime())}–${x.lastAt ? clock(new Date(x.lastAt).getTime()) : '…'}`; const same = ps.every(([, x]) => span(x) === span(ps[0][1])); return <div className="px-2 pb-1 text-[11px] text-slate-500 dark:text-neutral-400">{same ? `${span(ps[0][1])} · ${ps.map(([n]) => n.split(' ')[0]).join(', ')}` : ps.map(([n, x]) => `${n.split(' ')[0]} ${span(x)}`).join(' · ')}</div>; })()}</div>
+                            <div className="px-1 py-0.5"><div className="flex items-center gap-2"><span className="inline-block w-11 shrink-0 text-right font-bold tabular-nums not-italic text-slate-800 dark:text-neutral-100 text-sm">{(() => { const v = j.jobberId && visitLabor[j.jobberId]; return v ? minutesToHMM(Math.round((v.hours || 0) * 60)) : ''; })()}</span>{(() => { const ty = visitType[j.jobberId]; const ic = /jude'?s house/i.test(j.name) ? ['🏠', "Jude's house — counts as a job"] : isLightsJob(j.name) ? ['🎄', 'Christmas lights'] : ty === 'RECURRING' ? ['🌱', 'Lawn / maintenance plan (recurring)'] : ty === 'ONE_OFF' ? ['🛠️', 'One-time job'] : null; return <span className="w-6 shrink-0 text-center text-sm" title={ic?.[1]}>{ic?.[0] || ''}</span>; })()}<input className={tcell.replace('text-right', 'text-left')} placeholder="Job / client" value={j.name} onChange={(ev) => setDayJobs(d, (js) => js.map((x, k) => (k === i ? { ...x, name: ev.target.value } : x)))} /></div>{(() => { const v = j.jobberId && visitLabor[j.jobberId]; if (!v) return null; const ps = Object.entries(v.byPerson).filter(([, x]) => x?.firstAt); if (!ps.length) return null; const span = (x) => `${clock(new Date(x.firstAt).getTime())}–${x.lastAt ? clock(new Date(x.lastAt).getTime()) : '…'}`; const same = ps.every(([, x]) => span(x) === span(ps[0][1])); return <div className="pl-[3.25rem] pr-2 pb-1 text-[11px] text-slate-500 dark:text-neutral-400">{same ? `${span(ps[0][1])} · ${ps.map(([n]) => n.split(' ')[0]).join(', ')}` : ps.map(([n, x]) => `${n.split(' ')[0]} ${span(x)}`).join(' · ')}</div>; })()}</div>
                             <div className={`px-1 self-stretch flex items-center ${j.split ? 'bg-amber-50 dark:bg-amber-500/10' : fx ? (full ? 'bg-red-50 dark:bg-red-500/10' : 'bg-sky-50 dark:bg-sky-500/10') : ''}`}><input className={`${tcell} ${fx && full ? 'text-red-700 dark:text-red-300 font-semibold' : ''}`} inputMode="decimal" placeholder="—" value={j.revenue} onChange={(ev) => setDayJobs(d, (js) => js.map((x, k) => (k === i ? { ...x, revenue: ev.target.value } : x)))} /></div>
                             <div className="px-1"><input className={tcell} inputMode="decimal" placeholder="—" value={j.cogs} onChange={(ev) => setDayJobs(d, (js) => js.map((x, k) => (k === i ? { ...x, cogs: ev.target.value } : x)))} /></div>
                             <div className="px-2 text-right text-sm tabular-nums text-slate-600 dark:text-neutral-300">{L ? <span title={`Man-hours clocked on this job. Its labor % also counts ${minutesToHMM(L.genMins)} of the general time shown between the jobs.`}>{minutesToHMM(L.jobMins)}</span> : <span className="text-slate-300 dark:text-neutral-600">—</span>}</div>
@@ -733,7 +805,7 @@ export default function WeeklyLog() {
                               {isLightsJob(j.name) && <span title={isLightsInstall(j.name) ? 'Christmas lights install: left out of the lawn bonus, counts toward the daily lights bonus.' : 'Christmas lights takedown/service: left out of the lawn bonus, paid hourly only (no lights bonus).'} className="whitespace-nowrap rounded-full bg-[#B3121F] px-2 py-0.5 text-[11px] font-semibold text-white">{isLightsInstall(j.name) ? '🎄 lights' : '🎄 hourly only'}</span>}
                               {fx && <span title={fx.per ? `Fixed price: ${fmt(fx.of)} billed ${fx.invoices.toLowerCase()}, visits ${fx.visits.toLowerCase()}. That's about ${fx.per} visits per bill, so each visit is worth ${fmt(fx.of / fx.per)}.${full ? ' This line still has the full price: change it to the per-visit amount.' : ''} Type over it if this client's real visit count is different.` : `Fixed price: ${fmt(fx.of)} per bill, but the visit schedule couldn't be read. Divide by the visits it covers and type the per-visit amount.`}
                                 className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${!fx.per || full ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300' : 'bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300'}`}>
-                                {!fx.per ? `fixed ${fmt(fx.of)} · divide me` : `fixed ${fmt(fx.of)}/${periodOf(fx)} ÷ ${fx.per} = ${fmt(fx.of / fx.per)}`}</span>}
+                                {visitOverride(j.name) ? (visitOverride(j.name).per != null ? `set ${fmt(visitOverride(j.name).per)}/visit` : `set ${fmt(visitOverride(j.name).of)}/${periodOf(fx)} ÷ ${fx.per} = ${fmt(overrideValue(visitOverride(j.name), fx))}`) : !fx.per ? `fixed ${fmt(fx.of)} · divide me` : `fixed ${fmt(fx.of)}/${periodOf(fx)} ÷ ${fx.per} = ${fmt(fx.of / fx.per)}`}</span>}
                             </div>
                             <div className="flex justify-center"><button onClick={() => setDayJobs(d, (js) => js.filter((_, k) => k !== i))} className="rounded p-1 text-slate-300 dark:text-neutral-600 hover:text-red-600 dark:hover:text-red-400 group-hover:text-slate-400 dark:group-hover:text-neutral-500" aria-label="Remove job"><Trash2 size={14} /></button></div>
                           </div>
@@ -787,7 +859,7 @@ export default function WeeklyLog() {
                           </div>
                           )}
                         </div>); })()}
-                            </div>
+                            </fieldset>
                           )}
                         </div>
                       );
@@ -884,11 +956,42 @@ export default function WeeklyLog() {
                   <span className={`text-lg font-black tabular-nums ${calc.week.pool + (t.job_bonus || 0) > 0 ? 'text-[#4d7c0f]' : ''}`}>{fmt(calc.week.pool + (t.job_bonus || 0))}</span>
                   <span className="text-sm text-slate-600 dark:text-neutral-300">{calc.week.laborPct == null ? 'No lawn work yet.' : calc.week.pool > 0 ? `Lawn labor ${pctFmt(calc.week.laborPct)}, under the ${targetPct}% line — split by production hours.` : `Crew cost ${fmt(-left)} over the ${targetPct}% line (lawn labor ${pctFmt(calc.week.laborPct)}), so no bonus.`}{calc.doneJobs.length > 0 ? ` Plus finished job bonus ${fmt(t.job_bonus)} (${calc.doneJobs.map((j) => j.name).join(', ')}).` : ''}</span>
                 </div>
+                {calc.week.laborPct != null && (() => {
+                  // The lawn bonus math, spelled out: money in − mats, lawn wages (drive/shop time on mowing days included), labor %, pool.
+                  const k = (x) => (x || '').trim().toLowerCase();
+                  const genOn = (name) => Object.keys(dayLabor).filter((d) => weekDays(week).includes(d)).reduce((t, d) => {
+                    const mowed = dayJobs(d).some((j) => isLawnLine(j) && Object.keys(visitLabor[j.jobberId]?.byPerson || {}).some((n) => k(n) === k(name)));
+                    const g = Object.entries(dayLabor[d]?.general || {}).find(([n]) => k(n) === k(name))?.[1] || 0;
+                    return t + (mowed ? g * 60 : 0);
+                  }, 0);
+                  const crew = calc.people.filter((x) => x.prod_minutes > 0 && !PAID_BY_DRAW.has(x.id));
+                  const w = calc.week;
+                  return (
+                    <div className="bg-lime-50/60 dark:bg-lime-500/5 px-4 py-3 text-sm text-slate-700 dark:text-neutral-200">
+                      <div className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-neutral-400">How the lawn bonus works this week</div>
+                      <div className="grid max-w-xl grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-0.5 tabular-nums">
+                        <span>Lawn money in</span><span className="text-right">{fmt(w.revenue)}</span>
+                        <span>− Lawn mats (+ fees)</span><span className="text-right">−{fmt(w.cogs)}</span>
+                        <span className="font-semibold">= Kept</span><span className="text-right font-semibold">{fmt(w.margin)}</span>
+                        {crew.map((x) => { const g = Math.round(genOn(x.name)); return (
+                          <Fragment key={x.id}><span className="pl-3 text-slate-500 dark:text-neutral-400">{x.name.split(' ')[0]}: {minutesToHMM(x.prod_minutes)} lawn hrs{g ? ` (incl. ${minutesToHMM(g)} drive/shop)` : ''} × ${x.rate}</span><span className="text-right text-slate-500 dark:text-neutral-400">{fmt(x.prod_wages)}</span></Fragment>); })}
+                        <span className="font-semibold">Lawn wages</span><span className="text-right font-semibold">{fmt(w.prodWages)}</span>
+                        <span className="font-semibold">Lawn labor % = wages ÷ kept</span><span className={`text-right font-bold ${w.under ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-400'}`}>{pctFmt(w.laborPct)}</span>
+                        <span>Bonus pool = {targetPct}% × kept − wages</span><span className="text-right font-bold text-[#4d7c0f]">{fmt(w.pool)}</span>
+                        <span className="pl-3 text-slate-500 dark:text-neutral-400">Split by lawn hours</span><span className="text-right text-slate-500 dark:text-neutral-400">{crew.map((x) => `${x.name.split(' ')[0]} ${fmt(x.week_bonus || 0)}`).join(' · ')}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {calc.lights.days.length > 0 && (
                   <div className="grid grid-cols-[7rem_7rem_minmax(0,1fr)] items-baseline gap-x-4 px-4 py-3">
                     <span className="text-sm font-bold">🎄 Lights</span>
                     <span className={`text-lg font-black tabular-nums ${t.lights_bonus + t.lead_bonus > 0 ? 'text-[#4d7c0f]' : ''}`}>{fmt(t.lights_bonus + t.lead_bonus)}</span>
-                    <span className="text-sm text-slate-600 dark:text-neutral-300">{t.lights_bonus > 0 ? `Crew bonus ${fmt(t.lights_bonus)} (${calc.lights.days.filter((x) => x.pool > 0).map((x) => fmtDay(x.date)).join(', ')})` : 'No crew bonus — no day hit $2,000 installed'}{t.lead_bonus > 0 ? ` · Ethan's ${LIGHTS_LEAD_PCT * 100}% lead bonus ${fmt(t.lead_bonus)}` : ''}.</span>
+                    <span className="text-sm text-slate-600 dark:text-neutral-300">{t.lights_bonus > 0 ? `Crew bonus ${fmt(t.lights_bonus)} (${calc.lights.days.filter((x) => x.pool > 0).map((x) => fmtDay(x.date)).join(', ')})` : 'No crew bonus — no day hit $2,000 installed'}{t.lead_bonus > 0 ? ` · ${leadName}'s ${LIGHTS_LEAD_PCT * 100}% lead bonus ${fmt(t.lead_bonus)}` : ''}.
+                      <label className="ml-2 inline-flex items-center gap-1 text-xs font-semibold">Lead this week
+                        <select disabled={closed} value={calc.lights.leadId || ''} onChange={(ev) => { touch(); setDraft((f) => ({ ...f, lightsLead: ev.target.value })); }} className="rounded-md border border-slate-300 dark:border-white/15 bg-white dark:bg-[#141414] px-1.5 py-0.5 text-xs">
+                          {activePeople.filter((p) => !PAID_BY_DRAW.has(p.id)).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select></label></span>
                   </div>
                 )}
             {/* extra bonuses: reviews and anything else, added by hand */}
@@ -998,7 +1101,7 @@ export default function WeeklyLog() {
                 <div className="mb-1 font-bold">🎄 Lights bonus this week: <span className="tabular-nums text-[#4d7c0f]">{fmt(t.lights_bonus + t.lead_bonus)}</span></div>
                 <div className="text-sm text-slate-600 dark:text-neutral-300">
                   {t.lights_bonus > 0 ? <>Crew bonus <b>{fmt(t.lights_bonus)}</b> from {calc.lights.days.filter((x) => x.pool > 0).map((x) => fmtDay(x.date)).join(', ')}</> : <>No crew bonus: no day reached $2,000 installed</>}
-                  {t.lead_bonus > 0 && <> · Ethan's {LIGHTS_LEAD_PCT * 100}% lead bonus <b>{fmt(t.lead_bonus)}</b></>}.
+                  {t.lead_bonus > 0 && <> · {leadName}'s {LIGHTS_LEAD_PCT * 100}% lead bonus <b>{fmt(t.lead_bonus)}</b></>}.
                   {' '}Lights hours are paid at their normal rate.
                 </div>
                 {calc.lights.days.some((x) => x.warnings.length) && <div className="mt-1 text-xs font-semibold text-amber-800 dark:text-amber-300">{[...new Set(calc.lights.days.flatMap((x) => x.warnings.map((w) => `${fmtDay(x.date)}: ${w}`)))].join(' ')}</div>}
@@ -1128,6 +1231,55 @@ export default function WeeklyLog() {
                           <span className="text-slate-700 dark:text-neutral-200">{grade.checks.map((c) => <span key={c.text}> · {c.ok ? '✓' : '✗'} {c.text}</span>)}{t.lights_install > 0 && (() => { const lp = t.lights_install_labor / t.lights_install; return <span> · {lp <= LIGHTS_INSTALL_TARGET ? '✓' : '✗'} lights {(lp * 100).toFixed(0)}% (goal {Math.round(LIGHTS_INSTALL_TARGET * 100)}%)</span>; })()}{vsAvg != null ? <span className="text-slate-500 dark:text-neutral-400"> · kept {fmt0(Math.abs(vsAvg))} {vsAvg >= 0 ? 'more' : 'less'} than your average week</span> : ''}</span>
                         </div>
                       )}
+            {/* Crew summary: lawn crew vs lights crew, side by side. */}
+            {(() => {
+              const paidP = calc.people.filter((x) => !PAID_BY_DRAW.has(x.id));
+              const drawP = calc.people.filter((x) => PAID_BY_DRAW.has(x.id));
+              const w = calc.week;
+              const lawnP = paidP.filter((x) => x.prod_minutes > 0);
+              const lightsP = calc.people.filter((x) => x.lights_minutes > 0);
+              const lRev = t.lights_revenue || 0, lCogs = t.lights_cogs || 0;
+              const lWages = paidP.reduce((a, x) => a + (x.lights_pay || 0), 0);
+              const lBonus = (t.lights_bonus || 0) + (t.lead_bonus || 0);
+              const lPct = lRev > 0 ? (lWages + lBonus) / lRev : null;
+              const drawMin = drawP.reduce((a, x) => a + (x.lights_minutes || 0), 0);
+              const drawCost = drawP.reduce((a, x) => a + (x.lights_minutes || 0) / 60 * (Number(x.rate) || 0), 0);
+              const goalL = Math.round(LIGHTS_INSTALL_TARGET * 100);
+              const row = (k, v, cls = '') => <><span className="text-slate-500 dark:text-neutral-400">{k}</span><span className={`text-right tabular-nums ${cls}`}>{v}</span></>;
+              if (!lawnP.length && !lightsP.length) return null;
+              return (
+                <div>
+                  <div className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-neutral-400">Lawn crew vs lights crew</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-lg border border-[#4d7c0f]/30 bg-lime-50/50 dark:bg-lime-500/5 p-4">
+                      <div className="mb-2 font-black text-[#4d7c0f]">🌱 Lawn crew <span className="text-sm font-semibold text-slate-500 dark:text-neutral-400">{lawnP.map((x) => x.name.split(' ')[0]).join(', ') || '—'}</span></div>
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 text-sm">
+                        {row('Money in', fmt(w.revenue))}
+                        {row('Mats + fees', `−${fmt(w.cogs)}`)}
+                        {row('Kept', fmt(w.margin), 'font-semibold')}
+                        {row('Hours (incl. drive/shop)', lawnP.map((x) => `${x.name.split(' ')[0]} ${minutesToHMM(x.prod_minutes)}`).join(' · ') || '—')}
+                        {row('Wages', fmt(w.prodWages))}
+                        {row(`Labor % (goal ${targetPct}%)`, w.laborPct == null ? '—' : pctFmt(w.laborPct), `font-bold ${w.under ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-400'}`)}
+                        {row('Bonus', `${fmt(w.pool)}${lawnP.length ? ` · ${lawnP.map((x) => `${x.name.split(' ')[0]} ${fmt(x.week_bonus || 0)}`).join(', ')}` : ''}`, 'font-bold text-[#4d7c0f]')}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-[#B3121F]/30 bg-red-50/50 dark:bg-red-500/5 p-4">
+                      <div className="mb-2 font-black text-[#B3121F]">🎄 Lights crew <span className="text-sm font-semibold text-slate-500 dark:text-neutral-400">{lightsP.map((x) => x.name.split(' ')[0]).join(', ') || '—'}</span></div>
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 text-sm">
+                        {row('Money in', fmt(lRev))}
+                        {row('Mats', `−${fmt(lCogs)}`)}
+                        {row('Kept', fmt(lRev - lCogs), 'font-semibold')}
+                        {row('Hours', lightsP.map((x) => `${x.name.split(' ')[0]} ${minutesToHMM(x.lights_minutes)}${PAID_BY_DRAW.has(x.id) ? ' (draw)' : ''}`).join(' · ') || '—')}
+                        {row('Wages', fmt(lWages))}
+                        {row('Bonus', `${fmt(lBonus)}${t.lead_bonus ? ` · ${leadName} lead ${fmt(t.lead_bonus)}` : ''}${t.lights_bonus ? ` · crew ${fmt(t.lights_bonus)}` : ' · no day hit $2,000'}`, 'font-bold text-[#4d7c0f]')}
+                        {row(`Labor % of rev (goal ${goalL}%)`, lPct == null ? '—' : pctFmt(lPct), `font-bold ${lPct != null && lPct <= LIGHTS_INSTALL_TARGET ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-400'}`)}
+                        {drawMin > 0 && lRev > 0 && row(`…if ${drawP.map((x) => x.name.split(' ')[0]).join(', ')}'s ${minutesToHMM(drawMin)} were paid`, pctFmt((lWages + lBonus + drawCost) / lRev), 'text-slate-500 dark:text-neutral-400')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
                       <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-4">
                         {box('', 'Money in', fmt(t.revenue), 'finished work, lawn + lights')}
                         {box('−', 'Materials & fees', fmt(t.cogs), 'Mats + card fees', '', share(t.cogs))}
@@ -1239,6 +1391,26 @@ export default function WeeklyLog() {
         </section>
 
         </fieldset>
+
+        {/* ADP copy/paste: each paid person's hours + bonus, right before the history. */}
+        {calc && calc.people.some((p) => !PAID_BY_DRAW.has(p.id) && p.total_pay > 0) && (
+          <section className="rounded-xl border bg-white dark:bg-[#141414]">
+            <header className="border-b px-4 py-3"><h3 className="font-bold">ADP: copy &amp; paste <span className="text-sm font-normal text-slate-500 dark:text-neutral-400">tap a number to copy it</span></h3></header>
+            <div className="divide-y divide-slate-100 dark:divide-white/5">
+              {calc.people.filter((p) => !PAID_BY_DRAW.has(p.id) && p.total_pay > 0).map((p) => (
+                <div key={p.id} className="grid items-center gap-3 px-4 py-3 md:grid-cols-[10rem_minmax(0,1fr)_8rem]">
+                  <div className="font-bold">{p.name}</div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <CopyChip label="Regular hrs" value={p.reg_hours.toFixed(2)} />
+                    <CopyChip label="OT hrs" value={p.ot_hours.toFixed(2)} />
+                    <CopyChip label="Bonuses" value={(p.bonus + (p.bonus_ot || 0)).toFixed(2)} prefix="$" />
+                  </div>
+                  <div className="text-right text-sm"><span className="text-slate-500 dark:text-neutral-400">Total </span><b className="tabular-nums">{fmt(p.total_pay)}</b></div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* history — same numbers as the summary, one line per week */}
         <section className="rounded-xl border bg-white dark:bg-[#141414]">

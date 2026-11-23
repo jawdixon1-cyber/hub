@@ -175,11 +175,12 @@ async function enrichCalls(threads) {
 
 // Like Quo's caller guesses: for numbers with no contact name, Claude reads the call
 // summaries and texts and pulls out the caller's name if they said it. Cached per thread state.
+const AI_NAMES = false; // AI name-guessing OFF: it ran on every inbox load (slow + costs money)
 const nameCache = new Map();
 async function guessNames(threads) {
   const unnamed = threads.filter((t) => !t.name);
   const todo = unnamed.filter((t) => !nameCache.has(`${t.id}:${t.lastMessageId}`));
-  if (todo.length && process.env.ANTHROPIC_API_KEY) {
+  if (AI_NAMES && todo.length && process.env.ANTHROPIC_API_KEY) {
     const items = todo.map((t) => ({
       id: t.id,
       callSummary: (t.lastCall?.summary || []).join(' '),
@@ -328,6 +329,30 @@ export async function handleDraft(req, res) {
   }
 }
 
+// Contact history for specific phone numbers (texts + calls on every Quo line), for Leads:
+// POST { phones: [...] } → { results: [{ phone, messages: [{ dir, at, call }] }] }
+async function handleContacts(req, res) {
+  const phones = [...new Set((req.body?.phones || []).map(String).filter((p) => last10(p).length === 10))].slice(0, 25);
+  const { data: numbers } = await quo('/phone-numbers');
+  const lines = (numbers || []).map((n) => n.id);
+  const e164 = (p) => `+1${last10(p)}`;
+  const results = await pool(phones, 3, async (phone) => {
+    const per = await Promise.all(lines.map(async (lineId) => {
+      const who = `phoneNumberId=${lineId}&participants=${encodeURIComponent(e164(phone))}`;
+      const [m, c] = await Promise.all([
+        quo(`/messages?${who}&maxResults=40`).catch(() => ({ data: [] })),
+        quo(`/calls?${who}&maxResults=20`).catch(() => ({ data: [] })),
+      ]);
+      return [
+        ...(m.data || []).map((x) => ({ dir: x.direction, at: x.createdAt, call: false })),
+        ...(c.data || []).map((x) => ({ dir: x.direction, at: x.createdAt, call: true })),
+      ];
+    }));
+    return { phone, messages: per.flat().sort((a, b) => new Date(a.at) - new Date(b.at)) };
+  });
+  res.json({ results });
+}
+
 async function handleSend(req, res) {
   const { phoneNumberId, to, content, markDone } = req.body || {};
   const text = String(content || '').trim();
@@ -383,6 +408,7 @@ export default async function handler(req, res) {
     if (action === 'inbox' && req.method === 'GET') return await handleInbox(req, res, db);
     if (action === 'draft' && req.method === 'POST') return await handleDraft(req, res);
     if (action === 'send' && req.method === 'POST') return await handleSend(req, res);
+    if (action === 'contacts' && req.method === 'POST') return await handleContacts(req, res);
     if (action === 'done' && req.method === 'POST') return await handleDone(req, res);
     if (action === 'call' && req.method === 'GET') return await handleCall(req, res);
     return res.status(400).json({ error: 'action must be inbox (GET), draft, send or done (POST)' });

@@ -317,7 +317,8 @@ export default function LightsQuoter() {
   // Only save when something actually changed. The fingerprint skips the big photo
   // data (length only), so it's cheap; opening a quote just records its fingerprint.
   const lastSig = useRef('');
-  const sigNow = () => JSON.stringify([client, clientInfo?.id, feet, strands, count, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto?.length || 0, nightPhoto?.length || 0, disc, installDate, takedownDate, matOk, linesOk.length, stepsOk, extras, crewToken, customColor, planLocked, savedId,
+  const sigNow = () => JSON.stringify([client, clientInfo?.id, feet, prices, // prices: a $/ft change re-saves the price Present shows
+    strands, count, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto?.length || 0, nightPhoto?.length || 0, disc, installDate, takedownDate, matOk, linesOk.length, stepsOk, extras, crewToken, customColor, planLocked, savedId,
     angles.map(({ plain, marked, ai, ...rest }) => [plain?.length || 0, marked?.length || 0, ai?.image?.length || 0, rest]),
     previews.map((x) => [x.id, x.image?.length || 0])]);
   useEffect(() => {
@@ -356,7 +357,7 @@ export default function LightsQuoter() {
       }
     }, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, customColor, planLocked, savedId, addonMats]);
+  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, customColor, planLocked, savedId, addonMats, prices]);
 
   useEffect(() => {
     localStorage.setItem(PRICES_KEY, JSON.stringify(prices));

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, Sparkles, Maximize2, X, Copy, Check, Upload, FolderDown, Trash2, ChevronLeft, ChevronRight, Star } from 'lucide-react';
-import { buildShowPrompt, buildNightPrompt } from '../lib/lightsPrompt';
+import { buildShowImagePrompt, buildNightPrompt } from '../lib/lightsPrompt';
 import { getPrepFolder, setPrepFolder } from '../lib/lightsStore';
 import { DESIGNS } from '../lib/lightsDesigns';
 import { extrasPromptLines } from '../lib/lightsExtras';
@@ -184,14 +184,14 @@ async function linesPhoto(side, bulbMap = false, extrasHere = []) {
   return cv.toDataURL('image/jpeg', 0.92);
 }
 
-// Full plan photo: exactly what the Plan step shows (lights with feet, jump lines, 🔌 power,
+// Full plan photo: what the Plan step shows (lights runs, jump lines, 🔌 power — no feet tags,
 // ⚡ inline power), drawn onto the photo at full size. For the Present step's downloads.
 async function planPhoto(side) {
   const img = await loadImage(side.plain);
   const w = side.w || img.width, h = side.h || img.height;
   const svg = renderToStaticMarkup(
     <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${w} ${h}`} width={img.width} height={img.height} preserveAspectRatio="none">
-      <PlanOverlay lines={side.lines || []} jumps={side.jumps || []} w={w} h={h} tags plan />
+      <PlanOverlay lines={side.lines || []} jumps={side.jumps || []} w={w} h={h} plan />{/* no feet tags — these go to the client */}
       <OutletMarks outlets={side.outlets || []} w={w} h={h} />
       <OutletMarks inline outlets={side.inlines || []} w={w} h={h} />
     </svg>,
@@ -289,17 +289,16 @@ function LinesCard({ url, index, onOpen, name }) {
   );
 }
 
-function ShowCard({ side, index, onPatch }) {
-  const picked = !!side.show;
+function ShowCard({ side, index, picked, onPick }) {
   return (
     <button
-      onClick={() => onPatch({ show: !picked })}
+      onClick={onPick}
       title={`Side ${index + 1}`}
       className={`relative w-28 shrink-0 rounded-lg overflow-hidden border-2 cursor-pointer transition ${picked ? 'border-border-brand' : 'border-transparent opacity-50 hover:opacity-80'}`}
     >
       <img src={side.plain} alt={`Side ${index + 1}`} className="w-full h-20 object-cover" />
       <span className="absolute bottom-1 left-1 text-[10px] font-semibold text-white bg-black/60 rounded px-1">Side {index + 1}</span>
-      {picked && <span className="absolute top-1 right-1 w-5 h-5 rounded-full bg-brand text-on-brand flex items-center justify-center"><Check size={12} strokeWidth={3} /></span>}
+      {picked && <span className="absolute top-1 right-1 rounded-full bg-brand text-on-brand text-[10px] font-black px-1.5 py-0.5 flex items-center gap-0.5"><Star size={10} fill="currentColor" /> Show</span>}
     </button>
   );
 }
@@ -352,14 +351,14 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
   const urlFor = (i) => (title ? planUrls[i] : lineUrls[i]);
   const galleryItems = shownLines.filter(({ i }) => urlFor(i)).map(({ i }) => ({ url: urlFor(i), label: `Side ${i + 1}`, name: lineName(i) }));
   const withPhoto = angles.map((a, i) => ({ a, i })).filter(({ a }) => a.plain);
-  // Ticked show photos — or every photo if none are ticked, so Prep always does something.
-  const ticked = withPhoto.filter(({ a }) => a.show);
-  const picked = ticked.length ? ticked : withPhoto;
-  const patch = (i) => (p) => setAngles((as) => as.map((a, j) => (j === i ? { ...a, ...p } : a)));
-  const guides = picked.some(({ a, i }) => a.lines.length || extrasOn(i).length);
-  // Bulb counts from your measured feet (12" spacing = 1 per foot) so ChatGPT doesn't add extras.
-  const bulbs = picked.reduce((t, { a }) => t + a.lines.reduce((u, l) => u + Math.round(Number(l.feet) || 0), 0), 0);
-  const prompt = () => buildShowPrompt(design.id, designId === 'custom' ? custom : '', picked.length, guides, bulbs, extrasPromptLines(extras));
+  // ONE show photo (the one ChatGPT edits): the ticked one, else the first photo.
+  // ChatGPT also gets EVERY side's lines photo so it knows where bulbs go all around the house.
+  const showSide = withPhoto.find(({ a }) => a.show) || withPhoto[0];
+  const picked = showSide ? [showSide] : [];
+  const guideSides = withPhoto.filter(({ a, i }) => a.lines.length || extrasOn(i).length);
+  const pickShow = (i) => setAngles((as) => as.map((a, j) => ({ ...a, show: j === i })));
+  const bulbs = guideSides.reduce((t, { a }) => t + a.lines.reduce((u, l) => u + Math.round(Number(l.feet) || 0), 0), 0);
+  const prompt = () => buildShowImagePrompt(design.id, designId === 'custom' ? custom : '', showSide ? showSide.i + 1 : 1, guideSides.map(({ i }) => i + 1), extrasPromptLines(extras));
 
   const copyPrompt = async () => {
     await navigator.clipboard.writeText(prompt());
@@ -367,11 +366,8 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Saves the picked show photos (clean, no lines) + prompt.txt into
-  // <chosen folder>/<client>-lights/, and copies the prompt.
-  // Saves the picked show photos (clean + lines) and prompt.txt into
-  // <chosen folder>/<client>-lights/ and copies the prompt. If the folder can't
-  // be used for any reason, falls back to plain downloads so it never does nothing.
+  // Saves the show photo + every side's lines photo + prompt.txt into <chosen folder>/<client>-lights/
+  // and copies the prompt. If the folder can't be used, falls back to plain downloads so it never does nothing.
   const prep = async (forceNew = false) => {
     if (!picked.length) { setStatus('error:add a house photo in section 1 first'); return; }
     setStatus('Saving…');
@@ -420,10 +416,8 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
         await w.write(await (await fetch(url)).blob());
         await w.close();
       };
-      for (const { a, i } of picked) {
-        await save(a.plain, `photo-side${i + 1}.jpg`);
-        if (a.lines.length || extrasOn(i).length) await save(await linesPhoto(a, true, extrasOn(i)), `lines-side${i + 1}.jpg`);
-      }
+      await save(showSide.a.plain, `show-photo-side${showSide.i + 1}.jpg`);
+      for (const { a, i } of guideSides) await save(await linesPhoto(a, true, extrasOn(i)), `lines-side${i + 1}.jpg`);
       await save(URL.createObjectURL(new Blob([prompt()], { type: 'text/plain' })), 'prompt.txt');
       try { window.focus(); await navigator.clipboard.writeText(prompt()); } catch { /* Copy prompt button covers it */ }
       setStatus(`done:${where}`);
@@ -538,19 +532,19 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
           className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-ring-brand placeholder:text-placeholder-muted" />
       )}
 
-      {bigStep(1, 'Prep the photos', 'Tick the photos for the mockup (none ticked = all), then hit Prep. It saves the clean photos for both ChatGPT parts below.', prepped || done, !withPhoto.length ? (
+      {bigStep(1, 'Prep the photos', 'Tap the photo you want as the show image, then hit Prep. It saves that photo plus every side\'s bulb map, and copies the prompt.', prepped || done, !withPhoto.length ? (
         <p className="text-sm text-muted">Add photos in step 2 first.</p>
       ) : (
         <>
           <div className="flex gap-2 flex-wrap">
-            {withPhoto.map(({ a, i }) => <ShowCard key={i} side={a} index={i} onPatch={patch(i)} />)}
+            {withPhoto.map(({ a, i }) => <ShowCard key={i} side={a} index={i} picked={showSide?.i === i} onPick={() => pickShow(i)} />)}
           </div>
-          {picked.some(({ i }) => guideUrls[i]) && (
+          {guideSides.some(({ i }) => guideUrls[i]) && (
             <div className="space-y-1.5">
-              <p className="text-sm font-semibold text-primary">What ChatGPT gets: a dot for every bulb <span className="font-normal text-muted">· each run its own color, bars where it starts + ends · 12" spacing = 1 per ft · {bulbs} bulbs total</span></p>
+              <p className="text-sm font-semibold text-primary">What ChatGPT gets: every side's bulb map <span className="font-normal text-muted">· {guideSides.length} side{guideSides.length === 1 ? '' : 's'} · a dot for every bulb · {bulbs} bulbs total</span></p>
               {/* Small previews — tap one to open it full size */}
               <div className="flex gap-2 flex-wrap">
-                {picked.filter(({ i }) => guideUrls[i]).map(({ i }) => (
+                {guideSides.filter(({ i }) => guideUrls[i]).map(({ i }) => (
                   <button key={i} onClick={() => setOpenGuide(openGuide === i ? null : i)} title="Tap to see it big" className="cursor-pointer">
                     <img src={guideUrls[i]} alt={`Side ${i + 1} guide`} className={`h-28 w-auto rounded-lg border-2 ${openGuide === i ? 'border-brand' : 'border-border-default hover:border-brand'}`} />
                   </button>
@@ -565,7 +559,7 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
             <button onClick={() => prep(false)} disabled={status === 'Saving…'} className={`inline-flex items-center gap-2 rounded-xl text-base font-bold px-6 py-3 disabled:opacity-50 cursor-pointer transition-colors ${prepped ? 'bg-emerald-500 text-white' : 'bg-brand text-on-brand hover:bg-brand-hover'}`}>
               {status === 'Saving…' ? <>Saving…</>
                 : prepped ? <><Check size={18} /> Saved + prompt copied</>
-                : <><FolderDown size={18} /> Prep for ChatGPT{picked.length ? ` (${picked.length})` : ''}</>}
+                : <><FolderDown size={18} /> Prep for ChatGPT</>}
             </button>
             {window.showDirectoryPicker && <button onClick={() => prep(true)} className="text-xs text-muted hover:text-primary cursor-pointer">Change folder</button>}
             {status && (

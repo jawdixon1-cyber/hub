@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { ChevronLeft, ChevronRight, Sparkles, Check, X, RefreshCw, Trash2, List } from 'lucide-react';
+import { TaskList, TaskItem } from '@tiptap/extension-list';
+import { ChevronLeft, ChevronRight, Sparkles, Check, X, RefreshCw, Trash2, List, ListChecks } from 'lucide-react';
 import { useAppStore } from '../store/AppStoreContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -28,7 +29,7 @@ const LISTS = [
 ];
 const EMPTY = { habits: [], habitLog: {}, goals: [], lists: { cantWait: [], implement: [], canWait: [], brainDump: [] }, days: {} };
 
-export default function Plan({ embedded = false }) {
+export default function Plan({ embedded = false, only = '', hideHabits = false }) {
   const raw = useAppStore((s) => s.plannerData);
   const videoIdeas = useAppStore((s) => s.socialIdeas) || [];
   const setRaw = useAppStore((s) => s.setPlannerData);
@@ -120,14 +121,13 @@ export default function Plan({ embedded = false }) {
   const dateLabel = new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
   const dateShort = new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
   const rel = date === ymd(new Date()) ? 'Today' : date === shift(ymd(new Date()), 1) ? 'Tomorrow' : date === shift(ymd(new Date()), -1) ? 'Yesterday' : null;
-  const crewCounts = sched.visits.reduce((m, v) => { for (const c of v.crew.length ? v.crew : ['Unassigned']) m[c] = (m[c] || 0) + 1; return m; }, {});
   const myStops = sched.visits.filter((v) => v.crew.some((c) => /^jude/i.test(c)));
 
   const schedRows = [
     ...sched.events.map((e) => ({ id: e.id, start: e.start, allDay: e.allDay, title: e.title, kind: e.calendar || 'Calendar', sub: e.location || '' })),
     ...myStops.map((v) => ({ id: v.id, start: v.start, allDay: v.allDay, title: v.client || v.title, kind: 'Job', sub: v.address, done: v.done })),
     ...(sched.assessments || []).map((a) => ({ id: a.id, start: a.start, allDay: a.allDay, title: a.client || a.title, kind: 'Quote', sub: [a.title !== a.client ? a.title : '', a.address].filter(Boolean).join(' · '), done: a.done })),
-    ...(sched.tasks || []).map((t) => ({ id: t.id, start: t.start, allDay: t.allDay, title: t.title, kind: 'Task', done: t.done,
+    ...(sched.tasks || []).filter((t) => !t.crew.length || t.crew.some((c) => /^jude/i.test(c))).map((t) => ({ id: t.id, start: t.start, allDay: t.allDay, title: t.title, kind: 'Task', done: t.done,
       sub: t.crew.length && !t.crew.some((c) => /^jude/i.test(c)) ? t.crew.map((c) => c.split(' ')[0]).join(', ') : '' })),
   ].sort((x, y) => (x.allDay !== y.allDay ? (x.allDay ? 1 : -1) : new Date(x.start) - new Date(y.start)));
 
@@ -146,6 +146,7 @@ export default function Plan({ embedded = false }) {
       </div>
       <h1 className="text-3xl font-bold text-primary leading-tight mb-6">{dateLabel}</h1>
 
+      {only !== 'schedule' && (<>
       {ai.error && <p className="text-sm text-rose-400 mb-4">{ai.error}</p>}
       {ai.plan && (
         <div className="mb-8 border-l-2 border-brand pl-3 relative">
@@ -170,6 +171,7 @@ export default function Plan({ embedded = false }) {
         </div>
       )}
 
+      </>)}
       {/* Schedule */}
       <Section title="Schedule" right={<button onClick={loadSched} title="Refresh" className="text-muted hover:text-primary cursor-pointer"><RefreshCw size={12} className={sched.loading ? 'animate-spin' : ''} /></button>}>
         {Object.values(sched.errors || {}).map((e) => <p key={e} className="text-xs text-rose-400">{e}</p>)}
@@ -180,29 +182,35 @@ export default function Plan({ embedded = false }) {
             if (d.url) window.location.href = d.url;
           }} className="my-1 text-sm font-semibold text-brand hover:underline cursor-pointer">Connect calendar</button>
         )}
-        {schedRows.map((x) => (
-          <div key={x.id} className="flex gap-3 py-1 items-baseline">
-            <span className="w-16 shrink-0 text-sm text-muted tabular-nums">{x.allDay ? 'All day' : time(x.start)}</span>
-            <p className={`text-[15px] flex-1 min-w-0 ${x.done ? 'text-tertiary line-through' : 'text-primary'}`}>
+        {schedRows.map((x, i) => (
+          <div key={x.id}>
+          {/* Timed things (set a timer) first, then all-day things (no set time) under their own label. */}
+          {i === 0 && !x.allDay && <p className="text-[11px] font-bold uppercase tracking-wide text-brand-text pb-0.5">Schedule</p>}
+          {x.allDay && (i === 0 || !schedRows[i - 1].allDay) && <p className={`text-[11px] font-bold uppercase tracking-wide text-muted pb-0.5 ${i ? 'pt-3' : ''}`}>All day</p>}
+          <div className="flex gap-3 py-1 items-center">
+            {/* Done check: Hub-only (ticks it off here; nothing changes in Google Calendar or Jobber). */}
+            {(() => { const on = !!(x.done || day.schedDone?.[x.id]); return <Box on={on} onClick={() => { if (x.done) return; setDay({ schedDone: { ...(day.schedDone || {}), [x.id]: !on } }); }} />; })()}
+            <span className={`w-16 shrink-0 text-sm tabular-nums ${x.allDay ? 'text-tertiary' : 'font-semibold text-primary'}`}>{x.allDay ? 'Anytime' : time(x.start)}</span>
+            <p className={`text-[15px] flex-1 min-w-0 ${x.done || day.schedDone?.[x.id] ? 'text-tertiary line-through' : 'text-primary'}`}>
               {x.title}
               <span className="text-sm text-muted"> · {x.kind === 'Job' || x.kind === 'Quote' || x.kind === 'Task' ? x.kind.toLowerCase() : x.kind}{x.sub ? ` · ${x.sub}` : ''}</span>
             </p>
           </div>
+          </div>
         ))}
-        {Object.keys(crewCounts).length > 0 && (
-          <p className="text-sm text-muted pt-1">Crew: {Object.entries(crewCounts).map(([c, n]) => `${c.split(' ')[0]} ${n} stop${n === 1 ? '' : 's'}`).join(' · ')}</p>
-        )}
         {!sched.loading && !schedRows.length && <p className="text-sm text-muted py-1">Nothing on the calendar.</p>}
         {!sched.loading && !sched.calendarsConnected?.length && <p className="text-xs text-amber-400 pt-1">Google Calendar isn't connected yet.</p>}
       </Section>
 
       {/* Notes: one running note for every day, just type. */}
+      {only !== 'schedule' && (<>
       <Section title="Notes" right={!data.notesImported && oldItems.length > 0 && (
         <button onClick={pullOld} className="text-xs font-semibold text-muted hover:text-brand cursor-pointer">+ Pull in {oldItems.length} old items</button>
       )}>
         <NoteEditor html={data.notesHtml ?? textToHtml(data.notes || '')} onChange={(h) => save((d) => ({ ...d, notesHtml: h }))} />
       </Section>
 
+      {!hideHabits && (
       <Section title="Habits">
         {data.habits.map((h) => (
           <div key={h.id} className="flex items-start gap-2.5 py-1 group">
@@ -226,7 +234,9 @@ export default function Plan({ embedded = false }) {
         ))}
         <AddLine onAdd={(t) => save((d) => ({ ...d, habits: [...d.habits, { id: newId(), name: t }] }))} />
       </Section>
+      )}
 
+      </>)}
     </div>
   );
 }
@@ -259,12 +269,12 @@ function Box({ on, onClick }) {
 const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const textToHtml = (t) => (t ? t.split('\n').map((l) => `<p>${esc(l)}</p>`).join('') : '');
 
-// Apple Notes-style editor: Cmd+B bold, Cmd+I italic, "- " starts a bullet list, "# " a heading.
+// Apple Notes-style editor: Cmd+B bold, Cmd+I italic, "- " starts a bullet list, "[ ] " a checklist, "# " a heading.
 // Only takes outside changes while you're not typing in it, so a cloud refresh can't eat your words.
 function NoteEditor({ html, onChange }) {
   const [, force] = useState(0);
   const editor = useEditor({
-    extensions: [StarterKit.configure({ heading: { levels: [2, 3] } }), Placeholder.configure({ placeholder: 'Start typing…' })],
+    extensions: [StarterKit.configure({ heading: { levels: [2, 3] } }), TaskList, TaskItem.configure({ nested: true }), Placeholder.configure({ placeholder: 'Start typing…' })],
     content: html,
     onUpdate: ({ editor: e }) => onChange(e.getHTML()),
     onSelectionUpdate: () => force((n) => n + 1),
@@ -286,6 +296,7 @@ function NoteEditor({ html, onChange }) {
           {btn(editor.isActive('italic'), <i className="font-serif">I</i>, () => editor.chain().focus().toggleItalic().run(), 'Italic (⌘I)')}
           {btn(editor.isActive('heading', { level: 2 }), <span className="font-bold">Aa</span>, () => editor.chain().focus().toggleHeading({ level: 2 }).run(), 'Heading')}
           {btn(editor.isActive('bulletList'), <List size={15} />, () => editor.chain().focus().toggleBulletList().run(), 'Bullet list')}
+          {btn(editor.isActive('taskList'), <ListChecks size={15} />, () => editor.chain().focus().toggleTaskList().run(), 'Checklist ([ ] + space)')}
         </div>
       )}
       <EditorContent editor={editor} />
