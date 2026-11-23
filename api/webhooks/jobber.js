@@ -182,7 +182,8 @@ async function logHit(entry) {
     const db = getSupabaseAdmin();
     const { data } = await db.from('app_state').select('value').eq('key', 'jobber-webhook-log').maybeSingle();
     const list = [{ at: new Date().toISOString(), ...entry }, ...(Array.isArray(data?.value) ? data.value : [])].slice(0, 40);
-    await db.from('app_state').upsert({ key: 'jobber-webhook-log', value: list }, { onConflict: 'key' });
+    const org = (await db.from('app_state').select('org_id').eq('key', 'greenteam-lightsOrders').maybeSingle()).data?.org_id;
+    await db.from('app_state').upsert({ key: 'jobber-webhook-log', value: list, ...(org ? { org_id: org } : {}) }, { onConflict: 'key' });
   } catch { /* logging must never break the webhook */ }
 }
 
