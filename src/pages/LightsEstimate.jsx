@@ -61,9 +61,22 @@ export default function LightsEstimate() {
   const [confirmDel, setConfirmDel] = useState('');
   const [formCopied, setFormCopied] = useState(false);
   const [hot, setHot] = useState(-1); // run highlighted on the photo
+  // 'list' = table of everyone; 'edit' = one person's estimate. Opening from a lead's $ Range button (or a draft) goes straight to edit.
+  const [view, setView] = useState(() => (params.get('client') || params.get('phone') || (draft?.est?.client) ? 'edit' : 'list'));
+  const [q, setQ] = useState('');
+  const [jobber, setJobber] = useState([]); // Jobber clients matching what's typed
+  useEffect(() => {
+    const t0 = q.trim();
+    if (view !== 'list' || t0.length < 2) { setJobber([]); return undefined; }
+    let off = false;
+    const t = setTimeout(() => {
+      fetch(`/api/jobber-data?action=clients&q=${encodeURIComponent(t0)}`).then((r) => (r.ok ? r.json() : [])).then((d) => { if (!off) setJobber(Array.isArray(d) ? d.slice(0, 5) : []); }).catch(() => {});
+    }, 300);
+    return () => { off = true; clearTimeout(t); };
+  }, [q, view]);
 
   const refresh = () => listEstimates().then(setList).catch((e) => setErr(e.message));
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refresh(); }, [orgId]); // re-load once the login is ready (the list is account-only)
 
   const setImg = (k, v) => { setImgs((m) => ({ ...m, [k]: v })); setDirtyImgs((m) => ({ ...m, [k]: v })); };
   const rate = { ...prices(), ...EST_RATES, ...(est.rates || {}) };
@@ -71,10 +84,16 @@ export default function LightsEstimate() {
   const setRate = (k, v) => setEst((e) => ({ ...e, rates: { ...(e.rates || {}), [k]: v.replace(/[^\d.]/g, '') } }));
 
   const open = async (e) => {
-    setErr(''); setEst(e); setImgs({}); setDirtyImgs({});
+    setErr(''); setEst(e); setImgs({}); setDirtyImgs({}); setView('edit'); window.scrollTo(0, 0);
     setImgs(await getEstimateImages(e.id));
   };
-  const startNew = () => { setErr(''); setEst(BLANK); setImgs({}); setDirtyImgs({}); };
+  const startNew = (prefill = {}) => { setErr(''); setEst({ ...BLANK, ...prefill }); setImgs({}); setDirtyImgs({}); setView('edit'); setQ(''); window.scrollTo(0, 0); };
+  const backToList = () => { setView('list'); refresh(); try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ } };
+  const fromJobber = (c) => startNew({ client: c.name || '', phone: c.phone || '', email: c.email || '', address: [c.address, c.city, [c.state, c.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') });
+  const statusOf = (e) => (e.said ? ['✅ Wants consultation', 'text-emerald-600 dark:text-emerald-400']
+    : e.views?.count ? [`👀 Opened ${e.views.count}× · ${ago(e.views.last)}`, 'text-sky-600 dark:text-sky-400']
+      : e.token ? ['Sent · not opened', 'text-muted']
+        : e.form ? ['📝 New from form', 'text-amber-600 dark:text-amber-400'] : ['Draft', 'text-muted']);
 
   const pickPhoto = async (file) => {
     if (!file) return;
@@ -144,12 +163,62 @@ export default function LightsEstimate() {
         <div className="flex items-center gap-2">
           <button onClick={async () => { await navigator.clipboard.writeText(FORM_URL); setFormCopied(true); setTimeout(() => setFormCopied(false), 2500); }} title={FORM_URL} className="flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer">{formCopied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy form link</>}</button>
           <a href="/rough-estimate-form" target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary"><ExternalLink size={14} /> Form</a>
-          <button onClick={startNew} className="flex items-center gap-1 rounded-lg bg-[#B3121F] px-3 py-2 text-sm font-bold text-white cursor-pointer"><Plus size={14} /> New</button>
+          {view === 'edit' && <button onClick={backToList} className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer">← All</button>}
         </div>
       </div>
 
       {err && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm font-bold text-rose-500">{err}</p>}
 
+      {view === 'list' && (() => {
+        const t0 = q.trim().toLowerCase();
+        const rows = list.filter((e) => !t0 || `${e.client} ${e.address || ''} ${e.phone || ''}`.toLowerCase().includes(t0));
+        const known = new Set(list.map((e) => String(e.client || '').toLowerCase()));
+        return (
+          <div className="space-y-3">
+            <div className="relative">
+              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && q.trim() && !rows.length) startNew({ client: q.trim() }); }}
+                placeholder="Type a name to find someone or add a new person…" className="w-full rounded-xl border border-card-border bg-card px-4 py-3 text-base text-primary" />
+            </div>
+            {q.trim().length >= 2 && (
+              <div className="rounded-xl border border-card-border bg-card divide-y divide-card-border">
+                {jobber.filter((c) => !known.has(String(c.name || '').toLowerCase())).map((c) => (
+                  <button key={c.id} onClick={() => fromJobber(c)} className="w-full text-left px-4 py-2.5 hover:bg-surface-alt cursor-pointer">
+                    <p className="text-sm font-bold text-primary">+ {c.name} <span className="font-normal text-muted">from Jobber</span></p>
+                    <p className="text-xs text-muted truncate">{[c.address, c.city].filter(Boolean).join(', ')}{c.phone ? ` · ${c.phone}` : ''}</p>
+                  </button>
+                ))}
+                <button onClick={() => startNew({ client: q.trim() })} className="w-full text-left px-4 py-2.5 hover:bg-surface-alt cursor-pointer text-sm font-bold text-[#B3121F]">+ Add “{q.trim()}” as new</button>
+              </div>
+            )}
+            <div className="rounded-xl border border-card-border bg-card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-[11px] uppercase tracking-wider text-muted border-b border-card-border">
+                  <th className="px-4 py-2 font-black">Name</th><th className="px-3 py-2 font-black">Address</th><th className="px-3 py-2 font-black">Status</th><th className="px-3 py-2 font-black">Range</th><th className="px-3 py-2 font-black">Added</th><th />
+                </tr></thead>
+                <tbody className="divide-y divide-card-border">
+                  {rows.map((e) => { const [st, cls] = statusOf(e); return (
+                    <tr key={e.id} onClick={() => open(e)} className="hover:bg-surface-alt cursor-pointer">
+                      <td className="px-4 py-2.5 font-bold text-primary whitespace-nowrap">{e.client || 'No name'}</td>
+                      <td className="px-3 py-2.5 text-muted max-w-[220px] truncate">{String(e.address || '').split(',')[0]}</td>
+                      <td className={`px-3 py-2.5 whitespace-nowrap font-semibold ${cls}`}>{st}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-primary">{e.low ? `${money(e.low)}–${money(e.high)}` : '—'}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-muted">{e.createdAt ? ago(e.createdAt) : ''}</td>
+                      <td className="px-2 py-2.5 text-right" onClick={(x) => x.stopPropagation()}>
+                        {confirmDel === e.id
+                          ? <button onClick={() => { setConfirmDel(''); removeEstimate(e, orgId).then(refresh); }} className="rounded bg-red-600 px-1.5 py-0.5 text-[11px] font-semibold text-white cursor-pointer">Remove?</button>
+                          : <button onClick={() => setConfirmDel(e.id)} title="Remove (their link stops working)" className="p-1 text-muted hover:text-rose-500 cursor-pointer"><Trash2 size={13} /></button>}
+                      </td>
+                    </tr>
+                  ); })}
+                  {!rows.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-muted">{list.length ? 'Nobody matches. Press Enter or tap “Add” above.' : 'Nobody yet. Type a name above, or send the form link.'}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
+
+      {view === 'edit' && (
       <div className="grid gap-4 md:grid-cols-[1fr_280px]">
         <div className="space-y-4 min-w-0">
           {/* 1. Who */}
@@ -291,25 +360,9 @@ export default function LightsEstimate() {
             {est.said && <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm font-bold text-emerald-700 dark:text-emerald-300">✅ They want the exact quote{est.said.color ? ` (${est.said.color === 'warm' ? 'warm white' : 'multicolor'})` : ''}</p>}
           </div>
 
-          <div className="rounded-xl border border-card-border bg-card p-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.15em] text-muted mb-1">Saved</p>
-            {!list.length && <p className="text-xs text-muted">None yet.</p>}
-            <div className="divide-y divide-card-border">
-              {list.map((e) => (
-                <div key={e.id} className="flex items-center gap-2 py-1.5">
-                  <button onClick={() => open(e)} className={`min-w-0 flex-1 text-left cursor-pointer ${est.id === e.id ? 'font-black' : ''}`}>
-                    <p className="text-sm text-primary truncate">{e.said ? '✅ ' : e.form && !e.token ? '📝 ' : ''}{e.client || 'No name'}</p>
-                    <p className="text-xs text-muted">{e.low ? `${money(e.low)}–${money(e.high)}` : ''}{e.views?.count ? ` · 👀 ${e.views.count}× · ${ago(e.views.last)}` : e.token ? ' · not opened' : ''}</p>
-                  </button>
-                  {confirmDel === e.id
-                    ? <button onClick={() => { setConfirmDel(''); removeEstimate(e, orgId).then(() => { if (est.id === e.id) startNew(); refresh(); }); }} className="rounded bg-red-600 px-1.5 py-0.5 text-[11px] font-semibold text-white cursor-pointer">Remove?</button>
-                    : <button onClick={() => setConfirmDel(e.id)} title="Remove (their link stops working)" className="p-1 text-muted hover:text-rose-500 cursor-pointer"><Trash2 size={13} /></button>}
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
+      )}
     </div>
   );
 }
