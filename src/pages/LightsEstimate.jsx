@@ -91,6 +91,7 @@ export default function LightsEstimate() {
   const backToList = () => { setView('list'); refresh(); try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ } };
   const fromJobber = (c) => startNew({ client: c.name || '', phone: c.phone || '', email: c.email || '', address: [c.address, c.city, [c.state, c.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') });
   const statusOf = (e) => (e.said ? ['✅ Wants consultation', 'text-emerald-600 dark:text-emerald-400']
+    : e.declined ? ['❌ Not interested', 'text-rose-500']
     : e.views?.count ? [`👀 Opened ${e.views.count}× · ${ago(e.views.last)}`, 'text-sky-600 dark:text-sky-400']
       : e.token ? ['Sent · not opened', 'text-muted']
         : e.form ? ['📝 New from form', 'text-amber-600 dark:text-amber-400'] : ['Draft', 'text-muted']);

@@ -322,7 +322,9 @@ async function handleLightsEstimate(req, res) {
   }
   if (req.method === 'POST') {
     const color = ['warm', 'multi'].includes(req.body?.color) ? req.body.color : '';
-    const { error: w } = await db.from('app_state').upsert({ key: `le-yes:${id}`, value: { color, at: new Date().toISOString() }, ...(row.org_id ? { org_id: row.org_id } : {}) }, { onConflict: 'key' });
+    const declined = req.body?.decline === true;
+    // le-yes holds their answer: { yes: true } = wants the consultation, { declined: true } = not interested
+    const { error: w } = await db.from('app_state').upsert({ key: `le-yes:${id}`, value: declined ? { declined: true, at: new Date().toISOString() } : { color, at: new Date().toISOString() }, ...(row.org_id ? { org_id: row.org_id } : {}) }, { onConflict: 'key' });
     if (w) return res.status(500).json({ error: 'Could not save' });
     return res.json({ ok: true });
   }
@@ -344,7 +346,8 @@ async function handleLightsEstimate(req, res) {
     street: String(e.address || '').split(',')[0].trim(),
     low: Number(e.low) || 0, high: Number(e.high) || 0,
     photo: e.has?.photo ? url('photo') : '', warm: e.has?.warm ? url('warm') : '', multi: e.has?.multi ? url('multi') : '',
-    said: yes?.value?.at ? { color: yes.value.color || '' } : null,
+    said: yes?.value?.at && !yes.value.declined ? { color: yes.value.color || '' } : null,
+    declined: !!yes?.value?.declined,
   });
 }
 
@@ -415,6 +418,10 @@ async function handleEstimatePage(req, res) {
         ${img('warm') || img('multi') ? '<p class="hje-small">Mockup made from a photo of your house, to give you an idea. Your real design is planned to the foot.</p>' : ''}` : '';
   // Bottom bar: no price up top (it's the payoff at the end) — just point them to it.
   const sticky = `<div class="hje-sticky" hidden><div><b>Your rough estimate is ready</b><span>Based on a photo of your house · scroll down to see it</span></div><button type="button" class="btn btn-go hje-yes2">See it ↓</button></div>`;
+  const smsTo = '+18039027447'; // Biz # in Quo
+  const smsYes = `Hi Jude, it's ${String(e.client || '').trim().split(/\s+/)[0] || 'me'}${e.address ? ` at ${String(e.address).split(',')[0].trim()}` : ''}. I'd like to schedule my free design consultation 🎄`;
+  const smsNo = `Hi Jude, it's ${String(e.client || '').trim().split(/\s+/)[0] || 'me'}. I saw my rough estimate, thanks! I'm not interested right now.`;
+  const sms = (body) => `sms:${smsTo}?&body=${encodeURIComponent(body)}`;
   const section = `<section class="final" id="quote">
     <div class="wrap">
       <div class="sec-head rv">
@@ -431,10 +438,12 @@ async function handleEstimatePage(req, res) {
             <p class="hje-card-h hje-sub">Everything included</p>
             <ul class="hje-incl">${['Commercial-grade lights', 'Full plan before you buy', 'Install', 'Maintenance', 'Storage', 'Jan. takedown guarantee', 'Hidden, color-matched wire', 'Fully insured ($1M)'].map((t) => `<li>${t}</li>`).join('')}</ul>
             <p class="hje-trust">★★★★★ <b>5.0</b> · 195 Google reviews</p>
-            <button type="button" class="btn btn-go hje-yes">Schedule my free design consultation →</button>
-            <p class="hje-after">At your consultation we bring light samples, measure your roof, show you a detailed mockup and go over your exact price.</p>
+            <button type="button" class="btn btn-go hje-yes">✅ Yes, schedule my free design consultation</button>
+            <p class="hje-after">Opens a text to Jude, already written. Just hit send. At your consultation we bring light samples, measure your roof, show you a detailed mockup and go over your exact price.</p>
+            <button type="button" class="hje-no">No thanks, not interested right now</button>
           </div>
-          <div class="hje-done" hidden><p class="hje-big">You're on the list! 🎄</p><p>Jude will text you to pick a time for your design consultation.</p></div>
+          <div class="hje-done" hidden><p class="hje-big">You're on the list! 🎄</p><p>Jude will text you back to pick a time for your design consultation.</p></div>
+          <div class="hje-done hje-done-no" hidden><p class="hje-big">Thanks for letting us know!</p><p>If anything changes, just text Jude at (803) 902-7447.</p></div>
         </div>
       </div></div>
     </div>
@@ -479,7 +488,8 @@ async function handleEstimatePage(req, res) {
     #quote .hje-note{font-size:13px!important;opacity:.7;max-width:480px!important;margin:0 auto 24px!important;text-align:center!important;line-height:1.5}
     #quote .box::before,#quote .box::after,#quote .box-in::before,#quote .box-in::after{display:none!important}
     .hje-yes{width:100%;border:0;cursor:pointer;font-size:18px}
-    .hje-yes[hidden],.hje-done[hidden]{display:none}
+    .hje-yes[hidden],.hje-done[hidden],.hje-no[hidden]{display:none}
+    #quote .hje-no{display:block;margin:14px auto 0;background:none;border:0;color:#a9b0bf;text-decoration:underline;font:600 14px Poppins,system-ui,sans-serif;cursor:pointer}
     .hje-big{font-size:20px;font-weight:800;margin:0 0 4px}
     .hje-done{background:rgba(0,180,0,.12);border-radius:12px;padding:14px}
     .hje-plan{font-weight:800;font-size:18px;margin:4px 0 2px}
@@ -508,22 +518,28 @@ async function handleEstimatePage(req, res) {
       root.querySelectorAll('.hje-tabs button').forEach(function(x){x.classList.toggle('on',x===b)});
       root.querySelectorAll('.hje-pic figure').forEach(function(im){im.hidden=im.dataset.look!==b.dataset.look});
     })});
-    var yes=root.querySelector('.hje-yes'), done=root.querySelector('.hje-done');
+    var yes=root.querySelector('.hje-yes'), no=root.querySelector('.hje-no'), done=root.querySelector('.hje-done:not(.hje-done-no)'), doneNo=root.querySelector('.hje-done-no');
     var bar=document.querySelector('.hje-sticky'), yes2=bar&&bar.querySelector('.hje-yes2'), said=false;
-    function showDone(){said=true;yes.hidden=true;done.hidden=false;if(bar)bar.hidden=true}
+    function showDone(){said=true;yes.hidden=true;no.hidden=true;done.hidden=false;doneNo.hidden=true;if(bar)bar.hidden=true}
+    function showNo(){said=true;yes.hidden=true;no.hidden=true;doneNo.hidden=false;if(bar)bar.hidden=true}
     function tick(){if(!bar||said)return;var r=root.getBoundingClientRect();bar.hidden=r.bottom>0&&r.top<window.innerHeight}
     document.addEventListener('scroll',tick,{passive:true,capture:true}); window.addEventListener('resize',tick); tick();
     if(yes2)yes2.addEventListener('click',function(){root.scrollIntoView({behavior:'smooth'})});
+    var pv=/[?&]preview=1/.test(location.search);
     yes.addEventListener('click',function(){
-      var on=root.querySelector('.hje-tabs button.on'); yes.disabled=true; yes.textContent='Sending…';
-      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({color:on&&on.dataset.look!=='photo'?on.dataset.look:''})})
-        .then(function(r){if(!r.ok)throw 0;showDone()}).catch(function(){location.href='sms:+18039027447'});
+      var on=root.querySelector('.hje-tabs button.on');
+      if(!pv) fetch(api,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({color:on&&on.dataset.look!=='photo'?on.dataset.look:''})}).catch(function(){});
+      showDone(); location.href=${JSON.stringify(sms(smsYes))};
     });
-    fetch(api).then(function(r){return r.json()}).then(function(j){if(j&&j.said)showDone()}).catch(function(){});
-    if(/[?&]preview=1/.test(location.search)){
-      var pv=document.createElement('div'); pv.textContent='Preview: this visit is not counted as them opening it';
-      pv.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;background:#ffcf6b;color:#111;font:700 13px system-ui;text-align:center;padding:6px';
-      document.body.appendChild(pv);
+    no.addEventListener('click',function(){
+      if(!pv) fetch(api,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({decline:true})}).catch(function(){});
+      showNo(); location.href=${JSON.stringify(sms(smsNo))};
+    });
+    fetch(api).then(function(r){return r.json()}).then(function(j){if(j&&j.said)showDone(); else if(j&&j.declined)showNo();}).catch(function(){});
+    if(pv){
+      var pvb=document.createElement('div'); pvb.textContent='Preview: this visit is not counted as them opening it';
+      pvb.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;background:#ffcf6b;color:#111;font:700 13px system-ui;text-align:center;padding:6px';
+      document.body.appendChild(pvb);
     } else {
       fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({view:1})}).catch(function(){});
     }

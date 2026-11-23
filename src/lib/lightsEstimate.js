@@ -68,7 +68,7 @@ export async function listEstimates() {
   const seen = Object.fromEntries((views || []).map((r) => [r.key.slice(9), r.value]));
   if (error) throw error;
   const said = Object.fromEntries((yes || []).map((r) => [r.key.slice(7), r.value]));
-  return (data || []).map((r) => ({ ...r.value, id: r.key.slice(8), said: said[r.key.slice(8)] || null, views: seen[r.key.slice(8)] || null }))
+  return (data || []).map((r) => ({ ...r.value, id: r.key.slice(8), said: said[r.key.slice(8)]?.declined ? null : (said[r.key.slice(8)] || null), declined: !!said[r.key.slice(8)]?.declined, views: seen[r.key.slice(8)] || null }))
     .filter((e) => !e.off).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
@@ -93,6 +93,7 @@ export async function saveEstimate(est, imgs, orgId) {
   };
   delete meta.said;
   delete meta.views;
+  delete meta.declined;
   for (const r of imgRows) await upsert([r], orgId); // one picture per request
   await upsert([{ key: `le-meta:${id}`, value: meta }], orgId);
   return meta;
