@@ -518,6 +518,8 @@ async function handleEstimatePage(req, res) {
     .hje-sticky button{border:0;cursor:pointer;white-space:nowrap;padding:12px 16px}
     .sec-head p.two,.sec-head .two{white-space:normal!important;text-wrap:balance}
     .hje-tier{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;opacity:.6;margin:0 0 6px}
+    .hero .ctas .btn{white-space:normal!important;text-align:center;justify-content:center}
+    @media (max-width:600px){.hero .ctas{flex-direction:column!important;gap:10px!important}.hero .ctas .btn{width:100%!important;flex:none!important}}
     @media (max-width:520px){.hero .lead{font-size:16px!important}.hero h1.hje-h1{font-size:34px!important;line-height:1.08!important}}
     .hje-sticky b{white-space:nowrap}
     @media (max-width:520px){.hje-sticky b{font-size:14px;white-space:normal}.hje-sticky span{font-size:11px}.hje-sticky button{font-size:14px!important;padding:12px 14px!important}}
@@ -536,7 +538,7 @@ async function handleEstimatePage(req, res) {
       root.querySelectorAll('.hje-pic figure').forEach(function(im){im.hidden=im.dataset.look!==b.dataset.look});
     })});
     var bar=document.querySelector('.hje-sticky'), yes2=bar&&bar.querySelector('.hje-yes2');
-    function tick(){if(!bar)return;var r=root.getBoundingClientRect();bar.hidden=r.bottom>0&&r.top<window.innerHeight}
+    function tick(){if(!bar)return;var r=root.getBoundingClientRect();bar.hidden=window.scrollY<window.innerHeight*0.6||(r.bottom>0&&r.top<window.innerHeight)}
     document.addEventListener('scroll',tick,{passive:true,capture:true}); window.addEventListener('resize',tick); tick();
     if(yes2)yes2.addEventListener('click',function(){root.scrollIntoView({behavior:'smooth'})});
     var pv=/[?&]preview=1/.test(location.search);
