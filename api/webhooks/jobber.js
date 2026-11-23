@@ -175,6 +175,16 @@ async function handleJob(supabase, topic, itemId) {
   return { upserted: job.id };
 }
 
+// Last 40 webhook hits, kept in app_state 'jobber-webhook-log' so we can see what Jobber actually sends.
+async function logHit(entry) {
+  try {
+    const db = getSupabaseAdmin();
+    const { data } = await db.from('app_state').select('value').eq('key', 'jobber-webhook-log').maybeSingle();
+    const list = [{ at: new Date().toISOString(), ...entry }, ...(Array.isArray(data?.value) ? data.value : [])].slice(0, 40);
+    await db.from('app_state').upsert({ key: 'jobber-webhook-log', value: list }, { onConflict: 'key' });
+  } catch { /* logging must never break the webhook */ }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
@@ -189,6 +199,7 @@ export default async function handler(req, res) {
 
   if (!verifySignature(rawBody, sig, secret)) {
     console.warn('[Jobber Webhook] Invalid signature');
+    await logHit({ error: 'invalid signature', bytes: rawBody.length });
     return res.status(401).json({ error: 'invalid signature' });
   }
 
@@ -219,6 +230,7 @@ export default async function handler(req, res) {
     else result = { skipped: topic };
 
     console.log(`[Jobber Webhook] ${topic} ${itemId}:`, result);
+    if (!topic.startsWith('VISIT_') && !topic.startsWith('JOB_')) await logHit({ topic, itemId, result });
     return res.status(200).json({ ok: true, topic, ...result });
   } catch (err) {
     if (err instanceof JobberDisconnectedError || err.code === 'JOBBER_DISCONNECTED') {
@@ -227,6 +239,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: false, error: 'jobber disconnected', willRetryViaCron: true });
     }
     console.error('[Jobber Webhook] Error:', err.message);
+    await logHit({ topic, itemId, error: err.message });
     // 500 so Jobber retries — they retry up to ~12 times with backoff.
     return res.status(500).json({ ok: false, error: err.message });
   }
