@@ -432,10 +432,10 @@ async function handleEstimatePage(req, res) {
         ${street ? `<p>📍 ${street}</p>` : ''}
       </div>
       <div class="box rv"><div class="box-in hje">
-        ${pics}
         <div class="hje-range">
-          <div class="hje-card">
-            <p class="hje-eyebrow">Your rough estimate</p>
+          <div class="hje-card hje-main">
+            ${pics}
+            <p class="hje-eyebrow" style="margin-top:18px!important">Your rough estimate</p>
             <p class="hje-price">${money(e.low)} – ${money(e.high)}</p>
             <p class="hje-rough">From a photo · not a quote</p>
             <p class="hje-card-h hje-sub">Everything included</p>
@@ -466,6 +466,9 @@ async function handleEstimatePage(req, res) {
     #quote .hje-incl li::before{content:'✓'!important;display:block!important;position:absolute;left:0;top:0;color:#00DF00;font-weight:900;background:none!important;width:auto!important;height:auto!important}
     #quote .hje-incl li::after{display:none!important}
     .hje-card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:22px 18px;margin:0 auto 14px;max-width:560px;text-align:center}
+    .hje-card.hje-main{padding:12px 12px 22px;max-width:760px}
+    .hje-main .hje-pic img{border-radius:14px}
+    .hje-main .hje-small{margin:10px 6px 0!important}
     .hje-card-next{border:2px solid rgba(0,223,0,.45);background:linear-gradient(180deg,rgba(0,223,0,.08),rgba(0,223,0,.02))}
     #quote .hje-card-h{font-weight:900;font-size:22px;line-height:1.2;margin:0 0 16px!important;text-align:center!important;color:#f6f3ee}
     #quote .hje-card .hje-price{margin:6px 0 10px}
@@ -594,7 +597,10 @@ async function handleEstimatePage(req, res) {
     .replace(/<!-- 9b\. SIGN DEAL -->\s*<section[\s\S]*?<\/section>/, '') // door hanger / yard sign $50 off (asks them to use the form)
     .replace(/<div class="sticky" id="hjl-sticky">[\s\S]*?<\/div>/, '')
     .replace(/<a class="btn [^"]*"[^>]*>[\s\S]*?<\/a>/g, (m) => (/google\.com/.test(m) ? m : ''))
-    .replace(/<div class="ctas">\s*<\/div>/g, '') // hero buttons are gone; drop their empty row (it left a big gap)
+    // hero buttons: jump to their estimate, or to what's included
+    .replace(/<div class="ctas">\s*<\/div>/, () => '<div class="ctas"><a class="btn btn-go" href="#quote">See my mockup &amp; estimate ↓</a><a class="btn btn-ghost" href="#included">What&#8217;s included</a></div>')
+    .replace(/<div class="ctas">\s*<\/div>/g, '')
+    .replace(/(<!-- 2\. CONTRAST[^>]*-->)/, (m) => `${m}<a id="included" style="position:relative;top:-70px;display:block"></a>`)
     .replace(/<section class="final" id="quote">[\s\S]*?<\/section>/, () => section) // their house + range at the bottom
     // the plan + before/after up top is another client's — say so (their own house is at the bottom)
     .replace('<span class="tag">Before</span><span class="tag r">After</span>', () => '<span class="tag">Before · AI night view</span><span class="tag r">After · AI mockup</span>')
