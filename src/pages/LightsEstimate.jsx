@@ -12,7 +12,7 @@ const ago = (iso) => { const m = Math.round((Date.now() - new Date(iso)) / 6e4);
 const BLANK = { client: '', phone: '', address: '', lines: [], notes: '', confidence: '' };
 const LEVELS = ['easy', 'medium', 'hard'];
 const DRAFT_KEY = 'hub-lights-estimate-draft';
-const FORM_URL = 'https://hub.heyjudeslawncare.com/rough-estimate-form'; // the C9 roofline lead form (text this to people asking for a price)
+const FORM_URL = 'https://estimate.heyjudeschristmaslights.com'; // Squarespace forward -> hub /rough-estimate-form // the C9 roofline lead form (text this to people asking for a price)
 const LEVEL_COLOR = { easy: '#22c55e', medium: '#f59e0b', hard: '#ef4444' };
 // Spot for a run's number badge: the middle of its traced line.
 const midOf = (pts) => {

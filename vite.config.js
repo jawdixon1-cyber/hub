@@ -106,7 +106,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: {
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+        // pages served by the API (client estimate pages + lead form) must reach the server, not the app shell
+        navigateFallbackDenylist: [/^\/api\//, /^\/estimate\//, /^\/rough-/, /^\/lights-start/, /^\/refer\//],
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
