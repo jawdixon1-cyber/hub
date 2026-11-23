@@ -371,7 +371,7 @@ function reorderEstimateSections(html) {
   const jobs = `<!-- REAL JOBS (Hub) -->
   <section style="padding-top:10px">
     <div class="wrap">
-      <div class="sec-head rv"><h2>Real jobs we&#8217;ve done this season.</h2><p>Real photos. No AI.</p></div>
+      <div class="sec-head rv"><h2>A few jobs we&#8217;ve done this season.</h2><p>Real photos. No AI.</p></div>
       <div class="hje-jobs">
         <figure><img src="${SITE}/wp-content/uploads/2026/11/hero-real-install.jpg" alt="A home we lit in cool white and blue" loading="lazy"><span>📷 Real install</span></figure>
         <figure><img src="/lights-jobs/job-3.jpg" alt="A home we lit in warm white this season, with our yard sign" loading="lazy"><span>📷 Real install</span></figure>
