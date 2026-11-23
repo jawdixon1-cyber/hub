@@ -587,7 +587,7 @@ async function handleEstimatePage(req, res) {
 // ready-to-build estimate into the Hub's Lights estimate page (le-meta:<id> with form:true, photo in le-img).
 const LIGHTS_FORM_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Free Christmas lights estimate · Hey Jude's</title><meta name="robots" content="noindex">
-<meta property="og:title" content="Get your rough Christmas lights estimate 🎄"><meta property="og:description" content="1 minute. Jude sends you a rough price with a picture of your house.">
+<meta property="og:title" content="Get your rough Christmas lights estimate 🎄"><meta property="og:description" content="Takes 1 minute. Jude sends you a mockup of your home with a rough estimate.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box}body{margin:0;background:#07090f;color:#f6f3ee;font-family:Poppins,system-ui,sans-serif}
@@ -611,17 +611,18 @@ button:disabled{opacity:.6}
 .err{color:#ff6b6b;font-weight:700;text-align:center;min-height:20px}
 .done{text-align:center;padding:30px 10px}.done h2{font-size:26px;margin:0 0 8px}
 .hp{position:absolute;left:-9999px}
+.pac-container{background:#111621;border:1px solid rgba(255,255,255,.18);border-radius:12px;margin-top:4px;font-family:Poppins,system-ui,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.5)}.pac-item{color:#a9b0bf;border-top:1px solid rgba(255,255,255,.08);padding:8px 10px;cursor:pointer}.pac-item:hover,.pac-item-selected{background:#1b2232}.pac-item-query{color:#f6f3ee;font-size:14px}.pac-icon{display:none}.pac-logo:after{filter:invert(1);opacity:.6}
 </style></head><body><div class="w">
 <img class="logo" src="https://heyjudeslawncare.com/wp-content/uploads/2026/11/hey-judes-holiday-logo.png" alt="Hey Jude's">
 <div id="form">
 <h1>Get your rough Christmas lights estimate 🎄</h1>
-<p class="sub">Takes 1 minute. Jude sends you a rough price with a picture of your house.</p>
+<p class="sub">Takes 1 minute. Then Jude will send you a mockup of your home with a rough estimate.</p>
 <div class="card">
 <div class="row"><div><label class="f" for="n">First name</label><input id="n" type="text" autocomplete="given-name" placeholder="First"></div>
 <div><label class="f" for="ln">Last name</label><input id="ln" type="text" autocomplete="family-name" placeholder="Last"></div></div>
 <label class="f" for="p">Mobile phone</label><input id="p" type="tel" inputmode="numeric" autocomplete="tel" placeholder="803-555-1234">
 <label class="f" for="em">Email</label><input id="em" type="email" autocomplete="email" placeholder="you@email.com">
-<label class="f" for="s">Street address</label><input id="s" type="text" autocomplete="street-address" placeholder="123 Main St">
+<label class="f" for="s">Street address</label><input id="s" type="text" autocomplete="off" placeholder="Start typing your address">
 <div class="row"><div><label class="f" for="c">City</label><input id="c" type="text" autocomplete="address-level2" placeholder="Rock Hill"></div>
 <div style="flex:.5"><label class="f" for="st">State</label><select id="st"><option>SC</option><option>NC</option></select></div>
 <div style="flex:.7"><label class="f" for="z">Zip</label><input id="z" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="29730"></div></div>
@@ -644,7 +645,7 @@ button:disabled{opacity:.6}
 <p class="err" id="err"></p>
 <button id="go">Send me my rough estimate →</button>
 </div>
-<div id="ok" class="done" hidden><h2>Got it! 🎄</h2><p class="sub">Jude will text you your rough estimate soon, with a picture of your house and everything that's included.</p></div>
+<div id="ok" class="done" hidden><h2>Thank you! 🎄</h2><p class="sub">Jude will send you a mockup of your home with a rough estimate soon.</p><p style="margin:26px 0 10px;font-weight:700">Want to learn more about the service?</p><a href="https://heyjudeschristmaslights.com" style="display:block;background:#00DF00;color:#04170a;font-weight:800;font-size:17px;padding:15px;border-radius:14px;text-decoration:none">Click here →</a></div>
 </div>
 <script>
 (function(){
@@ -683,7 +684,28 @@ button:disabled{opacity:.6}
       .catch(function(e){ $('err').textContent=e.message+' You can also text Jude at (803) 843-0699.'; b.disabled=false; b.textContent='Send me my rough estimate →'; });
   });
 })();
-</script></body></html>`;
+</script>
+<script>
+function hjPlaces(){
+  try{
+    var g=google.maps, el=document.getElementById('s');
+    // Rock Hill, SC area first (about 35 miles around), US only
+    var near=new g.LatLngBounds({lat:34.45,lng:-81.6},{lat:35.4,lng:-80.45});
+    var ac=new g.places.Autocomplete(el,{bounds:near,strictBounds:false,componentRestrictions:{country:'us'},types:['address'],fields:['address_components']});
+    ac.addListener('place_changed',function(){
+      var c=(ac.getPlace()||{}).address_components||[], get=function(t,short){var x=c.filter(function(a){return a.types.indexOf(t)>=0})[0];return x?(short?x.short_name:x.long_name):''};
+      var street=(get('street_number')+' '+get('route')).trim(); if(street) el.value=street;
+      var city=get('locality')||get('sublocality')||get('postal_town')||get('administrative_area_level_3'); if(city) document.getElementById('c').value=city;
+      var st=get('administrative_area_level_1',true), sel=document.getElementById('st');
+      if(st){ if(![].some.call(sel.options,function(o){return o.value===st})){var o=document.createElement('option');o.value=o.textContent=st;sel.appendChild(o);} sel.value=st; }
+      var z=get('postal_code'); if(z) document.getElementById('z').value=z;
+    });
+    el.addEventListener('keydown',function(e){ if(e.key==='Enter') e.preventDefault(); });
+  }catch(e){}
+}
+</script>
+<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB9NZOyude8C_I92b1OHqa-V09E84Vsuso&libraries=places&callback=hjPlaces"></script>
+</body></html>`;
 
 async function handleLightsForm(req, res) {
   if (req.method === 'GET') {
@@ -696,7 +718,7 @@ async function handleLightsForm(req, res) {
   if (b.hp) return res.json({ ok: true }); // bot filled the hidden field
   const clean = (v, n = 120) => String(v || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n);
   const firstName = clean(b.first, 40); const lastName = clean(b.last, 40); const name = `${firstName} ${lastName}`.trim(); const email = clean(b.email, 120).toLowerCase(); const street = clean(b.street); const city = clean(b.city, 60);
-  const state = ['SC', 'NC'].includes(b.state) ? b.state : 'SC'; const zip = clean(b.zip, 10);
+  const state = /^[A-Z]{2}$/.test(String(b.state || '')) ? b.state : 'SC'; const zip = clean(b.zip, 10);
   const digits = String(b.phone || '').replace(/\D/g, '').slice(-10);
   const sides = (Array.isArray(b.sides) ? b.sides : []).filter((x) => ['Front', 'Left side', 'Right side', 'Back'].includes(x));
   const color = b.color === 'Custom' && clean(b.customColor, 80) ? `Custom: ${clean(b.customColor, 80)}`
