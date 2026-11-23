@@ -633,6 +633,7 @@ button:disabled{opacity:.6}
 <div class="card"><p class="q">Preferred mockup color</p><p class="qs">We&#8217;ll show your house lit up in this color.</p>
 <div class="chips" id="color">
 <label><input type="radio" name="col" value="Warm white" checked><span>Warm white</span></label><label><input type="radio" name="col" value="Multicolor"><span>Multicolor</span></label>
+<label><input type="radio" name="col" value="Candy cane"><span>Candy cane</span></label>
 <label><input type="radio" name="col" value="Not sure"><span>Not sure</span></label></div></div>
 <div class="card"><p class="q">Photos of your house <span style="font-weight:600;color:#a9b0bf">(optional)</span></p><p class="qs">Front first, then any other sides you picked (up to 4). Try to fit the <b>whole side</b> in each photo, so stand back or across the street.</p>
 <div class="thumbs" id="thumbs"></div>
@@ -693,7 +694,7 @@ async function handleLightsForm(req, res) {
   const state = ['SC', 'NC'].includes(b.state) ? b.state : 'SC'; const zip = clean(b.zip, 10);
   const digits = String(b.phone || '').replace(/\D/g, '').slice(-10);
   const sides = (Array.isArray(b.sides) ? b.sides : []).filter((x) => ['Front', 'Left side', 'Right side', 'Back'].includes(x));
-  const color = ['Warm white', 'Multicolor', 'Not sure'].includes(b.color) ? b.color : 'Not sure';
+  const color = ['Warm white', 'Multicolor', 'Candy cane', 'Not sure'].includes(b.color) ? b.color : 'Not sure';
   const photos = (Array.isArray(b.photos) ? b.photos : [b.photo]).map(String)
     .filter((x) => /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(x) && x.length < 2_500_000).slice(0, 4);
   const photo = photos[0] || '';
