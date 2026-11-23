@@ -443,9 +443,9 @@ async function handleEstimatePage(req, res) {
             <p class="hje-after">Ready for the next step? At your free design consultation we bring light samples, measure your roof, show you a detailed mockup and go over your exact price.</p>
             <div class="hje-choice">
               <a class="btn btn-go hje-yes" href="${sms(smsYes)}">✅ Accept</a>
-              <a class="hje-no" href="${sms(smsNo)}">Decline</a>
+              <a class="hje-no" href="${sms(smsNo)}"><span>Decline</span><small>No follow-up messages</small></a>
             </div>
-            <p class="hje-small" style="margin-top:10px">Either button opens a text to Jude, already written. Just hit send. Not interested? Tap <b>Decline</b> and send it so you won&#8217;t get any follow-up messages.</p>
+            <p class="hje-small" style="margin-top:10px">Either button opens a text to Jude, already written. Just hit send.</p>
           </div>
           
         </div>
@@ -495,7 +495,8 @@ async function handleEstimatePage(req, res) {
     .hje-yes[hidden],.hje-done[hidden],.hje-no[hidden]{display:none}
     .hje-choice{display:flex;gap:10px;margin-top:18px}
     #quote .hje-choice .hje-yes{flex:2;margin:0!important;display:flex;align-items:center;justify-content:center;text-decoration:none}
-    #quote .hje-no{flex:1;display:flex;align-items:center;justify-content:center;text-decoration:none;background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:14px;color:#f6f3ee;font:700 16px Poppins,system-ui,sans-serif;cursor:pointer;padding:14px}
+    #quote .hje-no small{display:block;font-size:11px;font-weight:600;opacity:.7;margin-top:2px}
+    #quote .hje-no{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.2;text-decoration:none;background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:14px;color:#f6f3ee;font:700 16px Poppins,system-ui,sans-serif;cursor:pointer;padding:14px}
     #quote .hje-sms{color:#ffcf6b;font-weight:700}
     .hje-choice[hidden]{display:none}
     .hje-big{font-size:20px;font-weight:800;margin:0 0 4px}
