@@ -440,12 +440,15 @@ async function handleEstimatePage(req, res) {
             <p class="hje-card-h hje-sub">Everything included</p>
             <ul class="hje-incl">${['Commercial-grade lights', 'Full plan before you buy', 'Install', 'Maintenance', 'Storage', 'Jan. takedown guarantee', 'Hidden, color-matched wire', 'Fully insured ($1M)'].map((t) => `<li>${t}</li>`).join('')}</ul>
             <p class="hje-trust">★★★★★ <b>5.0</b> · 195 Google reviews</p>
-            <button type="button" class="btn btn-go hje-yes">✅ Yes, schedule my free design consultation</button>
-            <p class="hje-after">Opens a text to Jude, already written. Just hit send. At your consultation we bring light samples, measure your roof, show you a detailed mockup and go over your exact price.</p>
-            <button type="button" class="hje-no">No thanks, not interested right now</button>
+            <p class="hje-after">Ready for the next step? At your free design consultation we bring light samples, measure your roof, show you a detailed mockup and go over your exact price.</p>
+            <div class="hje-choice">
+              <button type="button" class="btn btn-go hje-yes">✅ Accept</button>
+              <button type="button" class="hje-no">Decline</button>
+            </div>
+            <p class="hje-small" style="margin-top:10px">Either button opens a text to Jude, already written. Just hit send.</p>
           </div>
-          <div class="hje-done" hidden><p class="hje-big">You're on the list! 🎄</p><p>Jude will text you back to pick a time for your design consultation.</p></div>
-          <div class="hje-done hje-done-no" hidden><p class="hje-big">Thanks for letting us know!</p><p>If anything changes, just text Jude at (803) 902-7447.</p></div>
+          <div class="hje-done" hidden><p class="hje-big">You're on the list! 🎄</p><p>Hit send on the text and Jude will reply to pick a time for your design consultation.</p><p style="margin-top:10px"><a class="hje-sms" href="${sms(smsYes)}">Text didn't open? Tap here</a> · or text (803) 902-7447</p></div>
+          <div class="hje-done hje-done-no" hidden><p class="hje-big">Thanks for letting us know!</p><p><a class="hje-sms" href="${sms(smsNo)}">Text didn't open? Tap here</a> · If anything changes, text Jude at (803) 902-7447.</p></div>
         </div>
       </div></div>
     </div>
@@ -491,7 +494,11 @@ async function handleEstimatePage(req, res) {
     #quote .box::before,#quote .box::after,#quote .box-in::before,#quote .box-in::after{display:none!important}
     .hje-yes{width:100%;border:0;cursor:pointer;font-size:18px}
     .hje-yes[hidden],.hje-done[hidden],.hje-no[hidden]{display:none}
-    #quote .hje-no{display:block;margin:14px auto 0;background:none;border:0;color:#a9b0bf;text-decoration:underline;font:600 14px Poppins,system-ui,sans-serif;cursor:pointer}
+    .hje-choice{display:flex;gap:10px;margin-top:18px}
+    #quote .hje-choice .hje-yes{flex:2;margin:0!important}
+    #quote .hje-no{flex:1;background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:14px;color:#f6f3ee;font:700 16px Poppins,system-ui,sans-serif;cursor:pointer;padding:14px}
+    #quote .hje-sms{color:#ffcf6b;font-weight:700}
+    .hje-choice[hidden]{display:none}
     .hje-big{font-size:20px;font-weight:800;margin:0 0 4px}
     .hje-done{background:rgba(0,180,0,.12);border-radius:12px;padding:14px}
     .hje-plan{font-weight:800;font-size:18px;margin:4px 0 2px}
@@ -522,8 +529,9 @@ async function handleEstimatePage(req, res) {
     })});
     var yes=root.querySelector('.hje-yes'), no=root.querySelector('.hje-no'), done=root.querySelector('.hje-done:not(.hje-done-no)'), doneNo=root.querySelector('.hje-done-no');
     var bar=document.querySelector('.hje-sticky'), yes2=bar&&bar.querySelector('.hje-yes2'), said=false;
-    function showDone(){said=true;yes.hidden=true;no.hidden=true;done.hidden=false;doneNo.hidden=true;if(bar)bar.hidden=true}
-    function showNo(){said=true;yes.hidden=true;no.hidden=true;doneNo.hidden=false;if(bar)bar.hidden=true}
+    var choice=root.querySelector('.hje-choice');
+    function showDone(){said=true;choice.hidden=true;done.hidden=false;doneNo.hidden=true;if(bar)bar.hidden=true}
+    function showNo(){said=true;choice.hidden=true;doneNo.hidden=false;done.hidden=true;if(bar)bar.hidden=true}
     function tick(){if(!bar||said)return;var r=root.getBoundingClientRect();bar.hidden=r.bottom>0&&r.top<window.innerHeight}
     document.addEventListener('scroll',tick,{passive:true,capture:true}); window.addEventListener('resize',tick); tick();
     if(yes2)yes2.addEventListener('click',function(){root.scrollIntoView({behavior:'smooth'})});
