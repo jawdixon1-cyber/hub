@@ -422,7 +422,7 @@ async function handleEstimatePage(req, res) {
   const sticky = `<div class="hje-sticky" hidden><div><b>Your rough estimate is ready</b><span>Based on a photo of your house · scroll down to see it</span></div><button type="button" class="btn btn-go hje-yes2">See it ↓</button></div>`;
   const smsTo = '+18039027447'; // Biz # in Quo
   const smsYes = `Hi Jude, it's ${String(e.client || '').trim().split(/\s+/)[0] || 'me'}${e.address ? ` at ${String(e.address).split(',')[0].trim()}` : ''}. I'd like to schedule my free design consultation 🎄`;
-  const smsNo = `Hi Jude, it's ${String(e.client || '').trim().split(/\s+/)[0] || 'me'}. I saw my rough estimate, thanks! I'm not interested right now.`;
+  const smsNo = `Hi Jude, it's ${String(e.client || '').trim().split(/\s+/)[0] || 'me'}. I saw my rough estimate, thanks! I'm not interested right now, so no need to follow up.`;
   const sms = (body) => `sms:${smsTo}?&body=${encodeURIComponent(body)}`;
   const section = `<section class="final" id="quote">
     <div class="wrap">
@@ -445,7 +445,7 @@ async function handleEstimatePage(req, res) {
               <a class="btn btn-go hje-yes" href="${sms(smsYes)}">✅ Accept</a>
               <a class="hje-no" href="${sms(smsNo)}">Decline</a>
             </div>
-            <p class="hje-small" style="margin-top:10px">Either button opens a text to Jude, already written. Just hit send.</p>
+            <p class="hje-small" style="margin-top:10px">Either button opens a text to Jude, already written. Just hit send. Not interested? Tap <b>Decline</b> and send it so you won&#8217;t get any follow-up messages.</p>
           </div>
           
         </div>
