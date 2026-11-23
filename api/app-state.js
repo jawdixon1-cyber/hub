@@ -593,7 +593,8 @@ const LIGHTS_FORM_HTML = `<!doctype html><html lang="en"><head><meta charset="ut
 *{box-sizing:border-box}body{margin:0;background:#07090f;color:#f6f3ee;font-family:Poppins,system-ui,sans-serif}
 .w{max-width:520px;margin:0 auto;padding:22px 16px 40px}
 .logo{height:46px;display:block;margin:0 auto 18px}
-h1{font-size:30px;line-height:1.1;font-weight:900;margin:0 0 8px;text-align:center}
+h1{font-size:30px;line-height:1.1;font-weight:900;margin:0 0 8px;text-align:center;text-wrap:balance}
+@media (max-width:480px){h1{font-size:23px}}
 .sub{color:#a9b0bf;text-align:center;margin:0 0 22px;font-size:15px}
 .card{background:#111621;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:18px;margin-bottom:14px}
 label.f{display:block;font-weight:700;font-size:14px;margin:0 0 6px}
@@ -634,7 +635,9 @@ button:disabled{opacity:.6}
 <div class="chips" id="color">
 <label><input type="radio" name="col" value="Warm white" checked><span>Warm white</span></label><label><input type="radio" name="col" value="Multicolor"><span>Multicolor</span></label>
 <label><input type="radio" name="col" value="Candy cane"><span>Candy cane</span></label>
-<label><input type="radio" name="col" value="Not sure"><span>Not sure</span></label></div></div>
+<label><input type="radio" name="col" value="Custom"><span>Custom</span></label>
+<label><input type="radio" name="col" value="Not sure"><span>Not sure</span></label></div>
+<input id="cc" type="text" placeholder="Your colors, e.g. red &amp; white, or blue + white" style="margin:10px 0 0;display:none" maxlength="80"></div>
 <div class="card"><p class="q">Photos of your house <span style="font-weight:600;color:#a9b0bf">(optional)</span></p><p class="qs">Front first, then any other sides you picked (up to 4). Try to fit the <b>whole side</b> in each photo, so stand back or across the street.</p>
 <div class="thumbs" id="thumbs"></div>
 <label class="photo" id="ph"><span id="phl">📷 Add photos</span><input id="pf" type="file" accept="image/*" multiple hidden></label></div>
@@ -651,6 +654,7 @@ button:disabled{opacity:.6}
     $('thumbs').innerHTML=photos.map(function(p,i){return '<div><img src="'+p+'" alt=""><button type="button" data-i="'+i+'">×</button></div>'}).join('');
     $('phl').textContent=photos.length?(photos.length<4?'📷 Add more':'Max 4 photos'):'📷 Add photos';
   }
+  [].forEach.call(document.querySelectorAll('#color input'),function(r){r.addEventListener('change',function(){var on=r.value==='Custom'&&r.checked;$('cc').style.display=on?'block':'none';if(on)$('cc').focus();});});
   $('p').addEventListener('input',function(){
     var d=this.value.replace(/\\D/g,''); if(d.length===11&&d[0]==='1') d=d.slice(1); d=d.slice(0,10);
     this.value=d.length>6?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.length>3?d.slice(0,3)+'-'+d.slice(3):d;
@@ -667,10 +671,11 @@ button:disabled{opacity:.6}
   $('go').addEventListener('click',function(){
     var b=this, d={ first:$('n').value.trim(), last:$('ln').value.trim(), email:$('em').value.trim(), phone:$('p').value.trim(), street:$('s').value.trim(), city:$('c').value.trim(), state:$('st').value, zip:$('z').value.trim(),
       sides:[].slice.call(document.querySelectorAll('#sides input:checked')).map(function(x){return x.value}),
-      color:(document.querySelector('#color input:checked')||{}).value||'', photos:photos, hp:$('hp').value };
+      color:(document.querySelector('#color input:checked')||{}).value||'', customColor:$('cc').value.trim(), photos:photos, hp:$('hp').value };
     var digits=d.phone.replace(/\\D/g,'');
     if(!d.first||!d.last||digits.length<10||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(d.email)||!d.street||!d.city){ $('err').textContent='Please fill in your name, phone, email and address.'; return; }
     if(!d.sides.length){ $('err').textContent='Pick at least one side.'; return; }
+    if(d.color==='Custom'&&!d.customColor){ $('err').textContent='Tell us your colors (or pick another option).'; return; }
     $('err').textContent=''; b.disabled=true; b.textContent='Sending…';
     fetch('/api/app-state?key=lights-form',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
       .then(function(r){return r.json().then(function(j){ if(!r.ok) throw new Error(j.error||'Something went wrong'); return j; })})
@@ -694,7 +699,8 @@ async function handleLightsForm(req, res) {
   const state = ['SC', 'NC'].includes(b.state) ? b.state : 'SC'; const zip = clean(b.zip, 10);
   const digits = String(b.phone || '').replace(/\D/g, '').slice(-10);
   const sides = (Array.isArray(b.sides) ? b.sides : []).filter((x) => ['Front', 'Left side', 'Right side', 'Back'].includes(x));
-  const color = ['Warm white', 'Multicolor', 'Candy cane', 'Not sure'].includes(b.color) ? b.color : 'Not sure';
+  const color = b.color === 'Custom' && clean(b.customColor, 80) ? `Custom: ${clean(b.customColor, 80)}`
+    : ['Warm white', 'Multicolor', 'Candy cane', 'Not sure'].includes(b.color) ? b.color : 'Not sure';
   const photos = (Array.isArray(b.photos) ? b.photos : [b.photo]).map(String)
     .filter((x) => /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(x) && x.length < 2_500_000).slice(0, 4);
   const photo = photos[0] || '';
