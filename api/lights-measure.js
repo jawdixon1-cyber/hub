@@ -153,7 +153,7 @@ async function estimateFromPhoto(req, res) {
       output_config: { effort: 'high', format: { type: 'json_schema', schema: EST_SCHEMA } },
       messages: [{ role: 'user', content: [photo, { type: 'text', text: `This is a photo of a house a client wants Christmas lights on. Give a rough estimate for a price range (not a final quote).
 
-List the roofline runs a standard Hey Jude's install would light that are VISIBLE in this photo: front gutter lines / eaves and gable (rake) edges, dormers, and porch rooflines. Never ridge caps. Don't light trees, bushes or windows.
+${req.body?.ridgeOnly ? `List ONLY the top ridge line(s) of the roof that are VISIBLE in this photo: the peak running across the very top of each roof section (main ridge, plus any garage or wing ridges). Do NOT list eaves, gutters, gable rakes or dormers. Ridge work is walked on the roof, so rate every ridge run hard.` : `List the roofline runs a standard Hey Jude's install would light that are VISIBLE in this photo: front gutter lines / eaves and gable (rake) edges, dormers, and porch rooflines. Never ridge caps. Don't light trees, bushes or windows.`}
 
 Estimate each run's length in feet using things of known size: a 1-car garage door is about 9 ft wide and a 2-car door 16 ft, a front door about 3 ft wide and 7 ft tall, a story is about 9-10 ft, a car about 15 ft long. Round to whole feet.
 

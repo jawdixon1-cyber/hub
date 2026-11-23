@@ -109,6 +109,18 @@ export default function LightsEstimate() {
     return () => window.removeEventListener('paste', onPaste);
   });
 
+  // Add just the top ridge (peak across the top) as extra runs, without touching the runs already there.
+  const addRidge = async () => {
+    setBusy('ridge'); setErr('');
+    try {
+      const r = await post('/api/lights-measure', { mode: 'estimate', ridgeOnly: true, photo: await withGrid(imgs.photo) });
+      const add = (r.lines || []).map((l) => ({ label: l.label || 'Top ridge', feet: Math.round(l.feet), level: 'hard', points: l.points || [] }));
+      if (!add.length) setErr('No ridge found in this photo. Use + Add a run.');
+      setEst((e) => ({ ...e, lines: [...e.lines, ...add] }));
+    } catch (e) { setErr(e.message); }
+    setBusy('');
+  };
+
   const read = async () => {
     setBusy('read'); setErr('');
     try {
@@ -272,6 +284,7 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
                 </a>
               )}
               {imgs.photo && <button onClick={read} disabled={!!busy} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50"><Sparkles size={14} /> {busy === 'read' ? 'Reading roofline…' : est.lines.length ? 'Re-read photo' : 'Estimate from photo'}</button>}
+              {imgs.photo && est.lines.length > 0 && <button onClick={addRidge} disabled={!!busy} title="Adds the peak across the very top of the roof (rated hard)" className="flex items-center gap-1.5 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer disabled:opacity-50"><Plus size={14} /> {busy === 'ridge' ? 'Finding ridge…' : 'Add top ridge'}</button>}
             </div>
             {imgs.photo && (
               <div className="relative rounded-lg overflow-hidden bg-black">
