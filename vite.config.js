@@ -107,7 +107,7 @@ export default defineConfig({
       workbox: {
         navigateFallback: '/index.html',
         // pages served by the API (client estimate pages + lead form) must reach the server, not the app shell
-        navigateFallbackDenylist: [/^\/api\//, /^\/estimate\//, /^\/rough-/, /^\/lights-start/, /^\/refer\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/e(\/|$)/, /^\/estimate\//, /^\/rough-/, /^\/lights-start/, /^\/refer\//],
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
