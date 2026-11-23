@@ -6,6 +6,8 @@
     { "source": "/refer/:token", "destination": "/api/app-state?key=refer-page&token=:token" },
     { "source": "/estimate/:token", "destination": "/api/app-state?key=estimate-page&token=:token" },
     { "source": "/lights-start", "destination": "/api/app-state?key=lights-form" },
+    { "source": "/rough-light-estimate", "destination": "/api/app-state?key=lights-form" },
+    { "source": "/rough-light-estimate-form", "destination": "/api/app-state?key=lights-form" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {

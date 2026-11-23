@@ -75,6 +75,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:3001',
       '/lights-start': { target: 'http://localhost:3001', rewrite: () => '/api/app-state?key=lights-form' },
+      '/rough-light-estimate': { target: 'http://localhost:3001', rewrite: () => '/api/app-state?key=lights-form' },
       // client estimate page is served by the API (live /lights/ page + their house)
       '/estimate/': { target: 'http://localhost:3001', rewrite: (p) => { const [path, q] = p.split('?'); return `/api/app-state?key=estimate-page&token=${path.split('/')[2] || ''}${q ? `&${q}` : ''}`; } },
     },
