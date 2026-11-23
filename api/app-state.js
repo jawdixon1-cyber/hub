@@ -441,7 +441,7 @@ async function handleEstimatePage(req, res) {
             <p class="hje-card-h hje-sub">Everything included</p>
             <ul class="hje-incl">${['Commercial-grade lights', 'Full plan before you buy', 'Install', 'Maintenance', 'Storage', 'Jan. takedown guarantee', 'Hidden, color-matched wire', 'Fully insured ($1M)'].map((t) => `<li>${t}</li>`).join('')}</ul>
             <p class="hje-trust">★★★★★ <b>5.0</b> · 195 Google reviews</p>
-            <p class="hje-after">Ready for the next step? At your free design consultation we bring light samples, measure your roof, show you a detailed mockup and go over your exact price.</p>
+            <p class="hje-after">Ready for the next step? At your free design consultation we bring light samples, measure your roof, show you a detailed plan and mockup and go over your exact price.</p>
             <div class="hje-choice">
               <a class="btn btn-go hje-yes" href="${sms(smsYes)}">✅ Accept</a>
               <div class="hje-choice2">
