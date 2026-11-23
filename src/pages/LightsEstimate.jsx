@@ -291,10 +291,14 @@ export default function LightsEstimate() {
                   <input className={`${field} !w-16 shrink-0 text-right`} inputMode="numeric" value={l.feet} onChange={(e) => editLine(i, { feet: Number(e.target.value.replace(/\D/g, '')) || 0 })} />
                   <span className="text-xs text-muted">ft</span>
                   <select className={`${field} !w-24 shrink-0`} value={l.level} onChange={(e) => editLine(i, { level: e.target.value })}>{LEVELS.map((x) => <option key={x}>{x}</option>)}</select>
+                  <span className="w-16 shrink-0 text-right text-sm font-bold text-primary tabular-nums">{money((Number(l.feet) || 0) * Number(rate[l.level] || 0))}</span>
                   <button onClick={() => setEst((e) => ({ ...e, lines: e.lines.filter((_, j) => j !== i) }))} className="p-1.5 text-muted hover:text-rose-500 cursor-pointer"><Trash2 size={14} /></button>
                 </div>
               ))}
-              <button onClick={() => setEst((e) => ({ ...e, lines: [...e.lines, { label: 'Extra run', feet: 20, level: 'easy' }] }))} className="text-sm font-semibold text-sky-600 dark:text-sky-400 cursor-pointer">+ Add a run</button>
+              <div className="flex items-center justify-between gap-2 border-t border-card-border pt-2">
+                <button onClick={() => setEst((e) => ({ ...e, lines: [...e.lines, { label: 'Extra run', feet: 20, level: 'easy' }] }))} className="text-sm font-semibold text-sky-600 dark:text-sky-400 cursor-pointer">+ Add a run</button>
+                <p className="text-sm font-black text-primary tabular-nums">{p.total} ft · Total {money(p.est)}{p.est > p.feet.easy * rate.easy + p.feet.medium * rate.medium + p.feet.hard * rate.hard ? ` (${money(rate.minimum)} min)` : ''} <span className="font-semibold text-muted">· they see {money(p.low)}–{money(p.high)}</span></p>
+              </div>
               {est.notes && <p className="text-xs text-muted italic">{est.notes}</p>}
             </div>
           )}
