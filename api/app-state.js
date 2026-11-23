@@ -423,11 +423,12 @@ async function handleEstimatePage(req, res) {
   const smsTo = '+18039027447'; // Biz # in Quo
   const smsYes = `Hi Jude, it's ${String(e.client || '').trim().split(/\s+/)[0] || 'me'}${e.address ? ` at ${String(e.address).split(',')[0].trim()}` : ''}. I'd like to schedule my free design consultation 🎄`;
   const smsNo = `Hi Jude, it's ${String(e.client || '').trim().split(/\s+/)[0] || 'me'}. I saw my rough estimate, thanks! I'm not interested right now, so no need to follow up.`;
+  const smsRevise = `Hi Jude, it's ${String(e.client || '').trim().split(/\s+/)[0] || 'me'}. I'd like to revise my estimate: `;
   const sms = (body) => `sms:${smsTo}?&body=${encodeURIComponent(body)}`;
   const section = `<section class="final" id="quote">
     <div class="wrap">
       <div class="sec-head rv">
-        <h2>${first ? `${first}, here's your house.` : "Here's your house."}</h2>
+        <h2>${first ? `${first}, here&#8217;s your mockup and rough estimate.` : 'Here&#8217;s your mockup and rough estimate.'}</h2>
         ${street ? `<p>📍 ${street}</p>` : ''}
       </div>
       <div class="box rv"><div class="box-in hje">
@@ -443,7 +444,10 @@ async function handleEstimatePage(req, res) {
             <p class="hje-after">Ready for the next step? At your free design consultation we bring light samples, measure your roof, show you a detailed mockup and go over your exact price.</p>
             <div class="hje-choice">
               <a class="btn btn-go hje-yes" href="${sms(smsYes)}">✅ Accept</a>
-              <a class="hje-no" href="${sms(smsNo)}"><span>Decline</span><small>No follow-up messages</small></a>
+              <div class="hje-choice2">
+                <a class="hje-no" href="${sms(smsRevise)}"><span>Revise scope</span><small>Add or remove areas to change the price</small></a>
+                <a class="hje-no" href="${sms(smsNo)}"><span>Decline</span><small>No follow-up messages</small></a>
+              </div>
             </div>
             <p class="hje-small" style="margin-top:10px">Either button opens a text to Jude, already written. Just hit send.</p>
           </div>
@@ -493,8 +497,9 @@ async function handleEstimatePage(req, res) {
     #quote .box::before,#quote .box::after,#quote .box-in::before,#quote .box-in::after{display:none!important}
     .hje-yes{width:100%;border:0;cursor:pointer;font-size:18px}
     .hje-yes[hidden],.hje-done[hidden],.hje-no[hidden]{display:none}
-    .hje-choice{display:flex;gap:10px;margin-top:18px}
-    #quote .hje-choice .hje-yes{flex:2;margin:0!important;display:flex;align-items:center;justify-content:center;text-decoration:none}
+    .hje-choice{display:flex;flex-direction:column;gap:10px;margin-top:18px}
+    .hje-choice2{display:flex;gap:10px}
+    #quote .hje-choice .hje-yes{margin:0!important;padding:16px!important;display:flex;align-items:center;justify-content:center;text-decoration:none}
     #quote .hje-no small{display:block;font-size:11px;font-weight:600;opacity:.7;margin-top:2px}
     #quote .hje-no{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.2;text-decoration:none;background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:14px;color:#f6f3ee;font:700 16px Poppins,system-ui,sans-serif;cursor:pointer;padding:14px}
     #quote .hje-sms{color:#ffcf6b;font-weight:700}
