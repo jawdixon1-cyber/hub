@@ -330,10 +330,8 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
             <div className="rounded-xl border border-card-border bg-card p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[11px] font-black uppercase tracking-[0.15em] text-muted">Mockups · made in your ChatGPT</p>
-                <div className="flex flex-wrap gap-2">
-                  <a href={imgs.photo} download={`${fileBase}-photo.jpg`} className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary"><Download size={14} /> Photo</a>
-                  <button onClick={downloadLines} disabled={!hasLines} title={hasLines ? 'Same photo with the lights runs drawn in magenta' : 'Click Estimate from photo first'} className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer disabled:opacity-50"><Download size={14} /> Photo with lines</button>
-                </div>
+                <button onClick={async () => { const a = document.createElement('a'); a.href = imgs.photo; a.download = `${fileBase}-photo.jpg`; a.click(); if (hasLines) { await new Promise((r) => setTimeout(r, 400)); await downloadLines(); } }}
+                  title="Downloads the clean photo and the photo with the lights lines drawn on it" className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer"><Download size={14} /> {hasLines ? 'Download both photos' : 'Download photo'}</button>
               </div>
               <p className="text-xs text-muted">1. Download both photos · 2. Copy a prompt and paste it in ChatGPT with both photos · 3. Drag the result into its box (or click the box, then ⌘V).</p>
               <div className="grid gap-3 sm:grid-cols-2">
