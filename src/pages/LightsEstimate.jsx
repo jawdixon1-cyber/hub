@@ -12,7 +12,7 @@ const ago = (iso) => { const m = Math.round((Date.now() - new Date(iso)) / 6e4);
 const BLANK = { client: '', phone: '', address: '', lines: [], notes: '', confidence: '' };
 const LEVELS = ['easy', 'medium', 'hard'];
 const DRAFT_KEY = 'hub-lights-estimate-draft';
-const FORM_URL = 'https://hub.heyjudeslawncare.com/rough-light-estimate'; // the C9 roofline lead form (text this to people asking for a price)
+const FORM_URL = 'https://hub.heyjudeslawncare.com/rough-estimate-form'; // the C9 roofline lead form (text this to people asking for a price)
 const LEVEL_COLOR = { easy: '#22c55e', medium: '#f59e0b', hard: '#ef4444' };
 // Spot for a run's number badge: the middle of its traced line.
 const midOf = (pts) => {
@@ -143,7 +143,7 @@ export default function LightsEstimate() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={async () => { await navigator.clipboard.writeText(FORM_URL); setFormCopied(true); setTimeout(() => setFormCopied(false), 2500); }} title={FORM_URL} className="flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer">{formCopied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy form link</>}</button>
-          <a href="/rough-light-estimate" target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary"><ExternalLink size={14} /> Form</a>
+          <a href="/rough-estimate-form" target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary"><ExternalLink size={14} /> Form</a>
           <button onClick={startNew} className="flex items-center gap-1 rounded-lg bg-[#B3121F] px-3 py-2 text-sm font-bold text-white cursor-pointer"><Plus size={14} /> New</button>
         </div>
       </div>
