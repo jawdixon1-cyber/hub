@@ -1759,7 +1759,8 @@ export default function LightsBusiness({ view, onOpen = null }) {
     const chips = (mats, tone = 'bg-surface-alt text-primary') => (
       <div className="flex items-center gap-1.5 flex-wrap">
         {groupSupplies(Object.keys(mats).filter((id) => n(mats[id])).map((id) => itemById(id) || { id, name: 'Removed item' })).flatMap(([, , its]) => its).map((it) => (
-          <span key={it.id} title={it.name} className={`inline-flex items-center gap-1.5 rounded-md pl-0.5 pr-2 py-0.5 ${tone}`}>
+          <span key={it.id} className={`group relative inline-flex items-center gap-1.5 rounded-md pl-0.5 pr-2 py-0.5 ${tone}`}>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-30 hidden group-hover:block whitespace-nowrap rounded-md bg-black/90 px-2 py-1 text-[11px] font-semibold text-white shadow-lg">{it.name}</span>
             {it.image ? <img src={it.image} alt="" className="w-7 h-7 rounded object-cover bg-white" /> : <span className="w-7 h-7 rounded bg-surface-alt" />}
             <b className="text-sm tabular-nums">{n(mats[it.id])}</b>
           </span>
