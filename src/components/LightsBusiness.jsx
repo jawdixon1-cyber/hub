@@ -1851,7 +1851,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
           <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border-subtle">
             <span className="text-xs text-muted">{j.saved.fromQuote && !j.saved.needsMove ? 'From the quote. Always in sync.' : ''}</span>
             <span className="ml-auto text-sm text-muted">Materials <b className="text-primary tabular-nums">${cost.toFixed(2)}</b></span>
-            {onOpen && j.saved.fromQuote && !j.saved.needsMove && <button onClick={() => onOpen(j.saved.fromQuote, 3)} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">{j.saved.confirmed ? 'Edit in quote' : 'Finish in quote'}</button>}
+            {onOpen && j.saved.fromQuote && !j.saved.needsMove && <button onClick={() => onOpen(j.saved.fromQuote, 7)} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-semibold cursor-pointer">{j.saved.confirmed ? 'Edit in quote' : 'Finish in quote'}</button>}
           </div>
         </div>
       );
@@ -1953,7 +1953,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
           {/* Top: what matters most — stock + the plan + its materials. Dates, links and buttons are at the bottom. */}
           {jobQuote(j)?.power && <p className="text-xs font-semibold text-yellow-400">🔌 Power: {jobQuote(j).power}</p>}
           {stage === 'materials' && jobQuote(j) && onOpen && (
-            <p className="text-sm text-yellow-300">📝 Materials not confirmed yet — <button onClick={() => onOpen(jobQuote(j).id, 3)} className="underline font-semibold cursor-pointer">confirm them in the quote</button></p>
+            <p className="text-sm text-yellow-300">📝 Materials not confirmed yet — <button onClick={() => onOpen(jobQuote(j).id, 7)} className="underline font-semibold cursor-pointer">confirm them in the quote</button></p>
           )}
           {(stage === 'materials' || stage === 'stock' || stage === 'ready' || stage === 'schedule') && stockLine(j)}
           {installing?.id === j.id && installPanel(j)}
@@ -2034,7 +2034,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
                 return (
                   <div className="flex items-center gap-2 flex-wrap">
                     <button onClick={() => onOpen(qq.id, 3)} className={btn}>📐 Plan</button>
-                    <button onClick={() => onOpen(qq.id, 3)} className={btn}>📦 Materials</button>
+                    <button onClick={() => onOpen(qq.id, 7)} className={btn}>📦 Materials</button>
                     {/* Lock / unlock the plan + materials (same lock as the quote's Plan step) */}
                     <button onClick={() => { const on = !qq.planLocked; setQuotes((qs) => qs.map((x) => (x.id === qq.id ? { ...x, planLocked: on } : x))); patchQuoteMeta(qq.id, { planLocked: on }).catch(() => refresh()); }}
                       className={`px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer ${qq.planLocked ? 'border border-yellow-500/50 bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20' : 'bg-yellow-400 text-black hover:bg-yellow-300'}`}>
