@@ -1777,7 +1777,8 @@ export default function LightsBusiness({ view, onOpen = null }) {
             const wait = rd?.waiting.find((w) => w.id === it.id);
             const [tag, tone] = short ? [`short ${short.qty}`, 'text-red-400 bg-red-500/10'] : wait ? [wait.orders.length ? `#${wait.orders.join(' + #')} coming` : 'coming', 'text-blue-300 bg-blue-500/10'] : ['✓ in stock', 'text-emerald-400 bg-emerald-500/10'];
             return (
-              <span key={it.id} title={`${it.name}${short ? ` · ${short.note}` : ''}`} className="inline-flex flex-col items-center gap-0.5 rounded-md bg-surface-alt px-1 pt-1 pb-0.5 min-w-[64px]">
+              <span key={it.id} className="group relative inline-flex flex-col items-center gap-0.5 rounded-md bg-surface-alt px-1 pt-1 pb-0.5 min-w-[64px]">
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-30 hidden group-hover:block whitespace-nowrap rounded-md bg-black/90 px-2 py-1 text-[11px] font-semibold text-white shadow-lg">{`${it.name}${short ? ` · ${short.note}` : ''}`}</span>
                 <span className="inline-flex items-center gap-1.5">
                   {it.image ? <img src={it.image} alt="" className="w-7 h-7 rounded object-cover bg-white" /> : <span className="w-7 h-7 rounded bg-card" />}
                   <b className="text-sm tabular-nums text-primary">{n(mats[it.id])}</b>
@@ -1805,7 +1806,8 @@ export default function LightsBusiness({ view, onOpen = null }) {
       const rd = readyById[j.id]; if (!rd) return null;
       const row = (label, tone, list, note) => (
         <div className="flex items-center gap-2 flex-wrap"><span className={`text-xs font-semibold ${tone}`}>{label}</span>{list.map((w) => (
-          <span key={w.id} title={`${w.name}${note(w)}`} className={`inline-flex items-center gap-1.5 rounded-md pl-0.5 pr-2 py-0.5 ${tone === 'text-red-400' ? 'bg-red-500/10' : 'bg-blue-500/10'}`}>
+          <span key={w.id} className={`group relative inline-flex items-center gap-1.5 rounded-md pl-0.5 pr-2 py-0.5 ${tone === 'text-red-400' ? 'bg-red-500/10' : 'bg-blue-500/10'}`}>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-30 hidden group-hover:block whitespace-nowrap rounded-md bg-black/90 px-2 py-1 text-[11px] font-semibold text-white shadow-lg">{`${w.name}${note(w)}`}</span>
             {w.image ? <img src={w.image} alt="" className="w-7 h-7 rounded object-cover bg-white" /> : <span className="w-7 h-7 rounded bg-surface-alt" />}
             <b className={`text-sm tabular-nums ${tone}`}>{w.qty}</b>
             {w.note && <span className="text-[10px] text-muted">{w.note}</span>}
