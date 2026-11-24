@@ -252,7 +252,7 @@ async function handleLightsPresent(req, res) {
     db.from('app_state').select('value').eq('key', `lq-presentplan:${id}`).maybeSingle(),
   ]);
   const stamp = String(stampRow?.updated_at || '');
-  let plan = cacheRow?.value && cacheRow.value.stamp === stamp && stamp ? cacheRow.value : null;
+  let plan = cacheRow?.value && cacheRow.value.stamp === stamp && stamp && cacheRow.value.sides?.length ? cacheRow.value : null;
   if (!plan) {
     // One side at a time (in parallel the database times out on big quotes); stop at the first empty slot.
     const pick = async (sel) => {
@@ -937,9 +937,9 @@ async function handleLightsCrew(req, res) {
     db.from('app_state').select('value').eq('key', `lq-crewplan:${id}`).maybeSingle(),
   ]);
   const stamp = String(stampRow?.updated_at || '');
-  let plan = cacheRow?.value && cacheRow.value.stamp === stamp && stamp ? cacheRow.value : null;
+  let plan = cacheRow?.value && cacheRow.value.stamp === stamp && stamp && cacheRow.value.sides?.length ? cacheRow.value : null;
   if (!plan) {
-    const { data: photoRow } = await db.from('app_state').select('value').eq('key', `lq-data:${id}`).maybeSingle();
+    const { data: photoRow, error: photoErr } = await db.from('app_state').select('value').eq('key', `lq-data:${id}`).maybeSingle();
     const v = photoRow?.value || {};
     plan = {
       stamp,
@@ -948,7 +948,8 @@ async function handleLightsCrew(req, res) {
         ai, w: a.w, h: a.h, lines: a.lines || [], jumps: a.jumps || [], outlets: a.outlets || [], inlines: a.inlines || [],
       })),
     };
-    if (stamp) await db.from('app_state').upsert({ key: `lq-crewplan:${id}`, value: plan, ...(metaRow.org_id ? { org_id: metaRow.org_id } : {}) }, { onConflict: 'key' });
+    // Only cache a good read: a failed/timed-out read cached as 0 sections and the crew saw no plan (Joe Connelly 11-24).
+    if (stamp && !photoErr && photoRow && (plan.sides.length || !(v.angles || []).length)) await db.from('app_state').upsert({ key: `lq-crewplan:${id}`, value: plan, ...(metaRow.org_id ? { org_id: metaRow.org_id } : {}) }, { onConflict: 'key' });
   }
   const photoUrl = (ix) => `/api/app-state?key=lights-crew&token=${encodeURIComponent(token)}&photo=${ix}&v=${encodeURIComponent(stamp)}`;
   const [{ data: suppliesRow }, { data: actualRow }, { data: mapRow }] = await Promise.all([

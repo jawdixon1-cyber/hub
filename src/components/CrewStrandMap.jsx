@@ -11,11 +11,11 @@ const P = (pts) => pts.map((p) => `${p.x},${p.y}`).join(' ');
 // The end markers of one drawn line: M (male), F (female), ➜ in / out.
 export function EndMarks({ pts, a, b, w, h, color = '#fff' }) {
   if (!pts || pts.length < 2) return null;
-  const r = Math.max(w, h) / 40;
+  const r = Math.max(w, h) / 62;
   const dot = (p, label, fill) => (
     <g>
-      <circle cx={p.x} cy={p.y} r={r} fill={fill} stroke="#000" strokeWidth={r / 5} />
-      <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fontSize={r * 1.15} fontWeight="900" fill="#000">{label}</text>
+      <circle cx={p.x} cy={p.y} r={r} fill={fill} fillOpacity="0.7" stroke="#000" strokeWidth={r / 6} />
+      <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fontSize={r * 1.3} fontWeight="900" fill="#000">{label}</text>
     </g>
   );
   // Arrow head at p pointing away from q.
@@ -89,11 +89,11 @@ function StrandTag({ pts, no, color, w, h, ft = null }) {
   let best = 1, bl = -1;
   for (let i = 1; i < pts.length; i++) { const L = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); if (L > bl) { bl = L; best = i; } }
   const x = (pts[best].x + pts[best - 1].x) / 2, y = (pts[best].y + pts[best - 1].y) / 2;
-  const r = Math.max(w, h) / 42;
+  const r = Math.max(w, h) / 62;
   return (
     <g>
-      <circle cx={x} cy={y} r={r} fill={color} stroke="#000" strokeWidth={r / 5} />
-      <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={r * 1.1} fontWeight="900" fill="#000">{no}</text>
+      <circle cx={x} cy={y} r={r} fill={color} fillOpacity="0.7" stroke="#000" strokeWidth={r / 6} />
+      <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={r * 1.3} fontWeight="900" fill="#000">{no}</text>
       {ft != null && (() => {
         // Feet for this line, in a pill just under the number.
         const label = ft ? `${ft} ft` : '? ft';
