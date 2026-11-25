@@ -835,13 +835,14 @@ async function handleEstimatePage(req, res) {
     .replace(/<link rel="canonical"[^>]*>/, '')
     // text-message link preview = THEIR mockup (or photo) + their name
     .replace(/<meta (property|name)="(og:[a-z_:]+|twitter:[a-z0-9_:]+)"[^>]*>\s*/g, '')
-    .replace('</head>', () => {
+    // Link preview (texts): at the very TOP of <head> so Messages finds it fast. Their house + their name.
+    .replace(/<head[^>]*>/, (headTag) => {
       const host = req.headers['x-forwarded-host'] || req.headers.host || 'hub.heyjudeslawncare.com';
       const prevImg = heroImg ? `https://${host}${heroImg}` : `${SITE}/wp-content/uploads/2026/11/lights-share.jpg`;
-      const kind = lqInfo ? 'quote' : 'rough estimate';
-      const t = first ? `${first}, here's your Christmas lights ${kind} 🎄` : `Your Christmas lights ${kind} 🎄`;
-      return `<meta property="og:type" content="website"><meta property="og:title" content="${escHtml(t)}"><meta property="og:description" content="Your ${kind} from Hey Jude's">`
-        + `<meta property="og:image" content="${prevImg}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${prevImg}"></head>`;
+      const t = first ? `${first}, your house lit up for Christmas 🎄` : 'Your house, lit up for Christmas 🎄';
+      const d = lqInfo ? 'See your mockup, your plan and your exact price from Hey Jude\'s.' : 'See your mockup and rough estimate from Hey Jude\'s.';
+      return `${headTag}<meta property="og:type" content="website"><meta property="og:site_name" content="Hey Jude's Christmas Lights"><meta property="og:title" content="${escHtml(t)}"><meta property="og:description" content="${escHtml(d)}">`
+        + `<meta property="og:image" content="${prevImg}"><meta property="og:image:type" content="image/jpeg"><meta property="og:image:alt" content="Your house with Christmas lights"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escHtml(t)}"><meta name="twitter:image" content="${prevImg}">`;
     })
     // their page already has their price: drop the site's "Get my free design / Call us" buttons + sticky bar
     .replace(/\s*All you do is contact us\./, '')
