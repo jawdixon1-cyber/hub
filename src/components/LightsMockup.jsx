@@ -374,14 +374,16 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
     const sub = `${slug(client)}-lights`;
     let folder = null;
     let where = 'Downloads';
+    // Chrome's permission ask can hang with no visible prompt; give up after 8s and download instead.
+    const within = (p, ms = 8000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('folder permission timed out')), ms))]);
     if (window.showDirectoryPicker) {
       try {
-        let root = forceNew ? null : await getPrepFolder().catch(() => null);
-        if (root && (await root.queryPermission({ mode: 'readwrite' })) !== 'granted') {
-          if ((await root.requestPermission({ mode: 'readwrite' })) !== 'granted') root = null;
+        let root = forceNew ? null : await within(getPrepFolder()).catch(() => null);
+        if (root && (await within(root.queryPermission({ mode: 'readwrite' }))) !== 'granted') {
+          if ((await within(root.requestPermission({ mode: 'readwrite' }))) !== 'granted') root = null;
         }
         // A remembered folder that was moved/deleted: forget it and ask again.
-        if (root) { try { for await (const k of root.keys()) { void k; break; } } catch { root = null; } }
+        if (root) { try { await within((async () => { for await (const k of root.keys()) { void k; break; } })()); } catch { root = null; } }
         if (!root) {
           root = await window.showDirectoryPicker({ id: 'lights-prep', mode: 'readwrite', startIn: 'downloads' });
           // Picked a client's folder (e.g. "Pam-lights") by mistake — that nests everything inside it.
@@ -397,10 +399,12 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
           root = await root.getDirectoryHandle('Lights Mockups', { create: true });
           await setPrepFolder(root).catch(() => {});
         }
-        folder = await root.getDirectoryHandle(sub, { create: true });
-        const old = [];
-        for await (const name of folder.keys()) old.push(name);
-        for (const name of old) await folder.removeEntry(name).catch(() => {});
+        folder = await within(root.getDirectoryHandle(sub, { create: true }));
+        await within((async () => {
+          const old = [];
+          for await (const name of folder.keys()) old.push(name);
+          for (const name of old) await folder.removeEntry(name).catch(() => {});
+        })());
         where = `${root.name}/${sub}`;
       } catch (e) {
         if (e.name === 'AbortError') { setStatus(''); return; } // closed the picker
@@ -412,9 +416,13 @@ export default function LightsMockup({ angles, setAngles, client, previews = [],
     try {
       const save = async (url, name) => {
         if (!folder) { downloadUrl(url, `${sub}-${name}`); await wait(300); return; }
-        const w = await (await folder.getFileHandle(name, { create: true })).createWritable();
-        await w.write(await (await fetch(url)).blob());
-        await w.close();
+        try {
+          await within((async () => {
+            const w = await (await folder.getFileHandle(name, { create: true })).createWritable();
+            await w.write(await (await fetch(url)).blob());
+            await w.close();
+          })(), 15000);
+        } catch (e) { console.warn('[prep] write failed, downloading', name, e); folder = null; where = `Downloads (folder didn't work: ${e.message})`; downloadUrl(url, `${sub}-${name}`); await wait(300); }
       };
       await save(showSide.a.plain, `show-photo-side${showSide.i + 1}.jpg`);
       for (const { a, i } of guideSides) await save(await linesPhoto(a, true, extrasOn(i)), `lines-side${i + 1}.jpg`);

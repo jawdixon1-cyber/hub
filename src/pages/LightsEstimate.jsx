@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { buildShowPrompt } from '../lib/lightsPrompt';
 import { Camera, Copy, Check, Sparkles, Trash2, Plus, ExternalLink, MapPin, Download } from 'lucide-react';
@@ -66,13 +66,27 @@ export default function LightsEstimate() {
   const [view, setView] = useState(() => (params.get('client') || params.get('phone') || (draft?.est?.client) ? 'edit' : 'list'));
   const [q, setQ] = useState('');
   const [jobber, setJobber] = useState([]); // Jobber clients matching what's typed
+  const [jobberBusy, setJobberBusy] = useState(false);
+  const jobberCache = useRef({}); // query -> results, so typing more letters filters instantly
   useEffect(() => {
     const t0 = q.trim();
-    if (view !== 'list' || t0.length < 2) { setJobber([]); return undefined; }
+    if (view !== 'list' || t0.length < 2) { setJobber([]); setJobberBusy(false); return undefined; }
+    const key = t0.toLowerCase();
+    // Show matches right away from a shorter search already done ("kay" → "kay m").
+    const words = key.split(/\s+/);
+    const hit = (c) => words.every((w) => `${c.name} ${c.address || ''} ${c.phone || ''}`.toLowerCase().includes(w));
+    const prev = Object.keys(jobberCache.current).filter((k) => key.startsWith(k)).sort((a, b) => b.length - a.length)[0];
+    if (jobberCache.current[key]) { setJobber(jobberCache.current[key]); setJobberBusy(false); return undefined; }
+    if (prev) setJobber(jobberCache.current[prev].filter(hit).slice(0, 5));
+    setJobberBusy(true);
     let off = false;
     const t = setTimeout(() => {
-      fetch(`/api/jobber-data?action=clients&q=${encodeURIComponent(t0)}`).then((r) => (r.ok ? r.json() : [])).then((d) => { if (!off) setJobber(Array.isArray(d) ? d.slice(0, 5) : []); }).catch(() => {});
-    }, 300);
+      fetch(`/api/jobber-data?action=clients&q=${encodeURIComponent(t0)}`).then((r) => (r.ok ? r.json() : [])).then((d) => {
+        const res = Array.isArray(d) ? d.slice(0, 8) : [];
+        jobberCache.current[key] = res;
+        if (!off) { setJobber(res.slice(0, 5)); setJobberBusy(false); }
+      }).catch(() => { if (!off) setJobberBusy(false); });
+    }, 120);
     return () => { off = true; clearTimeout(t); };
   }, [q, view]);
 
@@ -118,6 +132,20 @@ export default function LightsEstimate() {
       const add = (r.lines || []).map((l) => ({ label: l.label || 'Top ridge', feet: Math.round(l.feet), level: 'hard', points: l.points || [] }));
       if (!add.length) setErr('No ridge found in this photo. Use + Add a run.');
       setEst((e) => ({ ...e, lines: [...e.lines, ...add] }));
+    } catch (e) { setErr(e.message); }
+    setBusy('');
+  };
+
+  // Like Add top ridge, but for a side of the house: Claude works out that side's runs from the same photo
+  // (hidden parts estimated from the house's size). Re-adding a side replaces its runs.
+  const SIDE_KEY = { 'Left side': 'left', 'Right side': 'right', Back: 'back' };
+  const addSide = async (side) => {
+    setBusy(`side:${side}`); setErr('');
+    try {
+      const r = await post('/api/lights-measure', { mode: 'estimate', sideOnly: SIDE_KEY[side], photo: await withGrid(imgs.photo) });
+      const add = (r.lines || []).map((l) => ({ label: `${side} · ${l.label}`, feet: Math.round(l.feet), level: l.level, points: l.points || [] }));
+      if (!add.length) setErr(`Couldn't work out the ${side.toLowerCase()}. Use + Add a run.`);
+      setEst((e) => ({ ...e, lines: [...e.lines.filter((l) => !String(l.label || '').startsWith(`${side} · `)), ...add], readSides: [...new Set([...(e.readSides || []), side])] }));
     } catch (e) { setErr(e.message); }
     setBusy('');
   };
@@ -239,6 +267,7 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
                     <p className="text-xs text-muted truncate">{[c.address, c.city].filter(Boolean).join(', ')}{c.phone ? ` · ${c.phone}` : ''}</p>
                   </button>
                 ))}
+                {jobberBusy && !jobber.length && <p className="px-4 py-2.5 text-sm text-muted animate-pulse">Searching Jobber…</p>}
                 <button onClick={() => startNew({ client: q.trim() })} className="w-full text-left px-4 py-2.5 hover:bg-surface-alt cursor-pointer text-sm font-bold text-[#B3121F]">+ Add “{q.trim()}” as new</button>
               </div>
             )}
@@ -300,8 +329,19 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
                   <MapPin size={14} /> Street View (screenshot the front)
                 </a>
               )}
+              {est.address && (
+                <a href={`https://earth.google.com/web/search/${encodeURIComponent(est.address)}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm font-semibold text-sky-600 dark:text-sky-400">
+                  🌎 Google Earth
+                </a>
+              )}
               {imgs.photo && <button onClick={read} disabled={!!busy} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50"><Sparkles size={14} /> {busy === 'read' ? 'Reading roofline…' : est.lines.length ? 'Re-read photo' : 'Estimate from photo'}</button>}
               {imgs.photo && est.lines.length > 0 && <button onClick={addRidge} disabled={!!busy} title="Adds the peak across the very top of the roof (rated hard)" className="flex items-center gap-1.5 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer disabled:opacity-50"><Plus size={14} /> {busy === 'ridge' ? 'Finding ridge…' : 'Add top ridge'}</button>}
+              {imgs.photo && est.lines.length > 0 && ['Left side', 'Right side', 'Back'].map((side) => (
+                <button key={side} onClick={() => addSide(side)} disabled={!!busy} title={`Adds the ${side.toLowerCase()}'s rooflines, worked out from this photo (hidden parts estimated)`}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold cursor-pointer disabled:opacity-50 ${est.readSides?.includes(side) ? 'bg-emerald-600/15 text-emerald-700 dark:text-emerald-400' : 'bg-surface-alt text-primary'}`}>
+                  {est.readSides?.includes(side) ? '✓' : <Plus size={14} />} {busy === `side:${side}` ? `Finding ${side.toLowerCase()}…` : `Add ${side.toLowerCase()}`}
+                </button>
+              ))}
             </div>
             {imgs.photo && (
               <div className="relative rounded-lg overflow-hidden bg-black">

@@ -427,9 +427,9 @@ async function handleEstimatePage(req, res) {
   const first = escHtml(String(e.client || '').trim().split(/\s+/)[0]);
   const street = escHtml(String(e.address || '').split(',')[0].trim());
   const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', Number.isInteger(Math.round((Number(n) || 0) * 100) / 100) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; // cents only when there are some
-  const pics = looks.length ? `<div class="hje-pic">${looks.map(([k, label], i) => `<figure data-look="${k}"${i ? ' hidden' : ''}><img src="${img(k)}" alt="${label}">${k === 'photo' ? linesSvg : ''}${k === 'photo' ? '' : '<span class="hje-badge">✨ Mockup preview</span>'}</figure>`).join('')}</div>
+  const pics = looks.length ? `<div class="hje-pic">${looks.map(([k, label], i) => `<figure data-look="${k}"${i ? ' hidden' : ''}><img src="${img(k)}" alt="${label}">${k === 'photo' ? linesSvg : ''}</figure>`).join('')}</div>
         ${looks.length > 1 ? `<div class="hje-tabs">${looks.map(([k, label], i) => `<button type="button" data-look="${k}"${i ? '' : ' class="on"'}>${label}</button>`).join('')}</div>` : ''}
-        <p class="hje-small">${mock ? 'Mockup of your house. Your exact design is planned to the foot at your consultation.' : 'Here&#8217;s your house and what this estimate is based on: the lit rooflines are traced in gold.'}</p>` : '';
+        ${mock ? '' : '<p class="hje-small">Here&#8217;s your house and what this estimate is based on: the lit rooflines are traced in gold.</p>'}` : '';
   // Bottom bar: no price up top (it's the payoff at the end) — just point them to it.
   const sticky = `<div class="hje-sticky" hidden><div><b>Your rough estimate is ready</b><span>Based on a photo of your house · scroll down to see it</span></div><button type="button" class="btn btn-go hje-yes2">See it ↓</button></div>`;
   const smsTo = '+18039027447'; // Biz # in Quo
@@ -441,15 +441,16 @@ async function handleEstimatePage(req, res) {
     <div class="wrap">
       <div class="sec-head rv">
         <h2>${first ? `${first}, here&#8217;s your mockup and rough estimate.` : 'Here&#8217;s your mockup and rough estimate.'}</h2>
-        ${street ? `<p>📍 ${street}</p>` : ''}
       </div>
       <div class="box rv"><div class="box-in hje">
         <div class="hje-range">
           <div class="hje-card hje-main">
+            ${street ? `<p class="hje-addr">📍 ${street}</p>` : ''}
             ${pics}
             <p class="hje-eyebrow" style="margin-top:18px!important">Your rough estimate</p>
             <p class="hje-price">${money(e.low)} – ${money(e.high)}</p>
-            <p class="hje-rough">From a photo · not a quote</p>
+            <p class="hje-rough">From a photo, not an exact quote, so it could be off. It all comes down to exact measurements: at your free consultation we measure your roof and plan your exact design and price to the foot.</p>
+            <div class="hje-3y"><div class="hje-3y-row"><span class="hje-3y-l">3-year plan <em>Save 10%</em></span><span class="hje-3y-p">${money(Math.round(e.low * 90) / 100)} – ${money(Math.round(e.high * 90) / 100)}<small>/season</small></span></div><p class="hje-3y-n">Price locked 3 Christmases. Cancel early? Just pay back the discount you&#8217;ve used.</p></div>
             <p class="hje-card-h hje-sub">Everything included</p>
             <ul class="hje-incl">${['Commercial-grade lights', 'Full plan before you buy', 'Install', 'Maintenance', 'Jan. takedown guarantee', 'Storage', 'Hidden, color-matched wire', 'Fully insured ($1M)'].map((t) => `<li>${t}</li>`).join('')}</ul>
             <p class="hje-trust">★★★★★ <b>5.0</b> · 195 Google reviews</p>
@@ -474,12 +475,13 @@ async function handleEstimatePage(req, res) {
     .hje-pic img{box-shadow:0 10px 40px rgba(0,0,0,.5)}
     .hje-pic img{width:100%;display:block;border-radius:14px}
     .hje-pic figure{position:relative;margin:0}
-    #quote .hje-rough{display:inline-block;background:rgba(255,207,107,.12);border:1px solid rgba(255,207,107,.45);color:#ffcf6b;font-weight:700;font-size:13px;border-radius:999px;padding:5px 12px;margin:0 auto 14px!important}
+    #quote .hje-rough{display:block;background:none;border:0;color:#f6f3ee;opacity:.6;font-weight:500;font-size:12.5px;line-height:1.45;max-width:380px;padding:0;margin:0 auto!important}
     #quote .hje-incl li::before{content:'✓'!important;display:block!important;position:absolute;left:0;top:0;color:#00DF00;font-weight:900;background:none!important;width:auto!important;height:auto!important}
     #quote .hje-incl li::after{display:none!important}
     .hje-card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:22px 18px;margin:0 auto 14px;max-width:560px;text-align:center}
     .hje-card.hje-main{padding:12px 12px 22px;max-width:760px}
     .hje-main .hje-pic img{border-radius:14px}
+    #quote .hje-addr{font-size:15px!important;font-weight:600;color:#f6f3ee;opacity:.85;margin:4px 0 12px!important;text-align:center}
     .hje-main .hje-small{margin:10px 6px 0!important}
     .hje-card-next{border:2px solid rgba(0,223,0,.45);background:linear-gradient(180deg,rgba(0,223,0,.08),rgba(0,223,0,.02))}
     #quote .hje-card-h{font-weight:900;font-size:22px;line-height:1.2;margin:0 0 16px!important;text-align:center!important;color:#f6f3ee}
@@ -488,7 +490,7 @@ async function handleEstimatePage(req, res) {
     #quote .hje-card-h.hje-sub{font-size:18px;margin:22px 0 12px!important;padding-top:20px;border-top:1px solid rgba(255,255,255,.1)}
     #quote .hje-incl{list-style:none;padding:0;margin:0 auto 14px!important;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;text-align:left}
     #quote .hje-incl li{position:relative;padding-left:24px;font-size:15px;font-weight:600;color:#f6f3ee;line-height:1.3}
-    @media (max-width:520px){#quote .hje-incl{grid-template-columns:1fr;max-width:290px}.hje-steps{grid-template-columns:1fr!important}}
+    @media (max-width:520px){#quote .hje-incl{gap:8px 10px}#quote .hje-incl li{font-size:13px;padding-left:20px}.hje-steps{grid-template-columns:1fr!important}}
     #quote .hje-trust{font-size:13px;opacity:.8;margin:0!important;text-align:center!important;color:#f6f3ee}
     #quote .hje-card .hje-yes{margin-top:20px!important}
     #quote .hje-after{font-size:13px!important;opacity:.75;margin:12px auto 0!important;max-width:420px!important;text-align:center!important;line-height:1.5;color:#f6f3ee}
@@ -506,8 +508,15 @@ async function handleEstimatePage(req, res) {
     .hje-tabs button.on{background:#B3121F;color:#fff;border-color:#B3121F}
     .hje-small{font-size:12px;opacity:.7;margin:0}
     .hje-range{padding:6px 0 4px}
+    #quote .hje-3y-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    #quote .hje-3y{margin:16px auto 0!important;max-width:440px;padding:10px 14px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);text-align:left}
+    #quote .hje-3y-l{font-weight:700;font-size:14px;color:#f6f3ee}
+    #quote .hje-3y-l em{font-style:normal;font-size:11px;font-weight:800;color:#5fe03a;margin-left:6px}
+    #quote .hje-3y-p{font-weight:800;font-size:15px;color:#f6f3ee;white-space:nowrap}
+    #quote .hje-3y-p small{font-size:11px;font-weight:600;opacity:.6;margin-left:2px}
+    #quote .hje-3y-n{font-size:12px!important;opacity:.6;margin:6px 0 0!important;line-height:1.4;text-align:left}
     .hje-eyebrow{font-size:12px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#ffcf6b;margin:0}
-    .hje-price{font-size:clamp(34px,8vw,52px);font-weight:900;margin:6px 0}
+    .hje-price{font-size:clamp(24px,7vw,50px);font-weight:900;margin:6px 0;white-space:nowrap;letter-spacing:-.01em}
     #quote .hje-note{font-size:13px!important;opacity:.7;max-width:480px!important;margin:0 auto 24px!important;text-align:center!important;line-height:1.5}
     #quote .box::before,#quote .box::after,#quote .box-in::before,#quote .box-in::after{display:none!important}
     .hje-yes{width:100%;border:0;cursor:pointer;font-size:18px}
