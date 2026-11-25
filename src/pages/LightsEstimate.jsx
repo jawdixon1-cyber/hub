@@ -413,11 +413,12 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
             {est.token && autoSaved && <p className="text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400">✓ {autoSaved}</p>}
             {est.token && (() => {
               const vw = list.find((x) => x.id === est.id)?.views;
-              if (!vw?.count) return <p className="text-center text-xs text-muted">👀 Not opened yet</p>;
+              const mine = (vw?.list || []).filter((x) => x.me).length;
+              if (!vw?.count && !mine) return <p className="text-center text-xs text-muted">👀 Not opened yet</p>;
               return (
                 <div className="rounded-lg bg-sky-500/10 px-3 py-2 text-xs text-primary">
-                  <p className="font-bold">👀 Opened {vw.count}× · last {ago(vw.last)}</p>
-                  <div className="mt-1 max-h-32 overflow-auto text-muted">{[...vw.list].reverse().map((x) => <p key={x.at}>{when(x.at)} · {x.device}</p>)}</div>
+                  <p className="font-bold">{vw.count ? `👀 They opened it ${vw.count}× · last ${ago(vw.last)}` : '👀 They haven’t opened it yet'}{mine ? <span className="font-normal text-muted"> · you {mine}×</span> : null}</p>
+                  <div className="mt-1 max-h-32 overflow-auto text-muted">{[...(vw.list || [])].reverse().map((x) => <p key={x.at} className={x.me ? 'opacity-60' : 'text-primary'}>{when(x.at)} · {x.device}{x.me ? ' · you' : ''}</p>)}</div>
                 </div>
               );
             })()}

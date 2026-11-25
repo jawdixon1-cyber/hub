@@ -319,7 +319,11 @@ async function handleLightsEstimate(req, res) {
     const { data: vr } = await db.from('app_state').select('value').eq('key', `le-views:${id}`).maybeSingle();
     const now = new Date().toISOString();
     const prev = vr?.value || {};
-    const value = { count: (prev.count || 0) + 1, first: prev.first || now, last: now, list: [...(prev.list || []), { at: now, device }].slice(-50) };
+    // me = opened on Jude's own device: logged with the list (tagged), never counted as them opening it
+    const me = req.body?.me === 1 || req.body?.me === true;
+    const value = me
+      ? { ...prev, count: prev.count || 0, mine: (prev.mine || 0) + 1, list: [...(prev.list || []), { at: now, device, me: true }].slice(-50) }
+      : { ...prev, count: (prev.count || 0) + 1, first: prev.first || now, last: now, list: [...(prev.list || []), { at: now, device }].slice(-50) };
     await db.from('app_state').upsert({ key: `le-views:${id}`, value, ...(row.org_id ? { org_id: row.org_id } : {}) }, { onConflict: 'key' });
     return res.json({ ok: true });
   }
@@ -552,9 +556,8 @@ async function handleEstimatePage(req, res) {
       var pvb=document.createElement('div'); pvb.textContent=pv?'Preview: this visit is not counted as them opening it':'Your device: this visit is not counted as them opening it';
       pvb.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;background:#ffcf6b;color:#111;font:700 13px system-ui;text-align:center;padding:6px';
       document.body.appendChild(pvb);
-    } else {
-      fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({view:1})}).catch(function(){});
     }
+    fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pv||me?{view:1,me:1}:{view:1})}).catch(function(){});
   })();
   </script>`;
 
