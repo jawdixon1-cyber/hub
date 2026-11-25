@@ -94,7 +94,7 @@ export async function saveEstimate(est, imgs, orgId) {
   delete meta.said;
   delete meta.views;
   delete meta.declined;
-  for (const r of imgRows) await upsert([r], orgId); // one picture per request
+  await Promise.all(imgRows.map((r) => upsert([r], orgId))); // one picture per request, all at once
   await upsert([{ key: `le-meta:${id}`, value: meta }], orgId);
   return meta;
 }

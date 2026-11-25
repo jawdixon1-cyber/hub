@@ -60,6 +60,7 @@ export default function LightsEstimate() {
   const [copied, setCopied] = useState(false);
   const [confirmDel, setConfirmDel] = useState('');
   const [formCopied, setFormCopied] = useState(false);
+  const [noTags, setNoTags] = useState(false); // hide the run # dots to see the lines
   const [hot, setHot] = useState(-1); // run highlighted on the photo
   // 'list' = table of everyone; 'edit' = one person's estimate. Opening from a lead's $ Range button (or a draft) goes straight to edit.
   const [view, setView] = useState(() => (params.get('client') || params.get('phone') || (draft?.est?.client) ? 'edit' : 'list'));
@@ -309,13 +310,17 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
                     <polyline key={i} points={l.points.map((q) => `${q.x},${q.y}`).join(' ')} fill="none" stroke={LEVEL_COLOR[l.level] || '#fff'} strokeWidth={hot === i ? 7 : 4} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" opacity={hot === -1 || hot === i ? 1 : 0.35} />
                   ) : null))}
                 </svg>
-                {est.lines.map((l, i) => { const m = midOf(l.points); return m ? (
+                {!noTags && est.lines.map((l, i) => { const m = midOf(l.points); return m ? (
                   <button key={i} onMouseEnter={() => setHot(i)} onMouseLeave={() => setHot(-1)} onClick={() => setHot(hot === i ? -1 : i)}
-                    className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full px-1.5 py-0.5 text-[11px] font-black text-white shadow cursor-pointer whitespace-nowrap"
-                    style={{ left: `${m.x / 10}%`, top: `${m.y / 10}%`, background: LEVEL_COLOR[l.level] || '#333', outline: hot === i ? '2px solid white' : 'none' }}>
-                    <span className="inline-flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-white/90 text-[10px] leading-4 text-center" style={{ color: LEVEL_COLOR[l.level] || '#333' }}>{i + 1}</span>{l.feet} ft</span>
+                    title={`Run ${i + 1} · ${l.feet} ft`}
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full text-[10px] font-black text-white shadow cursor-pointer whitespace-nowrap ring-1 ring-white/80 ${hot === i ? 'px-1.5 py-0.5 z-10' : 'w-[18px] h-[18px] leading-[18px] text-center opacity-80'}`}
+                    style={{ left: `${m.x / 10}%`, top: `${m.y / 10}%`, background: LEVEL_COLOR[l.level] || '#333' }}>
+                    {hot === i ? `${i + 1} · ${l.feet} ft` : i + 1}
                   </button>
                 ) : null; })}
+                {est.lines.some((l) => l.points?.length) && (
+                  <button onClick={() => setNoTags((v) => !v)} className="absolute top-2 right-2 rounded-md bg-black/60 px-2 py-1 text-[11px] font-bold text-white cursor-pointer">{noTags ? 'Show #s' : 'Hide #s'}</button>
+                )}
               </div>
             )}
             {['x1', 'x2', 'x3'].some((k) => imgs[k]) && (
@@ -328,7 +333,7 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
                 </div>
               </div>
             )}
-            {est.lines.some((l) => l.points?.length > 1) && <p className="text-[11px] text-muted">Each tag = <b>run #</b> (white circle, matches the list below) + <b>feet of lights</b>. Lines are where Claude thinks each run is. <span style={{ color: LEVEL_COLOR.easy }}>■</span> easy <span style={{ color: LEVEL_COLOR.medium }}>■</span> medium <span style={{ color: LEVEL_COLOR.hard }}>■</span> hard</p>}
+            {est.lines.some((l) => l.points?.length > 1) && <p className="text-[11px] text-muted">Each dot = <b>run #</b> (matches the list below); hover it for the feet. <b>Hide #s</b> to see just the lines. Lines are where Claude thinks each run is. <span style={{ color: LEVEL_COLOR.easy }}>■</span> easy <span style={{ color: LEVEL_COLOR.medium }}>■</span> medium <span style={{ color: LEVEL_COLOR.hard }}>■</span> hard</p>}
           </div>
 
           {/* 3. Lines */}
@@ -398,7 +403,7 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
                 <p>Range = −10% / +10%. Default $7 / $9 / $10 per ft; edits here only change this estimate.</p>
               </div>
             )}
-            <button onClick={save} disabled={busy === 'save' || !est.client} className="w-full rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer disabled:opacity-50">{busy === 'save' ? 'Saving…' : 'Save'}</button>
+            <button onClick={save} disabled={busy === 'save' || !est.client} className="w-full rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer disabled:opacity-50">{busy === 'save' ? (Object.keys(dirtyImgs).length ? 'Saving photos… (a few seconds)' : 'Saving…') : 'Save'}</button>
             <button onClick={copyLink} disabled={!est.client || !est.lines.length || !!busy} className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50">{copied ? <><Check size={14} /> Link copied</> : <><Copy size={14} /> Copy client link</>}</button>
             <button onClick={openPreview} disabled={!est.client || !est.lines.length || !!busy} className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50"><ExternalLink size={14} /> Preview their page</button>
             <p className="-mt-1 text-center text-[11px] text-muted">Preview doesn't count as them opening it</p>

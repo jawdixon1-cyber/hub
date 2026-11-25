@@ -1087,7 +1087,7 @@ function JobPlan({ quoteId }) {
         {measured.off.length > 0 && <span className="block text-xs">Off 5+ ft — {measured.off.join(' · ')}</span>}
       </div>
     )}
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1.5 items-start">
       {sides.map((side, i) => {
         const w = side.w || 1600; const h = side.h || 1200;
         return (
@@ -1195,13 +1195,14 @@ function MaterialRows({ mats, items, locked, onQty, onRemove, notes = {}, fallba
 }
 
 // Must-have checklist: red = missing (tap to add), yellow = added but no amount, green = done.
-function MustHaveChips({ mats, items, onAdd, readOnly }) {
+function MustHaveChips({ mats, items, onAdd, readOnly, onlyMissing }) {
   const onJob = Object.keys(mats || {}).map((id) => items.find((x) => x.id === id)).filter(Boolean);
   const list = MUST_HAVE.map(([label, test]) => {
     const present = onJob.filter(test);
     return { label, present: present.length > 0, filled: present.some((it) => n(mats[it.id]) > 0), pick: pickBlack(items, test) };
   });
   const missing = list.filter((c) => !c.filled).length;
+  if (onlyMissing && !missing) return null;
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       {list.map((c) => (
@@ -1624,9 +1625,13 @@ export default function LightsBusiness({ view, onOpen = null }) {
           .catch((e) => alert(`Couldn't put the materials on the Jobber job: ${e.message}`));
       }, Object.keys(j.saved?.jobberExpenseIds || {}).length ? 1500 : 0));
     };
-    const finishInstall = (j, actual) => {
+    // waste = extra that got cut/broken/tossed: it comes out of stock and counts as used, and is kept on the job too.
+    const finishInstall = (j, used, waste = {}) => {
+      const actual = { ...used };
+      Object.entries(waste).forEach(([id, w]) => { if (n(w) > 0) actual[id] = String(n(actual[id]) + n(w)); });
+      const wasteOnly = Object.fromEntries(Object.entries(waste).filter(([, w]) => n(w) > 0).map(([id, w]) => [id, n(w)]));
       moveStock(actual, 1);
-      patchJob(j, { installed: true, installedAt: new Date().toISOString(), actual });
+      patchJob(j, { installed: true, installedAt: new Date().toISOString(), actual, waste: Object.keys(wasteOnly).length ? wasteOnly : null });
       syncExpense(j, actual);
       setInstalling(null);
     };
@@ -1679,10 +1684,10 @@ export default function LightsBusiness({ view, onOpen = null }) {
         };
         setPlug(/\bmale\b/i, /female/i, built.plugs.male);
         setPlug(/female/i, null, built.plugs.female);
-        setInstalling({ id: j.id, planned, says: { ...draft }, draft, crew: fill ? fill.info : { lightFt: 0, zipFt: 0, planFt: 0 }, built });
+        setInstalling({ id: j.id, planned, says: { ...draft }, draft, crew: fill ? fill.info : { lightFt: 0, zipFt: 0, planFt: 0 }, built, pick: null });
         return;
       }
-      setInstalling({ id: j.id, planned, says: fill ? { ...fill.draft } : null, draft: fill ? fill.draft : planned, crew: fill ? fill.info : null, built });
+      setInstalling({ id: j.id, planned, says: fill ? { ...fill.draft } : null, draft: fill ? fill.draft : planned, crew: fill ? fill.info : null, built, pick: fill ? null : 'plan' });
     };
     const crewFill = (act, planned) => {
       if (!act) return null;
@@ -1708,7 +1713,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
     const undoInstall = (j) => {
       moveStock(usedOf(j), -1);
       const ids = [...Object.values(j.saved?.jobberExpenseIds || {}), j.saved?.jobberExpenseId].filter(Boolean);
-      patchJob(j, { installed: false, installedAt: null, actual: null, jobberExpenseId: null, jobberExpenseIds: null });
+      patchJob(j, { installed: false, installedAt: null, actual: null, waste: null, jobberExpenseId: null, jobberExpenseIds: null });
       if (inJobber(j)) {
         clearTimeout(expenseTimers.get(j.id));
         fetch('/api/jobber-data?action=lights-job-expense', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ removeIds: ids, jobId: j.id }) })
@@ -1863,6 +1868,10 @@ export default function LightsBusiness({ view, onOpen = null }) {
     // "What did you actually use?" — before stock comes off.
     const installPanel = (j) => {
       const draft = installing.draft;
+      // Waste % per product: remembered on the item (Material), changeable here. Waste = using × % rounded up.
+      const pctOf = (id) => (installing.wastePct?.[id] != null ? installing.wastePct[id] : (itemById(id)?.wastePct ?? ''));
+      const wasteOf = (id) => Math.ceil((n(draft[id]) * n(pctOf(id))) / 100);
+      const wasteMap = Object.fromEntries(Object.keys(draft).map((id) => [id, wasteOf(id)]).filter(([, w]) => w > 0));
       return (
         <div className="rounded-lg border border-border-brand bg-brand-light/40 p-3 space-y-2">
           <p className="text-base font-bold text-primary">Confirm this looks right <span className="text-xs font-normal text-muted">· what the crew built, then what came out of stock</span></p>
@@ -1887,36 +1896,80 @@ export default function LightsBusiness({ view, onOpen = null }) {
               </div>
             </div>
           )}
-          <p className="text-sm font-semibold text-primary pt-1">What did you actually use? <span className="text-xs font-normal text-muted">Stock comes off by the last column — add any waste there.</span></p>
+          {/* Fill from: the crew's measurements or the plan */}
+          {installing.says ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-primary">Fill the numbers from:</span>
+              <button onClick={() => setInstalling({ ...installing, pick: 'crew', draft: { ...installing.says } })}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold cursor-pointer ${installing.pick === 'crew' ? 'bg-emerald-500 text-black' : 'bg-surface-alt text-primary hover:bg-emerald-500/20'}`}>📏 Crew measurements{installing.crew?.lightFt ? ` · ${installing.crew.lightFt} ft` : ''}</button>
+              <button onClick={() => setInstalling({ ...installing, pick: 'plan', draft: { ...installing.planned } })}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold cursor-pointer ${installing.pick === 'plan' ? 'bg-brand text-on-brand' : 'bg-surface-alt text-primary hover:bg-brand/20'}`}>📋 The plan{installing.crew?.planFt ? ` · ${installing.crew.planFt} ft` : ''}</button>
+              {installing.crew?.unmeasured ? <span className="text-xs font-semibold text-yellow-300">{installing.crew.unmeasured} drawn line{installing.crew.unmeasured === 1 ? '' : 's'} not measured yet</span> : null}
+            </div>
+          ) : <p className="text-xs text-muted">No crew measurements yet, so these are the planned numbers.</p>}
+          {installing.pick && (() => {
+            // Totals of what's coming out of stock (using + waste)
+            const tot = {};
+            Object.keys(draft).forEach((id) => { tot[id] = n(draft[id]) + n(wasteMap[id]); });
+            const nm = (id) => itemById(id)?.name || '';
+            const sumIf = (test) => Object.entries(tot).filter(([id]) => test(nm(id), itemById(id))).reduce((t, [, v]) => t + v, 0);
+            const lightFt = sumIf((x, it) => it?.unit === 'ft' && /socket|wire|light|string/i.test(x) && !/zip|spt|extension/i.test(x));
+            const zipFt = sumIf((x) => /zip|spt/i.test(x));
+            const males = sumIf((x) => /\bmale\b/i.test(x) && !/female/i.test(x));
+            const females = sumIf((x) => /female/i.test(x));
+            const wasteN = Object.values(wasteMap).reduce((t, v) => t + n(v), 0);
+            const cost = Object.entries(tot).reduce((t, [id, v]) => t + v * n(itemById(id)?.cost), 0);
+            const chip = (label, v, cls = 'text-primary') => <span className="rounded-lg bg-card border border-border-subtle px-2.5 py-1 text-xs text-muted">{label} <b className={`text-sm tabular-nums ${cls}`}>{v}</b></span>;
+            return (
+              <div className="flex flex-wrap gap-1.5">
+                {chip('Lights', `${Math.round(lightFt)} ft`)}
+                {zipFt > 0 && chip('Zip cord', `${Math.round(zipFt)} ft`)}
+                {chip('Males', males)}
+                {chip('Females', females)}
+                {wasteN > 0 && chip('Waste', wasteN, 'text-rose-300')}
+                {chip('Everything', `${Object.values(tot).filter((v) => v > 0).length} items · $${cost.toFixed(2)}`)}
+              </div>
+            );
+          })()}
+          {installing.pick && <>
+          <p className="text-sm font-semibold text-primary pt-2">What did you actually use? <span className="text-xs font-normal text-muted">Using + waste comes out of stock. Waste % is remembered per product.</span></p>
           <div className="flex items-center gap-2.5 text-[11px] font-bold uppercase tracking-wide text-muted">
             <span className="w-7" /><span className="flex-1" />
             <span className="w-16 text-right">Planned</span>
             <span className="w-16 text-right text-emerald-300">Crew says</span>
             <span className="w-20 text-right text-primary">Using</span>
+            <span className="w-28 text-right text-rose-300">Waste %</span>
             <span className="w-10" />
           </div>
-          {installing.crew ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-md bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-300">
-              <span className="flex-1">📏 Filled from the crew’s measurements: <b>{installing.crew.lightFt} ft</b> of lights{installing.crew.planFt ? ` (plan ${installing.crew.planFt})` : ''}{installing.crew.zipFt ? <>, <b>{installing.crew.zipFt} ft</b> zip cord</> : ''}. {installing.crew.unmeasured ? <b className="text-yellow-300"> {installing.crew.unmeasured} drawn line{installing.crew.unmeasured === 1 ? '' : 's'} not measured yet.</b> : ''} {installing.built?.plugs ? ` Plugs counted from the drawing: ${installing.built.plugs.male} male (${installing.built.plugs.mEnds} M ends + ${installing.built.plugs.zipN} zip cords), ${installing.built.plugs.female} female (${installing.built.plugs.fEnds} F ends + ${installing.built.plugs.zipN} zip cords).` : ''} Timer and the rest are as planned. Fix anything before it comes out of stock.</span>
-              <button onClick={() => setInstalling({ ...installing, draft: { ...installing.planned }, crew: null })} className="underline cursor-pointer">Use plan numbers</button>
-            </div>
-          ) : <p className="text-[11px] text-muted">No crew measurements yet — these are the planned numbers.</p>}
           {groupSupplies(Object.keys(draft).map((id) => itemById(id) || { id, name: 'Removed item' })).flatMap(([, , its]) => its).map((it) => (
             <div key={it.id} className="flex items-center gap-2.5">
               {it.image ? <img src={it.image} alt="" className="w-7 h-7 rounded object-cover bg-white" /> : <span className="w-7 h-7 rounded bg-surface-alt" />}
               <span className="flex-1 text-sm text-primary truncate">{it.name}</span>
-              {/* Planned · what the crew's measurements say · what you're putting in (add waste here) */}
+              {/* Planned · what the crew's measurements say · what you're putting in (+ waste) */}
               <span className="w-16 text-right text-xs text-muted tabular-nums">{n(installing.planned?.[it.id] ?? j.saved.materials?.[it.id])}</span>
               <span className="w-16 text-right text-xs font-semibold text-emerald-300 tabular-nums">{installing.says ? n(installing.says[it.id]) : '—'}</span>
               <input value={draft[it.id]} inputMode="decimal" onChange={(e) => setInstalling({ ...installing, draft: { ...draft, [it.id]: e.target.value.replace(/[^0-9.]/g, '') } })}
                 className="w-20 rounded-md border border-border-strong bg-card px-2 py-1 text-sm text-primary text-right" />
+              <span className="w-28 flex items-center justify-end gap-1">
+                <input value={pctOf(it.id)} inputMode="decimal" placeholder="0" title="Waste % for this product (remembered for next time). Using × % comes out of stock too."
+                  onChange={(e) => setInstalling({ ...installing, wastePct: { ...(installing.wastePct || {}), [it.id]: e.target.value.replace(/[^0-9.]/g, '') } })}
+                  className="w-12 rounded-md border border-rose-500/30 bg-card px-1.5 py-1 text-sm text-rose-300 text-right" />
+                <span className="text-xs text-muted">%</span>
+                <span className="w-10 text-right text-xs font-semibold text-rose-300 tabular-nums">{wasteOf(it.id) ? `+${wasteOf(it.id)}` : ''}</span>
+              </span>
               <span className="w-10 text-xs text-muted">{it.unit}</span>
             </div>
           ))}
+          </>}
           <div className="flex items-center justify-end gap-2 pt-1">
-            <MaterialPicker items={items.filter((x) => !(x.id in draft))} onPick={(id) => setInstalling({ ...installing, draft: { ...draft, [id]: '' } })} />
+            {installing.pick && <MaterialPicker items={items.filter((x) => !(x.id in draft))} onPick={(id) => setInstalling({ ...installing, draft: { ...draft, [id]: '' } })} />}
             <button onClick={() => setInstalling(null)} className="text-xs text-muted hover:text-primary cursor-pointer">Cancel</button>
-            <button onClick={() => finishInstall(j, Object.fromEntries(Object.entries(draft).filter(([, v]) => n(v))))} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold cursor-pointer">✓ Looks right — installed, take it out of stock</button>
+            <button onClick={() => {
+              // Remember any waste % changed here on the product
+              const ch = installing.wastePct || {};
+              if (Object.keys(ch).length) setItems((rawItems || []).map((x) => (x.id in ch ? { ...x, wastePct: ch[x.id] === '' ? null : n(ch[x.id]) } : x)));
+              finishInstall(j, Object.fromEntries(Object.entries(draft).filter(([, v]) => n(v))), wasteMap);
+            }} disabled={!installing.pick} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">✓ Installed, take it out of stock</button>
           </div>
         </div>
       );
@@ -1965,7 +2018,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
           {jobQuote(j) && stage !== 'wrap' && stage !== 'takedown' && stage !== 'done' && <JobPlan quoteId={jobQuote(j).id} />}
 
           {(stage === 'materials' || stage === 'schedule' || stage === 'stock' || stage === 'ready') && (open ? editor(j) : (
-            <div className="space-y-2"><MustHaveChips mats={mats} items={items} readOnly onAdd={() => {}} />{statusChips(j, mats)}</div>
+            <div className="space-y-2"><MustHaveChips mats={mats} items={items} readOnly onlyMissing onAdd={() => {}} />{statusChips(j, mats)}</div>
           ))}
 
           {(stage === 'wrap' || stage === 'takedown' || stage === 'done') && (
@@ -2036,6 +2089,9 @@ export default function LightsBusiness({ view, onOpen = null }) {
                 const btn = 'px-3 py-1.5 rounded-lg border border-border-strong text-sm font-semibold text-primary hover:bg-surface-alt cursor-pointer';
                 return (
                   <div className="flex items-center gap-2 flex-wrap">
+                    {['materials', 'schedule', 'stock', 'ready'].includes(stage) && installing?.id !== j.id && (
+                      <button onClick={() => startInstall(j)} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold cursor-pointer">✓ Mark installed</button>
+                    )}
                     <button onClick={() => onOpen(qq.id, 3)} className={btn}>📐 Plan</button>
                     <button onClick={() => onOpen(qq.id, 7)} className={btn}>📦 Materials</button>
                     {/* Lock / unlock the plan + materials (same lock as the quote's Plan step) */}
@@ -2054,12 +2110,15 @@ export default function LightsBusiness({ view, onOpen = null }) {
                 );
               })()}
             </div>
-            <div className="flex items-center gap-2">
-              {['materials', 'schedule', 'stock', 'ready'].includes(stage) && installing?.id !== j.id && (
-                <button onClick={() => startInstall(j)} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold cursor-pointer">✓ Mark installed</button>
-              )}
-              <button onClick={toggle} className="text-xs text-muted hover:text-primary underline cursor-pointer">{open ? 'Hide' : 'Materials'}</button>
-            </div>
+            {/* No quote linked: install + the job's own materials list live here */}
+            {!jobQuote(j)?.id && (
+              <div className="flex items-center gap-2">
+                {['materials', 'schedule', 'stock', 'ready'].includes(stage) && installing?.id !== j.id && (
+                  <button onClick={() => startInstall(j)} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold cursor-pointer">✓ Mark installed</button>
+                )}
+                <button onClick={toggle} className="text-xs text-muted hover:text-primary underline cursor-pointer">{open ? 'Hide' : 'Edit materials'}</button>
+              </div>
+            )}
           </div>
         </div>
       );
