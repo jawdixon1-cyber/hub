@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { priceOf, prices, EST_RATES, toJpeg, withGrid, fileToDataUrl, listEstimates, getEstimateImages, saveEstimate, removeEstimate, estimateUrl, toggleMyView } from '../lib/lightsEstimate';
 
 // Lights price-range estimate: house photo → Claude guesses the roofline feet → range + 2 mockups (made in Jude's ChatGPT) → private link.
-const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', Number.isInteger(Math.round((Number(n) || 0) * 100) / 100) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; // cents only when there are some
 const when = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const ago = (iso) => { const m = Math.round((Date.now() - new Date(iso)) / 6e4); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
 const BLANK = { client: '', phone: '', address: '', lines: [], notes: '', confidence: '' };
