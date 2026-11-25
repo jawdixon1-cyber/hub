@@ -99,6 +99,16 @@ export async function saveEstimate(est, imgs, orgId) {
   return meta;
 }
 
+// Mark one open as "that was me" (or back to theirs). Counts are recomputed from the list.
+export async function toggleMyView(id, at, orgId) {
+  const { data } = await supabase.from('app_state').select('value').eq('key', `le-views:${id}`).maybeSingle();
+  const v = data?.value; if (!v?.list) return null;
+  const list = v.list.map((x) => (x.at === at ? { ...x, me: x.me ? undefined : true } : x));
+  const theirs = list.filter((x) => !x.me);
+  const value = { ...v, list, count: theirs.length, mine: list.length - theirs.length, first: theirs[0]?.at || null, last: theirs.at(-1)?.at || null };
+  await upsert([{ key: `le-views:${id}`, value }], orgId);
+  return value;
+}
 export const removeEstimate = (e, orgId) => upsert([{ key: `le-meta:${e.id}`, value: { ...e, said: undefined, views: undefined, off: true } }], orgId);
 export const estimateUrl = (token) => `https://hub.heyjudeslawncare.com/estimate/${token}`;
 

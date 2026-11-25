@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { buildShowPrompt } from '../lib/lightsPrompt';
 import { Camera, Copy, Check, Sparkles, Trash2, Plus, ExternalLink, MapPin, Download } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { priceOf, prices, EST_RATES, toJpeg, withGrid, fileToDataUrl, listEstimates, getEstimateImages, saveEstimate, removeEstimate, estimateUrl } from '../lib/lightsEstimate';
+import { priceOf, prices, EST_RATES, toJpeg, withGrid, fileToDataUrl, listEstimates, getEstimateImages, saveEstimate, removeEstimate, estimateUrl, toggleMyView } from '../lib/lightsEstimate';
 
 // Lights price-range estimate: house photo → Claude guesses the roofline feet → range + 2 mockups (made in Jude's ChatGPT) → private link.
 const money = (n) => `$${Math.round(n).toLocaleString()}`;
@@ -418,7 +418,12 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
               return (
                 <div className="rounded-lg bg-sky-500/10 px-3 py-2 text-xs text-primary">
                   <p className="font-bold">{vw.count ? `👀 They opened it ${vw.count}× · last ${ago(vw.last)}` : '👀 They haven’t opened it yet'}{mine ? <span className="font-normal text-muted"> · you {mine}×</span> : null}</p>
-                  <div className="mt-1 max-h-32 overflow-auto text-muted">{[...(vw.list || [])].reverse().map((x) => <p key={x.at} className={x.me ? 'opacity-60' : 'text-primary'}>{when(x.at)} · {x.device}{x.me ? ' · you' : ''}</p>)}</div>
+                  <p className="mt-1 text-[10px] text-muted">Tap an open that was you to tag it (tap again to undo).</p>
+                  <div className="mt-0.5 max-h-40 overflow-auto text-muted">{[...(vw.list || [])].reverse().map((x) => (
+                    <button key={x.at} type="button" onClick={() => toggleMyView(est.id, x.at, orgId).then(refresh)} className={`block w-full text-left rounded px-1 py-0.5 hover:bg-sky-500/10 cursor-pointer ${x.me ? 'opacity-60' : 'text-primary'}`}>
+                      {when(x.at)} · {x.device}{x.me ? ' · you ✓' : ''}
+                    </button>
+                  ))}</div>
                 </div>
               );
             })()}
