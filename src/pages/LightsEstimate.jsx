@@ -405,9 +405,11 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
               </div>
             )}
             <button onClick={save} disabled={busy === 'save' || !est.client} className="w-full rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer disabled:opacity-50">{busy === 'save' ? (Object.keys(dirtyImgs).length ? 'Saving photos… (a few seconds)' : 'Saving…') : 'Save'}</button>
-            <button onClick={copyLink} disabled={!est.client || !est.lines.length || !!busy} className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50">{copied ? <><Check size={14} /> Link copied</> : <><Copy size={14} /> Copy client link</>}</button>
-            <button onClick={openPreview} disabled={!est.client || !est.lines.length || !!busy} className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50"><ExternalLink size={14} /> Open their page</button>
-            <p className="-mt-1 text-center text-[11px] text-muted">Opening it on your devices never counts as them opening it</p>
+            {/* One link: copy it to text them, or open it here (your own devices never count as them opening it) */}
+            <div className="flex gap-2">
+              <button onClick={copyLink} disabled={!est.client || !est.lines.length || !!busy} className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50">{copied ? <><Check size={14} /> Link copied</> : <><Copy size={14} /> Copy their link</>}</button>
+              <button onClick={openPreview} disabled={!est.client || !est.lines.length || !!busy} title="Open their page (doesn't count as them opening it)" className="flex items-center justify-center gap-1 rounded-lg border border-card-border bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer disabled:opacity-50"><ExternalLink size={14} /> Open</button>
+            </div>
             {est.token && autoSaved && <p className="text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400">✓ {autoSaved}</p>}
             {est.token && (() => {
               const vw = list.find((x) => x.id === est.id)?.views;
