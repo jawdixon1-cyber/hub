@@ -1497,6 +1497,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
   const [editing, setEditing] = useState(''); // supply row open for editing
   const [doneOpen, setDoneOpen] = useState([]); // installed jobs whose materials are expanded
   const [installing, setInstalling] = useState(null); // { id, draft } — "what did you actually use?"
+  const [installBusy, setInstallBusy] = useState(''); // job id while Mark installed loads the crew's numbers
   const [openJob, setOpenJob] = useState(''); // Jobs tab: the one job clicked open
   const [openGroups, setOpenGroups] = useState({}); // Jobs tab: collapsible groups (Prepped / Installed)
   const [rawItems, setItems, empty, notLoaded] = useLightsSupplies();
@@ -1638,17 +1639,28 @@ export default function LightsBusiness({ view, onOpen = null }) {
     // Mark installed: start from the crew's Team-view measurements (fresh from the Hub), else the plan.
     // Lights feet → bulbs, socket wire and clips (O clips for peaks stay as planned); zip cord feet → zip cord.
     // Everything else (plugs, timer…) stays as planned. All of it is editable before stock comes off.
+    // Opens the install popup and scrolls to it (it sits at the top of the job card).
+    const showInstall = (v) => { setInstalling(v); setTimeout(() => document.getElementById(`install-${v.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60); };
     const startInstall = async (j) => {
+      if (installBusy) return;
+      setInstallBusy(j.id);
+      try { await openInstall(j); } catch (e) { alert(`Couldn't open Mark installed: ${e.message}`); } finally { setInstallBusy(''); }
+    };
+    const openInstall = async (j) => {
       const planned = { ...(j.saved.materials || {}) };
       const q = jobQuote(j);
       let act = null; let lk = null; let built = null;
       if (q?.id) {
         try {
-          const [{ data }, { data: m }, { data: pics }] = await Promise.all([
+          const [{ data }, { data: m }] = await Promise.all([
             supabase.from('app_state').select('value').eq('key', `lq-actual:${q.id}`).maybeSingle(),
             supabase.from('app_state').select('value').eq('key', `lq-crewmap:${q.id}`).maybeSingle(),
-            supabase.from('app_state').select('key, t:value->>thumb').like('key', `lq-crewpic:${q.id}:%`),
           ]);
+          // Exact keys (fast). A LIKE scan over the photo rows timed out (~11 s) and the button looked dead.
+          const picKeys = (m?.value?.photos || []).map((ph) => `lq-crewpic:${q.id}:${ph.pid}`);
+          const { data: pics } = picKeys.length
+            ? await supabase.from('app_state').select('key, t:value->>thumb').in('key', picKeys)
+            : { data: [] };
           act = data?.value?.actual || null; lk = crewLiveKeys(m?.value);
           // What the crew built: their site photos with the strands drawn on them, + feet per strand.
           if (m?.value?.photos?.length) {
@@ -1684,10 +1696,10 @@ export default function LightsBusiness({ view, onOpen = null }) {
         };
         setPlug(/\bmale\b/i, /female/i, built.plugs.male);
         setPlug(/female/i, null, built.plugs.female);
-        setInstalling({ id: j.id, planned, says: { ...draft }, draft, crew: fill ? fill.info : { lightFt: 0, zipFt: 0, planFt: 0 }, built, pick: null });
+        showInstall({ id: j.id, planned, says: { ...draft }, draft, crew: fill ? fill.info : { lightFt: 0, zipFt: 0, planFt: 0 }, built, pick: null });
         return;
       }
-      setInstalling({ id: j.id, planned, says: fill ? { ...fill.draft } : null, draft: fill ? fill.draft : planned, crew: fill ? fill.info : null, built, pick: fill ? null : 'plan' });
+      showInstall({ id: j.id, planned, says: fill ? { ...fill.draft } : null, draft: fill ? fill.draft : planned, crew: fill ? fill.info : null, built, pick: fill ? null : 'plan' });
     };
     const crewFill = (act, planned) => {
       if (!act) return null;
@@ -1873,7 +1885,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
       const wasteOf = (id) => Math.ceil((n(draft[id]) * n(pctOf(id))) / 100);
       const wasteMap = Object.fromEntries(Object.keys(draft).map((id) => [id, wasteOf(id)]).filter(([, w]) => w > 0));
       return (
-        <div className="rounded-lg border border-border-brand bg-brand-light/40 p-3 space-y-2">
+        <div id={`install-${j.id}`} className="rounded-lg border border-border-brand bg-brand-light/40 p-3 space-y-2 scroll-mt-20">
           <p className="text-base font-bold text-primary">Confirm this looks right <span className="text-xs font-normal text-muted">· what the crew built, then what came out of stock</span></p>
           {installing.built && (
             <div className="space-y-2">
@@ -2090,7 +2102,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
                 return (
                   <div className="flex items-center gap-2 flex-wrap">
                     {['materials', 'schedule', 'stock', 'ready'].includes(stage) && installing?.id !== j.id && (
-                      <button onClick={() => startInstall(j)} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold cursor-pointer">✓ Mark installed</button>
+                      <button onClick={() => startInstall(j)} disabled={installBusy === j.id} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold cursor-pointer disabled:opacity-60">{installBusy === j.id ? 'Loading crew numbers…' : '✓ Mark installed'}</button>
                     )}
                     <button onClick={() => onOpen(qq.id, 3)} className={btn}>📐 Plan</button>
                     <button onClick={() => onOpen(qq.id, 7)} className={btn}>📦 Materials</button>
@@ -2114,7 +2126,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
             {!jobQuote(j)?.id && (
               <div className="flex items-center gap-2">
                 {['materials', 'schedule', 'stock', 'ready'].includes(stage) && installing?.id !== j.id && (
-                  <button onClick={() => startInstall(j)} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold cursor-pointer">✓ Mark installed</button>
+                  <button onClick={() => startInstall(j)} disabled={installBusy === j.id} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-sm font-semibold cursor-pointer disabled:opacity-60">{installBusy === j.id ? 'Loading crew numbers…' : '✓ Mark installed'}</button>
                 )}
                 <button onClick={toggle} className="text-xs text-muted hover:text-primary underline cursor-pointer">{open ? 'Hide' : 'Edit materials'}</button>
               </div>
