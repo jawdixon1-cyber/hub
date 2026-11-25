@@ -321,9 +321,14 @@ async function handleLightsEstimate(req, res) {
     const prev = vr?.value || {};
     // me = opened on Jude's own device: logged with the list (tagged), never counted as them opening it
     const me = req.body?.me === 1 || req.body?.me === true;
+    // More detail so two iPhones can be told apart: a random id this browser keeps, iOS/OS version, screen, and rough city.
+    const os = (/OS (\d+[_.]\d+)/.exec(ua)?.[1] || /Android (\d+(?:\.\d+)?)/.exec(ua)?.[1] || /Mac OS X (\d+[_.]\d+)/.exec(ua)?.[1] || '').replace('_', '.');
+    const app = /CriOS|Chrome/.test(ua) ? 'Chrome' : /FxiOS|Firefox/.test(ua) ? 'Firefox' : /Instagram/.test(ua) ? 'Instagram' : /FBAN|FBAV/.test(ua) ? 'Facebook' : /Safari/.test(ua) ? 'Safari' : '';
+    let city = ''; try { city = decodeURIComponent(String(req.headers['x-vercel-ip-city'] || '')); } catch { /* ignore */ }
+    const extra = { vid: String(req.body?.vid || '').slice(0, 8), os, app, screen: String(req.body?.screen || '').slice(0, 12), city: city.slice(0, 40) };
     const value = me
-      ? { ...prev, count: prev.count || 0, mine: (prev.mine || 0) + 1, list: [...(prev.list || []), { at: now, device, me: true }].slice(-50) }
-      : { ...prev, count: (prev.count || 0) + 1, first: prev.first || now, last: now, list: [...(prev.list || []), { at: now, device }].slice(-50) };
+      ? { ...prev, count: prev.count || 0, mine: (prev.mine || 0) + 1, list: [...(prev.list || []), { at: now, device, ...extra, me: true }].slice(-50) }
+      : { ...prev, count: (prev.count || 0) + 1, first: prev.first || now, last: now, list: [...(prev.list || []), { at: now, device, ...extra }].slice(-50) };
     await db.from('app_state').upsert({ key: `le-views:${id}`, value, ...(row.org_id ? { org_id: row.org_id } : {}) }, { onConflict: 'key' });
     return res.json({ ok: true });
   }
@@ -557,7 +562,9 @@ async function handleEstimatePage(req, res) {
       pvb.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;background:#ffcf6b;color:#111;font:700 13px system-ui;text-align:center;padding:6px';
       document.body.appendChild(pvb);
     }
-    fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pv||me?{view:1,me:1}:{view:1})}).catch(function(){});
+    var vid=''; try{ vid=localStorage.getItem('hj-vid')||Math.random().toString(36).slice(2,8); localStorage.setItem('hj-vid',vid); }catch(e){}
+    var info={view:1,vid:vid,screen:(screen.width||0)+'x'+(screen.height||0)}; if(pv||me) info.me=1;
+    fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(info)}).catch(function(){});
   })();
   </script>`;
 

@@ -421,7 +421,7 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
                   <p className="mt-1 text-[10px] text-muted">Tap an open that was you to tag it (tap again to undo).</p>
                   <div className="mt-0.5 max-h-40 overflow-auto text-muted">{[...(vw.list || [])].reverse().map((x) => (
                     <button key={x.at} type="button" onClick={() => toggleMyView(est.id, x.at, orgId).then(refresh)} className={`block w-full text-left rounded px-1 py-0.5 hover:bg-sky-500/10 cursor-pointer ${x.me ? 'opacity-60' : 'text-primary'}`}>
-                      {when(x.at)} · {x.device}{x.me ? ' · you ✓' : ''}
+                      {when(x.at)} · {x.device}{x.os ? ` ${x.os}` : ''}{x.app ? ` · ${x.app}` : ''}{x.city ? ` · ${x.city}` : ''}{x.vid ? ` · #${x.vid}` : ''}{x.me ? ' · you ✓' : ''}
                     </button>
                   ))}</div>
                 </div>
