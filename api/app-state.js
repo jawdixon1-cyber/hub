@@ -545,8 +545,11 @@ async function handleEstimatePage(req, res) {
     document.addEventListener('scroll',tick,{passive:true,capture:true}); window.addEventListener('resize',tick); tick();
     if(yes2)yes2.addEventListener('click',function(){root.scrollIntoView({behavior:'smooth'})});
     var pv=/[?&]preview=1/.test(location.search);
-    if(pv){
-      var pvb=document.createElement('div'); pvb.textContent='Preview: this visit is not counted as them opening it';
+    // Jude's own devices never count as a view: any device logged into the Hub (same site, so its login is visible here),
+    // or one that has opened a preview link once (remembered on that phone/computer for good).
+    var me=false; try{ me=localStorage.getItem('hj-me')==='1'||!!localStorage.getItem('greenteam-auth'); if(pv) localStorage.setItem('hj-me','1'); }catch(e){}
+    if(pv||me){
+      var pvb=document.createElement('div'); pvb.textContent=pv?'Preview: this visit is not counted as them opening it':'Your device: this visit is not counted as them opening it';
       pvb.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;background:#ffcf6b;color:#111;font:700 13px system-ui;text-align:center;padding:6px';
       document.body.appendChild(pvb);
     } else {
