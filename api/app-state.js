@@ -426,7 +426,7 @@ async function handleEstimatePage(req, res) {
   const heroImg = img('warm') || img('multi') || img('photo'); // mockup across the top when there is one
   const first = escHtml(String(e.client || '').trim().split(/\s+/)[0]);
   const street = escHtml(String(e.address || '').split(',')[0].trim());
-  const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-US')}`;
+  const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const pics = looks.length ? `<div class="hje-pic">${looks.map(([k, label], i) => `<figure data-look="${k}"${i ? ' hidden' : ''}><img src="${img(k)}" alt="${label}">${k === 'photo' ? linesSvg : ''}${k === 'photo' ? '' : '<span class="hje-badge">✨ Mockup preview</span>'}</figure>`).join('')}</div>
         ${looks.length > 1 ? `<div class="hje-tabs">${looks.map(([k, label], i) => `<button type="button" data-look="${k}"${i ? '' : ' class="on"'}>${label}</button>`).join('')}</div>` : ''}
         <p class="hje-small">${mock ? 'Mockup of your house. Your exact design is planned to the foot at your consultation.' : 'Here&#8217;s your house and what this estimate is based on: the lit rooflines are traced in gold.'}</p>` : '';

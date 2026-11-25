@@ -13,7 +13,8 @@ export const HIGH = 1.1;
 export function prices() {
   try { return { ...DEFAULT_PRICES, ...JSON.parse(localStorage.getItem(PRICES_KEY) || '{}') }; } catch { return DEFAULT_PRICES; }
 }
-const round25 = (n) => Math.round(n / 25) * 25;
+// Exact to the cent: $1,192.47 reads like a real number; $1,200 or $1,199.99 reads like a sales price.
+const round25 = (n) => Math.round(n * 100) / 100;
 // rates = this estimate's own $/ft (edited on the page); falls back to the Lights Quoter's prices.
 export function priceOf(lines, rates) {
   const p = { ...prices(), ...EST_RATES, ...(rates || {}) };
