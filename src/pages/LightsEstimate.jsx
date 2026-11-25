@@ -150,11 +150,37 @@ export default function LightsEstimate() {
     setBusy('');
   };
 
+  // What to read when you press Estimate: the front always, plus any of these (picked before reading).
+  const PARTS = [['ridge', 'Top ridge'], ['left', 'Left side'], ['right', 'Right side'], ['back', 'Back']];
+  const [parts, setParts] = useState(() => { try { return JSON.parse(localStorage.getItem('le-parts') || '{}'); } catch { return {}; } });
+  useEffect(() => { try { localStorage.setItem('le-parts', JSON.stringify(parts)); } catch { /* ignore */ } }, [parts]);
   const read = async () => {
     setBusy('read'); setErr('');
     try {
-      const r = await post('/api/lights-measure', { mode: 'estimate', photo: await withGrid(imgs.photo) });
-      setEst((e) => ({ ...e, lines: r.lines.map((l) => ({ label: l.label, feet: Math.round(l.feet), level: l.level, points: l.points || [] })), notes: r.notes, confidence: r.confidence }));
+      const photo = await withGrid(imgs.photo);
+      const picked = PARTS.filter(([k]) => parts[k]);
+      // 2 at a time, each tried twice: firing all 5 at once got some rejected (11-25).
+      const jobs = [{ mode: 'estimate', photo }, ...picked.map(([k]) => (k === 'ridge' ? { mode: 'estimate', ridgeOnly: true, photo } : { mode: 'estimate', sideOnly: k, photo }))];
+      const out = new Array(jobs.length);
+      const failed = [];
+      let next = 0;
+      const worker = async () => {
+        while (next < jobs.length) {
+          const i = next++;
+          for (let t = 0; t < 2 && !out[i]; t++) {
+            try { out[i] = await post('/api/lights-measure', jobs[i]); } catch (e2) { if (t) { if (!i) throw e2; failed.push(picked[i - 1][1]); out[i] = { lines: [] }; } else await new Promise((r) => setTimeout(r, 1500)); }
+          }
+        }
+      };
+      await Promise.all([worker(), worker()]);
+      const [front, ...extra] = out;
+      const lines = front.lines.map((l) => ({ label: l.label, feet: Math.round(l.feet), level: l.level, points: l.points || [] }));
+      picked.forEach(([k, name], i) => (extra[i].lines || []).forEach((l) => lines.push(k === 'ridge'
+        ? { label: l.label || 'Top ridge', feet: Math.round(l.feet), level: 'hard', points: l.points || [] }
+        : { label: `${name} · ${l.label}`, feet: Math.round(l.feet), level: l.level, points: l.points || [] })));
+      const readSides = picked.filter(([k, name]) => k !== 'ridge' && !failed.includes(name)).map(([, name]) => name);
+      setEst((e) => ({ ...e, lines, notes: [front.notes, ...extra.map((x) => x.notes)].filter(Boolean).join(' '), confidence: front.confidence, readSides }));
+      if (failed.length) setErr(`Couldn't read: ${failed.join(', ')}. Tap its Add button below to try again.`);
     } catch (e) { setErr(e.message); }
     setBusy('');
   };
@@ -199,18 +225,24 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
 
   // Once a link exists, price changes save themselves so the client's page always shows the current range.
   const [autoSaved, setAutoSaved] = useState('');
+  // New ones save themselves too, as soon as they have a name + photo (refreshing used to lose them: Kay, 11-25).
   useEffect(() => {
-    if (!est.id || !est.token || !est.lines.length) return undefined;
+    if (view !== 'edit' || busy === 'save') return undefined;
+    const isNew = !est.id || !est.token;
+    if (isNew ? !(est.client.trim() && imgs.photo) : !est.lines.length && !Object.keys(dirtyImgs).length) return undefined;
     const t = setTimeout(async () => {
       try {
-        const saved = await saveEstimate({ ...est, low: p.low, high: p.high, est: p.est, feet: p.total }, {}, orgId);
-        setEst((cur) => ({ ...cur, low: saved.low, high: saved.high, updatedAt: saved.updatedAt }));
-        setAutoSaved(`Saved · their page shows ${money(p.low)}–${money(p.high)}`); refresh();
+        const pics = dirtyImgs;
+        const saved = await saveEstimate({ ...est, low: p.low, high: p.high, est: p.est, feet: p.total }, pics, orgId);
+        setEst((cur) => ({ ...cur, id: saved.id, token: saved.token, createdAt: saved.createdAt, has: saved.has, low: saved.low, high: saved.high, updatedAt: saved.updatedAt }));
+        setDirtyImgs((d) => Object.fromEntries(Object.entries(d).filter(([k, v]) => pics[k] !== v)));
+        setAutoSaved(est.lines.length ? `Saved · their page shows ${money(p.low)}–${money(p.high)}` : 'Saved');
+        refresh();
       } catch (e) { setErr(`Auto-save failed: ${e.message}`); }
     }, 1200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [est.lines, est.rates]);
+  }, [est.lines, est.rates, est.client, est.phone, est.address, imgs.photo, dirtyImgs]);
 
   // Saves if needed, then opens their page in preview mode (not counted as an open).
   const openPreview = async () => {
@@ -334,6 +366,16 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
                   🌎 Google Earth
                 </a>
               )}
+              {imgs.photo && (
+                <div className="w-full flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-semibold text-muted mr-1">Read:</span>
+                  <span className="rounded-full bg-emerald-600/15 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-400">✓ Front</span>
+                  {PARTS.map(([k, name]) => (
+                    <button key={k} type="button" onClick={() => setParts((p0) => ({ ...p0, [k]: !p0[k] }))} disabled={!!busy}
+                      className={`rounded-full px-3 py-1 text-xs font-bold cursor-pointer disabled:opacity-50 ${parts[k] ? 'bg-emerald-600 text-white' : 'bg-surface-alt text-secondary'}`}>{parts[k] ? '✓' : '+'} {name}</button>
+                  ))}
+                </div>
+              )}
               {imgs.photo && <button onClick={read} disabled={!!busy} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white cursor-pointer disabled:opacity-50"><Sparkles size={14} /> {busy === 'read' ? 'Reading roofline…' : est.lines.length ? 'Re-read photo' : 'Estimate from photo'}</button>}
               {imgs.photo && est.lines.length > 0 && <button onClick={addRidge} disabled={!!busy} title="Adds the peak across the very top of the roof (rated hard)" className="flex items-center gap-1.5 rounded-lg bg-surface-alt px-3 py-2 text-sm font-bold text-primary cursor-pointer disabled:opacity-50"><Plus size={14} /> {busy === 'ridge' ? 'Finding ridge…' : 'Add top ridge'}</button>}
               {imgs.photo && est.lines.length > 0 && ['Left side', 'Right side', 'Back'].map((side) => (
@@ -372,6 +414,12 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
                     <button key={k} onClick={() => { const main = imgs.photo; setImg('photo', imgs[k]); setImg(k, main); }} className="w-20 h-20 rounded-lg overflow-hidden ring-1 ring-card-border cursor-pointer"><img src={imgs[k]} alt="" className="w-full h-full object-cover" /></button>
                   ))}
                 </div>
+              </div>
+            )}
+            {est.lines.some((l) => !(l.points?.length > 1)) && (
+              <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-primary">
+                <b>Not in this photo (added from the sides/back):</b>{' '}
+                {est.lines.map((l, i) => ({ l, i })).filter(({ l }) => !(l.points?.length > 1)).map(({ l, i }) => `#${i + 1} ${l.label} ${l.feet} ft`).join(' · ')}
               </div>
             )}
             {est.lines.some((l) => l.points?.length > 1) && <p className="text-[11px] text-muted">Each dot = <b>run #</b> (matches the list below); hover it for the feet. <b>Hide #s</b> to see just the lines. Lines are where Claude thinks each run is. <span style={{ color: LEVEL_COLOR.easy }}>■</span> easy <span style={{ color: LEVEL_COLOR.medium }}>■</span> medium <span style={{ color: LEVEL_COLOR.hard }}>■</span> hard</p>}

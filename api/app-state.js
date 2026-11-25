@@ -2,6 +2,7 @@ import { addonTotals, pricedAddons } from '../src/lib/lightsAddonMath.js';
 import { Buffer } from 'node:buffer';
 // Server-side proxy for app_state + team auth + GHL — bypasses RLS using service role key
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
+import { lqPriceParts, createLqJobberQuote } from './jobber-data.js';
 import { promises as dns } from 'dns';
 import ghlHandler from '../lib/ghlHandler.js';
 
@@ -213,8 +214,13 @@ async function handleLightsPresent(req, res) {
   if (req.method === 'POST') {
     const years = [1, 2, 3].includes(Number(req.body?.years)) ? Number(req.body.years) : 1;
     const addonIds = (Array.isArray(req.body?.addonIds) ? req.body.addonIds : []).map(String).filter((x) => /^[A-Za-z0-9_-]{1,60}$/.test(x)).slice(0, 20);
-    const { error: e } = await db.from('app_state').upsert({ key: `lq-yes:${id}`, value: { years, addonIds, at: new Date().toISOString() }, ...org }, { onConflict: 'key' });
+    const { error: e } = await db.from('app_state').upsert({ key: `lq-yes:${id}`, value: { years, addonIds, at: new Date().toISOString(), ...(req.body?.accept ? { accepted: true } : {}) }, ...org }, { onConflict: 'key' });
     if (e) return res.status(500).json({ error: 'Could not save' });
+    // Accepted on their exact-price page: draft the Jobber quote with what they picked (once; Jude reviews + sends it).
+    if (req.body?.accept) {
+      const r = await createLqJobberQuote(db, id, years, addonIds).catch((err) => ({ status: 500, body: { error: err.message } }));
+      return res.json({ ok: true, jobber: r.body });
+    }
     return res.json({ ok: true });
   }
 
@@ -277,6 +283,8 @@ async function handleLightsPresent(req, res) {
   const { data: suppliesRow } = await db.from('app_state').select('value').eq('key', 'greenteam-lightsSupplies').maybeSingle();
   // Roofline materials + what the add-ons that start added use (bush/tree mini strands…)
   const mats = { ...(q.materials && typeof q.materials === 'object' ? q.materials : {}) };
+  // The Quoter's materials already include its add-ons (addonMats): take those out, then add what the add-ons use NOW.
+  Object.entries(q.addonMats && typeof q.addonMats === 'object' ? q.addonMats : {}).forEach(([k, n]) => { mats[k] = (Number(mats[k]) || 0) - (Number(n) || 0); if (!(mats[k] > 0)) delete mats[k]; });
   Object.entries(addonTotals(ba.addons)).forEach(([k, n]) => { mats[k] = (Number(mats[k]) || 0) + n; });
   const supplies = (Array.isArray(suppliesRow?.value) ? suppliesRow.value : []).filter((x) => mats[x.id])
     .map((x) => ({ id: x.id, name: x.name, image: x.image ? `/api/app-state?key=lights-item-img&id=${encodeURIComponent(x.id)}` : '' }));
@@ -399,15 +407,31 @@ function reorderEstimateSections(html) {
     @media (max-width:700px){.hje-jobs{grid-template-columns:1fr}}
   </style>
 `;
-  return html.slice(0, at[0]) + [proof, jobs, contrast, hook, close, meet, more, plans, faq].join('\n') + html.slice(at[at.length - 1]);
+  void more; // "We light more than rooflines" chips: cut (11-25)
+  return html.slice(0, at[0]) + [proof, jobs, contrast, hook, close, meet, plans, faq].join('\n') + html.slice(at[at.length - 1]);
 }
 async function handleEstimatePage(req, res) {
   const token = String(req.query.token || '');
   const db = getSupabaseAdmin();
-  const row = /^[A-Za-z0-9_-]{20,}$/.test(token)
+  const okTok = /^[A-Za-z0-9_-]{20,}$/.test(token);
+  const row = okTok
     ? (await db.from('app_state').select('key, value, updated_at').like('key', 'le-meta:%').eq('value->>token', token).maybeSingle()).data : null;
-  if (!row || row.value?.off) return res.status(404).send('<!doctype html><meta name="viewport" content="width=device-width"><p style="font-family:sans-serif;padding:40px;text-align:center">This link is no longer active.</p>');
-  const e = row.value;
+  // Same page for a REAL quote (Quoter → Present → "Exact-price page"): exact prices, 1/2/3-year pick, add-ons; Accept drafts the Jobber quote.
+  const lq = !row && okTok
+    ? (await db.from('app_state').select('key, value, updated_at').like('key', 'lq-meta:%').eq('value->>presentToken', token).maybeSingle()).data : null;
+  let lqInfo = null;
+  if (lq) {
+    const lqId = lq.key.slice('lq-meta:'.length);
+    const [{ data: baR }, { data: pv }, { data: st }] = await Promise.all([
+      db.from('app_state').select('value').eq('key', `lq-ba:${lqId}`).maybeSingle(),
+      db.from('app_state').select('a:value->previews->0->>id, b:value->previews->1->>id, c:value->previews->2->>id').eq('key', `lq-data:${lqId}`).maybeSingle(),
+      db.from('app_state').select('updated_at').eq('key', `lq-data:${lqId}`).maybeSingle(),
+    ]);
+    const { data: jq } = await db.from('app_state').select('value').eq('key', `lq-jq:${lqId}`).maybeSingle();
+    lqInfo = { id: lqId, q: lq.value, parts: lqPriceParts(lq.value, baR?.value), previews: [pv?.a, pv?.b, pv?.c].filter((x) => x != null).length, stamp: String(st?.updated_at || ''), accepted: !!jq?.value?.quoteId };
+  }
+  if ((!row || row.value?.off) && !lqInfo) return res.status(404).send('<!doctype html><meta name="viewport" content="width=device-width"><p style="font-family:sans-serif;padding:40px;text-align:center">This link is no longer active.</p>');
+  const e = row ? row.value : { client: lqInfo.q.client || lqInfo.q.clientInfo?.name || '', address: lqInfo.q.clientInfo?.address || '', has: {}, lines: [] };
   if (!lightsPageCache.html || Date.now() - lightsPageCache.at > 10 * 60e3) {
     const r = await fetch(`${SITE}/lights/`).catch(() => null);
     const page = r?.ok ? await r.text() : '';
@@ -417,13 +441,14 @@ async function handleEstimatePage(req, res) {
   if (!html) return res.status(502).send('Could not load the page. Try again in a minute.');
 
   const tok = encodeURIComponent(token);
-  const v = encodeURIComponent(String(e.imgStamp || row.updated_at || ''));
+  const v = encodeURIComponent(String(e.imgStamp || row?.updated_at || ''));
   const img = (k) => (e.has?.[k] ? `/api/app-state?key=lights-estimate&amp;token=${tok}&amp;img=${k}&amp;v=${v}` : '');
   const traced = (Array.isArray(e.lines) ? e.lines : []).filter((l) => Array.isArray(l.points) && l.points.length > 1);
   const linesSvg = traced.length ? `<svg class="hje-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none">${traced.map((l) => `<polyline points="${l.points.map((q) => `${Number(q.x) || 0},${Number(q.y) || 0}`).join(' ')}" />`).join('')}</svg>` : '';
   const mock = img('warm') ? 'warm' : img('multi') ? 'multi' : '';
   const looks = mock ? [[mock, 'Mockup of your house']] : [['photo', 'Your roofline']].filter(([k]) => img(k)); // mockup when there is one, else their photo with the lines
-  const heroImg = img('warm') || img('multi') || img('photo'); // mockup across the top when there is one
+  const lqImg = (k) => `/api/app-state?key=lights-present&amp;token=${tok}&amp;img=${encodeURIComponent(k)}&amp;v=${encodeURIComponent(lqInfo?.stamp || '')}`;
+  const heroImg = lqInfo ? lqImg(lqInfo.previews ? 'prev:0' : 'side:0') : img('warm') || img('multi') || img('photo'); // mockup across the top when there is one
   const first = escHtml(String(e.client || '').trim().split(/\s+/)[0]);
   const street = escHtml(String(e.address || '').split(',')[0].trim());
   const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', Number.isInteger(Math.round((Number(n) || 0) * 100) / 100) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; // cents only when there are some
@@ -437,7 +462,7 @@ async function handleEstimatePage(req, res) {
   const smsNo = `Hi Jude, it's ${String(e.client || '').trim().split(/\s+/)[0] || 'me'}. I saw my rough estimate, thanks! I'm not interested right now, so no need to follow up.`;
   const smsRevise = `Hi Jude, it's ${String(e.client || '').trim().split(/\s+/)[0] || 'me'}. I'd like to revise my estimate: `;
   const sms = (body) => `sms:${smsTo}?&body=${encodeURIComponent(body)}`;
-  const section = `<section class="final" id="quote">
+  let section = `<section class="final" id="quote">
     <div class="wrap">
       <div class="sec-head rv">
         <h2>${first ? `${first}, here&#8217;s your mockup and rough estimate.` : 'Here&#8217;s your mockup and rough estimate.'}</h2>
@@ -453,7 +478,7 @@ async function handleEstimatePage(req, res) {
             <div class="hje-3y"><div class="hje-3y-row"><span class="hje-3y-l">3-year plan <em>Save 10%</em></span><span class="hje-3y-p">${money(Math.round(e.low * 90) / 100)} – ${money(Math.round(e.high * 90) / 100)}<small>/season</small></span></div><p class="hje-3y-n">Price locked 3 Christmases. Cancel early? Just pay back the discount you&#8217;ve used.</p></div>
             <p class="hje-card-h hje-sub">Everything included</p>
             <ul class="hje-incl">${['Commercial-grade lights', 'Full plan before you buy', 'Install', 'Maintenance', 'Jan. takedown guarantee', 'Storage', 'Hidden, color-matched wire', 'Fully insured ($1M)'].map((t) => `<li>${t}</li>`).join('')}</ul>
-            <p class="hje-trust">★★★★★ <b>5.0</b> · 195 Google reviews</p>
+            <p class="hje-trust"><span class="hje-stars">★★★★★</span> <b>5.0</b> · 195 Google reviews</p>
             <p class="hje-after">Ready for the next step? At your free design consultation we bring light samples, measure your roof, show you a detailed plan and mockup, talk through anything else you&#8217;d like lit (if you want it) and go over your exact price.</p>
             <div class="hje-choice">
               <a class="btn btn-go hje-yes" href="${sms(smsYes)}"><span>✅ Accept</span><small>Schedule consultation to get my exact price</small></a>
@@ -491,6 +516,7 @@ async function handleEstimatePage(req, res) {
     #quote .hje-incl{list-style:none;padding:0;margin:0 auto 14px!important;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;text-align:left}
     #quote .hje-incl li{position:relative;padding-left:24px;font-size:15px;font-weight:600;color:#f6f3ee;line-height:1.3}
     @media (max-width:520px){#quote .hje-incl{gap:8px 10px}#quote .hje-incl li{font-size:13px;padding-left:20px}.hje-steps{grid-template-columns:1fr!important}}
+    .hje-stars{color:#FACC15;letter-spacing:1px}
     #quote .hje-trust{font-size:13px;opacity:.8;margin:0!important;text-align:center!important;color:#f6f3ee}
     #quote .hje-card .hje-yes{margin-top:20px!important}
     #quote .hje-after{font-size:13px!important;opacity:.75;margin:18px auto 0!important;padding-top:18px;border-top:1px solid rgba(255,255,255,.1);max-width:420px!important;text-align:center!important;line-height:1.5;color:#f6f3ee}
@@ -580,6 +606,203 @@ async function handleEstimatePage(req, res) {
   })();
   </script>`;
 
+  // Real quote: exact prices instead of the range. Same look; the card's middle is swapped.
+  if (lqInfo) {
+    const { parts, q: lqQ, previews } = lqInfo;
+    const fmtDay = (d) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '');
+    const shots = previews ? Array.from({ length: previews }, (_, i) => [`prev:${i}`, previews > 1 ? `Mockup ${i + 1}` : 'Your mockup']) : [['side:0', 'Your house']];
+    const lqPics = `<div class="hje-pic">${shots.map(([k, label], i) => `<figure data-look="${k}"${i ? ' hidden' : ''}><img src="${lqImg(k)}" alt="${label}"></figure>`).join('')}</div>
+            ${shots.length > 1 ? `<div class="hje-tabs">${shots.map(([k, label], i) => `<button type="button" data-look="${k}"${i ? '' : ' class="on"'}>${label}</button>`).join('')}</div>` : ''}`;
+    const dates = [lqQ.installDate ? `<li><em>🎄</em><b>We install</b><span>${fmtDay(lqQ.installDate)}</span></li>` : '', lqQ.installDate && lqQ.takedownDate ? '<li class="hje-arrow">→</li>' : '', lqQ.takedownDate ? `<li><em>📦</em><b>We take it down</b><span>${fmtDay(lqQ.takedownDate)}</span></li>` : ''].join('');
+    const gifts = [...parts.perks.map((x) => x.title), ...parts.offers.map((o) => `${o.label}${o.kind === 'free' ? ' (free)' : ''}`)];
+    const firstName = String(e.client || '').trim().split(/\s+/)[0] || 'me';
+    const nextBtn = (label) => `<button type="button" class="btn btn-go hje-next">${label}</button>`;
+    const lqCard = `<div class="hje-range">
+          <div class="hje-stepbar"><button type="button" data-s="0" class="on"><i>1</i>See it</button><button type="button" data-s="1"><i>2</i>Included</button><button type="button" data-s="2"><i>3</i>The plan</button><button type="button" data-s="3"><i>4</i>Your price</button></div>
+          <div class="hje-card hje-main hje-step on" data-s="0">
+            ${street ? `<p class="hje-addr">📍 ${street}</p>` : ''}
+            ${lqPics}
+            <div id="hje-lqx"></div>
+            ${nextBtn('Next: what&#8217;s included →')}
+          </div>
+          <div class="hje-card hje-main hje-lqcard hje-step" data-s="1">
+            <h3 class="hje-lqh">Everything included</h3>
+            <p class="hje-small" style="margin:0 0 16px!important">One price. We handle all of it, start to finish.</p>
+            <ul class="hje-incl hje-incl-big">${[['🎨', 'Design', 'Custom-designed for your home, planned to the foot'], ['🪜', 'Install', 'Clipped on clean. No damage to your roof or gutters'], ['🔧', 'Maintenance', 'A bulb goes out? We fix it, all season'], ['🗓️', 'Takedown + January guarantee', 'Down in January or your money back (weather and safety permitting)'], ['📦', 'Storage', 'We store everything until next year'], ['⏲️', 'Timer set for you', 'Comes on at dusk when it gets dark and stays on 6 hours. Nothing to remember'], ['📐', 'See the plan first', 'Every bulb mapped before you pay'], ['🎯', 'Tight, color-matched wire', 'Pulled tight, no sagging or dangling wire. Matched to your roof and gutters, not that cheap green cord'], ['💡', 'Commercial-grade products', 'The best you can buy. Bulbs 7x brighter than hardware-store ones. The best on the block'], ['🛡️', 'Fully insured ($1M)', 'Your home is protected']].map(([i, t, d]) => `<li><span>${i}</span><div><b>${t}</b><small>${d}</small></div></li>`).join('')}</ul>
+            <p class="hje-trust" style="margin-top:14px!important"><span class="hje-stars">★★★★★</span> <b>5.0</b> · 195 Google reviews</p>
+            ${nextBtn('Next: see your plan →')}
+          </div>
+          <div class="hje-card hje-main hje-lqcard hje-step" data-s="2" id="hje-lqplancard">
+            <div id="hje-lqplan"><p class="hje-small">Loading your plan…</p></div>
+            <div id="hje-lqmat"></div>
+            ${nextBtn('Next: see your price →')}
+          </div>
+          <div class="hje-card hje-main hje-lqcard hje-step" data-s="3">
+            <div class="hje-pic"><img src="${heroImg}" alt="Your house with your lights"></div>
+            ${parts.addons.length ? `<p class="hje-card-h hje-sub" style="border-top:0;padding-top:4px;margin-top:6px!important">Add to your display</p><div class="hje-adds">${parts.addons.map((a) => `<label><input type="checkbox" data-id="${escHtml(a.id)}"${a.on ? ' checked' : ''}>${a.photo ? `<img src="${lqImg(`k:${a.photo}`)}" alt="" loading="lazy">` : ''}<span><b>${escHtml(a.label)}</b>${a.sub ? `<small>${escHtml(a.sub)}</small>` : ''}</span><i>+${money(a.price)}</i></label>`).join('')}</div>` : ''}
+            <div class="hje-yrs" role="radiogroup">
+              ${[[1, '1 season', ''], [2, '2 years', 'Save 5%'], [3, '3 years', 'Save 10%']].map(([y, t, save]) => `<button type="button" data-y="${y}"${y === 1 ? ' class="on"' : ''}><b>${t}</b>${save ? `<em>${save}</em>` : '<em>&nbsp;</em>'}<span class="hje-yp" data-y="${y}"></span></button>`).join('')}
+            </div>
+            <p class="hje-price hje-lqprice"></p>
+            <p class="hje-rough hje-lqsub"></p>
+            ${gifts.length ? `<div class="hje-gifts">${gifts.map((g) => `<p>🎁 ${escHtml(g)}</p>`).join('')}</div>` : ''}
+            ${dates ? `<div class="hje-when"><p class="hje-eyebrow">When we&#8217;ll install</p><ul class="hje-dates">${dates}</ul></div>` : ''}
+            
+            <p class="hje-trust"><span class="hje-stars">★★★★★</span> <b>5.0</b> · 195 Google reviews</p>
+            <ul class="hje-terms"><li><b>💳 50% now (<span class="hje-half"></span>), 50% after install (<span class="hje-half"></span>).</b> The first half locks in your install date.</li><li><b>🗓️ January takedown guarantee.</b> If we don&#8217;t take your lights down in January, you get your money back (weather and safety permitting).</li><li><b>🔒 Multi-year plans:</b> cancel early? You just pay back the discount you&#8217;ve used.</li></ul>
+            <p class="hje-after">Tap Accept and Jude sends your official quote to sign.</p>
+            <div class="hje-choice hje-lqchoice"${lqInfo.accepted ? ' hidden' : ''}>
+              <a class="btn btn-go hje-yes hje-lqyes" href="#"><span>✅ Accept</span><small>Send me my quote to sign</small></a>
+              <div class="hje-choice2">
+                <a class="hje-no" href="${sms(`Hi Jude, it's ${firstName}. I'd like to change my lights quote: `)}"><span>Make a change</span><small>Add or remove areas</small></a>
+                <a class="hje-no" href="${sms(`Hi Jude, it's ${firstName}. Thanks for the quote! I'm not going to move forward right now.`)}"><span>Decline</span><small>No follow-up messages</small></a>
+              </div>
+            </div>
+            <div class="hje-done hje-lqdone"${lqInfo.accepted ? '' : ' hidden'}><p class="hje-big">You&#8217;re all set! 🎄</p><p>Jude is sending your official quote to sign. Questions? Text (803) 902-7447.</p></div>`;
+    section = section
+      .replace(/<div class="hje-range">[\s\S]*?<p class="hje-small" style="margin-top:10px">[^<]*<\/p>/, () => lqCard)
+      .replace(/here&#8217;s your mockup and rough estimate\./g, 'here&#8217;s your Christmas lights quote.')
+      .replace('Here&#8217;s your mockup and rough estimate.', 'Here&#8217;s your Christmas lights quote.')
+      .replace('<b>Your rough estimate is ready</b><span>Based on a photo of your house · scroll down to see it</span>', '<b>Your quote is ready</b><span>Your exact price · scroll down to see it</span>')
+      .replace('</style>', () => `    #quote .hje-yrs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 6px}
+    #quote .hje-yrs button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 6px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.04);color:#f6f3ee;cursor:pointer;font-family:Poppins,system-ui,sans-serif}
+    #quote .hje-yrs button b{font-size:14px}
+    #quote .hje-yrs button em{font-style:normal;font-size:11px;font-weight:800;color:#5fe03a}
+    #quote .hje-yrs button .hje-yp{font-size:12px;opacity:.75}
+    #quote .hje-yrs button.on{border-color:#5fe03a;background:rgba(95,224,58,.12);box-shadow:0 0 0 1px #5fe03a inset}
+    #quote .hje-adds{display:flex;flex-direction:column;gap:8px;max-width:480px;margin:0 auto 6px;text-align:left}
+    #quote .hje-adds label{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);cursor:pointer}
+    #quote .hje-adds input{width:20px;height:20px;accent-color:#5fe03a;flex:none}
+    #quote .hje-adds img{width:56px;height:56px;object-fit:cover;border-radius:10px;flex:none;background:#fff}
+    #quote .hje-adds span{flex:1;display:flex;flex-direction:column;font-size:14px;line-height:1.25}
+    #quote .hje-adds small{font-size:12px;opacity:.65}
+    #quote .hje-adds i{font-style:normal;font-weight:800;font-size:14px;white-space:nowrap}
+    #quote .hje-gifts{margin:10px auto 0;max-width:480px}
+    #quote .hje-gifts p{margin:4px 0!important;font-size:14px;font-weight:700;color:#ffcf6b}
+    #quote .hje-when{margin:22px auto 4px;max-width:460px;padding-top:18px;border-top:1px solid rgba(255,255,255,.1)}
+    #quote .hje-when .hje-eyebrow{margin:0 0 10px!important}
+    #quote .hje-dates{list-style:none;padding:0;margin:0!important;display:flex;align-items:stretch;justify-content:center;gap:8px}
+    #quote .hje-dates li{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 8px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)}
+    #quote .hje-dates li.hje-arrow{flex:none;background:none;border:0;padding:0;justify-content:center;font-size:18px;opacity:.5}
+    #quote .hje-dates em{font-style:normal;font-size:20px;line-height:1}
+    #quote .hje-dates b{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.65;margin-top:4px}
+    #quote .hje-dates span{font-size:17px;font-weight:800;color:#f6f3ee}
+    #quote .hje-lqcard .hje-trust{margin-top:16px!important}
+    #quote .hje-lqsub{margin:2px auto 0!important;text-align:center!important;max-width:380px}
+    #quote .hje-lqsec{margin:22px 0 0;padding-top:20px;border-top:1px solid rgba(255,255,255,.1)}
+    #quote .hje-lqsec h3{font-weight:900;font-size:20px;margin:0 0 4px!important;color:#f6f3ee}
+    #quote .hje-lqsec>p{font-size:13px!important;opacity:.7;margin:0 0 12px!important}
+    #quote .hje-plan{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    #quote .hje-lqcard{padding:22px 16px!important}
+    #quote .hje-step{display:none!important}
+    #quote .hje-step.on{display:block!important}
+    #quote .hje-incl-big{grid-template-columns:1fr 1fr!important;max-width:620px!important;gap:12px!important}
+    #quote .hje-incl-big li{display:flex;gap:10px;align-items:flex-start;padding:12px!important;border-radius:14px;background:rgba(255,255,255,.05);text-align:left}
+    #quote .hje-incl-big li::before{display:none!important}
+    #quote .hje-incl-big li>span{font-size:22px;line-height:1}
+    #quote .hje-incl-big b{display:block;font-size:15px}
+    #quote .hje-incl-big small{display:block;font-size:12px;font-weight:500;opacity:.7;margin-top:2px;line-height:1.35}
+    @media (max-width:520px){#quote .hje-incl-big{grid-template-columns:1fr!important;max-width:none!important}}
+    #quote .hje-stepbar{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;max-width:760px;margin:0 auto 14px}
+    #quote .hje-stepbar button{display:flex;align-items:center;justify-content:center;gap:5px;padding:9px 2px;white-space:nowrap;border-radius:999px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#f6f3ee;opacity:.6;font:700 13px Poppins,system-ui,sans-serif;cursor:pointer}
+    #quote .hje-stepbar i{font-style:normal;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.15);font-size:11px}
+    #quote .hje-stepbar button.on{opacity:1;border-color:#5fe03a;background:rgba(95,224,58,.12)}
+    #quote .hje-stepbar button.on i{background:#5fe03a;color:#111}
+    #quote .hje-stepbar button.done{opacity:.9}
+    @media (max-width:520px){#quote .hje-stepbar{gap:4px}#quote .hje-stepbar button{font-size:11px;gap:3px;padding:8px 1px}#quote .hje-stepbar i{width:17px;height:17px;font-size:10px}}
+    #quote .hje-next{display:block;width:100%;margin:20px 0 0!important;padding:15px!important;border:0;cursor:pointer;font-size:17px}
+    #quote .hje-terms{list-style:none;padding:0;margin:18px auto 0!important;max-width:460px;text-align:left;display:flex;flex-direction:column;gap:8px;padding-top:18px;border-top:1px solid rgba(255,255,255,.1)}
+    #quote .hje-terms li{font-size:13.5px;line-height:1.45;color:#f6f3ee;opacity:.9}
+    #quote .hje-terms b{color:#fff}
+    #quote .hje-lqcard[hidden]{display:none}
+    #quote .hje-lqh{font-weight:900;font-size:26px;line-height:1.15;margin:0 0 6px!important;color:#f6f3ee;text-align:center}
+    #quote #hje-lqplan>div>p{font-size:13px!important;opacity:.7;margin:0 0 10px!important}
+    #quote .hje-key{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px;margin:2px 0 14px!important;font-size:13px;font-weight:700;color:#f6f3ee}
+    #quote .hje-key span{display:flex;align-items:center;gap:6px}
+    #quote .hje-key .k-solid{width:26px;height:4px;border-radius:2px;background:#ffcf6b;box-shadow:0 0 0 1px rgba(0,0,0,.6)}
+    #quote .hje-key .k-dot{width:26px;border-top:4px dotted #fff}
+    #quote .hje-key small{display:block;font-weight:500;font-size:11px;opacity:.65}
+    #quote .hje-key i{display:inline-block;width:24px;height:0;vertical-align:middle;margin-right:4px;border-radius:2px}
+    #quote .hje-key b{font-weight:800}
+    #quote .hje-plan figure{position:relative;margin:0;border-radius:12px;overflow:hidden;background:#000;cursor:zoom-in}
+    #quote .hje-plan img{width:100%;display:block}
+    #quote .hje-plan svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+    #quote .hje-plan figcaption{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.65);color:#fff;font:700 11px Poppins,system-ui,sans-serif;padding:3px 8px;border-radius:999px}
+    @media (max-width:520px){#quote .hje-plan{grid-template-columns:1fr}}
+    #quote .hje-sl{position:relative;border-radius:14px;overflow:hidden;background:#000;touch-action:pan-y;user-select:none;margin-bottom:10px}
+    #quote .hje-sl img{display:block;width:100%;pointer-events:none}
+    #quote .hje-sl .a{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;clip-path:inset(0 0 0 var(--p,50%))}
+    #quote .hje-sl .bar{position:absolute;top:0;bottom:0;left:var(--p,50%);width:3px;margin-left:-1.5px;background:#fff;box-shadow:0 0 8px rgba(0,0,0,.6)}
+    #quote .hje-sl .bar::after{content:'⟷';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:36px;height:36px;border-radius:50%;background:#fff;color:#111;display:grid;place-items:center;font:700 16px system-ui}
+    #quote .hje-sl span{position:absolute;top:10px;background:rgba(0,0,0,.65);color:#fff;font:700 11px Poppins,system-ui,sans-serif;padding:3px 8px;border-radius:999px}
+    #quote .hje-mats{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;text-align:left}
+    #quote .hje-mats div{display:flex;align-items:center;gap:8px;padding:8px;border-radius:12px;background:rgba(255,255,255,.05);font-size:12px;line-height:1.25}
+    #quote .hje-mats img{width:38px;height:38px;object-fit:contain;border-radius:8px;background:#fff;flex:none}
+    #quote .hje-mats b{display:block;font-size:12px}
+    #quote .hje-mats small{opacity:.65}
+  </style>`)
+      .replace('</script>', () => `</script>
+  <script>
+  (function(){
+    var root=document.getElementById('quote'); if(!root) return;
+    var P=${JSON.stringify({ base: parts.base, addons: parts.addons.map((a) => ({ id: a.id, price: a.price })), offers: parts.offers, off: parts.off })};
+    var api='/api/app-state?key=lights-present&token=${tok}', years=1, pv=/[?&]preview=1/.test(location.search);
+    function m(n){n=Math.round(n*100)/100;return '$'+n.toLocaleString('en-US',Number.isInteger(n)?{maximumFractionDigits:0}:{minimumFractionDigits:2,maximumFractionDigits:2})}
+    function picked(){return [].map.call(root.querySelectorAll('.hje-adds input:checked'),function(i){return i.dataset.id})}
+    function season(y){var ids=picked(),full=P.base;P.addons.forEach(function(a){if(ids.indexOf(a.id)>=0)full+=a.price});var sub=full;P.offers.forEach(function(o){if(o.kind!=='free')sub-=o.kind==='%'?Math.round(full*o.amount)/100:o.amount});return Math.round(sub*(100-(P.off[y]||0)))/100}
+    function draw(){[1,2,3].forEach(function(y){var el=root.querySelector('.hje-yp[data-y="'+y+'"]');if(el)el.textContent=m(season(y))+(y>1?'/yr':'')});
+      var s=season(years);root.querySelector('.hje-lqprice').textContent=m(s)+(years>1?' / season':'');[].forEach.call(root.querySelectorAll('.hje-half'),function(e){e.textContent=m(Math.round(s*50)/100)});
+      root.querySelector('.hje-lqsub').textContent=years>1?(years+' seasons, price locked. '+m(s*years)+' total, paid in equal installments.'):'This Christmas. Installed, maintained, taken down and stored.'}
+    [].forEach.call(root.querySelectorAll('.hje-yrs button'),function(b){b.addEventListener('click',function(){years=Number(b.dataset.y);[].forEach.call(root.querySelectorAll('.hje-yrs button'),function(x){x.classList.toggle('on',x===b)});draw()})});
+    [].forEach.call(root.querySelectorAll('.hje-adds input'),function(i){i.addEventListener('change',draw)});
+    draw();
+    // Plan photos (with the lines), before/after sliders and materials come from the presentation data.
+    fetch(api).then(function(r){return r.json()}).then(function(d){
+      if(!d||!d.q)return;
+      var x=document.getElementById('hje-lqx'),pl=document.getElementById('hje-lqplan'),mt=document.getElementById('hje-lqmat'),h='',hp='';
+      function esc(t){return String(t||'').replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+      var pairs=[];var pv=(d.q.previews||[])[0];
+      if(d.q.nightPhoto&&pv)pairs.push({label:'Your house tonight → with your lights',before:d.q.nightPhoto,after:pv.image});
+      (d.ba&&d.ba.pairs||[]).forEach(function(p){pairs.push(p)});
+      if(pairs.length){h+='<div class="hje-lqsec" style="border-top:0;padding-top:0;margin-top:0"><h3>Before → after</h3><p>Slide to light up your house.</p>'+pairs.map(function(p){return '<div class="hje-sl"><img src="'+p.before+'" alt="Before"><img class="a" src="'+p.after+'" alt="After"><div class="bar"></div><span style="left:10px">Before</span><span style="right:10px">After</span></div>'+(p.label?'<p style="font-size:12px;opacity:.7;margin:-4px 0 10px">'+esc(p.label)+'</p>':'')}).join('')+'</div>'}
+      var used={wire:{},cord:{}};
+      function col(c){c=String(c).toLowerCase();return /black/.test(c)?{n:'Black',hex:'#111',edge:'#fff'}:/green/.test(c)?{n:'Green',hex:'#1f7a32',edge:'#000'}:/brown/.test(c)?{n:'Brown',hex:'#6b4423',edge:'#fff'}:{n:'White',hex:'#f5f5f5',edge:'#000'}}
+      var sides=(d.q.angles||[]).filter(function(a){return (a.lines||[]).length||(a.jumps||[]).length||(a.outlets||[]).length||(a.inlines||[]).length});
+      if(sides.length){hp+='<div><h3 class="hje-lqh">Your plan</h3><p>Every side, with exactly where your lights go. Tap one to see it big.</p><p class="hje-key">@@KEY@@</p><div class="hje-plan">'+sides.map(function(a,i){var w=a.w||1600,hh=a.h||1200,sw=Math.max(4,w/220);
+        var runs=(a.lines||[]).map(function(l){var pts=(l.pts||[]).map(function(q){return q.x+','+q.y}).join(' ');return '<polyline points="'+pts+'" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="'+sw*1.9+'" stroke-linecap="round" stroke-linejoin="round"/><polyline points="'+pts+'" fill="none" stroke="#ffcf6b" stroke-width="'+sw*1.1+'" stroke-linecap="round" stroke-linejoin="round"/>'}).join('');
+        var js=(a.jumps||[]).map(function(j){var pts=(j.pts||[]).map(function(q){return q.x+','+q.y}).join(' ');return '<polyline points="'+pts+'" fill="none" stroke="#fff" stroke-width="'+sw*1.1+'" stroke-linecap="round" stroke-dasharray="0.01 '+sw*2.2+'"/>'}).join('');
+        var r=Math.max(16,Math.max(w,hh)/40);
+        var pw=function(list,inl){return (list||[]).map(function(q){return '<circle cx="'+q.x+'" cy="'+q.y+'" r="'+(inl?r*0.85:r)+'" fill="'+(inl?'#FF9500':'#FACC15')+'" stroke="#000" stroke-width="'+r/6+'"/><text x="'+q.x+'" y="'+q.y+'" font-size="'+r*(inl?0.95:1.15)+'" text-anchor="middle" dominant-baseline="central">'+(inl?'\u26a1':'\ud83d\udd0c')+'</text>'}).join('')};
+        return '<figure><img src="'+a.plain+'" alt="Side '+(i+1)+'" loading="lazy"><svg viewBox="0 0 '+w+' '+hh+'" preserveAspectRatio="none">'+js+runs+pw(a.outlets,false)+pw(a.inlines,true)+'</svg><figcaption>Side '+(i+1)+'</figcaption></figure>'}).join('')+'</div></div>'}
+      var key='<span><i class="k-solid"></i>Lights</span><span><i class="k-dot"></i>Jump cord</span><span>\ud83d\udd0c Outlet</span><span>\u26a1 Power feeds in</span>';
+      hp=hp.split('@@KEY@@').join(key);
+      x.innerHTML=h;pl.innerHTML=hp;
+      // Step 1 = just the slider: hide the mockup above it, and Next unlocks once they've slid it.
+      var s1=root.querySelector('.hje-step[data-s="0"]'),n1=s1&&s1.querySelector('.hje-next');
+      if(pairs.length&&s1){[].forEach.call(s1.querySelectorAll('.hje-pic,.hje-tabs'),function(e){e.style.display='none'});
+        if(n1){n1.dataset.lbl=n1.textContent;n1.textContent='\ud83d\udc48 Slide at least halfway to keep going';n1.disabled=true;n1.style.opacity='.45'}
+        [].forEach.call(x.querySelectorAll('.hje-sl'),function(b){b.style.setProperty('--p','93%');var chk=function(e){if(e.type==='pointermove'&&!e.buttons)return;var k=b.getBoundingClientRect();if((e.clientX-k.left)/k.width<=0.5&&n1&&n1.disabled){n1.disabled=false;n1.style.opacity='';n1.textContent=n1.dataset.lbl}};b.addEventListener('pointerdown',chk);b.addEventListener('pointermove',chk)})}
+      [].forEach.call(x.querySelectorAll('.hje-sl'),function(b){function at(e){var k=b.getBoundingClientRect();b.style.setProperty('--p',Math.max(0,Math.min(100,(e.clientX-k.left)/k.width*100))+'%')}var on=false;b.addEventListener('pointerdown',function(e){on=true;try{b.setPointerCapture(e.pointerId)}catch(z){}at(e)});b.addEventListener('pointermove',function(e){if(on)at(e)});['pointerup','pointercancel'].forEach(function(t){b.addEventListener(t,function(){on=false})})});
+      [].forEach.call(pl.querySelectorAll('.hje-plan figure'),function(f){f.addEventListener('click',function(){var o=document.createElement('div');o.className='hje-zoom';o.innerHTML='<b>×</b>';var c=f.cloneNode(true);c.style.cssText='position:relative;display:inline-block;margin:auto;line-height:0';var im=c.querySelector('img');im.style.cssText='display:block;max-width:96vw;max-height:88vh;width:auto;height:auto;border-radius:12px';var sv=c.querySelector('svg');if(sv)sv.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none';var fc=c.querySelector('figcaption');if(fc)fc.style.cssText='position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.65);color:#fff;font:700 12px Poppins,system-ui,sans-serif;padding:4px 10px;border-radius:999px;line-height:1.2';o.appendChild(c);o.addEventListener('click',function(){o.remove()});document.body.appendChild(o)})});
+      var mats=(d.supplies||[]).filter(function(s){return Number(d.q.materials&&d.q.materials[s.id])>0});
+      if(!hp&&!mats.length)pl.innerHTML='<p class="hje-small">Your detailed plan is built at install.</p>';
+      if(mats.length&&mt)mt.innerHTML='<div class="hje-lqsec"><h3>What we&#8217;re using</h3><p>Commercial-grade products, the best you can buy. Bulbs 7x brighter than hardware-store ones. The best on the block.</p><div class="hje-mats">'+mats.map(function(s){return '<div>'+(s.image?'<img src="'+s.image+'" alt="" loading="lazy">':'')+'<span><b>'+esc(s.name)+'</b><small>'+esc(d.q.materials[s.id])+'</small></span></div>'}).join('')+'</div></div>';
+    }).catch(function(){});
+    var cur=0;
+    function go(n){cur=n;[].forEach.call(root.querySelectorAll('.hje-step'),function(c){c.classList.toggle('on',Number(c.dataset.s)===n)});
+      [].forEach.call(root.querySelectorAll('.hje-stepbar button'),function(b){var k=Number(b.dataset.s);b.classList.toggle('on',k===n);b.classList.toggle('done',k<n)});
+      var bar=root.querySelector('.hje-stepbar');if(bar)window.scrollTo({top:bar.getBoundingClientRect().top+window.scrollY-80,behavior:'smooth'})}
+    [].forEach.call(root.querySelectorAll('.hje-stepbar button'),function(b){b.addEventListener('click',function(){go(Number(b.dataset.s))})});
+    [].forEach.call(root.querySelectorAll('.hje-next'),function(b){b.addEventListener('click',function(){go(Math.min(3,cur+1))})});
+    var yes=root.querySelector('.hje-lqyes');
+    if(yes)yes.addEventListener('click',function(ev){ev.preventDefault();var ids=picked(),s=season(years);
+      if(!pv)fetch(api,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({years:years,addonIds:ids,accept:true})}).catch(function(){});
+      root.querySelector('.hje-lqchoice').hidden=true;root.querySelector('.hje-lqdone').hidden=false;
+      var body="Hi Jude, it's ${firstName.replace(/[\\"'<>]/g, '')}. I accept my Christmas lights quote: "+(years>1?years+'-year plan, '+m(s)+' a season':'this season, '+m(s))+'. Please send it over to sign! 🎄';
+      location.href='sms:+18039027447?&body='+encodeURIComponent(body)});
+  })();
+  </script>`);
+  }
   // "See it before you commit": after the real client's plan + mockup, show how that same house actually turned out.
   {
     const host = req.headers['x-forwarded-host'] || req.headers.host || 'hub.heyjudeslawncare.com';
@@ -615,8 +838,9 @@ async function handleEstimatePage(req, res) {
     .replace('</head>', () => {
       const host = req.headers['x-forwarded-host'] || req.headers.host || 'hub.heyjudeslawncare.com';
       const prevImg = heroImg ? `https://${host}${heroImg}` : `${SITE}/wp-content/uploads/2026/11/lights-share.jpg`;
-      const t = first ? `${first}, here's your Christmas lights rough estimate 🎄` : 'Your Christmas lights rough estimate 🎄';
-      return `<meta property="og:type" content="website"><meta property="og:title" content="${escHtml(t)}"><meta property="og:description" content="Your rough estimate from Hey Jude's">`
+      const kind = lqInfo ? 'quote' : 'rough estimate';
+      const t = first ? `${first}, here's your Christmas lights ${kind} 🎄` : `Your Christmas lights ${kind} 🎄`;
+      return `<meta property="og:type" content="website"><meta property="og:title" content="${escHtml(t)}"><meta property="og:description" content="Your ${kind} from Hey Jude's">`
         + `<meta property="og:image" content="${prevImg}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${prevImg}"></head>`;
     })
     // their page already has their price: drop the site's "Get my free design / Call us" buttons + sticky bar
@@ -661,7 +885,7 @@ async function handleEstimatePage(req, res) {
     .replace(/<details><summary>How much does it cost\?<\/summary><p>[\s\S]*?<\/p><\/details>/, '<details open><summary>Why a range and not one price?</summary><p>We measured your roofline from a photo, so for now it&#8217;s a range. At your free design consultation we measure your roof, show you samples and a detailed mockup, and give you one exact price for everything: lights, install, maintenance, takedown and storage. Multi-year plans save 5&#8211;10%.</p></details>');
   html = reorderEstimateSections(html);
   // "What's included": one comparison table (✓/✗) instead of 3 cards; the insurance warning sits right under it.
-  html = html.replace(/<div class="tri">[\s\S]*?<p class="asknote[^"]*">[\s\S]*?<\/p>/, () => '<div class="hje-cmp rv"><table><thead><tr><th></th><th>Just hung</th><th>Full service</th><th class="hje-us"><img src="https://heyjudeslawncare.com/wp-content/uploads/2026/11/hey-judes-holiday-logo.png" alt="Hey Jude&#8217;s"><small>Full service, plus</small></th></tr></thead><tbody><tr><th>Design</th><td><span class="hje-n">✗</span></td><td><span class="hje-y">✓</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Install</th><td><span class="hje-y">✓</span></td><td><span class="hje-y">✓</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Maintain</th><td><span class="hje-n">✗</span></td><td><span class="hje-y">✓</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Take down</th><td><span class="hje-n">✗</span></td><td><span class="hje-y">✓</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Store</th><td><span class="hje-n">✗</span></td><td><span class="hje-y">✓</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Full plan first</th><td><span class="hje-n">✗</span></td><td><span class="hje-n">✗</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Color-matched wire</th><td><span class="hje-n">✗</span></td><td><span class="hje-n">✗</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>$1M insured</th><td><span class="hje-q">?</span></td><td><span class="hje-q">?</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Jan. takedown guaranteed</th><td><span class="hje-n">✗</span></td><td><span class="hje-n">✗</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Perfect 5.0★ rating on Google</th><td><span class="hje-n">✗</span></td><td><span class="hje-n">✗</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr></tbody></table><p class="hje-warn">⚠️ <b>Before you hire anyone, ask: “Are you insured?”</b> If an uninsured installer gets hurt on your roof, <b>they can hold <u>you</u> liable</b> for their injuries 💸</p></div>')
+  html = html.replace(/<div class="tri">[\s\S]*?<p class="asknote[^"]*">[\s\S]*?<\/p>/, () => '<div class="hje-cmp rv"><table><thead><tr><th></th><th>Just hung</th><th>Full service</th><th class="hje-us"><img src="https://heyjudeslawncare.com/wp-content/uploads/2026/11/hey-judes-holiday-logo.png" alt="Hey Jude&#8217;s"><small>Full service, plus</small></th></tr></thead><tbody><tr><th>Design</th><td><span class="hje-n">✗</span></td><td><span class="hje-y">✓</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Install</th><td><span class="hje-y">✓</span></td><td><span class="hje-y">✓</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Maintain</th><td><span class="hje-n">✗</span></td><td><span class="hje-y">✓</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Take down</th><td><span class="hje-n">✗</span></td><td><span class="hje-y">✓</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Store</th><td><span class="hje-n">✗</span></td><td><span class="hje-y">✓</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Timer set for you</th><td><span class="hje-n">✗</span></td><td><span class="hje-n">✗</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Full plan first</th><td><span class="hje-n">✗</span></td><td><span class="hje-n">✗</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Color-matched wire</th><td><span class="hje-n">✗</span></td><td><span class="hje-n">✗</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>$1M insured</th><td><span class="hje-q">?</span></td><td><span class="hje-q">?</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Jan. takedown guaranteed</th><td><span class="hje-n">✗</span></td><td><span class="hje-n">✗</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr><tr><th>Perfect 5.0★ rating on Google</th><td><span class="hje-n">✗</span></td><td><span class="hje-n">✗</span></td><td class="hje-us"><span class="hje-y">✓</span></td></tr></tbody></table><p class="hje-warn">⚠️ <b>Before you hire anyone, ask: “Are you insured?”</b> If an uninsured installer gets hurt on your roof, <b>they can hold <u>you</u> liable</b> for their injuries 💸</p></div>')
     .replace(/<p>Most companies hang lights\. Some do full service\. We do full service, plus\.<\/p>/, () => '<p>Not every Christmas light company does the same job.<br>Here&#8217;s the difference.</p>')
     .replace('<h2>No messy spacing. No messy wires.</h2>', () => '<h2>No messy spacing.<br>No messy wires.</h2>')
     .replace('</body>', () => '<script>(function(){[].forEach.call(document.querySelectorAll(".hjl .close-vid, .hjl .clips .clip"),function(c){c.addEventListener("click",function(){var v=c.querySelector("video");if(!v)return;var o=document.createElement("div");o.className="hje-zoom";o.innerHTML="<b>\\u00d7</b>";var nv=document.createElement("video");nv.src=v.currentSrc||v.src;nv.poster=v.poster;nv.autoplay=true;nv.loop=true;nv.muted=true;nv.playsInline=true;nv.setAttribute("playsinline","");o.appendChild(nv);o.addEventListener("click",function(){o.remove();document.documentElement.classList.remove("hje-zooming")});document.body.appendChild(o);document.documentElement.classList.add("hje-zooming");try{nv.currentTime=v.currentTime}catch(e){}nv.play&&nv.play().catch(function(){})})})})();</script>' + '</body>')

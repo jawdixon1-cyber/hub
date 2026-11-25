@@ -221,6 +221,8 @@ export default function LightsQuoter() {
   const [customColor, setCustomColor] = useState(''); // what 'Custom' means, typed in Discovery
   const [planLocked, setPlanLocked] = useState(false); // Plan step locked: lines can't be drawn, moved or deleted
   const [crewToken, setCrewToken] = useState(''); // secret for the no-login Crew view link
+  const [presentToken, setPresentToken] = useState(''); // secret for the client's exact-price page (/estimate/<token>)
+  const [pageCopied, setPageCopied] = useState('');
   const [crewCopied, setCrewCopied] = useState(false);
   const [extras, setExtras] = useState([]); // columns, railings, trees, bushes… [{ id, side, x, y, type, run, around, wraps, width, strands, label }] // { stepNumber: true } — confirmed steps (6 + 7 use matOk / linesOk so changes un-confirm)
   const [clientInfo, setClientInfo] = useState(null); // Jobber client picked from search
@@ -236,7 +238,7 @@ export default function LightsQuoter() {
   // A locked plan locks its materials too: no quantity or wire-color changes until it's unlocked.
   const matSet = planLocked ? () => {} : setMaterials;
   const wireSet = planLocked ? () => {} : setWire;
-  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, customColor, planLocked, savedId, addonMats });
+  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, presentToken, customColor, planLocked, savedId, addonMats });
   // The cloud version this device is working from — if another device saves after it,
   // this device's copy is stale and must not overwrite (that's how removed photos came back).
   const baseSaved = useRef('');
@@ -267,6 +269,7 @@ export default function LightsQuoter() {
     setStepsOk(d.stepsV === 2 ? d.stepsOk || {} : Object.fromEntries(Object.entries(d.stepsOk || {}).map(([k, v]) => [Number(k) >= 6 ? Number(k) + 1 : Number(k), v])));
     setExtras(d.extras || []);
     setCrewToken(d.crewToken || '');
+    setPresentToken(d.presentToken || '');
     setCustomColor(d.customColor || '');
     setPlanLocked(!!d.planLocked);
     if (d.style) setStyle(d.style);
@@ -318,7 +321,7 @@ export default function LightsQuoter() {
   // data (length only), so it's cheap; opening a quote just records its fingerprint.
   const lastSig = useRef('');
   const sigNow = () => JSON.stringify([client, clientInfo?.id, feet, prices, // prices: a $/ft change re-saves the price Present shows
-    strands, count, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto?.length || 0, nightPhoto?.length || 0, disc, installDate, takedownDate, matOk, linesOk.length, stepsOk, extras, crewToken, customColor, planLocked, savedId,
+    strands, count, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto?.length || 0, nightPhoto?.length || 0, disc, installDate, takedownDate, matOk, linesOk.length, stepsOk, extras, crewToken, presentToken, customColor, planLocked, savedId,
     angles.map(({ plain, marked, ai, ...rest }) => [plain?.length || 0, marked?.length || 0, ai?.image?.length || 0, rest]),
     previews.map((x) => [x.id, x.image?.length || 0])]);
   useEffect(() => {
@@ -357,7 +360,7 @@ export default function LightsQuoter() {
       }
     }, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, customColor, planLocked, savedId, addonMats, prices]);
+  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, presentToken, customColor, planLocked, savedId, addonMats, prices]);
 
   useEffect(() => {
     localStorage.setItem(PRICES_KEY, JSON.stringify(prices));
@@ -415,7 +418,7 @@ export default function LightsQuoter() {
     setCrewCopied(url);
     setTimeout(() => setCrewCopied(false), 6000);
   };
-  const reset = () => { setWstep(1); setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); setMaterials({}); setMatNotes({}); setWire('white'); setPower(''); setPowerPhoto(''); setNightPhoto(''); setDisc({}); setInstallDate(''); setTakedownDate(''); setMatOk(''); setLinesOk(''); setStepsOk({}); setExtras([]); setCrewToken(''); setCustomColor(''); setAddonMats({}); addonMatsRef.current = {}; };
+  const reset = () => { setWstep(1); setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); setMaterials({}); setMatNotes({}); setWire('white'); setPower(''); setPowerPhoto(''); setNightPhoto(''); setDisc({}); setInstallDate(''); setTakedownDate(''); setMatOk(''); setLinesOk(''); setStepsOk({}); setExtras([]); setCrewToken(''); setPresentToken(''); setCustomColor(''); setAddonMats({}); addonMatsRef.current = {}; };
   const say = (msg) => { setFlash(msg); setTimeout(() => setFlash(''), 2500); };
 
   const openQuote = async (id) => {
@@ -1013,6 +1016,31 @@ export default function LightsQuoter() {
       {/* Plan photos (+ mockups) with downloads, then the exact quote text */}
       <LightsMockup part="lines" title="Plan photos" sub="Every side with your lines. Tap one to see it big, or download." angles={angles} setAngles={setAngles} client={client} previews={previews} setPreviews={setPreviews} designId={style} />
       <LightsQuotePreview quoteId={savedId} />
+
+      {/* Client's exact-price page: the rough-estimate page look, with their real price, 1/2/3-year pick and add-ons. Accept drafts the Jobber quote. */}
+      <div className="rounded-xl border-2 border-emerald-500/40 bg-emerald-500/5 p-4 flex items-center gap-3 flex-wrap">
+        <div className="flex-1 min-w-[200px]">
+          <p className="text-base font-bold text-primary">🎄 Exact-price page</p>
+          <p className="text-xs text-muted">Text them this when they can't meet: their mockup, exact price, 1/2/3-year pick and add-ons. Accept makes the Jobber quote as a draft for you to send.</p>
+          {pageCopied && <p className="text-xs text-brand-text mt-1 break-all">Copied: {pageCopied}</p>}
+        </div>
+        {(() => {
+          const make = () => {
+            let t = presentToken;
+            if (!t) { const b = new Uint8Array(18); crypto.getRandomValues(b); t = btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); setPresentToken(t); }
+            return t;
+          };
+          const pageUrl = (t) => `https://hub.heyjudeslawncare.com/estimate/${t}`;
+          return (
+            <>
+              <button disabled={!savedId} title={savedId ? '' : 'Pick the client first so the quote saves'} onClick={async () => { const u = pageUrl(make()); try { await navigator.clipboard.writeText(u); } catch { /* shown below */ } setPageCopied(u); setTimeout(() => setPageCopied(''), 6000); }}
+                className="rounded-xl bg-emerald-600 text-white px-5 py-3 text-base font-bold hover:bg-emerald-700 disabled:opacity-40 cursor-pointer">{pageCopied ? '✓ Link copied' : '📋 Copy their link'}</button>
+              <button disabled={!savedId} onClick={() => { const t = make(); setTimeout(() => window.open(`/estimate/${t}?preview=1`, '_blank'), presentToken ? 0 : 2500); }}
+                className="rounded-xl border border-border-strong px-5 py-3 text-base font-bold text-primary hover:bg-surface-alt disabled:opacity-40 cursor-pointer">👀 Preview</button>
+            </>
+          );
+        })()}
+      </div>
 
       {/* Crew view: send the team the plan + materials */}
       <div className="rounded-xl border border-border-default bg-card p-4 flex items-center gap-3 flex-wrap">

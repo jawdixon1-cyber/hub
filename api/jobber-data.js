@@ -2247,6 +2247,16 @@ function buildLqQuote({ meta, ba, base, years, addonIds, angles }) {
   return { lineItems, addons, offers };
 }
 
+// What the client's exact-price page needs to price any pick: base, add-ons (with their default on/off) and offers.
+export function lqPriceParts(meta, ba) {
+  const roof = Number(meta?.quoted) || Number(meta?.total) || 0;
+  const base = roof + Math.max(0, Number(ba?.adjust) || 0);
+  const addons = pricedAddons(ba?.addons, ba?.perStrand).filter((a) => Number(a.price) > 0).map((a) => ({ id: String(a.id), label: a.label || '', sub: a.sub || '', price: Number(a.price), on: a.on !== false, photo: /^lq-img:[\w-]+:[A-Za-z0-9_-]{1,80}$/.test(String(a.photo || '')) ? String(a.photo).split(':').pop() : '' }));
+  const offers = (ba?.offers || []).filter((o) => o.on !== false && Number(o.amount) > 0).map((o) => ({ label: o.label || 'Special offer', kind: o.kind === 'free' ? 'free' : o.kind === '%' ? '%' : '$', amount: Number(o.amount), when: o.when || '' }));
+  const perks = (ba?.perks || []).filter((p) => p.title).map((p) => ({ title: String(p.title), sub: p.sub || '' }));
+  return { base, addons, offers, perks, off: LQ_OFF };
+}
+
 export async function handleLightsQuotePreview(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const db = getSupabaseAdmin();
@@ -2285,8 +2295,15 @@ async function handleLightsQuoteCreate(req, res) {
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   const { data: who } = token ? await db.auth.getUser(token) : { data: null };
   if (who?.user?.user_metadata?.role !== 'owner') return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const { id, years, addonIds } = req.body || {};
+  const r = await createLqJobberQuote(db, id, years, addonIds);
+  return res.status(r.status).json(r.body);
+}
 
-  const { id, years: y, addonIds } = req.body || {};
+// Shared by the Present step (owner) and the client's exact-price page (/estimate/<presentToken>, Accept):
+// creates the Jobber quote as a DRAFT once per lights quote; later calls return the one already made.
+export async function createLqJobberQuote(db, id, y, addonIds) {
+  const res = { status(n) { this.n = n; return this; }, json(b) { return { status: this.n || 200, body: b }; } };
   const years = [1, 2, 3].includes(Number(y)) ? Number(y) : 1;
   if (!/^[\w-]+$/.test(String(id || ''))) return res.status(400).json({ error: 'Bad quote id' });
 
