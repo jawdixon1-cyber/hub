@@ -1696,10 +1696,10 @@ export default function LightsBusiness({ view, onOpen = null }) {
         };
         setPlug(/\bmale\b/i, /female/i, built.plugs.male);
         setPlug(/female/i, null, built.plugs.female);
-        showInstall({ id: j.id, planned, says: { ...draft }, draft, crew: fill ? fill.info : { lightFt: 0, zipFt: 0, planFt: 0 }, built, pick: null });
+        showInstall({ id: j.id, planned, says: { ...draft }, draft, crew: fill ? fill.info : { lightFt: 0, zipFt: 0, planFt: 0 }, built, pick: 'crew' });
         return;
       }
-      showInstall({ id: j.id, planned, says: fill ? { ...fill.draft } : null, draft: fill ? fill.draft : planned, crew: fill ? fill.info : null, built, pick: fill ? null : 'plan' });
+      showInstall({ id: j.id, planned, says: fill ? { ...fill.draft } : null, draft: fill ? fill.draft : planned, crew: fill ? fill.info : null, built, pick: fill ? 'crew' : 'plan' });
     };
     const crewFill = (act, planned) => {
       if (!act) return null;
