@@ -456,7 +456,7 @@ async function handleEstimatePage(req, res) {
             <p class="hje-trust">★★★★★ <b>5.0</b> · 195 Google reviews</p>
             <p class="hje-after">Ready for the next step? At your free design consultation we bring light samples, measure your roof, show you a detailed plan and mockup, talk through anything else you&#8217;d like lit (if you want it) and go over your exact price.</p>
             <div class="hje-choice">
-              <a class="btn btn-go hje-yes" href="${sms(smsYes)}">✅ Accept</a>
+              <a class="btn btn-go hje-yes" href="${sms(smsYes)}"><span>✅ Accept</span><small>Schedule consultation to get my exact price</small></a>
               <div class="hje-choice2">
                 <a class="hje-no" href="${sms(smsRevise)}"><span>Revise scope</span><small>Add or remove areas to change the price</small></a>
                 <a class="hje-no" href="${sms(smsNo)}"><span>Decline</span><small>Opt out · no follow-up messages</small></a>
@@ -485,7 +485,7 @@ async function handleEstimatePage(req, res) {
     .hje-main .hje-small{margin:10px 6px 0!important}
     .hje-card-next{border:2px solid rgba(0,223,0,.45);background:linear-gradient(180deg,rgba(0,223,0,.08),rgba(0,223,0,.02))}
     #quote .hje-card-h{font-weight:900;font-size:22px;line-height:1.2;margin:0 0 16px!important;text-align:center!important;color:#f6f3ee}
-    #quote .hje-card .hje-price{margin:6px 0 10px}
+    #quote .hje-card .hje-price{margin:6px 0 2px!important;line-height:1.1!important}
     #quote .hje-card .hje-rough{margin:0!important}
     #quote .hje-card-h.hje-sub{font-size:18px;margin:22px 0 12px!important;padding-top:20px;border-top:1px solid rgba(255,255,255,.1)}
     #quote .hje-incl{list-style:none;padding:0;margin:0 auto 14px!important;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;text-align:left}
@@ -493,7 +493,7 @@ async function handleEstimatePage(req, res) {
     @media (max-width:520px){#quote .hje-incl{gap:8px 10px}#quote .hje-incl li{font-size:13px;padding-left:20px}.hje-steps{grid-template-columns:1fr!important}}
     #quote .hje-trust{font-size:13px;opacity:.8;margin:0!important;text-align:center!important;color:#f6f3ee}
     #quote .hje-card .hje-yes{margin-top:20px!important}
-    #quote .hje-after{font-size:13px!important;opacity:.75;margin:12px auto 0!important;max-width:420px!important;text-align:center!important;line-height:1.5;color:#f6f3ee}
+    #quote .hje-after{font-size:13px!important;opacity:.75;margin:18px auto 0!important;padding-top:18px;border-top:1px solid rgba(255,255,255,.1);max-width:420px!important;text-align:center!important;line-height:1.5;color:#f6f3ee}
     .hje-steps{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     .hje-steps div{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.25);border-radius:12px;padding:12px;text-align:left;font-size:15px;font-weight:600;line-height:1.3;color:#f6f3ee}
     .hje-steps b{font-size:18px}
@@ -523,7 +523,10 @@ async function handleEstimatePage(req, res) {
     .hje-yes[hidden],.hje-done[hidden],.hje-no[hidden]{display:none}
     .hje-choice{display:flex;flex-direction:column;gap:10px;margin-top:18px}
     .hje-choice2{display:flex;gap:10px}
-    #quote .hje-choice .hje-yes{margin:0!important;padding:16px!important;display:flex;align-items:center;justify-content:center;text-decoration:none}
+    #quote .hje-choice .hje-yes{margin:0!important;padding:14px 16px!important;display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;line-height:1.2}
+    #quote .hje-choice .hje-yes{gap:0!important}
+    #quote .hje-choice .hje-yes span{display:block;margin:0!important;padding:0!important;line-height:1.15!important}
+    #quote .hje-choice .hje-yes small{display:block;font-size:13px;font-weight:700;opacity:.8;margin:2px 0 0!important;padding:0!important;line-height:1.15!important}
     #quote .hje-no small{display:block;font-size:11px;font-weight:600;opacity:.7;margin-top:2px}
     #quote .hje-no{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.2;text-decoration:none;background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:14px;color:#f6f3ee;font:700 16px Poppins,system-ui,sans-serif;cursor:pointer;padding:14px}
     #quote .hje-sms{color:#ffcf6b;font-weight:700}

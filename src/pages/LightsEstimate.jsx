@@ -455,15 +455,54 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
               const vw = list.find((x) => x.id === est.id)?.views;
               const mine = (vw?.list || []).filter((x) => x.me).length;
               if (!vw?.count && !mine) return <p className="text-center text-xs text-muted">👀 Not opened yet</p>;
+              const all = [...(vw.list || [])].reverse();
+              const theirs = all.filter((x) => !x.me);
+              const yours = all.filter((x) => x.me);
+              // The estimate page saves a random device tag (hj-vid) in each browser; same tag here = this exact browser.
+              let myVid = '';
+              try { myVid = localStorage.getItem('hj-vid') || ''; } catch { /* ignore */ }
+              // Your other devices: any tag that's been marked "you" on any estimate.
+              const myVids = new Set(list.flatMap((e) => (e.views?.list || []).filter((v) => v.me && v.vid).map((v) => v.vid)));
+              const isPhone = (x) => /iphone|android|ipad/i.test(`${x.device} ${x.os}`);
+              // One tag = one browser. If a tag was ever seen as a computer, its "phone" opens were Chrome's phone preview.
+              const realDevice = {};
+              list.forEach((e) => (e.views?.list || []).forEach((v) => { if (v.vid && !isPhone(v)) realDevice[v.vid] = v.device; }));
+              const deviceOf = (x) => realDevice[x.vid] || x.device;
+              const previewed = (x) => isPhone(x) && !!realDevice[x.vid];
+              const nameOf = (x) => {
+                const d = deviceOf(x); const icon = isPhone({ device: d }) ? '📱' : '💻';
+                if (myVid && x.vid === myVid) return `${icon} This ${icon === '📱' ? 'phone' : 'computer'}`;
+                if (myVids.has(x.vid)) return `${icon} Your ${d}`;
+                return `${icon} ${d}`;
+              };
+              const table = (rows) => (
+                <table className="w-full table-fixed text-[11px]">
+                  <thead><tr className="text-left text-[10px] uppercase tracking-wide text-muted"><th className="w-[58px] py-1 font-semibold">When</th><th className="py-1 font-semibold">Device</th><th className="w-[52px] py-1 font-semibold text-right">Who</th></tr></thead>
+                  <tbody>{rows.map((x) => {
+                    return (
+                      <tr key={x.at} onClick={() => toggleMyView(est.id, x.at, orgId).then(refresh)} title={`${when(x.at)} · tag #${x.vid || '?'}${x.os ? ` · ${x.os}` : ''} · tap to switch You/Them`} className="border-t border-sky-500/15 cursor-pointer hover:bg-sky-500/10 align-top">
+                        <td className="py-1.5 whitespace-nowrap">{ago(x.at)}</td>
+                        <td className="py-1.5 pr-1">
+                          <span className="block font-semibold truncate">{nameOf(x)}{x.app ? <span className="font-normal text-muted"> · {x.app}</span> : null}</span>
+                          <span className="block text-[10px] text-muted truncate">{previewed(x) ? 'phone preview in Chrome' : x.city || 'no city'}</span>
+                        </td>
+                        <td className="py-1.5 text-right"><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${x.me ? 'bg-surface-alt text-muted' : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'}`}>{x.me ? 'You' : 'Them'}</span></td>
+                      </tr>
+                    );
+                  })}</tbody>
+                </table>
+              );
               return (
-                <div className="rounded-lg bg-sky-500/10 px-3 py-2 text-xs text-primary">
-                  <p className="font-bold">{vw.count ? `👀 They opened it ${vw.count}× · last ${ago(vw.last)}` : '👀 They haven’t opened it yet'}{mine ? <span className="font-normal text-muted"> · you {mine}×</span> : null}</p>
-                  <p className="mt-1 text-[10px] text-muted">Tap an open that was you to tag it (tap again to undo).</p>
-                  <div className="mt-0.5 max-h-40 overflow-auto text-muted">{[...(vw.list || [])].reverse().map((x) => (
-                    <button key={x.at} type="button" onClick={() => toggleMyView(est.id, x.at, orgId).then(refresh)} className={`block w-full text-left rounded px-1 py-0.5 hover:bg-sky-500/10 cursor-pointer ${x.me ? 'opacity-60' : 'text-primary'}`}>
-                      {when(x.at)} · {x.device}{x.os ? ` ${x.os}` : ''}{x.app ? ` · ${x.app}` : ''}{x.city ? ` · ${x.city}` : ''}{x.vid ? ` · #${x.vid}` : ''}{x.me ? ' · you ✓' : ''}
-                    </button>
-                  ))}</div>
+                <div className="rounded-lg bg-sky-500/10 px-3 py-2 text-xs text-primary space-y-1">
+                  <p className="text-sm font-bold">{vw.count ? `👀 They opened it ${vw.count}×` : '👀 They haven’t opened it yet'}</p>
+                  {theirs.length > 0 && <div className="max-h-48 overflow-auto">{table(theirs)}</div>}
+                  {yours.length > 0 && (
+                    <details>
+                      <summary className="cursor-pointer text-[11px] text-muted py-1">Your own opens ({yours.length}) · not counted</summary>
+                      <div className="max-h-40 overflow-auto opacity-70">{table(yours)}</div>
+                    </details>
+                  )}
+                  <p className="text-[10px] text-muted">Wrong? Tap a row to switch it between You and Them.</p>
                 </div>
               );
             })()}
