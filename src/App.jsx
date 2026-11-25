@@ -254,7 +254,8 @@ function App() {
       if (keys) query = query.in('key', keys);
       if (skip) query = query.not('key', 'in', `(${skip.map((k) => `"${k}"`).join(',')})`);
       // Lights quotes are their own rows (with photos) and load on the Lights page only
-      if (!keys) query = query.not('key', 'like', 'lq-%').not('key', 'like', 'lr:%'); // lr: = Lights receipt photos, loaded only when shown
+      // lr: = Lights receipt photos, le-img: = Rough Estimate photos (several MB): each page loads its own only when shown
+      if (!keys) query = query.not('key', 'like', 'lq-%').not('key', 'like', 'lr:%').not('key', 'like', 'le-img:%');
       const { data, error } = await query;
       if (error) throw error;
       return data || [];
