@@ -981,7 +981,7 @@ input[type=text],input[type=tel],input[type=email],select{width:100%;background:
 button{width:100%;border:0;border-radius:14px;background:#00DF00;color:#04170a;font:800 18px Poppins,system-ui,sans-serif;padding:16px;cursor:pointer;margin-top:6px}
 button:disabled{opacity:.6}
 .how{list-style:none;margin:0 0 22px;padding:0;display:grid;gap:8px}.how li{display:flex;gap:10px;align-items:flex-start;background:#111621;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:10px 12px;font-size:14px;color:#c9ced8;line-height:1.4}.how li>b{flex:none;width:24px;height:24px;border-radius:50%;background:#00DF00;color:#04170a;display:grid;place-items:center;font-size:13px;font-weight:900;margin-top:1px}.how li span b{color:#fff}
-.prog{height:6px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden;margin:0 0 6px}.prog i{display:block;height:100%;background:#00DF00;transition:width .3s}.pstep{color:#a9b0bf;font-size:13px;font-weight:700;text-align:center;margin:0 0 14px}button.skip,button.back{background:none;color:#a9b0bf;font-size:15px;padding:10px;margin-top:2px}button.back{font-size:14px}
+.prog{height:6px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden;margin:0 0 16px}.prog i{display:block;height:100%;background:#00DF00;transition:width .3s}.pstep{color:#a9b0bf;font-size:13px;font-weight:700;text-align:center;margin:0 0 14px}button.skip,button.back{background:none;color:#a9b0bf;font-size:15px;padding:10px;margin-top:2px}button.back{font-size:14px}
 .err{color:#ff6b6b;font-weight:700;text-align:center;min-height:20px}
 .done{text-align:center;padding:30px 10px}.done h2{font-size:26px;margin:0 0 8px}
 .hp{position:absolute;left:-9999px}
@@ -991,11 +991,11 @@ button:disabled{opacity:.6}
 <div id="form">
 <h1>Get your rough Christmas lights estimate 🎄</h1>
 
-<div class="prog" id="prog" hidden><i id="pbar" style="width:20%"></i></div><p class="pstep" id="plabel" hidden>Step 1 of 5 · Which sides</p>
+<div class="prog" id="prog" hidden><i id="pbar" style="width:20%"></i></div><p class="pstep" id="plabel" hidden>Which sides</p>
 <div class="stp" data-s="0">
 <p class="sub">Takes about a minute. Here&#8217;s how it works:</p>
 <ol class="how">
-<li><b>1</b><span><b>Roofline mockup + rough estimate.</b> Jude texts you your roofline lit up with a rough price, so you know if it fits your budget.</span></li>
+<li><b>1</b><span><b>Get your mockup &amp; rough estimate.</b> Jude texts you a mockup of your roofline lit up with a rough price, so you know if it fits your budget.</span></li>
 <li><b>2</b><span><b>Like it? Free design consultation.</b> We measure your roof, show you real bulbs, and plan any extras you want (wreaths, bushes, trees, windows).</span></li>
 <li><b>3</b><span><b>Your exact price.</b> One price for your roofline plus any extras: lights, install, maintenance, takedown and storage.</span></li>
 </ol>
@@ -1058,15 +1058,13 @@ button:disabled{opacity:.6}
 <div><label class="f" for="ln">Last name</label><input id="ln" type="text" autocomplete="family-name" placeholder="Last"></div></div>
 <label class="f" for="p">Mobile phone</label><input id="p" type="tel" inputmode="numeric" autocomplete="tel" placeholder="803-555-1234">
 <label class="f" for="em">Email</label><input id="em" type="email" autocomplete="email" placeholder="you@email.com">
-</div>
-<div class="card"><p class="q">Your address</p>
+<p class="q" style="margin-top:8px">Your address</p>
 <label class="f" for="s">Street address</label><input id="s" type="text" autocomplete="off" placeholder="Start typing your address">
 <div class="row"><div><label class="f" for="c">City</label><input id="c" type="text" autocomplete="address-level2" placeholder="Rock Hill"></div>
 <div style="flex:.5"><label class="f" for="st">State</label><select id="st"><option>SC</option><option>NC</option></select></div>
 <div style="flex:.7"><label class="f" for="z">Zip</label><input id="z" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="29730"></div></div>
 <input class="hp" id="hp" type="text" tabindex="-1" autocomplete="off">
-</div>
-<div class="card"><p class="q">How did you hear about us?</p><p class="qs">A neighbor, Google, Facebook, a yard sign…</p>
+<p class="q" style="margin-top:8px">How did you hear about us?</p><p class="qs">A neighbor, Google, Facebook, a yard sign…</p>
 <input id="heard" type="text" maxlength="200" placeholder="e.g. Saw your lights on Main St" style="margin:6px 0 0"></div>
 <p class="err" id="err"></p>
 <button id="go">Send me my rough estimate →</button>
@@ -1094,9 +1092,9 @@ button:disabled{opacity:.6}
     [].forEach.call(document.querySelectorAll('.err'),function(x){x.textContent=''});
     cur=n;
     [].forEach.call(document.querySelectorAll('.stp'),function(d){d.hidden=d.getAttribute('data-s')!=String(n)});
-    document.getElementById('prog').hidden=n===0; document.getElementById('plabel').hidden=n===0;
+    document.getElementById('prog').hidden=n===0; document.getElementById('plabel').hidden=true; // just the bar, no step text
     document.getElementById('pbar').style.width=(n*20)+'%';
-    if(n) document.getElementById('plabel').textContent='Step '+n+' of 5 · '+names[n];
+    if(n) document.getElementById('plabel').textContent=names[n];
     window.scrollTo({top:0,behavior:'smooth'});
   }
   [].forEach.call(document.querySelectorAll('[data-go]'),function(b){b.addEventListener('click',function(){show(Number(b.getAttribute('data-go')))})});
