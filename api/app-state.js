@@ -646,7 +646,7 @@ async function handleEstimatePage(req, res) {
             <p class="hje-price hje-lqprice"></p>
             <p class="hje-rough hje-lqsub"></p>
             ${gifts.length ? `<div class="hje-gifts">${gifts.map((g) => `<p>🎁 ${escHtml(g)}</p>`).join('')}</div>` : ''}
-            ${dates ? `<div class="hje-when"><p class="hje-eyebrow">When we&#8217;ll install</p><ul class="hje-dates">${dates}</ul><p class="hje-hold">⏳ <b>This date is only yours if you say yes now.</b> Install dates go fast. If someone else books it first, we&#8217;ll give you the next open one.</p></div>` : ''}
+            ${dates ? `<div class="hje-when"><p class="hje-eyebrow">When we&#8217;ll install</p><ul class="hje-dates">${dates}</ul><p class="hje-hold">This is our next open install date right now. It could change if it gets booked before you accept.</p></div>` : ''}
             
             <p class="hje-trust"><span class="hje-stars">★★★★★</span> <b>5.0</b> · 195 Google reviews</p>
             <ul class="hje-terms"><li><b>💳 50% now (<span class="hje-half"></span>), 50% after install (<span class="hje-half"></span>).</b> The first half locks in your install date.</li><li><b>🗓️ January takedown guarantee.</b> If we don&#8217;t take your lights down in January, you get your money back (weather and safety permitting).</li><li><b>🔒 Multi-year plans:</b> cancel early? You just pay back the discount you&#8217;ve used.</li></ul>
@@ -688,7 +688,7 @@ async function handleEstimatePage(req, res) {
     #quote .hje-dates b{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.65;margin-top:4px}
     #quote .hje-dates span{font-size:17px;font-weight:800;color:#f6f3ee}
     #quote .hje-lqcard .hje-trust{margin-top:16px!important}
-    #quote .hje-hold{margin:10px auto 0!important;padding:10px 12px;border-radius:12px;background:rgba(255,207,107,.1);border:1px solid rgba(255,207,107,.35);font-size:13px!important;line-height:1.45;color:#f6f3ee;text-align:center}
+    #quote .hje-hold{margin:10px auto 0!important;font-size:12.5px!important;line-height:1.45;color:#f6f3ee;opacity:.65;text-align:center}
     #quote .hje-hold b{color:#ffcf6b}
     #quote .hje-lqsub{margin:2px auto 0!important;text-align:center!important;max-width:380px}
     #quote .hje-lqsec{margin:22px 0 0;padding-top:20px;border-top:1px solid rgba(255,255,255,.1)}
