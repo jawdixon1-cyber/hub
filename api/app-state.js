@@ -633,7 +633,7 @@ async function handleEstimatePage(req, res) {
             ${nextBtn('Next: see your plan →')}
           </div>
           <div class="hje-card hje-main hje-lqcard hje-step" data-s="2" id="hje-lqplancard">
-            <div id="hje-lqplan"><p class="hje-small">Loading your plan…</p></div>
+            <div id="hje-lqplan"><div class="hje-loading"><span class="hje-spin"></span><b>Loading your plan…</b><small>Pulling up every side of your house. This takes a few seconds.</small></div></div>
             <div id="hje-lqmat"></div>
             ${nextBtn('Next: see your price →')}
           </div>
@@ -694,6 +694,11 @@ async function handleEstimatePage(req, res) {
     #quote .hje-lqsec>p{font-size:13px!important;opacity:.7;margin:0 0 12px!important}
     #quote .hje-plan{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     #quote .hje-lqcard{padding:22px 16px!important}
+    #quote .hje-loading{display:flex;flex-direction:column;align-items:center;gap:6px;padding:40px 10px}
+    #quote .hje-loading b{font-size:17px}
+    #quote .hje-loading small{font-size:13px;opacity:.65}
+    #quote .hje-spin{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.15);border-top-color:#5fe03a;animation:hjespin .8s linear infinite}
+    @keyframes hjespin{to{transform:rotate(360deg)}}
     #quote .hje-step{display:none!important}
     #quote .hje-step.on{display:block!important}
     #quote .hje-incl-big{grid-template-columns:1fr 1fr!important;max-width:620px!important;gap:12px!important}
