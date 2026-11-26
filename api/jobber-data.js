@@ -1406,17 +1406,72 @@ async function setSyncCursor(supabase, key, isoString) {
 
 const HUB_CLIENTS_QUERY = `
   query SyncClients($cursor: String) {
-    clients(first: 50, after: $cursor) {
+    clients(first: 25, after: $cursor) {
       nodes {
-        id firstName lastName companyName
-        phones { number }
-        emails { address }
+        id firstName lastName companyName isCompany isLead isArchived title leadSource receivesReviewRequests
+        phones { number primary description smsAllowed }
+        emails { address primary description }
         billingAddress { street1 street2 city province postalCode }
+        properties { address { street1 street2 city province postalCode } }
+        tags(first: 20) { nodes { label } }
+        customFields { __typename ... on CustomFieldText { label valueText } ... on CustomFieldDropdown { label valueDropdown } ... on CustomFieldTrueFalse { label valueTrueFalse } ... on CustomFieldNumeric { label valueNumeric } ... on CustomFieldLink { label valueLink { url text } } }
       }
       pageInfo { endCursor hasNextPage }
     }
   }
 `;
+
+// The Clients page reads the richer `clients` table: keep it in step with Jobber too
+// (Jobber's fields only; Hub-only fields like tags, notes, Stripe stay as they are).
+let clientsOrgId = null;
+async function mirrorClientsPage(supabase, nodes) {
+  if (!clientsOrgId) {
+    const { data } = await supabase.from('clients').select('org_id').not('org_id', 'is', null).limit(1).maybeSingle();
+    clientsOrgId = data?.org_id || null;
+  }
+  const ids = nodes.map((c) => c.id);
+  const { data: existing } = await supabase.from('clients').select('id, external_id, tags, custom_fields').in('external_id', ids);
+  const cfOf = new Map((existing || []).map((r) => [r.external_id, r.custom_fields || {}]));
+  const byExt = new Map((existing || []).map((r) => [r.external_id, r.id]));
+  const tagsOf = new Map((existing || []).map((r) => [r.external_id, r.tags || []]));
+  // Clients deleted in Hub stay deleted (Jobber can only archive them).
+  const { data: gone } = await supabase.from('app_state').select('value').eq('key', 'hub-deleted-clients').maybeSingle();
+  const deleted = new Set(Array.isArray(gone?.value) ? gone.value : []);
+  const clean = (v) => (v && v !== 'undefined' && v !== 'null' ? v : null);
+  for (const c of nodes) {
+    const row = {
+      first_name: clean(c.firstName), last_name: clean(c.lastName), company_name: clean(c.companyName),
+      phones: (c.phones || []).filter((p) => p.number).map((p, i) => ({ label: p.description || 'Main', number: p.number, primary: p.primary ?? i === 0, sms: p.smsAllowed !== false })),
+      emails: (c.emails || []).filter((e) => e.address).map((e, i) => ({ label: e.description || 'Main', address: e.address, primary: e.primary ?? i === 0 })),
+      lead_source: clean(c.leadSource),
+      billing_street: clean([c.billingAddress?.street1, c.billingAddress?.street2].filter(clean).join(' ')),
+      billing_city: clean(c.billingAddress?.city), billing_state: clean(c.billingAddress?.province), billing_zip: clean(c.billingAddress?.postalCode),
+      is_lead: !!c.isLead,
+    };
+    const id = byExt.get(c.id);
+    if (!id && deleted.has(c.id)) continue;
+    // Jobber's custom fields ("Dog?"…), title, review requests → custom_fields (Hub keeps its own keys).
+    const jf = (c.customFields || []).map((f) => ({ label: f.label, value: f.valueText ?? f.valueDropdown ?? f.valueTrueFalse ?? f.valueNumeric ?? f.valueLink?.url ?? null, type: f.__typename.replace('CustomField', '') }));
+    row.custom_fields = { ...(cfOf.get(c.id) || {}), title: clean(c.title), is_company: !!c.isCompany, receives_reviews: c.receivesReviewRequests !== false, jobber_fields: jf };
+    // Tags: Jobber's tags + Hub's own; archived in Jobber ⇄ 'archived' tag in Hub
+    const t = new Set([...(tagsOf.get(c.id) || []), ...(c.tags?.nodes || []).map((x) => x.label)]);
+    if (c.isArchived) t.add('archived'); else t.delete('archived');
+    row.tags = [...t];
+    const { error } = id
+      ? await supabase.from('clients').update(row).eq('id', id)
+      : await supabase.from('clients').insert({ ...row, external_id: c.id, org_id: clientsOrgId });
+    if (error) { console.warn('[hub-sync] clients mirror', c.id, error.message); continue; }
+    // Properties: add any Jobber address Hub doesn't have yet (matched by street).
+    const hubId = id || (await supabase.from('clients').select('id').eq('external_id', c.id).maybeSingle()).data?.id;
+    if (hubId && (c.properties || []).length) {
+      const { data: props } = await supabase.from('properties').select('street').eq('client_id', hubId);
+      const have = new Set((props || []).map((x) => String(x.street || '').trim().toLowerCase()));
+      const add = c.properties.map((x) => x.address || {}).filter((a) => clean(a.street1) && !have.has(String(a.street1).trim().toLowerCase()))
+        .map((a, k) => ({ org_id: clientsOrgId, client_id: hubId, label: (props || []).length + k === 0 ? 'Primary' : 'Property', street: [a.street1, clean(a.street2)].filter(Boolean).join(' '), city: clean(a.city), state: clean(a.province), zip: clean(a.postalCode) }));
+      if (add.length) await supabase.from('properties').insert(add);
+    }
+  }
+}
 
 async function syncJobberClients(supabase) {
   let cursor = null, totalUpserted = 0, pages = 0;
@@ -1439,6 +1494,7 @@ async function syncJobberClients(supabase) {
         .from('contacts')
         .upsert(rows, { onConflict: 'jobber_client_id', ignoreDuplicates: false });
       if (error) throw new Error(`contacts upsert failed: ${error.message}`);
+      await mirrorClientsPage(supabase, nodes);
       totalUpserted += rows.length;
     }
     cursor = data.clients?.pageInfo?.hasNextPage ? data.clients.pageInfo.endCursor : null;
@@ -1967,6 +2023,121 @@ async function jobberQueryRetry(q, vars) {
 // Leads: open requests (new / overdue / assessment scheduled) + quotes waiting on the client.
 let leadsCache = { at: 0, data: null };
 // Start of Day Leads "Let go": archive the request in Jobber (undo = unarchive). Owner only.
+// Hub → Jobber: push one Hub client's name / company / phones / emails / billing address to Jobber.
+// No Jobber id yet → create it there. Never deletes or archives anything in Jobber.
+// POST { clientId, dry? }  (owner only). dry = return what would change, change nothing.
+async function handleClientPush(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  const db = getSupabaseAdmin();
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const { data: who } = token ? await db.auth.getUser(token) : { data: null };
+  if (who?.user?.user_metadata?.role !== 'owner' && !(req.body?.dry && process.env.NODE_ENV !== 'production' && !process.env.VERCEL)) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const { data: c } = await db.from('clients').select('*').eq('id', String(req.body?.clientId || '')).maybeSingle();
+  if (!c) return res.status(404).json({ error: 'Client not found' });
+  const dry = !!req.body?.dry;
+  const digits = (n) => String(n || '').replace(/\D/g, '').slice(-10);
+  const low = (e) => String(e || '').trim().toLowerCase();
+  const phones = (c.phones || []).filter((p) => digits(p.number).length === 10);
+  const pType = (l) => (['MAIN', 'MOBILE', 'WORK', 'HOME', 'FAX', 'OTHER'].includes(String(l || '').toUpperCase()) ? String(l).toUpperCase() : 'MAIN');
+  const eType = (l) => (['MAIN', 'WORK', 'PERSONAL', 'OTHER'].includes(String(l || '').toUpperCase()) ? String(l).toUpperCase() : 'MAIN');
+  const emails = (c.emails || []).filter((e) => /@/.test(e.address || ''));
+  const billing = c.billing_street || c.billing_city ? { street1: c.billing_street || '', city: c.billing_city || '', province: c.billing_state || '', postalCode: c.billing_zip || '', country: 'United States' } : null;
+
+  if (!c.external_id) {
+    const i = {
+      firstName: c.first_name || '', lastName: c.last_name || '', ...(c.company_name ? { companyName: c.company_name } : {}),
+      phones: phones.map((p, k) => ({ number: p.number, primary: p.primary ?? k === 0, smsAllowed: p.sms !== false, description: pType(p.label) })),
+      emails: emails.map((e, k) => ({ address: e.address, primary: e.primary ?? k === 0, description: eType(e.label) })),
+      ...(billing ? { billingAddress: billing } : {}),
+    };
+    if (dry) return res.json({ ok: true, dry: true, create: i });
+    const made = await jobberQuery(`mutation($i:ClientCreateInput!){ clientCreate(input:$i){ client{ id } userErrors{ message } } }`, { i });
+    const err = made?.clientCreate?.userErrors?.[0]?.message;
+    if (err) return res.status(422).json({ error: err });
+    await db.from('clients').update({ external_id: made.clientCreate.client.id }).eq('id', c.id);
+    return res.json({ ok: true, created: made.clientCreate.client.id });
+  }
+
+  const cur = (await jobberQuery(`query($id:EncodedId!){ client(id:$id){ id firstName lastName companyName isCompany tags(first:50){ nodes{ label } } customFields{ __typename ... on CustomFieldText{ id label valueText customFieldConfiguration{ id } } ... on CustomFieldTrueFalse{ id label valueTrueFalse customFieldConfiguration{ id } } ... on CustomFieldNumeric{ id label valueNumeric customFieldConfiguration{ id } } ... on CustomFieldDropdown{ id label valueDropdown customFieldConfiguration{ id } } } phones{ id number primary description } emails{ id address primary description } billingAddress{ street1 city province postalCode } } }`, { id: c.external_id }))?.client;
+  if (!cur) return res.status(404).json({ error: 'Not found in Jobber' });
+  const i = {};
+  if ((c.first_name || '') !== (cur.firstName || '')) i.firstName = c.first_name || '';
+  if ((c.last_name || '') !== (cur.lastName || '')) i.lastName = c.last_name || '';
+  if ((c.company_name || '') !== (cur.companyName || '')) i.companyName = c.company_name || '';
+  // Tags (Hub's 'archived' tag is Jobber's archive switch, not a tag)
+  const hubTags = new Set((c.tags || []).filter((t) => t && t !== 'archived'));
+  const jobTags = new Set((cur.tags?.nodes || []).map((t) => t.label));
+  const tAdd = [...hubTags].filter((t) => !jobTags.has(t)); const tDel = [...jobTags].filter((t) => !hubTags.has(t));
+  if (tAdd.length) i.tagsToAdd = tAdd;
+  if (tDel.length) i.tagsToDelete = tDel;
+  // Custom fields Jobber already has (matched by label): send changed values
+  const want = new Map((c.custom_fields?.jobber_fields || []).map((f) => [String(f.label || '').trim().toLowerCase(), f.value]));
+  const cfEdit = (cur.customFields || []).filter((f) => f.id && want.has(String(f.label).trim().toLowerCase())).map((f) => {
+    const v = want.get(String(f.label).trim().toLowerCase());
+    if (f.__typename === 'CustomFieldTrueFalse') return v === !!f.valueTrueFalse ? null : { id: f.id, customFieldConfigurationId: f.customFieldConfiguration?.id, valueTrueFalse: !!v };
+    if (f.__typename === 'CustomFieldNumeric') return Number(v) === Number(f.valueNumeric) ? null : { id: f.id, customFieldConfigurationId: f.customFieldConfiguration?.id, valueNumeric: Number(v) || 0 };
+    if (f.__typename === 'CustomFieldDropdown') return String(v ?? '') === String(f.valueDropdown ?? '') ? null : { id: f.id, customFieldConfigurationId: f.customFieldConfiguration?.id, valueDropdown: String(v ?? '') };
+    return String(v ?? '') === String(f.valueText ?? '') ? null : { id: f.id, customFieldConfigurationId: f.customFieldConfiguration?.id, valueText: String(v ?? '') };
+  }).filter(Boolean);
+  if (cfEdit.length) i.customFields = cfEdit;
+  if (typeof c.custom_fields?.is_company === 'boolean' && c.custom_fields.is_company !== !!cur.isCompany) i.isCompany = c.custom_fields.is_company;
+  const add = phones.filter((p) => !(cur.phones || []).some((q) => digits(q.number) === digits(p.number)));
+  const del = (cur.phones || []).filter((q) => !phones.some((p) => digits(p.number) === digits(q.number)));
+  if (add.length) i.phonesToAdd = add.map((p) => ({ number: p.number, primary: !!p.primary, smsAllowed: p.sms !== false, description: pType(p.label) }));
+  const pEdit = (cur.phones || []).map((q) => { const p = phones.find((x) => digits(x.number) === digits(q.number)); return p && (pType(p.label) !== String(q.description || '').toUpperCase() || !!p.primary !== !!q.primary) ? { id: q.id, description: pType(p.label), primary: !!p.primary } : null; }).filter(Boolean);
+  if (pEdit.length) i.phonesToEdit = pEdit;
+  if (del.length) i.phonesToDelete = del.map((q) => q.id);
+  const eAdd = emails.filter((e) => !(cur.emails || []).some((q) => low(q.address) === low(e.address)));
+  const eDel = (cur.emails || []).filter((q) => !emails.some((e) => low(e.address) === low(q.address)));
+  if (eAdd.length) i.emailsToAdd = eAdd.map((e) => ({ address: e.address, primary: !!e.primary, description: eType(e.label) }));
+  const eEdit = (cur.emails || []).map((q) => { const e = emails.find((x) => low(x.address) === low(q.address)); return e && (eType(e.label) !== String(q.description || '').toUpperCase() || !!e.primary !== !!q.primary) ? { id: q.id, description: eType(e.label), primary: !!e.primary } : null; }).filter(Boolean);
+  if (eEdit.length) i.emailsToEdit = eEdit;
+  if (eDel.length) i.emailsToDelete = eDel.map((q) => q.id);
+  const b = cur.billingAddress || {};
+  if (billing && ['street1', 'city', 'province', 'postalCode'].some((k) => String(billing[k] || '').trim() !== String(b[k] || '').trim())) i.billingAddress = billing;
+  if (!Object.keys(i).length) return res.json({ ok: true, unchanged: true });
+  if (dry) return res.json({ ok: true, dry: true, edit: i });
+  const d = await jobberQuery(`mutation($id:EncodedId!,$i:ClientEditInput!){ clientEdit(clientId:$id, input:$i){ userErrors{ message } } }`, { id: c.external_id, i });
+  const err = d?.clientEdit?.userErrors?.[0]?.message;
+  if (err) return res.status(422).json({ error: err });
+  return res.json({ ok: true, changed: Object.keys(i) });
+}
+
+// Hub archive/unarchive/delete → Jobber. Jobber has no client delete, so a Hub delete archives
+// them in Jobber and remembers they're deleted so the Jobber refresh doesn't bring them back.
+// POST { clientId, op: 'archive' | 'unarchive' | 'delete' } (owner only)
+async function handleClientArchive(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  const db = getSupabaseAdmin();
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const { data: who } = token ? await db.auth.getUser(token) : { data: null };
+  if (who?.user?.user_metadata?.role !== 'owner') return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const op = String(req.body?.op || '');
+  if (!['archive', 'unarchive', 'delete'].includes(op)) return res.status(400).json({ error: 'op must be archive | unarchive | delete' });
+  const { data: c } = await db.from('clients').select('id, external_id, tags').eq('id', String(req.body?.clientId || '')).maybeSingle();
+  if (!c) return res.status(404).json({ error: 'Client not found' });
+  if (c.external_id) {
+    const m = op === 'unarchive' ? 'clientUnarchive' : 'clientArchive';
+    const d = await jobberQuery(`mutation($id:EncodedId!){ ${m}(clientId:$id){ userErrors{ message } } }`, { id: c.external_id });
+    const err = d?.[m]?.userErrors?.[0]?.message;
+    if (err && !/already/i.test(err)) return res.status(422).json({ error: `Jobber: ${err}` });
+  }
+  if (op === 'delete') {
+    if (c.external_id) {
+      const { data: gone } = await db.from('app_state').select('value').eq('key', 'hub-deleted-clients').maybeSingle();
+      const list = new Set(Array.isArray(gone?.value) ? gone.value : []); list.add(c.external_id);
+      await db.from('app_state').upsert({ key: 'hub-deleted-clients', value: [...list] }, { onConflict: 'key' });
+    }
+    await db.from('properties').delete().eq('client_id', c.id);
+    const { error } = await db.from('clients').delete().eq('id', c.id);
+    if (error) return res.status(422).json({ error: error.message });
+  } else {
+    const t = new Set(c.tags || []); if (op === 'archive') t.add('archived'); else t.delete('archived');
+    await db.from('clients').update({ tags: [...t] }).eq('id', c.id);
+  }
+  return res.json({ ok: true });
+}
+
 async function handleLeadArchive(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const db = getSupabaseAdmin();
@@ -2383,6 +2554,8 @@ export default async function handler(req, res) {
     if (action === 'plans') return handlePlans(req, res);
     if (action === 'leads') return handleLeads(req, res);
     if (action === 'lead-archive') return handleLeadArchive(req, res);
+    if (action === 'client-push') return handleClientPush(req, res);
+    if (action === 'client-archive') return handleClientArchive(req, res);
     if (action === 'lights-job-summary') return handleLightsJobSummary(req, res);
     if (action === 'lights-job-expense') return handleLightsJobExpense(req, res);
     if (action === 'lights-quote-create') return handleLightsQuoteCreate(req, res);

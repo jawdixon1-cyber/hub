@@ -29,7 +29,7 @@ const money = (n) => `$${Math.round(n).toLocaleString()}`;
 const CACHE = 'hub-leads-cache';
 
 // Their recent Quo chat, opened under the row: texts + calls, and a reply box (you hit Send).
-function LeadChat({ phone, name, token }) {
+export function LeadChat({ phone, name, token }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
   const [text, setText] = useState('');

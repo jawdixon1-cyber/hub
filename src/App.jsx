@@ -136,18 +136,14 @@ const TEAM_ITEMS = [
   { id: 'agreement', path: '/agreement', label: 'Agreement', icon: FileText },
 ];
 
+// Building — our own CRM (replacing Jobber piece by piece). Its own sidebar section.
 const OPERATIONS_ITEMS = [
-  { id: 'home', path: '/home', label: 'Home', icon: HomeIcon },
-  { id: 'schedule', path: '/schedule', label: 'Schedule', icon: CalendarDays },
   { id: 'clients', path: '/clients', label: 'Clients', icon: Users },
-  { id: 'requests', path: '/requests', label: 'Requests', icon: Inbox },
+  { id: 'schedule', path: '/schedule', label: 'Schedule', icon: CalendarDays },
   { id: 'quotes', path: '/quotes', label: 'Quotes', icon: FileText },
   { id: 'jobs', path: '/jobs', label: 'Jobs', icon: Briefcase },
   { id: 'invoices', path: '/invoices', label: 'Invoices', icon: FileText },
   { id: 'payments', path: '/payments', label: 'Payments', icon: DollarSign },
-  { id: 'insights', path: '/insights', label: 'Insights', icon: BarChart3 },
-  { id: 'eyeballs', path: '/eyeballs', label: 'Eyeballs', icon: Eye },
-  { id: 'hangers', path: '/print/hangers', label: 'Door Hangers', icon: DoorOpen },
 ];
 
 const OWNER_TOOLS_PINNED = [
@@ -166,6 +162,11 @@ const OWNER_TOOLS_MORE = [
   { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
   { id: 'timesheets', path: '/timesheets', label: 'Timesheets', icon: Clock },
   { id: 'suppliers', path: '/suppliers', label: 'Suppliers', icon: Truck },
+  { id: 'home', path: '/home', label: 'Home', icon: HomeIcon },
+  { id: 'hub-requests', path: '/requests', label: 'Hub requests (old)', icon: Inbox },
+  { id: 'insights', path: '/insights', label: 'Insights', icon: BarChart3 },
+  { id: 'eyeballs', path: '/eyeballs', label: 'Eyeballs', icon: Eye },
+  { id: 'hangers', path: '/print/hangers', label: 'Door Hangers', icon: DoorOpen },
 ];
 const OWNER_TOOLS_ITEMS = [...OWNER_TOOLS_PINNED, ...OWNER_TOOLS_MORE];
 
@@ -780,7 +781,7 @@ function AppShell() {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [buildingOpen, setBuildingOpen] = useState(false);
+  const [buildingOpen, setBuildingOpen] = useState(true);
   const [hideBuilding] = useLocalPref(PREF_HIDE_BUILDING, false);
   const [hideSchedule] = useLocalPref(PREF_HIDE_SCHEDULE, false);
   const [ownerMoreOpen, setOwnerMoreOpen] = useState(false);
@@ -953,12 +954,36 @@ function AppShell() {
             );
           })}
 
+          {/* Building — our own CRM (Clients, Schedule, Quotes, Jobs, Invoices, Payments). */}
+          {!hideBuilding && !collapsed && (
+            <button onClick={() => setBuildingOpen((o) => !o)}
+              className="w-full flex items-center justify-between px-3 py-2 mt-1 text-xs font-semibold text-muted hover:text-secondary cursor-pointer">
+              <span className="inline-flex items-center gap-2">
+                <ChevronRight size={14} className={`transition-transform ${buildingOpen ? 'rotate-90' : ''}`} />
+                Building
+              </span>
+            </button>
+          )}
+          {!hideBuilding && buildingOpen && !collapsed && OPERATIONS_ITEMS.filter((item) => !(item.id === 'schedule' && hideSchedule)).map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.path);
+            return (
+              <button key={item.id} onClick={() => handleNav(item.path)}
+                className={`w-full flex items-center gap-2.5 px-3 pl-6 py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
+                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                }`}>
+                <Icon size={14} className="shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </button>
+            );
+          })}
+
           {!collapsed && (
             <button onClick={() => setOwnerMoreOpen((o) => !o)}
               className="w-full flex items-center justify-between px-3 py-2 mt-1 text-xs font-semibold text-muted hover:text-secondary cursor-pointer">
               <span className="inline-flex items-center gap-2">
                 <ChevronRight size={14} className={`transition-transform ${ownerMoreOpen ? 'rotate-90' : ''}`} />
-                More
+                Extra
               </span>
             </button>
           )}
@@ -968,29 +993,6 @@ function AppShell() {
             return (
               <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
                 className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
-                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-                }`}>
-                <Icon size={14} className="shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
-            );
-          })}
-
-          {/* Building — CRM modules (Clients, Jobs, Quotes, Invoices, etc.), tucked inside More.
-              Hidden entirely via Settings → Appearance. */}
-          {!hideBuilding && !collapsed && ownerMoreOpen && (
-            <button onClick={() => setBuildingOpen((o) => !o)}
-              className="w-full flex items-center justify-between px-3 pl-6 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary cursor-pointer">
-              <span>Building</span>
-              <ChevronDown size={14} className={`transition-transform ${buildingOpen ? 'rotate-180' : ''}`} />
-            </button>
-          )}
-          {!hideBuilding && ownerMoreOpen && buildingOpen && !collapsed && OPERATIONS_ITEMS.filter((item) => !(item.id === 'schedule' && hideSchedule)).map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            return (
-              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3 pl-9'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
                   active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
                 }`}>
                 <Icon size={14} className="shrink-0" />

@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { pushClientToJobber } from '../lib/jobberPush';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppStore } from '../store/AppStoreContext';
 import { ChevronDown, ChevronUp, Plus } from 'lucide-react';
@@ -113,6 +114,8 @@ export default function NewClient() {
       setSaving(false);
       return;
     }
+
+    pushClientToJobber(newClient.id);
 
     if (form.street1 || form.city) {
       await supabase.from('properties').insert({

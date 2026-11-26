@@ -6,9 +6,12 @@ import {
   Search, Loader2, Users, Phone, Mail, MapPin, ArrowLeft,
   Plus, X, RefreshCw, Home, ChevronDown, Check, TrendingUp,
   Tag, MoreHorizontal, Archive, Trash2, ExternalLink, MessageSquare, Pencil,
+  Inbox, FileSearch, Hammer, FileText, CreditCard, ClipboardCheck, UserRound,
 } from 'lucide-react';
 import { getTimezone, getTodayInTimezone } from '../utils/timezone';
 import { useAppStore } from '../store/AppStoreContext';
+import { pushClientToJobber, clientArchiveOp } from '../lib/jobberPush';
+import { LeadChat } from '../components/LeadsStep';
 import { bucketFor as requestBucketFor, STATUS_CONFIG as REQUEST_STATUS_CONFIG } from './Requests';
 
 function formatPhone(p) {
@@ -438,6 +441,56 @@ function TagPicker({ tags, onChange, allTags }) {
 const LEAD_SOURCES = ['Google', 'Facebook', 'Instagram', 'Nextdoor', 'Referral', 'Yard Sign', 'Door Hanger', 'Website', 'Thumbtack', 'existing-client', 'online-search', 'Other'];
 const ALL_TAGS = ['vip', 'commercial', 'residential', 'referral', 'pct wt', 'syncing'];
 
+/* ─── Boxed field: small label on top, input underneath (Jobber style) ─── */
+const boxInput = 'w-full bg-transparent text-sm text-primary placeholder:text-muted focus:outline-none';
+function LabeledBox({ label, children }) {
+  return (
+    <label className="block px-3 pt-2 pb-2 focus-within:bg-surface-alt/60">
+      <span className="block text-[11px] text-muted leading-tight">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+/* ─── Lead source dropdown: every source you've used + the usual ones; type to add a new one ─── */
+function LeadSourcePicker({ value, onChange, bare = false }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const used = [...new Set((clientsCache.all || []).map((c) => (c.lead_source || '').trim()).filter(Boolean))];
+  const all = [...new Set([...LEAD_SOURCES.filter((x) => x !== 'Other'), ...used])].sort((a, b) => a.localeCompare(b));
+  const shown = all.filter((x) => x.toLowerCase().includes(q.trim().toLowerCase()));
+  const pick = (v) => { onChange(v); setOpen(false); setQ(''); };
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full text-left px-3 pt-2 pb-2 cursor-pointer flex items-end justify-between">
+        <span>{!bare && <span className="block text-[11px] text-muted leading-tight">Lead source</span>}<span className={`text-sm ${value ? 'text-primary' : 'text-muted'}`}>{value || 'Choose one'}</span></span>
+        <ChevronDown size={16} className="text-muted mb-0.5" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-card border border-border-default rounded-lg shadow-2xl">
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search or type a new one…"
+              onKeyDown={(e) => { if (e.key === 'Enter' && q.trim()) pick(shown[0] && shown[0].toLowerCase() === q.trim().toLowerCase() ? shown[0] : q.trim()); }}
+              className="w-full px-3 py-2 bg-transparent border-b border-border-subtle text-sm text-primary focus:outline-none" />
+            <div className="max-h-56 overflow-y-auto py-1">
+              {value && <button type="button" onClick={() => pick('')} className="w-full px-3 py-2 text-left text-sm text-muted hover:bg-surface-alt cursor-pointer">None</button>}
+              {shown.map((x) => (
+                <button type="button" key={x} onClick={() => pick(x)} className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface-alt cursor-pointer flex items-center justify-between">
+                  {x}{x === value && <Check size={14} className="text-brand" />}
+                </button>
+              ))}
+              {q.trim() && !all.some((x) => x.toLowerCase() === q.trim().toLowerCase()) && (
+                <button type="button" onClick={() => pick(q.trim())} className="w-full px-3 py-2 text-left text-sm text-brand-text hover:bg-surface-alt cursor-pointer">+ Add “{q.trim()}”</button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ─── Edit Client Modal ─── */
 export function EditClientModal({ client, properties = [], onClose, onSave, onPropertiesChange, orgId, inline = false }) {
   const bizSettings = useAppStore((s) => s.businessSettings) || {};
@@ -448,11 +501,16 @@ export function EditClientModal({ client, properties = [], onClose, onSave, onPr
     first_name: client.first_name || '',
     last_name: client.last_name || '',
     company_name: client.company_name || '',
-    phone: primaryPhone(client.phones) || '',
-    email: primaryEmail(client.emails) || '',
+    phones: (client.phones || []).length ? client.phones.map((p) => ({ number: formatPhone(p), label: p.label || 'Main', primary: !!p.primary, sms: p.sms !== false })) : [{ number: '', label: 'Main', primary: true, sms: true }],
+    emails: (client.emails || []).length ? client.emails.map((e) => ({ address: formatEmail(e), label: e.label || 'Main', primary: !!e.primary })) : [{ address: '', label: 'Main', primary: true }],
     lead_source: client.lead_source || '',
     tags: client.tags || [],
     receives_messages: client.custom_fields?.receives_messages !== false,
+    role: client.custom_fields?.role || '',
+    is_company: !!client.custom_fields?.is_company,
+    billing_contact: !!client.custom_fields?.billing_contact,
+    payment_terms: client.custom_fields?.payment_terms || 'Residential default (3 Days)',
+    extra_fields: (client.custom_fields?.jobber_fields || []).map((f) => ({ ...f })),
     prop_name: primaryProp?.label || 'Primary',
     prop_street: primaryProp?.street || '',
     prop_street2: '',
@@ -528,15 +586,18 @@ export function EditClientModal({ client, properties = [], onClose, onSave, onPr
       first_name: form.first_name || null,
       last_name: form.last_name || null,
       company_name: form.company_name || null,
-      phones: form.phone ? [{ number: form.phone, label: 'Main', primary: true }] : [],
-      emails: form.email ? [{ address: form.email, label: 'Main', primary: true }] : [],
+      // Every phone/email (not just the first) — Jobber gets the same list.
+      phones: form.phones.filter((p) => p.number.trim()).map((p, i, a) => ({ ...p, number: p.number.trim(), primary: a.some((x) => x.primary) ? !!p.primary : i === 0 })),
+      emails: form.emails.filter((e) => e.address.trim()).map((e, i, a) => ({ ...e, address: e.address.trim(), primary: a.some((x) => x.primary) ? !!e.primary : i === 0 })),
       lead_source: form.lead_source || null,
       tags: form.tags,
       billing_street: form.billing_same ? (form.prop_street || null) : (form.billing_street || null),
       billing_city: form.billing_same ? (form.prop_city || null) : (form.billing_city || null),
       billing_state: form.billing_same ? (form.prop_state || null) : (form.billing_state || null),
       billing_zip: form.billing_same ? (form.prop_zip || null) : (form.billing_zip || null),
-      custom_fields: { ...(client.custom_fields || {}), title: form.title || null, receives_messages: form.receives_messages },
+      custom_fields: { ...(client.custom_fields || {}), title: form.title || null, receives_messages: form.receives_messages,
+        role: form.role || null, is_company: form.is_company, billing_contact: form.billing_contact, payment_terms: form.payment_terms,
+        jobber_fields: form.extra_fields.filter((f) => String(f.label || '').trim()) },
       updated_at: new Date().toISOString(),
     });
     setSaving(false);
@@ -551,69 +612,127 @@ export function EditClientModal({ client, properties = [], onClose, onSave, onPr
         : "relative bg-card border border-border-subtle rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col"}>
         <div className="h-1 bg-brand rounded-t-2xl shrink-0" />
         <div className="flex items-center justify-between px-6 py-3 border-b border-border-subtle shrink-0">
-          <h2 className={inline ? "text-xl font-black text-primary" : "text-base font-bold text-primary"}>Edit Client</h2>
+          <h2 className="text-2xl font-black text-primary">Edit Client</h2>
           <button onClick={onClose} className="p-1 text-muted hover:text-primary cursor-pointer"><X size={16} /></button>
         </div>
         <div className={inline ? "p-6 space-y-5" : "flex-1 overflow-y-auto p-6 space-y-5"}>
-          {/* Primary contact details — connected fields */}
+          {/* Primary contact details — Jobber-style boxed fields with a small label on top */}
           <div>
-            <h3 className="text-xs font-bold text-muted uppercase mb-1">Primary contact details</h3>
-            <p className="text-[11px] text-muted mb-3">Provide the main point of contact to ensure smooth communication and reliable client records.</p>
-            <div className="rounded-lg border border-border-subtle overflow-hidden">
-              <div className="grid grid-cols-[100px_1fr_1fr]">
-                <select value={form.title || ''} onChange={e => set('title', e.target.value)}
-                  className="px-3 py-2.5 bg-surface-alt text-sm text-primary focus:outline-none border-r border-border-subtle">
-                  <option value="">No title</option>
-                  <option>Mr.</option>
-                  <option>Ms.</option>
-                  <option>Mrs.</option>
-                  <option>Miss.</option>
-                  <option>Dr.</option>
-                </select>
-                <input value={form.first_name} onChange={e => set('first_name', e.target.value)} placeholder="First name"
-                  className="px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-r border-border-subtle" />
-                <input value={form.last_name} onChange={e => set('last_name', e.target.value)} placeholder="Last name"
-                  className="px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none" />
+            <h3 className="text-xl font-bold text-primary">Primary contact details</h3>
+            <p className="text-xs text-secondary mb-3">Provide the main point of contact to ensure smooth communication and reliable client records</p>
+            <div className="rounded-lg border border-border-default overflow-hidden">
+              <div className="grid grid-cols-[110px_1fr_1fr] divide-x divide-border-default">
+                <LabeledBox label="Title">
+                  <select value={form.title || ''} onChange={e => set('title', e.target.value)} className="w-full bg-transparent text-sm text-primary focus:outline-none">
+                    <option value="">No title</option>
+                    {['Mr.', 'Ms.', 'Mrs.', 'Miss.', 'Dr.'].map((t) => <option key={t}>{t}</option>)}
+                  </select>
+                </LabeledBox>
+                <LabeledBox label="First name"><input value={form.first_name} onChange={e => set('first_name', e.target.value)} className={boxInput} /></LabeledBox>
+                <LabeledBox label="Last name"><input value={form.last_name} onChange={e => set('last_name', e.target.value)} className={boxInput} /></LabeledBox>
               </div>
-              <input value={form.company_name} onChange={e => set('company_name', e.target.value)} placeholder="Company name"
-                className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-t border-border-subtle" />
+              <div className="border-t border-border-default">
+                <LabeledBox label="Company name"><input value={form.company_name} onChange={e => set('company_name', e.target.value)} className={boxInput} /></LabeledBox>
+              </div>
+              <div className="border-t border-border-default">
+                <LabeledBox label="Role"><input value={form.role} onChange={e => set('role', e.target.value)} placeholder="e.g. Property manager" className={boxInput} /></LabeledBox>
+              </div>
             </div>
+            <label className="flex items-center gap-2 mt-3 cursor-pointer text-sm text-primary">
+              <input type="checkbox" checked={form.is_company} onChange={e => set('is_company', e.target.checked)} className="w-4 h-4 accent-brand" />
+              Commercial client: Use company name as client name
+            </label>
+            <label className="flex items-center gap-2 mt-2 cursor-pointer text-sm text-primary">
+              <input type="checkbox" checked={form.billing_contact} onChange={e => set('billing_contact', e.target.checked)} className="w-4 h-4 accent-brand" />
+              Set as billing contact
+            </label>
           </div>
 
-          {/* Communication */}
+          {/* Communication — every phone and email, each with its type; + adds another */}
           <div>
-            <h3 className="text-xs font-bold text-muted uppercase mb-3">Communication</h3>
-            <div className="rounded-lg border border-border-subtle overflow-hidden">
-              <input value={form.phone} onChange={e => set('phone', e.target.value)} type="tel" placeholder="Phone number"
-                className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none" />
-              <div className="flex items-center justify-between px-3 py-2 border-t border-border-subtle bg-surface-alt">
-                <span className="text-[11px] font-medium text-secondary">Receives messages</span>
+            <h3 className="text-xl font-bold text-primary mb-3">Communication</h3>
+            <div className="space-y-2">
+              {form.phones.map((p, i) => (
+                <div key={`p${i}`} className="flex gap-2">
+                  <div className="flex-1 flex rounded-lg border border-border-default overflow-hidden divide-x divide-border-default">
+                    <div className="flex-1"><LabeledBox label="Phone number"><input value={p.number} type="tel" onChange={e => set('phones', form.phones.map((x, k) => k === i ? { ...x, number: e.target.value } : x))} className={boxInput} /></LabeledBox></div>
+                    <select value={p.label} onChange={e => set('phones', form.phones.map((x, k) => k === i ? { ...x, label: e.target.value } : x))} className="w-28 px-3 bg-transparent text-sm text-primary focus:outline-none cursor-pointer">
+                      {['Main', 'Mobile', 'Work', 'Home', 'Fax', 'Other'].map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  {i === form.phones.length - 1
+                    ? <button type="button" title="Add phone" onClick={() => set('phones', [...form.phones, { number: '', label: 'Mobile', primary: false, sms: true }])} className="w-12 rounded-lg border border-border-default text-brand hover:bg-surface-alt cursor-pointer flex items-center justify-center"><Plus size={16} /></button>
+                    : <button type="button" title="Remove phone" onClick={() => set('phones', form.phones.filter((_, k) => k !== i))} className="w-12 rounded-lg border border-border-default text-muted hover:text-red-500 cursor-pointer flex items-center justify-center"><X size={16} /></button>}
+                </div>
+              ))}
+              <div className="flex items-center gap-2 py-1">
                 <button type="button" onClick={() => set('receives_messages', !form.receives_messages)}
-                  className={`relative w-10 h-[22px] rounded-full transition-colors shrink-0 ${form.receives_messages ? 'bg-brand' : 'bg-zinc-600'}`}>
+                  className={`relative w-10 h-[22px] rounded-full transition-colors shrink-0 cursor-pointer ${form.receives_messages ? 'bg-brand' : 'bg-zinc-400'}`}>
                   <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${form.receives_messages ? 'translate-x-[18px]' : 'translate-x-0'}`} />
                 </button>
+                <span className="text-sm text-primary">Receives messages</span>
               </div>
-              <input value={form.email} onChange={e => set('email', e.target.value)} type="email" placeholder="Email"
-                className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none border-t border-border-subtle" />
+              {form.emails.map((em, i) => (
+                <div key={`e${i}`} className="flex gap-2">
+                  <div className="flex-1 flex rounded-lg border border-border-default overflow-hidden divide-x divide-border-default">
+                    <div className="flex-1"><LabeledBox label="Email"><input value={em.address} type="email" onChange={e => set('emails', form.emails.map((x, k) => k === i ? { ...x, address: e.target.value } : x))} className={boxInput} /></LabeledBox></div>
+                    <select value={em.label} onChange={e => set('emails', form.emails.map((x, k) => k === i ? { ...x, label: e.target.value } : x))} className="w-28 px-3 bg-transparent text-sm text-primary focus:outline-none cursor-pointer">
+                      {['Main', 'Work', 'Personal', 'Other'].map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  {i === form.emails.length - 1
+                    ? <button type="button" title="Add email" onClick={() => set('emails', [...form.emails, { address: '', label: 'Work', primary: false }])} className="w-12 rounded-lg border border-border-default text-brand hover:bg-surface-alt cursor-pointer flex items-center justify-center"><Plus size={16} /></button>
+                    : <button type="button" title="Remove email" onClick={() => set('emails', form.emails.filter((_, k) => k !== i))} className="w-12 rounded-lg border border-border-default text-muted hover:text-red-500 cursor-pointer flex items-center justify-center"><X size={16} /></button>}
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Lead information */}
+          {/* Payment terms */}
           <div>
-            <h3 className="text-xs font-bold text-muted uppercase mb-3">Lead information</h3>
-            <div>
-              <label className="text-[10px] font-bold text-muted uppercase">Lead source</label>
-              <DropdownPicker value={form.lead_source} onChange={v => set('lead_source', v)} options={LEAD_SOURCES} placeholder="Select lead source" />
+            <h3 className="text-xl font-bold text-primary mb-3">Payment terms</h3>
+            <div className="rounded-lg border border-border-default relative">
+              <LabeledBox label="Payment terms">
+                <select value={form.payment_terms} onChange={e => set('payment_terms', e.target.value)} className="w-full bg-transparent text-sm text-primary focus:outline-none cursor-pointer appearance-none">
+                  {['Residential default (3 Days)', 'Due upon receipt', 'Net 7', 'Net 15', 'Net 30', 'Net 60'].map((t) => <option key={t}>{t}</option>)}
+                </select>
+              </LabeledBox>
+              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
             </div>
-            <div className="mt-3">
-              <label className="text-[10px] font-bold text-muted uppercase">Tags</label>
+          </div>
+
+          {/* Lead information — label on the left, like Jobber */}
+          <div>
+            <h3 className="text-xl font-bold text-primary mb-3">Lead information</h3>
+            <div className="grid grid-cols-[120px_1fr] items-center gap-3">
+              <span className="text-sm text-primary">Lead source</span>
+              <div className="rounded-lg border border-border-default"><LeadSourcePicker bare value={form.lead_source} onChange={(v) => set('lead_source', v)} /></div>
+              <span className="text-sm text-primary">Tags</span>
               <TagPicker tags={form.tags} onChange={v => set('tags', v)} allTags={ALL_TAGS} />
+            </div>
+          </div>
+
+          {/* Additional client details — custom fields (Dog? …) */}
+          <div className="rounded-lg bg-surface-alt p-4 space-y-2">
+            <h3 className="text-lg font-bold text-primary">Additional client details</h3>
+            {form.extra_fields.map((f, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
+                <input value={f.label} onChange={e => set('extra_fields', form.extra_fields.map((x, k) => k === i ? { ...x, label: e.target.value } : x))} placeholder="Field (e.g. Gate code)" className="rounded-md border border-border-default bg-card px-2 py-1.5 text-sm text-primary" />
+                {f.type === 'TrueFalse'
+                  ? <select value={f.value ? 'Yes' : 'No'} onChange={e => set('extra_fields', form.extra_fields.map((x, k) => k === i ? { ...x, value: e.target.value === 'Yes' } : x))} className="rounded-md border border-border-default bg-card px-2 py-1.5 text-sm text-primary"><option>Yes</option><option>No</option></select>
+                  : <input value={f.value ?? ''} onChange={e => set('extra_fields', form.extra_fields.map((x, k) => k === i ? { ...x, value: e.target.value } : x))} placeholder="Value" className="rounded-md border border-border-default bg-card px-2 py-1.5 text-sm text-primary" />}
+                <button type="button" onClick={() => set('extra_fields', form.extra_fields.filter((_, k) => k !== i))} className="p-1 text-muted hover:text-red-500 cursor-pointer"><X size={14} /></button>
+              </div>
+            ))}
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] text-muted">Track extra details like gate codes or pets.</p>
+              <button type="button" onClick={() => set('extra_fields', [...form.extra_fields, { label: '', value: '', type: 'Text' }])} className="rounded-lg border border-border-default px-3 py-1.5 text-xs font-bold text-brand-text hover:bg-card cursor-pointer">Add Custom Field</button>
             </div>
           </div>
 
           {/* Property address */}
           <div>
-            <h3 className="text-xs font-bold text-muted uppercase mb-3">Property address</h3>
+            <h3 className="text-xl font-bold text-primary mb-3">Property address</h3>
             <div className="rounded-lg border border-border-subtle overflow-hidden relative">
               <input value={form.prop_name} onChange={e => set('prop_name', e.target.value)} placeholder="Property name"
                 className="w-full px-3 py-2.5 bg-surface-alt text-sm text-primary placeholder:text-muted focus:outline-none" />
@@ -1577,14 +1696,29 @@ function ClientScheduleSection({ clientId }) {
 
 function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, archiveClient, deleteClient, onClientUpdate, clientIsLead }) {
   const navigate = useNavigate();
-  const name = [client.first_name, client.last_name].filter(Boolean).join(' ') || client.company_name || 'Unknown';
+  const name = (client.custom_fields?.is_company && client.company_name) || [client.first_name, client.last_name].filter(Boolean).join(' ') || client.company_name || 'Unknown';
   const phone = primaryPhone(client.phones);
-  const email = primaryEmail(client.emails);
   const billingAddr = [client.billing_street, client.billing_city, client.billing_state, client.billing_zip].filter(Boolean).join(', ');
   const [workTab, setWorkTab] = useState('jobs');
   const [editProperty, setEditProperty] = useState(null);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [tab, setTab] = useState('info'); // info | comm | files
+  const [contactKey, setContactKey] = useState(0);
+  const { session } = useAuth();
+  const cf = client.custom_fields || {};
+  const infoRows = [
+    ...(client.phones || []).map((p, i) => [`${p.label || 'Main'} phone`, <a key={`p${i}`} href={`tel:${formatPhone(p)}`} className="text-brand-text underline">{formatPhone(p)}</a>]),
+    ...(client.emails || []).map((e, i) => [`${e.label || 'Main'} email`, <a key={`e${i}`} href={`mailto:${formatEmail(e)}`} className="text-brand-text underline break-all">{formatEmail(e)}</a>]),
+  ];
+  const sideRows = [
+    cf.payment_terms && ['Payment terms', cf.payment_terms],
+    client.lead_source && ['Lead source', client.lead_source],
+    cf.role && ['Role', cf.role],
+    cf.title && ['Title', cf.title],
+    ['Ask for a review', cf.receives_reviews === false ? 'No' : 'Yes'],
+    ...(cf.jobber_fields || []).map((f) => [f.label, f.value === true ? 'Yes' : f.value === false ? 'No' : String(f.value ?? '—')]),
+  ].filter(Boolean);
   return (
     <div>
       {editProperty && (
@@ -1623,49 +1757,42 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
                     )}
                   </div>
                   <h1 className="text-2xl font-black text-primary leading-tight">{name}</h1>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3">
-                    {phone ? (
-                      <a href={`tel:${phone}`} className="inline-flex items-center gap-1.5 text-xs text-secondary hover:text-brand-text">
-                        <Phone size={12} className="text-muted" /> {phone}
-                      </a>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-muted"><Phone size={12} /> No phone</span>
-                    )}
-                    {email ? (
-                      <a href={`mailto:${email}`} className="inline-flex items-center gap-1.5 text-xs text-secondary hover:text-brand-text break-all">
-                        <Mail size={12} className="text-muted" /> {email}
-                      </a>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-muted"><Mail size={12} /> No email</span>
-                    )}
-                  </div>
+                  {(() => { const person = [client.first_name, client.last_name].filter(Boolean).join(' '); const sub = client.custom_fields?.is_company ? person : client.company_name; return sub ? <p className="text-base font-semibold text-muted mt-0.5">{sub}</p> : null; })()}
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {phone && (
-                  <a href={`sms:${phone}`} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-alt border border-border-subtle text-xs font-semibold text-secondary hover:text-primary cursor-pointer">
-                    <MessageSquare size={13} /> Text
-                  </a>
-                )}
-                {email && (
-                  <a href={`mailto:${email}`} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-alt border border-border-subtle text-xs font-semibold text-secondary hover:text-primary cursor-pointer">
-                    <Mail size={13} /> Email
-                  </a>
-                )}
                 <div className="relative">
                   <button onClick={() => setShowCreateMenu(o => !o)}
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand text-on-brand text-xs font-bold hover:bg-brand-hover cursor-pointer">
                     <Plus size={13} /> Create
                   </button>
                   {showCreateMenu && (
-                    <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border-subtle rounded-lg shadow-2xl min-w-[150px] py-1">
-                      {['Request', 'Quote', 'Job', 'Invoice'].map(item => (
-                        <button key={item} onClick={() => setShowCreateMenu(false)}
-                          className="w-full px-4 py-2 text-left text-xs font-medium text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
-                          {item}
-                        </button>
-                      ))}
+                    <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowCreateMenu(false)} />
+                    <div className="absolute right-0 top-full mt-2 z-50 bg-card border border-border-subtle rounded-xl shadow-2xl min-w-[200px] py-2">
+                      {(() => {
+                        // Until Hub has its own Requests/Quotes/Jobs/Invoices, these open Jobber's create screen for this client.
+                        const jid = (() => { try { return atob(client.external_id || '').split('/').pop(); } catch { return ''; } })();
+                        const jobber = (path) => () => window.open(jid ? `https://secure.getjobber.com/${path}${path.includes('?') ? '&' : '?'}client_id=${jid}` : 'https://secure.getjobber.com', '_blank');
+                        const jobberClient = () => window.open(jid ? `https://secure.getjobber.com/clients/${jid}` : 'https://secure.getjobber.com', '_blank');
+                        return [
+                          ['Request', Inbox, 'text-orange-500', jobber('work_requests/new')],
+                          ['Quote', FileSearch, 'text-rose-400', jobber('quotes/new')],
+                          ['Job', Hammer, 'text-emerald-500', jobber('work_orders/new')],
+                          ['Invoice', FileText, 'text-sky-500', jobber('invoices/new')],
+                          ['Payment', CreditCard, 'text-sky-500', jobberClient],
+                          ['Task', ClipboardCheck, 'text-muted', jobberClient],
+                          ['Property', Home, 'text-primary', () => { setTab('info'); setEditProperty('new'); }],
+                          ['Contact', UserRound, 'text-primary', () => { setTab('info'); setContactKey((k) => k + 1); }],
+                        ].map(([label, Icon, color, go]) => (
+                          <button key={label} onClick={() => { setShowCreateMenu(false); go(); }}
+                            className="w-full px-4 py-2.5 text-left text-sm font-semibold text-primary hover:bg-surface-alt cursor-pointer flex items-center gap-3">
+                            <Icon size={18} className={color} /> {label}
+                          </button>
+                        ));
+                      })()}
                     </div>
+                    </>
                   )}
                 </div>
                 <button onClick={() => navigate(`/clients/${client.client_number ?? client.id}/edit`)}
@@ -1699,8 +1826,30 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
                 </div>
               </div>
             </div>
+            {/* Contact + details rows (like Jobber's header) */}
+            <div className="grid md:grid-cols-2 gap-x-8 px-6 pb-5 text-sm">
+              <div>{infoRows.map(([k, v], i) => <div key={i} className="flex gap-4 py-2 border-b border-border-subtle/60"><span className="w-32 shrink-0 text-muted">{k}</span><span className="min-w-0">{v}</span></div>)}</div>
+              <div>{sideRows.map(([k, v], i) => <div key={i} className="flex gap-4 py-2 border-b border-border-subtle/60"><span className="w-32 shrink-0 text-muted">{k}</span><span className="text-primary">{v}</span></div>)}</div>
+            </div>
           </div>
 
+          {/* Tabs */}
+          <div className="flex gap-6 border-b border-border-subtle px-1">
+            {[['info', 'Client information'], ['comm', 'Communication'], ['files', 'Files and media']].map(([k, l]) => (
+              <button key={k} onClick={() => setTab(k)} className={`pb-2.5 text-sm font-semibold border-b-2 -mb-px cursor-pointer ${tab === k ? 'border-brand text-primary' : 'border-transparent text-muted hover:text-primary'}`}>{l}</button>
+            ))}
+          </div>
+
+          {tab === 'comm' && (
+            <div className="rounded-xl bg-card border border-border-subtle p-5">
+              {phone ? <LeadChat phone={phone} name={name} token={session?.access_token || ''} /> : <p className="text-sm text-muted">No phone on file.</p>}
+            </div>
+          )}
+          {tab === 'files' && (
+            <div className="rounded-xl bg-card border border-border-subtle p-8 text-center text-sm text-muted">Photos and files for this client will show here.</div>
+          )}
+
+          {tab === 'info' && <>
           {/* 2. Properties (Primary first, then any additional) */}
           <div className="rounded-xl bg-card border border-border-subtle p-5">
             <div className="flex items-center justify-between mb-3">
@@ -1744,6 +1893,8 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
             )}
           </div>
 
+          <ClientContactsCard key={contactKey} startOpen={contactKey > 0} client={client} onClientUpdate={onClientUpdate} />
+
           {/* 3. Work overview — separate card */}
           <WorkOverviewSection clientId={client.id} workTab={workTab} setWorkTab={setWorkTab} />
 
@@ -1753,6 +1904,7 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
 
           {/* 6. Client schedule — every activity ever scheduled for this client */}
           <ClientScheduleSection clientId={client.id} />
+          </>}
         </div>
 
         {/* ─── Right: sidebar ─── */}
@@ -1772,11 +1924,15 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
             </div>
           </div>
 
+          <ClientTagsCard client={client} onClientUpdate={onClientUpdate} />
+
           {/* Last communication */}
           <div className="rounded-xl bg-card border border-border-subtle p-4">
             <h3 className="text-[11px] font-bold text-muted uppercase tracking-wider mb-2">Last Communication</h3>
             <p className="text-xs text-muted">No communications yet</p>
           </div>
+
+          <ClientNotesCard client={client} onClientUpdate={onClientUpdate} />
 
         </div>
       </div>
@@ -1784,14 +1940,197 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
   );
 }
 
+/* ─── Tags card (syncs to Jobber) ─── */
+function ClientTagsCard({ client, onClientUpdate }) {
+  const [adding, setAdding] = useState(false);
+  const [t, setT] = useState('');
+  const tags = (client.tags || []).filter((x) => x !== 'archived');
+  const save = (next) => onClientUpdate(client.id, { tags: [...next, ...((client.tags || []).includes('archived') ? ['archived'] : [])] });
+  const add = () => { const v = t.trim(); if (v && !tags.includes(v)) save([...tags, v]); setT(''); setAdding(false); };
+  return (
+    <div className="rounded-xl bg-card border border-border-subtle p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-[11px] font-bold text-muted uppercase tracking-wider">Tags</h3>
+        <button onClick={() => setAdding(true)} className="p-1 rounded-md border border-border-subtle text-brand-text hover:bg-surface-alt cursor-pointer" title="Add tag"><Plus size={13} /></button>
+      </div>
+      {adding && (
+        <input autoFocus value={t} onChange={(e) => setT(e.target.value)} onBlur={add} onKeyDown={(e) => { if (e.key === 'Enter') add(); if (e.key === 'Escape') { setT(''); setAdding(false); } }}
+          placeholder="New tag…" className="w-full mb-2 rounded-md border border-border-default bg-surface-alt px-2 py-1.5 text-sm text-primary focus:outline-none" />
+      )}
+      {tags.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map((x) => (
+            <span key={x} className="inline-flex items-center gap-1 rounded-full bg-brand/15 text-brand-text px-2 py-0.5 text-xs font-semibold">
+              {x}<button onClick={() => save(tags.filter((y) => y !== x))} className="hover:text-red-500 cursor-pointer" title="Remove"><X size={11} /></button>
+            </span>
+          ))}
+        </div>
+      ) : !adding && <p className="text-xs text-muted">This client has no tags</p>}
+    </div>
+  );
+}
+
+/* ─── Internal notes for you / the crew ─── */
+function ClientNotesCard({ client, onClientUpdate }) {
+  const [text, setText] = useState(client.notes || '');
+  const [saved, setSaved] = useState(false);
+  const dirty = text !== (client.notes || '');
+  const save = async () => { if (!dirty) return; await onClientUpdate(client.id, { notes: text.trim() || null }); setSaved(true); setTimeout(() => setSaved(false), 1500); };
+  return (
+    <div className="rounded-xl bg-card border border-border-subtle p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-[11px] font-bold text-muted uppercase tracking-wider">Notes</h3>
+        {saved && <span className="text-[11px] text-emerald-500 font-semibold">Saved</span>}
+      </div>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={save} rows={4}
+        placeholder="Leave an internal note for yourself or a team member"
+        className="w-full rounded-lg border border-dashed border-border-default bg-transparent p-2.5 text-sm text-primary placeholder:text-muted focus:outline-none focus:border-brand/60 resize-y" />
+    </div>
+  );
+}
+
+/* ─── Contacts: other people for this client (spouse, property manager…) ─── */
+function ClientContactsCard({ client, onClientUpdate, startOpen = false }) {
+  const list = client.custom_fields?.contacts || [];
+  const [form, setForm] = useState(() => (startOpen ? { name: '', role: '', phone: '', email: '' } : null)); // { name, role, phone, email }
+  const save = (next) => onClientUpdate(client.id, { custom_fields: { ...(client.custom_fields || {}), contacts: next } });
+  const inp = 'rounded-md border border-border-default bg-surface-alt px-2 py-1.5 text-sm text-primary focus:outline-none';
+  return (
+    <div className="rounded-xl bg-card border border-border-subtle p-5">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-secondary"><b className="text-primary">Contacts</b>{!list.length && ' – Add contacts to keep track of everyone you communicate with'}</p>
+        {!form && <button onClick={() => setForm({ name: '', role: '', phone: '', email: '' })} className="text-[12px] font-semibold text-brand-text hover:underline cursor-pointer">Add Contact</button>}
+      </div>
+      {list.length > 0 && (
+        <div className="mt-3 divide-y divide-border-subtle">
+          {list.map((c, i) => (
+            <div key={i} className="flex items-center justify-between py-2 text-sm">
+              <div><span className="font-semibold text-primary">{c.name}</span>{c.role && <span className="text-muted"> · {c.role}</span>}
+                <div className="text-xs text-secondary">{[c.phone, c.email].filter(Boolean).join(' · ')}</div></div>
+              <button onClick={() => save(list.filter((_, k) => k !== i))} className="p-1 text-muted hover:text-red-500 cursor-pointer" title="Remove"><X size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      {form && (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Name" className={inp} />
+          <input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="Role (spouse, property manager…)" className={inp} />
+          <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Phone" className={inp} />
+          <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email" className={inp} />
+          <div className="col-span-2 flex justify-end gap-2">
+            <button onClick={() => setForm(null)} className="px-3 py-1.5 text-xs font-semibold text-muted cursor-pointer">Cancel</button>
+            <button disabled={!form.name.trim()} onClick={() => { save([...list, { ...form, name: form.name.trim() }]); setForm(null); }} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold disabled:opacity-40 cursor-pointer">Save contact</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Bulk actions (checkbox selection on the list) ─── */
+const e164 = (raw) => { const d = String(raw?.number || raw || '').replace(/\D/g, ''); return d.length === 10 ? `+1${d}` : d.length === 11 && d[0] === '1' ? `+${d}` : ''; };
+
+// Text everyone selected from the work Quo line. {first} = their first name. Sends one at a time.
+function BulkTextModal({ clients, onClose }) {
+  const { session } = useAuth();
+  const token = session?.access_token || '';
+  const [msg, setMsg] = useState('Hi {first}, ');
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState([]); // { name, ok, err }
+  const withPhone = clients.filter((c) => e164((c.phones || []).find((p) => p.primary) || c.phones?.[0]));
+  const noPhone = clients.length - withPhone.length;
+  const fill = (c) => msg.replace(/\{first\}/g, (c.first_name || '').trim() || 'there');
+  const send = async () => {
+    setSending(true);
+    const h = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+    let line = null;
+    for (const c of withPhone) {
+      const to = e164((c.phones || []).find((p) => p.primary) || c.phones?.[0]);
+      const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Client';
+      try {
+        if (!line) { const t = await fetch('/api/quo?action=thread', { method: 'POST', headers: h, body: JSON.stringify({ phone: to }) }).then((r) => r.json()); line = t.phoneNumberId; }
+        const r = await fetch('/api/quo?action=send', { method: 'POST', headers: h, body: JSON.stringify({ phoneNumberId: line, to, content: fill(c) }) });
+        const j = await r.json().catch(() => ({}));
+        setDone((d) => [...d, { name, ok: r.ok, err: j.error }]);
+      } catch (e) { setDone((d) => [...d, { name, ok: false, err: e.message }]); }
+    }
+    setSending(false);
+  };
+  const finished = done.length === withPhone.length && done.length > 0;
+  const sample = withPhone[0];
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !sending && onClose()}>
+      <div className="w-full max-w-lg rounded-2xl bg-card border border-border-subtle p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold text-primary">Text {withPhone.length} client{withPhone.length === 1 ? '' : 's'}</h3>
+          <button onClick={onClose} disabled={sending} className="p-1 text-muted hover:text-primary cursor-pointer"><X size={16} /></button>
+        </div>
+        {noPhone > 0 && <p className="text-xs text-amber-600">{noPhone} selected have no phone and will be skipped.</p>}
+        {!done.length && <>
+          <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={5} className="w-full rounded-lg border border-border-default bg-surface-alt p-3 text-sm text-primary" />
+          <p className="text-[11px] text-muted">{'{first}'} = their first name · {msg.length} characters · sent one by one from your work Quo line, ~1–2¢ each</p>
+          {sample && <div className="rounded-lg bg-surface-alt p-3 text-xs text-secondary"><b className="text-primary">Preview ({sample.first_name || 'Client'}):</b> {fill(sample)}</div>}
+          <div className="flex justify-end gap-2">
+            <button onClick={onClose} className="px-3 py-2 rounded-lg border border-border-default text-sm font-semibold text-primary cursor-pointer">Cancel</button>
+            <button disabled={!msg.replace('{first}', '').trim() || !withPhone.length} onClick={send} className="px-4 py-2 rounded-lg bg-brand text-on-brand text-sm font-bold disabled:opacity-40 cursor-pointer">Send to {withPhone.length}</button>
+          </div>
+        </>}
+        {done.length > 0 && <>
+          <p className="text-sm font-semibold text-primary">{finished ? 'Done' : 'Sending…'} {done.filter((d) => d.ok).length}/{withPhone.length} sent{done.some((d) => !d.ok) ? ` · ${done.filter((d) => !d.ok).length} failed` : ''}</p>
+          <div className="max-h-48 overflow-y-auto text-xs space-y-0.5">{done.map((d, i) => <p key={i} className={d.ok ? 'text-secondary' : 'text-red-500'}>{d.ok ? '✓' : '✕'} {d.name}{d.err ? ` — ${d.err}` : ''}</p>)}</div>
+          {finished && <div className="flex justify-end"><button onClick={onClose} className="px-4 py-2 rounded-lg bg-brand text-on-brand text-sm font-bold cursor-pointer">Close</button></div>}
+        </>}
+      </div>
+    </div>
+  );
+}
+
+// Add or remove one tag on everyone selected (Hub tags).
+function BulkTagModal({ clients, onClose, onSaved }) {
+  const [tag, setTag] = useState('');
+  const [busy, setBusy] = useState(false);
+  const run = async (add) => {
+    const t = tag.trim(); if (!t) return;
+    setBusy(true);
+    for (const c of clients) {
+      const tags = new Set(c.tags || []);
+      if (add) tags.add(t); else tags.delete(t);
+      await supabase.from('clients').update({ tags: [...tags] }).eq('id', c.id);
+      pushClientToJobber(c.id);
+    }
+    setBusy(false); onSaved(); onClose();
+  };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !busy && onClose()}>
+      <div className="w-full max-w-sm rounded-2xl bg-card border border-border-subtle p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-primary">Tag {clients.length} client{clients.length === 1 ? '' : 's'}</h3>
+        <input autoFocus value={tag} onChange={(e) => setTag(e.target.value)} placeholder="e.g. lights 2026" className="w-full rounded-lg border border-border-default bg-surface-alt px-3 py-2 text-sm text-primary" />
+        <div className="flex justify-end gap-2">
+          <button disabled={busy || !tag.trim()} onClick={() => run(false)} className="px-3 py-2 rounded-lg border border-border-default text-sm font-semibold text-primary disabled:opacity-40 cursor-pointer">Remove tag</button>
+          <button disabled={busy || !tag.trim()} onClick={() => run(true)} className="px-4 py-2 rounded-lg bg-brand text-on-brand text-sm font-bold disabled:opacity-40 cursor-pointer">{busy ? 'Saving…' : 'Add tag'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── In-memory cache so going list ⇄ client ⇄ edit is instant (refreshes quietly behind) ─── */
+const clientsCache = { all: null, active: null, props: {} };
+const cachedClient = (key) => {
+  const asNum = Number(key);
+  return (clientsCache.all || []).find((c) => c.id === key || (!Number.isNaN(asNum) && c.client_number === asNum)) || null;
+};
+
 /* ─── Main ─── */
 export default function Clients() {
   const { orgId } = useAuth();
   const navigate = useNavigate();
   const { clientNumber: urlClientNumber } = useParams();
-  const [allClients, setAllClients] = useState([]);
-  const [properties, setProperties] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [allClients, setAllClients] = useState(() => clientsCache.all || []);
+  const [properties, setProperties] = useState(() => clientsCache.props);
+  const [loading, setLoading] = useState(() => !clientsCache.all);
+  useEffect(() => { clientsCache.props = properties; }, [properties]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('leads-active'); // all | leads-active | leads | active
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
@@ -1800,26 +2139,33 @@ export default function Clients() {
   const [hoveredRow, setHoveredRow] = useState(null);
   const [moreMenuId, setMoreMenuId] = useState(null);
   const [tagEditClient, setTagEditClient] = useState(null);
+  const [picked, setPicked] = useState(() => new Set());
+  const [bulk, setBulk] = useState(null); // 'text' | 'tag'
 
   // Active is derived: a client is "active" iff they have at least one job with status='active'.
   // Lead = everyone else (no current job). The is_lead column on `clients` is ignored.
-  const [activeClientIds, setActiveClientIds] = useState(() => new Set());
+  const [activeClientIds, setActiveClientIds] = useState(() => clientsCache.active || new Set());
 
   const fetchClients = useCallback(async () => {
     if (!orgId) return;
-    setLoading(true);
+    if (!clientsCache.all) setLoading(true);
     const { data, error } = await supabase
       .from('clients').select('*').eq('org_id', orgId).order('updated_at', { ascending: false });
+    clientsCache.all = data || [];
     if (error) console.error('[Clients] fetch error:', error.message);
     setAllClients(data || []);
     const clientIds = (data || []).map(c => c.id);
     if (clientIds.length > 0) {
-      const { data: jobs } = await supabase
-        .from('hub_jobs')
-        .select('contact_id, status')
-        .in('contact_id', clientIds)
-        .eq('status', 'active');
-      setActiveClientIds(new Set((jobs || []).map(j => j.contact_id)));
+      // Jobs hang off `contacts` (the Jobber sync); link them to these rows by Jobber client id.
+      const [{ data: jobs }, { data: contacts }] = await Promise.all([
+        supabase.from('hub_jobs').select('contact_id').eq('status', 'active'),
+        supabase.from('contacts').select('id, jobber_client_id'),
+      ]);
+      const extOf = new Map((contacts || []).map(k => [k.id, k.jobber_client_id]));
+      const activeExt = new Set((jobs || []).map(j => extOf.get(j.contact_id)).filter(Boolean));
+      const act = new Set((data || []).filter(c => activeExt.has(c.external_id) || (jobs || []).some(j => j.contact_id === c.id)).map(c => c.id));
+      clientsCache.active = act;
+      setActiveClientIds(act);
     } else {
       setActiveClientIds(new Set());
     }
@@ -1828,14 +2174,36 @@ export default function Clients() {
 
   useEffect(() => { fetchClients(); }, [fetchClients]);
 
-  const isActive = useCallback((c) => activeClientIds.has(c.id), [activeClientIds]);
-  const isLead = useCallback((c) => !activeClientIds.has(c.id), [activeClientIds]);
+  // Jobber's own label: Lead = never had a job, Active = has. Hub-only clients fall back to "has an active job".
+  const isActive = useCallback((c) => (c.external_id ? !c.is_lead : activeClientIds.has(c.id)), [activeClientIds]);
+  const isLead = useCallback((c) => !isActive(c), [isActive]);
+  const isArchived = (c) => (c.tags || []).includes('archived');
+  // Archive = Hub tag 'archived' (hidden from Leads/Active). Delete = gone from Hub.
+  const setArchived = async (rows, on) => {
+    setMoreMenuId(null);
+    for (const c of rows) { try { await clientArchiveOp(c.id, on ? 'archive' : 'unarchive'); } catch { break; } }
+    setPicked(new Set()); fetchClients();
+  };
+  const [confirmDelete, setConfirmDelete] = useState(null); // rows to delete
+  const [deleting, setDeleting] = useState('');
+  const doDelete = async () => {
+    const rows = confirmDelete || []; const failed = [];
+    setDeleting('Deleting…');
+    for (const c of rows) {
+      try { await clientArchiveOp(c.id, 'delete'); }
+      catch (e) { failed.push(`${[c.first_name, c.last_name].filter(Boolean).join(' ')}: ${e.message}`); }
+    }
+    setDeleting(failed.length ? `Couldn't delete ${failed.length}: ${failed.join(' · ')}` : '');
+    if (!failed.length) setConfirmDelete(null);
+    setPicked(new Set()); fetchClients();
+  };
 
   // Filter + search
   const clients = (() => {
     let filtered = allClients;
-    if (statusFilter === 'leads-active') filtered = filtered; // both — nothing to drop
-    else if (statusFilter === 'leads') filtered = filtered.filter(c => isLead(c));
+    if (statusFilter === 'archived') filtered = filtered.filter(c => isArchived(c));
+    else if (statusFilter !== 'all') filtered = filtered.filter(c => !isArchived(c));
+    if (statusFilter === 'leads') filtered = filtered.filter(c => isLead(c));
     else if (statusFilter === 'active') filtered = filtered.filter(c => isActive(c));
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -1875,6 +2243,7 @@ export default function Clients() {
       is_lead: form.is_lead,
       notes: form.notes || null,
     }).select('id').single();
+    if (newClient?.id) pushClientToJobber(newClient.id);
     if (error) { console.error('[Clients] create error:', error.message); return; }
     // Create property from address
     if (form.street || form.city) {
@@ -1906,27 +2275,28 @@ export default function Clients() {
 
   const saveTags = async (id, tags) => {
     await supabase.from('clients').update({ tags, updated_at: new Date().toISOString() }).eq('id', id);
+    pushClientToJobber(id);
     fetchClients();
   };
 
   const archiveClient = async (id) => {
-    await supabase.from('clients').update({ tags: ['archived'], updated_at: new Date().toISOString() }).eq('id', id);
     setMoreMenuId(null);
+    try { await clientArchiveOp(id, 'archive'); } catch { /* note shown */ }
     fetchClients();
   };
 
   const deleteClient = async (id) => {
-    if (!confirm('Delete this client? This cannot be undone.')) return;
-    await supabase.from('properties').delete().eq('client_id', id);
-    await supabase.from('clients').delete().eq('id', id);
+    if (!confirm('Delete this client? This cannot be undone. (Jobber can’t delete clients, so they’re archived there.)')) return;
     setMoreMenuId(null);
+    try { await clientArchiveOp(id, 'delete'); } catch { /* note shown */ }
     fetchClients();
   };
 
   // Stats — live values when fetch is done; otherwise fall back to a localStorage
   // cache from the last visit so we never flash "0" on a refresh.
   const STATS_CACHE_KEY = 'boost-clients-stats-cache';
-  const leadCount = allClients.filter(c => isLead(c)).length;
+  const leadCount = allClients.filter(c => isLead(c) && !isArchived(c)).length;
+  const archivedCount = allClients.filter(c => isArchived(c)).length;
   const clientCount = allClients.filter(c => isActive(c)).length;
   const todayStr = getTodayInTimezone();
   const thirtyDaysAgoDate = new Date(todayStr + 'T00:00:00');
@@ -1951,7 +2321,7 @@ export default function Clients() {
     ? { newLeads30, newClients30, clientCount }
     : (cachedStats || null);
 
-  const statusLabel = statusFilter === 'leads-active' ? 'Leads and Active' : statusFilter === 'leads' ? 'Leads' : statusFilter === 'active' ? 'Active' : 'All';
+  const statusLabel = statusFilter === 'leads-active' ? 'Leads and Active' : statusFilter === 'leads' ? 'Leads' : statusFilter === 'active' ? 'Active' : statusFilter === 'archived' ? 'Archived' : 'All';
 
   // Don't flash the list while resolving /clients/:clientNumber on a fresh load.
   if (urlClientNumber && !selected && (loading || allClients.length === 0)) {
@@ -1968,6 +2338,7 @@ export default function Clients() {
       setProperties(prev => ({ ...prev, [selected.id]: data || [] }));
     }} onClientUpdate={async (id, updates) => {
       await supabase.from('clients').update(updates).eq('id', id);
+      if (['first_name', 'last_name', 'company_name', 'phones', 'emails', 'billing_street', 'billing_city', 'billing_state', 'billing_zip', 'tags', 'custom_fields'].some((k) => k in updates)) pushClientToJobber(id);
       const { data } = await supabase.from('clients').select('*').eq('id', id).single();
       if (data) { setSelected(data); fetchClients(); }
     }} />;
@@ -2041,6 +2412,7 @@ export default function Clients() {
                 { id: 'leads-active', label: 'Leads and Active' },
                 { id: 'active', label: `Active (${clientCount})` },
                 { id: 'leads', label: `Leads (${leadCount})` },
+                { id: 'archived', label: `Archived (${archivedCount})` },
                 { id: 'all', label: `All (${allClients.length})` },
               ].map(o => (
                 <button key={o.id} onClick={() => { setStatusFilter(o.id); setShowStatusDropdown(false); }}
@@ -2083,6 +2455,26 @@ export default function Clients() {
         </div>
       )}
 
+      {/* Bulk modals (the selection controls live in the table header, so nothing shifts) */}
+      {bulk === 'text' && <BulkTextModal clients={allClients.filter((c) => picked.has(c.id))} onClose={() => setBulk(null)} />}
+      {bulk === 'tag' && <BulkTagModal clients={allClients.filter((c) => picked.has(c.id))} onClose={() => setBulk(null)} onSaved={fetchClients} />}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !deleting && setConfirmDelete(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-card border border-border-subtle p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-primary">Delete {confirmDelete.length} client{confirmDelete.length === 1 ? '' : 's'}?</h3>
+            <p className="text-sm text-secondary">{confirmDelete.slice(0, 5).map((c) => [c.first_name, c.last_name].filter(Boolean).join(' ') || c.company_name).join(', ')}{confirmDelete.length > 5 ? ` +${confirmDelete.length - 5} more` : ''}</p>
+            <p className="text-xs text-red-500 font-semibold">This can’t be undone. Want to just hide them? Use Archive instead.</p>
+            <p className="text-xs text-muted">Jobber can’t delete clients, so they’re archived in Jobber (their history stays there).</p>
+            {deleting && deleting !== 'Deleting…' && <p className="text-xs text-red-500">{deleting}</p>}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => { setConfirmDelete(null); setDeleting(''); }} className="px-3 py-2 rounded-lg border border-border-default text-sm font-semibold text-primary cursor-pointer">Cancel</button>
+              <button onClick={doDelete} disabled={deleting === 'Deleting…'} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-bold disabled:opacity-50 cursor-pointer">{deleting === 'Deleting…' ? 'Deleting…' : 'Delete'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Table — flat, no outer card; just row dividers */}
       {!loading && clients.length > 0 && (
         <div className="-mx-2">
@@ -2090,11 +2482,33 @@ export default function Clients() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b border-border-subtle">
+                  <th className="pl-4 py-3 w-8">
+                    <input type="checkbox" className="cursor-pointer accent-emerald-600" title="Select all shown"
+                      checked={clients.length > 0 && clients.every((c) => picked.has(c.id))}
+                      onChange={(e) => setPicked(e.target.checked ? new Set([...picked, ...clients.map((c) => c.id)]) : new Set([...picked].filter((id) => !clients.some((c) => c.id === id))))} />
+                  </th>
+                  {picked.size > 0 ? (() => {
+                    const sel = allClients.filter((c) => picked.has(c.id));
+                    const btn = 'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer';
+                    return (
+                      <th colSpan={5} className="px-4 py-3 text-[11px] font-semibold">
+                        <div className="flex items-center gap-1 leading-none">
+                          <span className="text-primary mr-1">{picked.size} selected</span>
+                          <button onClick={() => setPicked(new Set())} className="text-brand underline mr-3 cursor-pointer">Deselect all</button>
+                          <button onClick={() => setBulk('text')} className={btn}><MessageSquare size={12} /> Text</button>
+                          <button onClick={() => setBulk('tag')} className={btn}><Tag size={12} /> Tag</button>
+                          <button onClick={() => setArchived(sel, !sel.every(isArchived))} className={btn}><Archive size={12} /> {sel.every(isArchived) ? 'Unarchive' : 'Archive'}</button>
+                          <button onClick={() => setConfirmDelete(sel)} className={`${btn} !text-red-500`}><Trash2 size={12} /> Delete</button>
+                        </div>
+                      </th>
+                    );
+                  })() : <>
                   <th className="px-4 py-3 text-[11px] font-semibold text-muted">Name ↕</th>
                   <th className="px-4 py-3 text-[11px] font-semibold text-muted hidden sm:table-cell">Address</th>
                   <th className="px-4 py-3 text-[11px] font-semibold text-muted hidden md:table-cell">Tags</th>
                   <th className="px-4 py-3 text-[11px] font-semibold text-muted">Status</th>
                   <th className="px-4 py-3 text-[11px] font-semibold text-muted text-right">Last Activity ↕</th>
+                  </>}
                 </tr>
               </thead>
               <tbody>
@@ -2108,7 +2522,11 @@ export default function Clients() {
                     <tr key={c.id} onClick={() => selectClient(c)}
                       onMouseEnter={() => setHoveredRow(c.id)}
                       onMouseLeave={() => { setHoveredRow(null); if (moreMenuId === c.id) setMoreMenuId(null); }}
-                      className={`cursor-pointer transition-colors hover:bg-white/[0.03] ${i > 0 ? 'border-t border-border-subtle/50' : ''}`}>
+                      className={`group cursor-pointer transition-colors hover:bg-white/[0.03] ${picked.has(c.id) ? 'bg-emerald-500/5' : ''} ${i > 0 ? 'border-t border-border-subtle/50' : ''}`}>
+                      <td className="pl-4 py-3 w-8" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" className={`cursor-pointer accent-emerald-600 ${picked.size ? '' : 'opacity-0 group-hover:opacity-100'}`} checked={picked.has(c.id)}
+                          onChange={() => setPicked((p) => { const n = new Set(p); if (n.has(c.id)) n.delete(c.id); else n.add(c.id); return n; })} />
+                      </td>
                       <td className="px-4 py-3">
                         <p className="font-bold text-primary">{name}</p>
                         {c.company_name && c.first_name && <p className="text-[11px] text-muted">{c.company_name}</p>}
@@ -2125,7 +2543,11 @@ export default function Clients() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        {isLead(c) ? (
+                        {isArchived(c) ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted">
+                            <span className="w-2 h-2 rounded-full bg-gray-400" /> Archived
+                          </span>
+                        ) : isLead(c) ? (
                           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-400">
                             <span className="w-2 h-2 rounded-full bg-amber-500" /> Lead
                           </span>
@@ -2135,8 +2557,21 @@ export default function Clients() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <p className="text-xs text-muted">{lastActivity(c.updated_at)}</p>
+                      <td className="px-4 py-3 text-right relative">
+                        <p className={`text-xs text-muted ${isHovered || moreMenuId === c.id ? 'invisible' : ''}`}>{lastActivity(c.updated_at)}</p>
+                        {(isHovered || moreMenuId === c.id) && (
+                          <div className="absolute inset-y-0 right-4 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <button title="Tag" onClick={(e) => { e.stopPropagation(); setPicked(new Set([c.id])); setBulk('tag'); }} className="p-1.5 rounded-md border border-border-subtle text-muted hover:text-primary cursor-pointer"><Tag size={13} /></button>
+                            <button title="More" onClick={(e) => { e.stopPropagation(); setMoreMenuId(moreMenuId === c.id ? null : c.id); }} className="p-1.5 rounded-md border border-border-subtle text-muted hover:text-primary cursor-pointer"><MoreHorizontal size={13} /></button>
+                          </div>
+                        )}
+                        {moreMenuId === c.id && (
+                          <div className="absolute right-4 top-full -mt-1 z-30 bg-card border border-border-subtle rounded-xl shadow-2xl min-w-[170px] py-1 text-left" onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => setArchived([c], !isArchived(c))} className="w-full px-4 py-2 text-xs font-medium text-secondary hover:bg-surface-alt flex items-center gap-2 cursor-pointer"><Archive size={13} /> {isArchived(c) ? 'Unarchive' : 'Archive'}</button>
+                            <button onClick={() => { setMoreMenuId(null); setConfirmDelete([c]); }} className="w-full px-4 py-2 text-xs font-medium text-red-500 hover:bg-surface-alt flex items-center gap-2 cursor-pointer"><Trash2 size={13} /> Delete</button>
+                            <button onClick={() => { setMoreMenuId(null); window.open(`/clients/${c.client_number ?? c.id}`, '_blank'); }} className="w-full px-4 py-2 text-xs font-medium text-secondary hover:bg-surface-alt flex items-center gap-2 cursor-pointer"><ExternalLink size={13} /> Open in new tab</button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -2155,13 +2590,13 @@ export function EditClientPage() {
   const { orgId } = useAuth();
   const { clientNumber } = useParams();
   const navigate = useNavigate();
-  const [client, setClient] = useState(null);
-  const [properties, setProperties] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [client, setClient] = useState(() => cachedClient(clientNumber));
+  const [properties, setProperties] = useState(() => { const c = cachedClient(clientNumber); return (c && clientsCache.props[c.id]) || []; });
+  const [loading, setLoading] = useState(() => !cachedClient(clientNumber));
 
   const load = useCallback(async () => {
     if (!orgId || !clientNumber) return;
-    setLoading(true);
+    if (!cachedClient(clientNumber)) setLoading(true);
     const isUuid = /^[0-9a-f-]{36}$/i.test(String(clientNumber));
     const asNum = Number(clientNumber);
     let q = supabase.from('clients').select('*').eq('org_id', orgId);
@@ -2194,7 +2629,10 @@ export function EditClientPage() {
   };
 
   const saveClient = async (id, patch) => {
+    // Update the cache first so the client page shows the change instantly.
+    if (clientsCache.all) clientsCache.all = clientsCache.all.map((c) => (c.id === id ? { ...c, ...patch } : c));
     await supabase.from('clients').update(patch).eq('id', id);
+    pushClientToJobber(id);
     // Propagate name/contact changes to any requests linked to this client + their
     // schedule_items, so the assessment popup / request list don't show a stale snapshot.
     const reqPatch = {};
