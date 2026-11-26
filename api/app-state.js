@@ -992,6 +992,7 @@ button:disabled{opacity:.6}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 @keyframes pop{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}
 @keyframes shine{0%{left:-60%}60%,100%{left:130%}}
+:root{color-scheme:dark}.emb,.emb body{background:transparent!important}.emb .logo,.emb #form>h1,.emb .stp[data-s="0"]>.sub,.emb .wait,.emb .lit{display:none}.emb .w{padding-top:4px}
 .prog{height:6px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden;margin:0 0 16px}.prog i{display:block;height:100%;background:#00DF00;transition:width .3s}.pstep{color:#a9b0bf;font-size:13px;font-weight:700;text-align:center;margin:0 0 14px}button.skip,button.back{background:none;color:#a9b0bf;font-size:15px;padding:10px;margin-top:2px}button.back{font-size:14px}
 .err{color:#ff6b6b;font-weight:700;text-align:center;min-height:20px}
 .done{text-align:center;padding:30px 10px}.done h2{font-size:26px;margin:0 0 8px}
@@ -1096,6 +1097,13 @@ button:disabled{opacity:.6}
   paint();
 })();
 
+// Embedded on heyjudeslawncare.com/lights (?embed=1): no logo/title, the page sizes the frame to fit.
+(function(){
+  if(!/[?&]embed=1/.test(location.search)) return;
+  document.documentElement.classList.add('emb');
+  var last=0; function tell(){ var w=document.querySelector('.w'); var h=w?Math.ceil(w.getBoundingClientRect().height)+8:document.body.scrollHeight; if(h!==last){ last=h; try{ parent.postMessage({hjForm:'height',h:h},'*'); }catch(e){} } }
+  setInterval(tell,300); window.addEventListener('load',tell); tell();
+})();
 // Steps: sides → color → extras → photos (optional) → your info. One question per screen.
 (function(){
   var names={1:'Which sides',2:'Your colors',3:'Anything else?',4:'Photos (optional)',5:'Your info'};
@@ -1109,7 +1117,7 @@ button:disabled{opacity:.6}
     document.getElementById('prog').hidden=n===0; document.getElementById('plabel').hidden=true; // just the bar, no step text
     document.getElementById('pbar').style.width=(n*20)+'%';
     if(n) document.getElementById('plabel').textContent=names[n];
-    window.scrollTo({top:0,behavior:'smooth'});
+    if(document.documentElement.classList.contains('emb')){ try{ parent.postMessage({hjForm:'top'},'*'); }catch(e){} } else window.scrollTo({top:0,behavior:'smooth'});
   }
   [].forEach.call(document.querySelectorAll('[data-go]'),function(b){b.addEventListener('click',function(){show(Number(b.getAttribute('data-go')))})});
 })();
@@ -1148,7 +1156,7 @@ button:disabled{opacity:.6}
     $('err').textContent=''; b.disabled=true; b.textContent='Sending…';
     fetch('/api/app-state?key=lights-form',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
       .then(function(r){return r.json().then(function(j){ if(!r.ok) throw new Error(j.error||'Something went wrong'); return j; })})
-      .then(function(){ $('form').hidden=true; $('ok').hidden=false; window.scrollTo(0,0); })
+      .then(function(){ $('form').hidden=true; $('ok').hidden=false; if(document.documentElement.classList.contains('emb')){ try{ parent.postMessage({hjForm:'top'},'*'); }catch(e){} } else window.scrollTo(0,0); })
       .catch(function(e){ $('err').textContent=e.message+' You can also text Jude at (803) 843-0699.'; b.disabled=false; b.textContent='Send me my rough estimate →'; });
   });
 })();
