@@ -7,10 +7,14 @@ import { useAuth } from '../contexts/AuthContext';
 
 const money = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export default function LightsQuotePreview({ quoteId }) {
+// years/onYears: the plan they picked (saved on the quote) — the preview follows it.
+export default function LightsQuotePreview({ quoteId, years: yearsProp, onYears }) {
   const { session } = useAuth();
   const token = session?.access_token || '';
-  const [years, setYears] = useState(1);
+  const [yearsLocal, setYearsLocal] = useState(1);
+  const years = yearsProp || yearsLocal;
+  const setYears = (y) => (onYears ? onYears(y) : setYearsLocal(y));
+  const [open, setOpen] = useState(false); // collapsed until you want to see the exact Jobber quote
   const [addonIds, setAddonIds] = useState([]);
   const [state, setState] = useState({ loading: true, data: null, error: null });
   const [showTerms, setShowTerms] = useState(false);
@@ -50,8 +54,14 @@ export default function LightsQuotePreview({ quoteId }) {
 
   return (
     <div className="rounded-xl border border-border-default bg-card p-4">
-      <p className="text-base font-bold text-primary">What their quote will say</p>
-      <p className="text-xs text-muted mb-3">The exact Jobber quote that gets created when they pick. Try each option.</p>
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-3 cursor-pointer text-left">
+        <span>
+          <span className="block text-base font-bold text-primary">Their Jobber quote</span>
+          <span className="block text-xs text-muted">{d ? `${years} season${years > 1 ? 's' : ''} · ${money(d.total)} · deposit ${money(d.deposit)}` : 'The exact quote Jobber gets'}</span>
+        </span>
+        <ChevronDown size={18} className={`text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className="mt-3">
 
       {/* Options they can pick at the presentation */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -124,6 +134,7 @@ export default function LightsQuotePreview({ quoteId }) {
           {made.error && <p className="text-sm text-red-400 mt-1">{made.error}</p>}
         </div>
       )}
+      </div>}
     </div>
   );
 }

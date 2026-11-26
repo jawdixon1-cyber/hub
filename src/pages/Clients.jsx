@@ -1705,6 +1705,8 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [tab, setTab] = useState('info'); // info | comm | files
   const [contactKey, setContactKey] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const extras = useClientExtras(client);
   const { session } = useAuth();
   const cf = client.custom_fields || {};
   const infoRows = [
@@ -1712,7 +1714,7 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
     ...(client.emails || []).map((e, i) => [`${e.label || 'Main'} email`, <a key={`e${i}`} href={`mailto:${formatEmail(e)}`} className="text-brand-text underline break-all">{formatEmail(e)}</a>]),
   ];
   const sideRows = [
-    cf.payment_terms && ['Payment terms', cf.payment_terms],
+    ['Payment terms', cf.payment_terms || 'Residential default (3 Days)'],
     client.lead_source && ['Lead source', client.lead_source],
     cf.role && ['Role', cf.role],
     cf.title && ['Title', cf.title],
@@ -1721,6 +1723,12 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
   ].filter(Boolean);
   return (
     <div>
+      {editing && (
+        <EditClientModal client={client} properties={properties} orgId={orgId}
+          onClose={() => setEditing(false)}
+          onPropertiesChange={onPropertiesChange}
+          onSave={async (id, patch) => { await saveClientRecord(id, patch); await onClientUpdate(id, {}); }} />
+      )}
       {editProperty && (
         <PropertyEditor
           property={editProperty === 'new' ? null : editProperty}
@@ -1795,7 +1803,7 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
                     </>
                   )}
                 </div>
-                <button onClick={() => navigate(`/clients/${client.client_number ?? client.id}/edit`)}
+                <button onClick={() => setEditing(true)}
                   className="p-2 rounded-lg bg-surface-alt border border-border-subtle text-muted hover:text-primary cursor-pointer" title="Edit client">
                   <Pencil size={15} />
                 </button>
@@ -1893,17 +1901,21 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
             )}
           </div>
 
-          <ClientContactsCard key={contactKey} startOpen={contactKey > 0} client={client} onClientUpdate={onClientUpdate} />
+          <ClientContactsCard key={contactKey} startOpen={contactKey > 0} client={client} onClientUpdate={onClientUpdate} extras={extras} />
 
           {/* 3. Work overview — separate card */}
-          <WorkOverviewSection clientId={client.id} workTab={workTab} setWorkTab={setWorkTab} />
+          {extras.data?.linked
+            ? <JobberWorkOverview extras={extras} />
+            : <WorkOverviewSection clientId={client.id} workTab={workTab} setWorkTab={setWorkTab} />}
 
           {/* Payment methods */}
+          <ClientBillingSection extras={extras} />
+
           <PaymentMethodsSection client={client} properties={properties} />
 
 
           {/* 6. Client schedule — every activity ever scheduled for this client */}
-          <ClientScheduleSection clientId={client.id} />
+          {extras.data?.linked ? <JobberScheduleSection extras={extras} /> : <ClientScheduleSection clientId={client.id} />}
           </>}
         </div>
 
@@ -1915,11 +1927,11 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted">Current balance</span>
-                <span className="text-lg font-black text-primary">$0.00</span>
+                <span className="text-lg font-black text-primary">{extras.data?.linked ? money(extras.data.balance) : '$0.00'}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted">Lifetime value</span>
-                <span className="text-sm font-bold text-emerald-400">$0.00</span>
+                <span className="text-sm font-bold text-emerald-400">{extras.data?.linked ? money(extras.data.lifetime) : '$0.00'}</span>
               </div>
             </div>
           </div>
@@ -1932,10 +1944,140 @@ function ClientDetail({ client, properties, onBack, orgId, onPropertiesChange, a
             <p className="text-xs text-muted">No communications yet</p>
           </div>
 
-          <ClientNotesCard client={client} onClientUpdate={onClientUpdate} />
+          <ClientNotesCard client={client} onClientUpdate={onClientUpdate} extras={extras} />
 
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─── Live Jobber extras for one client (billing, notes, contacts), cached so reopening is instant ─── */
+const extrasCache = {};
+const money = (n) => `${n < 0 ? '-' : ''}$${Math.abs(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function useClientExtras(client) {
+  const { session } = useAuth();
+  const token = session?.access_token || '';
+  const [data, setData] = useState(() => extrasCache[client.id] || null);
+  const [err, setErr] = useState('');
+  const call = useCallback(async (body) => {
+    const r = await fetch(`/api/jobber-data?action=client-extras&id=${encodeURIComponent(client.id)}`, body
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ id: client.id, ...body }) }
+      : { headers: { Authorization: `Bearer ${token}` } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { setErr(j.error || `Failed (${r.status})`); return null; }
+    setErr(''); extrasCache[client.id] = j; setData(j); return j;
+  }, [client.id, token]);
+  useEffect(() => { if (token) call(); }, [call, token]);
+  return { data, err, act: call };
+}
+
+/* ─── Work overview: requests, quotes, jobs, invoices — live from Jobber ─── */
+const DONE = new Set(['converted', 'archived', 'paid', 'bad_debt', 'closed', 'cancelled', 'completed', 'void']);
+const WORK_ICON = { request: '📥', quote: '📝', job: '🔨', invoice: '🧾' };
+function JobberWorkOverview({ extras }) {
+  const [tab, setTab] = useState('active');
+  const all = (extras.data?.work || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const rows = tab === 'active' ? all.filter((w) => !DONE.has(String(w.status || '').toLowerCase())) : all.filter((w) => w.kind === tab);
+  const count = (k) => (k === 'active' ? all.filter((w) => !DONE.has(String(w.status || '').toLowerCase())).length : all.filter((w) => w.kind === k).length);
+  const pretty = (st) => String(st || '').replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+  return (
+    <div className="rounded-xl bg-card border border-border-subtle p-5">
+      <h2 className="text-lg font-bold text-primary mb-3">Work overview</h2>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {[['active', 'Active'], ['request', 'Requests'], ['quote', 'Quotes'], ['job', 'Jobs'], ['invoice', 'Invoices']].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 rounded-full text-xs font-semibold border cursor-pointer ${tab === k ? 'bg-surface-alt border-border-default text-primary' : 'border-border-subtle text-muted hover:text-primary'}`}>
+            {k !== 'active' && <span className="mr-1">{WORK_ICON[k]}</span>}{l} <span className="text-muted">{count(k)}</span>
+          </button>
+        ))}
+      </div>
+      {!rows.length ? <p className="text-sm text-muted text-center py-4">Nothing here</p> : (
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[11px] text-muted border-b border-border-subtle"><th className="py-2">Item</th><th>Date</th><th>Status</th><th className="text-right">Amount</th></tr></thead>
+          <tbody>
+            {rows.map((w) => (
+              <tr key={w.id} className="border-b border-border-subtle/50 hover:bg-surface-alt/40 cursor-pointer" onClick={() => w.url && window.open(w.url, '_blank')}>
+                <td className="py-2.5"><p className="font-semibold text-primary">{WORK_ICON[w.kind]} {w.label}</p>{w.title && <p className="text-xs text-secondary truncate max-w-[320px]">{w.title}</p>}</td>
+                <td className="text-secondary">{w.date ? new Date(w.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}</td>
+                <td><span className={`text-xs font-semibold ${DONE.has(String(w.status || '').toLowerCase()) ? 'text-muted' : 'text-emerald-500'}`}>{pretty(w.status)}</span></td>
+                <td className="text-right text-primary">{w.amount != null ? money(w.amount) : ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="text-[11px] text-muted mt-2">Tap a row to open it in Jobber.</p>
+    </div>
+  );
+}
+
+/* ─── Client schedule: visits, assessments, tasks — live from Jobber ─── */
+function JobberScheduleSection({ extras }) {
+  const [type, setType] = useState('all');
+  const [status, setStatus] = useState('all');
+  const now = Date.now();
+  const items = (extras.data?.schedule || [])
+    .filter((v) => type === 'all' || v.type === type)
+    .filter((v) => status === 'all' || (status === 'done' ? v.done : !v.done))
+    // Upcoming first (soonest on top), then past (most recent on top)
+    .sort((a, b) => { const ta = new Date(a.date).getTime(); const tb = new Date(b.date).getTime(); const fa = ta >= now; const fb = tb >= now; return fa !== fb ? (fa ? -1 : 1) : fa ? ta - tb : tb - ta; });
+  const sel = 'rounded-lg bg-surface-alt border border-border-subtle px-3 py-1.5 text-xs font-semibold text-primary cursor-pointer';
+  return (
+    <div className="rounded-xl bg-card border border-border-subtle p-5">
+      <h2 className="text-lg font-bold text-primary mb-3">Client schedule</h2>
+      <div className="flex gap-2 mb-3">
+        <select value={type} onChange={(e) => setType(e.target.value)} className={sel}><option value="all">Type | All</option><option value="Visit">Visits</option><option value="Assessment">Assessments</option><option value="Task">Tasks</option></select>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className={sel}><option value="all">Status | All</option><option value="open">Not done</option><option value="done">Completed</option></select>
+      </div>
+      {!items.length ? <p className="text-sm text-muted text-center py-4">No scheduled items</p> : (
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[11px] text-muted border-b border-border-subtle"><th className="py-2">Schedule</th><th>Title</th><th>Assigned</th><th className="text-right">Status</th></tr></thead>
+          <tbody>
+            {items.map((v) => (
+              <tr key={v.id} className={`border-b border-border-subtle/50 ${v.done ? 'opacity-60' : ''}`}>
+                <td className="py-2.5 font-semibold text-primary whitespace-nowrap pr-3">{v.type === 'Assessment' ? '📋' : v.type === 'Task' ? '✅' : '🚚'} {new Date(v.date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })}</td>
+                <td className="text-secondary">{v.job ? `Job #${v.job} · ` : ''}{v.title}</td>
+                <td className="text-secondary text-xs">{v.crew.join(', ') || '—'}</td>
+                <td className={`text-right text-xs font-semibold ${v.done ? 'text-muted' : new Date(v.date).getTime() < now ? 'text-red-500' : 'text-emerald-500'}`}>{v.done ? 'Completed' : new Date(v.date).getTime() < now ? 'Overdue' : 'Upcoming'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* ─── Billing: invoices + deposits from Jobber ─── */
+function ClientBillingSection({ extras }) {
+  const d = extras.data;
+  const rows = d ? [
+    ...(d.deposits || []).map((p) => ({ k: `d${p.date}`, icon: '💵', label: 'Deposit', to: p.quote ? `Quote #${p.quote}` : '', date: p.date, amount: -p.amount })),
+    ...(d.invoices || []).map((v) => ({ k: v.id, icon: '🧾', label: `Invoice #${v.number}`, to: v.subject || '', date: v.date, amount: v.total, status: v.status, url: v.url })),
+    // Payments made on each invoice (Jobber shows these as their own rows)
+    ...(d.invoices || []).filter((v) => v.paid > 0).map((v) => ({ k: `p${v.id}`, icon: '💳', label: 'Payment', to: `Invoice #${v.number}`, date: v.date, amount: -v.paid })),
+  ].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))) : [];
+  return (
+    <div className="rounded-xl bg-card border border-border-subtle p-5">
+      <h2 className="text-lg font-bold text-primary mb-3">Billing</h2>
+      {!d ? <p className="text-xs text-muted py-3">Loading…</p> : !d.linked ? <p className="text-xs text-muted py-3">Not linked to Jobber yet.</p> : !rows.length ? (
+        <p className="text-sm text-secondary py-2">Bill this client to see billing history</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[11px] text-muted border-b border-border-subtle"><th className="py-2">Item</th><th>Applied to</th><th>Date</th><th className="text-right">Amount</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.k} className="border-b border-border-subtle/50">
+                <td className="py-2.5 font-semibold text-primary">{r.icon} {r.url ? <a href={r.url} target="_blank" rel="noreferrer" className="hover:underline">{r.label}</a> : r.label}{r.status && <span className="ml-2 text-[10px] uppercase text-muted">{String(r.status).replace(/_/g, ' ')}</span>}</td>
+                <td className="text-secondary">{r.to}</td>
+                <td className="text-secondary">{r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}</td>
+                <td className="text-right text-primary">{money(r.amount)}</td>
+              </tr>
+            ))}
+            <tr><td className="py-2.5 font-bold text-primary" colSpan={3}>Current balance</td><td className="text-right font-bold text-primary">{money(d.balance)}</td></tr>
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
@@ -1970,30 +2112,47 @@ function ClientTagsCard({ client, onClientUpdate }) {
   );
 }
 
-/* ─── Internal notes for you / the crew ─── */
-function ClientNotesCard({ client, onClientUpdate }) {
-  const [text, setText] = useState(client.notes || '');
-  const [saved, setSaved] = useState(false);
-  const dirty = text !== (client.notes || '');
-  const save = async () => { if (!dirty) return; await onClientUpdate(client.id, { notes: text.trim() || null }); setSaved(true); setTimeout(() => setSaved(false), 1500); };
+/* ─── Internal notes for you / the crew (saved as Jobber notes when the client is linked) ─── */
+function ClientNotesCard({ client, onClientUpdate, extras }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const linked = extras?.data?.linked;
+  const notes = extras?.data?.notes || [];
+  const add = async () => {
+    const m = text.trim(); if (!m) return;
+    setBusy(true);
+    if (linked) await extras.act({ op: 'note', message: m });
+    else await onClientUpdate(client.id, { notes: [client.notes, m].filter(Boolean).join('\n\n') });
+    setText(''); setBusy(false);
+  };
   return (
     <div className="rounded-xl bg-card border border-border-subtle p-4">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-[11px] font-bold text-muted uppercase tracking-wider">Notes</h3>
-        {saved && <span className="text-[11px] text-emerald-500 font-semibold">Saved</span>}
-      </div>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={save} rows={4}
+      <h3 className="text-[11px] font-bold text-muted uppercase tracking-wider mb-2">Notes</h3>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3}
         placeholder="Leave an internal note for yourself or a team member"
         className="w-full rounded-lg border border-dashed border-border-default bg-transparent p-2.5 text-sm text-primary placeholder:text-muted focus:outline-none focus:border-brand/60 resize-y" />
+      {text.trim() && <div className="flex justify-end mt-1.5"><button onClick={add} disabled={busy} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold disabled:opacity-50 cursor-pointer">{busy ? 'Saving…' : 'Save note'}</button></div>}
+      <div className="mt-2 space-y-2">
+        {notes.map((n) => (
+          <div key={n.id} className="rounded-lg bg-surface-alt p-2.5">
+            <p className="text-sm text-primary whitespace-pre-wrap">{n.pinned && '📌 '}{n.message}</p>
+            <p className="text-[10px] text-muted mt-1">{new Date(n.at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+          </div>
+        ))}
+        {client.notes && <div className="rounded-lg bg-surface-alt p-2.5"><p className="text-sm text-primary whitespace-pre-wrap">{client.notes}</p><p className="text-[10px] text-muted mt-1">Hub note</p></div>}
+      </div>
     </div>
   );
 }
 
 /* ─── Contacts: other people for this client (spouse, property manager…) ─── */
-function ClientContactsCard({ client, onClientUpdate, startOpen = false }) {
-  const list = client.custom_fields?.contacts || [];
+function ClientContactsCard({ client, onClientUpdate, startOpen = false, extras }) {
+  const linked = extras?.data?.linked;
+  const list = linked ? (extras.data.contacts || []) : (client.custom_fields?.contacts || []);
   const [form, setForm] = useState(() => (startOpen ? { name: '', role: '', phone: '', email: '' } : null)); // { name, role, phone, email }
   const save = (next) => onClientUpdate(client.id, { custom_fields: { ...(client.custom_fields || {}), contacts: next } });
+  const remove = (i) => (linked ? extras.act({ op: 'contact-delete', contactId: list[i].id }) : save(list.filter((_, k) => k !== i)));
+  const addOne = (k) => (linked ? extras.act({ op: 'contact-add', contact: k }) : save([...list, k]));
   const inp = 'rounded-md border border-border-default bg-surface-alt px-2 py-1.5 text-sm text-primary focus:outline-none';
   return (
     <div className="rounded-xl bg-card border border-border-subtle p-5">
@@ -2007,7 +2166,7 @@ function ClientContactsCard({ client, onClientUpdate, startOpen = false }) {
             <div key={i} className="flex items-center justify-between py-2 text-sm">
               <div><span className="font-semibold text-primary">{c.name}</span>{c.role && <span className="text-muted"> · {c.role}</span>}
                 <div className="text-xs text-secondary">{[c.phone, c.email].filter(Boolean).join(' · ')}</div></div>
-              <button onClick={() => save(list.filter((_, k) => k !== i))} className="p-1 text-muted hover:text-red-500 cursor-pointer" title="Remove"><X size={14} /></button>
+              <button onClick={() => remove(i)} className="p-1 text-muted hover:text-red-500 cursor-pointer" title="Remove"><X size={14} /></button>
             </div>
           ))}
         </div>
@@ -2020,7 +2179,7 @@ function ClientContactsCard({ client, onClientUpdate, startOpen = false }) {
           <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email" className={inp} />
           <div className="col-span-2 flex justify-end gap-2">
             <button onClick={() => setForm(null)} className="px-3 py-1.5 text-xs font-semibold text-muted cursor-pointer">Cancel</button>
-            <button disabled={!form.name.trim()} onClick={() => { save([...list, { ...form, name: form.name.trim() }]); setForm(null); }} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold disabled:opacity-40 cursor-pointer">Save contact</button>
+            <button disabled={!form.name.trim()} onClick={() => { addOne({ ...form, name: form.name.trim() }); setForm(null); }} className="px-3 py-1.5 rounded-lg bg-brand text-on-brand text-xs font-bold disabled:opacity-40 cursor-pointer">Save contact</button>
           </div>
         </div>
       )}
@@ -2122,6 +2281,24 @@ const cachedClient = (key) => {
   return (clientsCache.all || []).find((c) => c.id === key || (!Number.isNaN(asNum) && c.client_number === asNum)) || null;
 };
 
+/* ─── Save a client edit: cache, database, Jobber, and any linked requests' name/contact snapshot ─── */
+async function saveClientRecord(id, patch) {
+  if (clientsCache.all) clientsCache.all = clientsCache.all.map((c) => (c.id === id ? { ...c, ...patch } : c));
+  await supabase.from('clients').update(patch).eq('id', id);
+  pushClientToJobber(id);
+  const reqPatch = {};
+  if ('first_name' in patch) reqPatch.first_name = patch.first_name;
+  if ('last_name' in patch) reqPatch.last_name = patch.last_name;
+  if ('phones' in patch) reqPatch.phone = patch.phones?.[0]?.number || null;
+  if ('emails' in patch) reqPatch.email = patch.emails?.[0]?.address || null;
+  if (Object.keys(reqPatch).length === 0) return;
+  const { data: reqs } = await supabase.from('requests').update(reqPatch).eq('client_id', id).select('id, title, first_name, last_name');
+  for (const r of reqs || []) {
+    const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Unknown';
+    await supabase.from('schedule_items').update({ title: `Assessment: ${r.title || `Request for ${name}`}` }).eq('request_id', r.id).eq('type', 'assessment');
+  }
+}
+
 /* ─── Main ─── */
 export default function Clients() {
   const { orgId } = useAuth();
@@ -2206,12 +2383,15 @@ export default function Clients() {
     if (statusFilter === 'leads') filtered = filtered.filter(c => isLead(c));
     else if (statusFilter === 'active') filtered = filtered.filter(c => isActive(c));
     if (search.trim()) {
-      const q = search.toLowerCase();
-      filtered = filtered.filter(c =>
-        [c.first_name, c.last_name, c.company_name, primaryPhone(c.phones), primaryEmail(c.emails),
-         c.billing_street, c.billing_city, ...(c.tags || [])]
-          .filter(Boolean).some(f => f.toLowerCase().includes(q))
-      );
+      // Every word you type must show up somewhere (name, company, phones, emails, address, tags),
+      // so "jude wilson", "jude " or "wilson rock hill" all work. Phone digits match with or without dashes.
+      const words = search.toLowerCase().trim().split(/\s+/);
+      filtered = filtered.filter(c => {
+        const hay = [c.first_name, c.last_name, c.company_name, ...(c.phones || []).map(formatPhone), ...(c.emails || []).map(formatEmail),
+          c.billing_street, c.billing_city, c.billing_zip, ...(c.tags || [])].filter(Boolean).join(' ').toLowerCase();
+        const digits = hay.replace(/\D/g, '');
+        return words.every((w) => hay.includes(w) || (/^\d{3,}$/.test(w.replace(/\D/g, '')) && digits.includes(w.replace(/\D/g, ''))));
+      });
     }
     return filtered;
   })();
@@ -2337,7 +2517,7 @@ export default function Clients() {
       const { data } = await supabase.from('properties').select('*').eq('client_id', selected.id).order('created_at');
       setProperties(prev => ({ ...prev, [selected.id]: data || [] }));
     }} onClientUpdate={async (id, updates) => {
-      await supabase.from('clients').update(updates).eq('id', id);
+      if (Object.keys(updates).length) await supabase.from('clients').update(updates).eq('id', id);
       if (['first_name', 'last_name', 'company_name', 'phones', 'emails', 'billing_street', 'billing_city', 'billing_state', 'billing_zip', 'tags', 'custom_fields'].some((k) => k in updates)) pushClientToJobber(id);
       const { data } = await supabase.from('clients').select('*').eq('id', id).single();
       if (data) { setSelected(data); fetchClients(); }
@@ -2628,26 +2808,7 @@ export function EditClientPage() {
     else navigate('/clients');
   };
 
-  const saveClient = async (id, patch) => {
-    // Update the cache first so the client page shows the change instantly.
-    if (clientsCache.all) clientsCache.all = clientsCache.all.map((c) => (c.id === id ? { ...c, ...patch } : c));
-    await supabase.from('clients').update(patch).eq('id', id);
-    pushClientToJobber(id);
-    // Propagate name/contact changes to any requests linked to this client + their
-    // schedule_items, so the assessment popup / request list don't show a stale snapshot.
-    const reqPatch = {};
-    if ('first_name' in patch) reqPatch.first_name = patch.first_name;
-    if ('last_name' in patch) reqPatch.last_name = patch.last_name;
-    if ('phones' in patch) reqPatch.phone = patch.phones?.[0]?.number || null;
-    if ('emails' in patch) reqPatch.email = patch.emails?.[0]?.address || null;
-    if (Object.keys(reqPatch).length === 0) return;
-    const { data: reqs } = await supabase.from('requests').update(reqPatch).eq('client_id', id).select('id, title, first_name, last_name');
-    for (const r of reqs || []) {
-      const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Unknown';
-      const newTitle = `Assessment: ${r.title || `Request for ${name}`}`;
-      await supabase.from('schedule_items').update({ title: newTitle }).eq('request_id', r.id).eq('type', 'assessment');
-    }
-  };
+  const saveClient = saveClientRecord;
 
   if (loading) {
     return <div className="flex items-center justify-center py-20"><Loader2 size={20} className="text-muted animate-spin" /></div>;

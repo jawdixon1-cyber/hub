@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Lightbulb, Sparkles, Copy, Check, FolderOpen, Trash2, Plus } from 'lucide-react';
+import { Lightbulb, Sparkles, Copy, Check, FolderOpen, Trash2, Plus, Layers } from 'lucide-react';
 import LightsMeasurePhotos from '../components/LightsMeasurePhotos';
 import LightsMockup from '../components/LightsMockup';
 import LightsQuotePreview from '../components/LightsQuotePreview';
@@ -13,11 +13,11 @@ import { DESIGNS } from '../lib/lightsDesigns';
 import { kindOf } from '../lib/lightsMaterials';
 import JobberClientPicker from '../components/JobberClientPicker';
 import LightsBusiness, { QuoteMaterialsCard } from '../components/LightsBusiness';
-import { openCrewView, getExtrasMeta, DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, listCovers, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt } from '../lib/lightsStore';
+import { openCrewView, getExtrasMeta, DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, listCovers, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt, patchQuoteMeta } from '../lib/lightsStore';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useAppStore } from '../store/AppStoreContext';
-import { useJobberList, quoteStage, STAGE_LABEL } from '../lib/jobberLights';
+import { useJobberList, quoteStage, STAGE_LABEL, nameKey } from '../lib/jobberLights';
 
 // Christmas lights quoter: roofline per foot + strands each, with one minimum
 // for the whole lights job. Prices are remembered in this browser.
@@ -34,6 +34,7 @@ const num = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 const money = (n) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+const dollars = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-US')}`; // list view: whole dollars
 
 // Numbered step title, same look as the steps inside the photo/mockup cards.
 function StepHead({ title, sub }) {
@@ -142,8 +143,24 @@ function calcLightsQuote({ feet, strands, perStrand, minimum, ...prices }) {
   return { roof, roofParts, roofFt, strand, base, topUp, total: base + topUp };
 }
 
+// Multi-year plan discount, % off each season (must match LQ_OFF in api/jobber-data.js)
+const PLAN_OFF = { 1: 0, 2: 5, 3: 10 };
+
+// Link a saved quote to a Jobber client: their lights requests up top, or search all of Jobber.
+function LinkPicker({ initial, requests, onPick }) {
+  const [q, setQ] = useState(initial || '');
+  const [picked, setPicked] = useState(null);
+  const seen = new Set();
+  const sugg = (requests || []).filter((r) => r.clientId && r.status !== 'archived')
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .filter((r) => (seen.has(r.clientId) ? false : seen.add(r.clientId)))
+    .map((r) => ({ key: r.id, id: r.clientId, name: r.clientName, address: r.street, city: r.city, phone: r.phone, email: r.email, sub: `${new Date(r.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${r.title}` }));
+  return <JobberClientPicker value={q} picked={picked} onType={setQ} onPick={(c) => { setPicked(c); if (c) onPick(c); }}
+    suggestions={sugg} suggestionsTitle="Christmas lights requests in Jobber" />;
+}
+
 // When a quote was made: its id is lq-<ms timestamp>; older ones fall back to last saved.
-const createdOf = (sq) => { const m = /^lq-(\d{12,})/.exec(sq?.id || ''); return m ? Number(m[1]) : new Date(sq?.savedAt || 0).getTime(); };
+const createdOf = (sq) => { if (sq?.createdAt) return new Date(sq.createdAt).getTime(); const m = /^lq-(\d{12,})/.exec(sq?.id || ''); return m ? Number(m[1]) : new Date(sq?.savedAt || 0).getTime(); }; // createdAt: set for quotes added after the fact (e.g. from an old Jobber quote)
 
 export default function LightsQuoter() {
   const navigate = useNavigate();
@@ -155,7 +172,25 @@ export default function LightsQuoter() {
   const [opening, setOpening] = useState(''); // quote being loaded from the account
   const jobberQuotes = useJobberList('lights-quotes', 'quotes', true).quotes;
   const jobberRequests = useJobberList('lights-requests', 'requests', true).requests;
-  const stageOf = (sq) => quoteStage(sq, jobberQuotes, jobberRequests);
+  const stageOf = (sq) => {
+    if (sq.gift) return { key: 'gift' }; // our house, giveaways: no price, never counts toward $/ft or sales
+    const st = quoteStage(sq, jobberQuotes, jobberRequests);
+    // Accepted only when YOU mark it (they tap Accept → text you → you mark it). Page taps alone don't count.
+    if (st.key !== 'sold' && sq.qStage === 'accepted') return { key: 'accepted', jq: { years: Number(sq.planYears) || 1 } };
+    if (st.key === 'sold') {
+      // Everything they bought (main quote + add-on quotes): pay = sum of the won quotes, plan = the longest term.
+      const cid = sq.clientInfo?.id; const nk = nameKey(sq.clientInfo?.name || sq.client);
+      const won = (jobberQuotes || []).filter((q) => (q.status === 'approved' || q.status === 'converted') && ((cid && q.clientId === cid) || nameKey(q.clientName) === nk));
+      // Roofline = the first quote's roofline lines; everything else (wreaths, bushes, add-on quotes) = add-ons.
+      const first = won.slice().sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))[0];
+      const total = won.reduce((t, q) => t + (Number(q.total) || 0), 0);
+      const roof = Number(first?.roof ?? first?.total) || 0;
+      const firstAddons = Number(first?.addons) || 0; // wreath/bush lines on the main quote
+      const extraQuotes = Math.max(0, total - (Number(first?.total) || 0)); // separate add-on quotes in Jobber
+      return { ...st, jq: { ...st.jq, total, roof, addons: Math.max(0, total - roof), firstAddons, extraQuotes, years: Math.max(1, ...won.map((q) => q.years || 1)), clientKey: cid || nk } };
+    }
+    return st;
+  };
   // Rescue: any full quote still held in this page's memory (photos included) gets
   // saved to the account. Upload only — never deletes or replaces anything.
   const [prices, setPrices] = useState(() => {
@@ -241,6 +276,10 @@ export default function LightsQuoter() {
   const [saved, setSaved] = useState([]);
   const [listOpen, setListOpen] = useState(false);
   const [flash, setFlash] = useState('');
+  const [linking, setLinking] = useState(null);
+  const [qFilter, setQFilter] = useState('all');
+  const [openDeal, setOpenDeal] = useState(''); // list row expanded to show its options + add-ons
+  const [attaching, setAttaching] = useState(null); // quote being moved into another deal // list filter: all | sold | out | declined // saved quote being linked to a Jobber client from the list
   const [confirmNew, setConfirmNew] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
   const autosaveTimer = useRef(null);
@@ -249,12 +288,15 @@ export default function LightsQuoter() {
   // A locked plan locks its materials too: no quantity or wire-color changes until it's unlocked.
   const matSet = planLocked ? () => {} : setMaterials;
   const wireSet = planLocked ? () => {} : setWire;
-  const snapshot = () => ({ client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, presentToken, customColor, planLocked, savedId, addonMats });
+  // Deal info (options / add-ons): kept as-is through every save so the editor never wipes it.
+  const [dealMeta, setDealMeta] = useState({});
+  const snapshot = () => ({ ...dealMeta, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, presentToken, customColor, planLocked, savedId, addonMats });
   // The cloud version this device is working from — if another device saves after it,
   // this device's copy is stale and must not overwrite (that's how removed photos came back).
   const baseSaved = useRef('');
   const apply = (d) => {
     baseSaved.current = d.savedAt || '';
+    setDealMeta({ group: d.group || null, kind: d.kind || null, chosenId: d.chosenId || null, scopeName: d.scopeName || '', gift: !!d.gift, planYears: d.planYears || null, feetOverride: d.feetOverride || null, ...(d.createdAt ? { createdAt: d.createdAt } : {}) });
     setClient(d.client || '');
     setClientInfo(d.clientInfo || null);
     setFeet({ ...EMPTY_FEET, ...(d.feet || {}) });
@@ -331,7 +373,7 @@ export default function LightsQuoter() {
   // Only save when something actually changed. The fingerprint skips the big photo
   // data (length only), so it's cheap; opening a quote just records its fingerprint.
   const lastSig = useRef('');
-  const sigNow = () => JSON.stringify([client, clientInfo?.id, feet, prices, // prices: a $/ft change re-saves the price Present shows
+  const sigNow = () => JSON.stringify([dealMeta, client, clientInfo?.id, feet, prices, // prices: a $/ft change re-saves the price Present shows
     strands, count, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto?.length || 0, nightPhoto?.length || 0, disc, installDate, takedownDate, matOk, linesOk.length, stepsOk, extras, crewToken, presentToken, customColor, planLocked, savedId,
     angles.map(({ plain, marked, ai, ...rest }) => [plain?.length || 0, marked?.length || 0, ai?.image?.length || 0, rest]),
     previews.map((x) => [x.id, x.image?.length || 0])]);
@@ -371,7 +413,7 @@ export default function LightsQuoter() {
       }
     }, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, presentToken, customColor, planLocked, savedId, addonMats, prices]);
+  }, [loaded, dealMeta, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, extras, crewToken, presentToken, customColor, planLocked, savedId, addonMats, prices]);
 
   useEffect(() => {
     localStorage.setItem(PRICES_KEY, JSON.stringify(prices));
@@ -429,7 +471,7 @@ export default function LightsQuoter() {
     setCrewCopied(url);
     setTimeout(() => setCrewCopied(false), 6000);
   };
-  const reset = () => { setWstep(1); setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); setMaterials({}); setMatNotes({}); setWire('white'); setPower(''); setPowerPhoto(''); setNightPhoto(''); setDisc({}); setInstallDate(''); setTakedownDate(''); setMatOk(''); setLinesOk(''); setStepsOk({}); setExtras([]); setCrewToken(''); setPresentToken(''); setCustomColor(''); setAddonMats({}); addonMatsRef.current = {}; };
+  const reset = () => { setDealMeta({}); setWstep(1); setClient(''); setFeet(EMPTY_FEET); setStrands(''); setCount(EMPTY_COUNT); setAngles([EMPTY_SIDE]); setSavedId(null); setClientInfo(null); setPreviews([]); setQuoted(''); setQStage(''); setMaterials({}); setMatNotes({}); setWire('white'); setPower(''); setPowerPhoto(''); setNightPhoto(''); setDisc({}); setInstallDate(''); setTakedownDate(''); setMatOk(''); setLinesOk(''); setStepsOk({}); setExtras([]); setCrewToken(''); setPresentToken(''); setCustomColor(''); setAddonMats({}); addonMatsRef.current = {}; };
   const say = (msg) => { setFlash(msg); setTimeout(() => setFlash(''), 2500); };
 
   const openQuote = async (id) => {
@@ -511,15 +553,24 @@ export default function LightsQuoter() {
 
       {/* Quotes tab: New quote, pending quotes, then sold ones (tagged). Unqualified are hidden. */}
       {view === 'quote' && !editing && (() => {
-        // Average $/ft across every real quote (pending + sold) — total $ ÷ total ft.
-        const real = saved.filter((sq) => stageOf(sq).key !== 'unqualified');
-        const sum = real.reduce((t, sq) => {
-          const ft = ['easy', 'medium', 'hard'].reduce((u, k) => u + num(sq.feet?.[k]), 0);
-          return ft > 0 && num(sq.total) > 0 ? { ft: t.ft + ft, $: t.$ + num(sq.total), n: t.n + 1 } : t;
-        }, { ft: 0, $: 0, n: 0 });
+        // Average $/ft = SOLD deals only: what they pay per season (Jobber, plan discount included) ÷ feet
+        // of the agreed scope + add-ons. Gifts, old scopes and quotes with no feet measured are left out.
+        const byId = Object.fromEntries(saved.map((x) => [x.id, x]));
+        const ftOf = (x) => num(x.feetOverride) || ['easy', 'medium', 'hard'].reduce((u, k) => u + num(x.feet?.[k]), 0);
+        const soldDeals = saved.filter((sq) => !(sq.group && byId[sq.group])).map((sq) => ({ sq, st: stageOf(sq) }))
+          .filter(({ st }) => st.key === 'sold' || st.key === 'accepted');
+        const withFt = soldDeals.map(({ sq, st }) => {
+          const agreed = byId[sq.chosenId] || sq;
+          const yrs = Number(agreed.planYears) || st.jq?.years || 1; const off = 1 - (PLAN_OFF[yrs] || 0) / 100;
+          const roofAdds = saved.filter((x) => x.group === sq.id && x.kind === 'addon' && ftOf(x) > 0); // add-ons with feet = more roofline
+          const ft = [agreed, ...roofAdds].reduce((t, x) => t + ftOf(x), 0);
+          const pay = (st.jq?.total ? num(st.jq.roof ?? st.jq.total) : num(agreed.total) * off) + roofAdds.reduce((t, x) => t + num(x.total) * off, 0); // roofline only
+          return { ft, pay };
+        }).filter((d) => d.ft > 0 && d.pay > 0);
+        const sum = { ft: withFt.reduce((t, d) => t + d.ft, 0), $: withFt.reduce((t, d) => t + d.pay, 0), n: withFt.length, sold: soldDeals.length };
         return (
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            {sum.ft > 0 ? <p className="text-sm text-secondary">Average <b className="text-brand-text text-base">{money(sum.$ / sum.ft)}/ft</b> <span className="text-xs text-muted">across {sum.n} quotes · {Math.round(sum.ft)} ft · {money(sum.$)}</span></p> : <span />}
+            {sum.ft > 0 ? <p className="text-sm text-secondary">Average <b className="text-brand-text text-base">{money(sum.$ / sum.ft)}/ft</b> <span className="text-xs text-muted">across {sum.n} of {sum.sold} sold{sum.sold > sum.n ? ` (${sum.sold - sum.n} have no feet measured)` : ''} · {Math.round(sum.ft)} ft · {dollars(sum.$)} roofline/season</span></p> : <span />}
             <div className="flex rounded-lg bg-surface-alt p-0.5">
               {[['gallery', 'Gallery'], ['list', 'List']].map(([k, label]) => (
                 <button key={k} onClick={() => setQView(k)} className={`px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer ${qView === k ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-primary'}`}>{label}</button>
@@ -529,45 +580,262 @@ export default function LightsQuoter() {
         );
       })()}
       {view === 'quote' && !editing && qView === 'list' && (() => {
-        const rows = saved.filter((sq) => stageOf(sq).key !== 'unqualified')
+        // Filter: Sold (sold or accepted) · Out (sent, follow up, not in Jobber yet) · Declined (archived / unqualified)
+        const bucket = (k) => (k === 'gift' ? 'gift' : k === 'sold' || k === 'accepted' ? 'sold' : k === 'unqualified' ? 'declined' : 'out');
+        const counts = saved.filter((sq) => !sq.group || !saved.some((x) => x.id === sq.group)).reduce((c, sq) => { const b = bucket(stageOf(sq).key); c[b] = (c[b] || 0) + 1; return c; }, {});
+        // Deals: a main quote + its options (other scopes; one is ✓ agreed) + add-ons. Only the agreed option + add-ons count.
+        const ids = new Set(saved.map((x) => x.id));
+        const membersOf = (id) => saved.filter((x) => x.group === id);
+        const dealOf = (sq) => {
+          const mem = membersOf(sq.id);
+          const opts = [sq, ...mem.filter((x) => x.kind !== 'addon')];
+          const agreed = opts.find((x) => x.id === sq.chosenId) || sq;
+          const addons = mem.filter((x) => x.kind === 'addon');
+          const ftOf = (x) => num(x.feetOverride) || ['easy', 'medium', 'hard'].reduce((t, k) => t + num(x.feet?.[k]), 0); // typed-in feet (old jobs) win
+          return { opts, agreed, addons, mem, ft: [agreed, ...addons].reduce((t, x) => t + ftOf(x), 0), total: [agreed, ...addons].reduce((t, x) => t + num(x.total), 0), ftOf };
+        };
+        const mains = saved.filter((sq) => !sq.group || !ids.has(sq.group));
+        const rows = mains.filter((sq) => { const b = bucket(stageOf(sq).key); return qFilter === 'all' ? b !== 'declined' && b !== 'gift' : b === qFilter; })
           .sort((a, b) => createdOf(b) - createdOf(a)); // newest first
         const open = async (id) => { setOpening(id); try { await openQuote(id); setEditing(true); } finally { setOpening(''); } };
+        // Numbers for one deal row (shared by the rows and the totals line)
+        const rowNums = (sq0) => {
+          const deal = dealOf(sq0);
+          const sq = { ...sq0, total: deal.total }; // deal total (agreed option + add-ons)
+          const st0 = stageOf(sq0);
+          const sold = st0.key === 'sold';
+          const ft = deal.ft;
+          // Plan comes from their Jobber quote (the "N Season term" line); plan price = what they actually pay per season.
+          const yrs = Number(deal.agreed.planYears) || st0.jq?.years || 1; // your pick in Present wins, else Jobber's term line
+          // Roofline price (what $/ft uses); add-ons shown on their own line
+          const off = 1 - (PLAN_OFF[yrs] || 0) / 100;
+          // Hub add-ons follow the deal's plan. With feet = more roofline; without = wreath/bushes → Add-ons.
+          const hubAdd = deal.addons.map((x) => ({ ft: deal.ftOf(x), pay: num(x.total) * off }));
+          const hubRoofAdd = hubAdd.filter((a) => a.ft > 0).reduce((t, a) => t + a.pay, 0);
+          const hubOtherAdd = hubAdd.filter((a) => !(a.ft > 0)).reduce((t, a) => t + a.pay, 0);
+          const baseRoof = st0.jq?.total ? num(st0.jq.roof ?? st0.jq.total) : num(deal.agreed.total) * off;
+          // Jobber's separate add-on quotes count only when there's no Hub add-on for them (no double counting)
+          const jobberAdd = st0.jq?.total ? num(st0.jq.firstAddons ?? st0.jq.addons) + (deal.addons.length ? 0 : num(st0.jq.extraQuotes)) : 0;
+          const planPrice = baseRoof + hubRoofAdd;
+          const addonsPrice = jobberAdd + hubOtherAdd;
+          return { deal, sq, st0, sold, ft, yrs, planPrice, addonsPrice };
+        };
+
+        // Multi-year plans (sold): yearly recurring + what's locked in over the remaining seasons.
+        // Multi-year plans straight from Jobber (every sold lights quote with an N-season term), one per client.
+        const byClient = {};
+        (jobberQuotes || []).filter((q) => q.status === 'approved' || q.status === 'converted').forEach((q) => {
+          const k = q.clientId || nameKey(q.clientName);
+          const c = byClient[k] || (byClient[k] = { name: q.clientName, years: 1, total: 0 });
+          c.years = Math.max(c.years, q.years || 1); c.total += Number(q.total) || 0;
+        });
+        const plans = Object.values(byClient).filter((c) => c.years > 1);
+        const perSeason = plans.reduce((t, c) => t + c.total, 0);
+        const locked = plans.reduce((t, c) => t + c.total * c.years, 0);
         return (
+          <>
+          {plans.length > 0 && (
+            <div className="mb-3 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-2.5 text-sm text-secondary">
+              🔁 <b className="text-primary">{plans.length} on multi-year plans</b> · <b className="text-primary">{dollars(perSeason)}</b>/season recurring · {dollars(locked)} locked in <span className="text-muted">(names on Sales)</span>
+            </div>
+          )}
+          {linking && (
+            <div className="fixed inset-0 z-[80] bg-black/50 flex items-start justify-center pt-24 px-4" onClick={() => setLinking(null)}>
+              <div className="w-full max-w-lg rounded-2xl bg-card border border-border-subtle p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-lg font-bold text-primary">Link “{linking.client}” to Jobber</h3>
+                <p className="text-xs text-secondary">Pick their client in Jobber. After this, Sold / Sent comes straight from their Jobber quote.</p>
+                <LinkPicker initial={linking.client} requests={jobberRequests} onPick={async (c) => {
+                  try { await patchQuoteMeta(linking.id, { clientInfo: c }); say(`Linked ${c.name} ✓`); refreshList(); }
+                  catch (e) { say(`Couldn't link: ${e.message}`); }
+                  setLinking(null);
+                }} />
+              </div>
+            </div>
+          )}
+          {attaching && (() => {
+            const others = mains.filter((m) => m.id !== attaching.id && m.group !== attaching.id);
+            const same = (m) => nameKey(m.clientInfo?.name || m.client).slice(0, 5) === nameKey(attaching.clientInfo?.name || attaching.client).slice(0, 5);
+            const put = async (m, kind) => {
+              // Anything already inside this quote's deal moves along with it
+              for (const x of saved.filter((y) => y.group === attaching.id)) await patchQuoteMeta(x.id, { group: m.id });
+              await patchQuoteMeta(attaching.id, { group: m.id, kind });
+              if (kind === 'option' && !m.chosenId) await patchQuoteMeta(m.id, { chosenId: m.id });
+              setAttaching(null); setOpenDeal(m.id); refreshList();
+            };
+            return (
+              <div className="fixed inset-0 z-[80] bg-black/50 flex items-start justify-center pt-20 px-4" onClick={() => setAttaching(null)}>
+                <div className="w-full max-w-lg rounded-2xl bg-card border border-border-subtle p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+                  <h3 className="text-lg font-bold text-primary">Put “{attaching.client}” inside another deal</h3>
+                  <p className="text-xs text-secondary"><b>Other scope</b> = a different version of the same job (only the ✓ agreed one counts). <b>Add-on</b> = extra work on top (always counts).</p>
+                  <div className="max-h-80 overflow-y-auto divide-y divide-border-subtle">
+                    {[...others.filter(same), ...others.filter((m) => !same(m))].map((m) => (
+                      <div key={m.id} className="flex items-center gap-2 py-2">
+                        <span className="flex-1 min-w-0 text-sm text-primary truncate">{m.client} <span className="text-muted">· {dollars(num(m.total))}</span></span>
+                        <button onClick={() => put(m, 'option')} className="px-2 py-1 rounded-md border border-border-default text-[11px] font-semibold text-primary hover:bg-surface-alt cursor-pointer">Other scope</button>
+                        <button onClick={() => put(m, 'addon')} className="px-2 py-1 rounded-md bg-sky-500/15 text-[11px] font-semibold text-sky-400 hover:bg-sky-500/25 cursor-pointer">Add-on</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+          <div className="mb-2">
+            <select value={qFilter} onChange={(e) => setQFilter(e.target.value)}
+              className="rounded-lg border border-border-default bg-card px-3 py-1.5 text-sm font-semibold text-primary cursor-pointer">
+              {[['all', 'All', (counts.sold || 0) + (counts.out || 0)], ['sold', 'Sold', counts.sold || 0], ['out', 'Pending', counts.out || 0], ['declined', 'Declined', counts.declined || 0], ['gift', '🎁 Gifts', counts.gift || 0]].map(([k, l, c]) => (
+                <option key={k} value={k}>{l} ({c})</option>
+              ))}
+            </select>
+          </div>
           <div className="rounded-xl border border-border-default bg-card overflow-hidden">
-            <div className="hidden sm:grid grid-cols-[minmax(0,2fr)_70px_100px_80px_80px_70px_36px] gap-3 px-4 py-2 border-b border-border-subtle text-[10px] font-bold uppercase tracking-wide text-muted">
-              <span>Client</span><span className="text-right">Feet</span><span className="text-right">Price</span><span className="text-right">$/ft</span><span>Status</span><span>Date</span><span />
+            <div className="hidden sm:grid grid-cols-[minmax(0,2fr)_80px_110px_60px_60px_44px_70px_150px_36px] gap-3 px-4 py-2 border-b border-border-subtle text-[10px] font-bold uppercase tracking-wide text-muted">
+              <span>Client</span><span className="text-right">Total</span><span className="text-right">Roofline</span><span className="text-right">Feet</span><span className="text-right">$/ft</span><span>Term</span><span className="text-right">Add-ons</span><span>Status</span><span />
             </div>
             <button onClick={() => { reset(); setEditing(true); }} className="w-full flex items-center gap-2 px-4 py-2.5 border-b border-border-subtle text-sm font-semibold text-brand-text hover:bg-surface-alt cursor-pointer"><Plus size={14} /> New quote</button>
-            {rows.map((sq) => {
-              const sold = stageOf(sq).key === 'sold';
-              const ft = ['easy', 'medium', 'hard'].reduce((t, k) => t + num(sq.feet?.[k]), 0);
+            {rows.map((sq0) => {
+              const { deal, sq, st0, sold, ft, yrs, planPrice, addonsPrice } = rowNums(sq0);
               return (
-                <div key={sq.id} onClick={() => !opening && open(sq.id)}
-                  className={`group grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,2fr)_70px_100px_80px_80px_70px_36px] gap-3 items-center px-4 py-2.5 border-b border-border-subtle last:border-b-0 hover:bg-surface-alt cursor-pointer ${sold ? 'opacity-75' : ''}`}>
+                <Fragment key={sq.id}>
+                <div onClick={() => !opening && open(deal.agreed.id)}
+                  className={`group grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,2fr)_80px_110px_60px_60px_44px_70px_150px_36px] gap-3 items-center px-4 py-2.5 border-b border-border-subtle last:border-b-0 hover:bg-surface-alt cursor-pointer ${sold ? 'opacity-75' : ''}`}>
                   <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-primary truncate">{opening === sq.id ? 'Opening…' : sq.client || 'No name'}</span>
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="min-w-0">
+                        {/* Their real name from Jobber; a business name sits under it, small and gray */}
+                        <span className="block text-sm font-semibold text-primary truncate">{opening === deal.agreed.id ? 'Opening…' : (jobberQuotes || []).find((q) => sq0.clientInfo?.id && q.clientId === sq0.clientInfo.id)?.clientName || sq0.clientInfo?.name || sq.client || 'No name'}</span>
+                        {(() => {
+                          // Business name from Jobber; else the name you typed on the quote when it's not just their name (e.g. "State Farm")
+                          const co = (jobberQuotes || []).find((q) => sq0.clientInfo?.id && q.clientId === sq0.clientInfo.id && q.companyName)?.companyName;
+                          const typed = nameKey(sq.client); const real = nameKey(sq0.clientInfo?.name);
+                          const sub = co || (sq0.clientInfo?.name && typed && !real.includes(typed) && !typed.includes(real) ? sq.client : '');
+                          return sub ? <span className="block text-[11px] text-muted truncate">{sub}</span> : null;
+                        })()}
+                      </span>
+                      {deal.mem.length > 0 && (
+                        <button onClick={(e) => { e.stopPropagation(); setOpenDeal(openDeal === sq.id ? '' : sq.id); }}
+                          className="shrink-0 px-1.5 py-0.5 rounded-md bg-surface-alt border border-border-subtle text-[10px] font-bold text-secondary hover:text-primary cursor-pointer">
+                          {[deal.opts.length > 1 && `${deal.opts.length} options`, deal.addons.length && `+${deal.addons.length} add-on${deal.addons.length > 1 ? 's' : ''}`].filter(Boolean).join(' · ')} {openDeal === sq.id ? '▴' : '▾'}
+                        </button>
+                      )}
+                    </span>
                     {/* Phone: the details under the name */}
-                    <span className="sm:hidden block text-xs text-muted truncate">{ft ? `${ft} ft` : 'No feet yet'}{ft > 0 && num(sq.total) > 0 ? ` · ${money(num(sq.total) / ft)}/ft` : ''} · {sold ? 'Sold' : 'Pending'} · {new Date(createdOf(sq)).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                    <span className="sm:hidden block text-xs text-muted truncate">{ft ? `${ft} ft` : 'No feet yet'}{ft > 0 && num(sq.total) > 0 ? ` · ${money(num(sq.total) / ft)}/ft` : ''} · {(STAGE_LABEL[stageOf(sq).key] || ['Pending'])[0]}{!sq.clientInfo?.id ? ' · ⚠ Not linked' : ''}</span>
                   </span>
-                  <span className="hidden sm:block text-sm text-secondary text-right tabular-nums">{ft || '—'}</span>
-                  <span className="text-sm font-bold text-brand-text text-right tabular-nums">{money(sq.total || 0)}</span>
-                  <span className="hidden sm:block text-sm text-secondary text-right tabular-nums">{ft > 0 && num(sq.total) > 0 ? money(num(sq.total) / ft) : '—'}</span>
-                  <span className="hidden sm:block">{sold
-                    ? <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500 text-white">Sold</span>
-                    : <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-yellow-500/15 text-yellow-400">Pending</span>}</span>
-                  <span className="hidden sm:block text-xs text-muted">{new Date(createdOf(sq)).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                  {/* Final price per season = roofline + add-ons */}
+                  <span className="text-right tabular-nums text-sm font-bold text-brand-text">{st0.key === 'gift' ? <span className="text-pink-400">Gift</span> : planPrice + addonsPrice > 0 ? dollars(planPrice + addonsPrice) : '—'}</span>
+                  {/* Price = what they pay per season; on a plan, the full price shows small underneath */}
+                  {/* Full price on top; on a multi-season plan it's crossed out and the per-season price shows under it */}
+                  <span className="hidden sm:block text-right tabular-nums leading-tight">{(() => {
+                    const full = yrs > 1 && PLAN_OFF[yrs] ? planPrice / (1 - PLAN_OFF[yrs] / 100) : planPrice;
+                    if (st0.key === 'gift') return <span className="block text-sm font-semibold text-pink-400">Gift</span>;
+                    if (!(planPrice > 0)) return <span className="block text-sm text-muted">—</span>;
+                    return yrs > 1 ? <>
+                      <span className="block text-xs text-muted line-through">{dollars(full)}</span>
+                      <span className="block text-sm font-semibold text-primary">{dollars(planPrice)}<span className="text-[10px] font-semibold text-secondary">/season</span></span>
+                    </> : <span className="block text-sm font-semibold text-primary">{dollars(planPrice)}</span>;
+                  })()}</span>
+                  {/* Feet: tap to type what you measured (old jobs measured before this tool) */}
+                  <span className="hidden sm:block text-right" onClick={(e) => e.stopPropagation()}>
+                    <input key={`${deal.agreed.id}-${deal.agreed.feetOverride || ''}`} defaultValue={ft || ''} placeholder="—" inputMode="decimal"
+                      title={deal.agreed.feetOverride ? 'Typed in by you — clear it to use the measured feet' : 'Tap to type the feet you measured'}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                      onBlur={async (e) => {
+                        const v = parseFloat(e.target.value); const measured = ['easy', 'medium', 'hard'].reduce((t, k) => t + num(deal.agreed.feet?.[k]), 0);
+                        const next = Number.isFinite(v) && v > 0 && v !== measured ? v : null;
+                        if ((next || null) === (deal.agreed.feetOverride || null)) return;
+                        await patchQuoteMeta(deal.agreed.id, { feetOverride: next }); refreshList();
+                      }}
+                      className={`w-14 bg-transparent text-sm text-right tabular-nums rounded px-1 hover:bg-surface-alt focus:bg-surface-alt focus:outline-none ${deal.agreed.feetOverride ? 'text-sky-400' : 'text-secondary'}`} />
+                  </span>
+                  <span className="hidden sm:block text-sm text-secondary text-right tabular-nums">{st0.key !== 'gift' && ft > 0 && planPrice > 0 ? `$${(planPrice / ft).toFixed(2)}` : '—'}</span>
+                  <span className="hidden sm:block">{yrs > 1 && <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-sky-500/15 text-sky-400 whitespace-nowrap">{yrs} yr</span>}</span>
+                  <span className="hidden sm:block text-right text-sm tabular-nums text-sky-400">{st0.key !== 'gift' && addonsPrice > 0 ? dollars(addonsPrice) : <span className="text-muted">—</span>}</span>
+                  <span className="hidden sm:flex flex-col items-start gap-0.5">{(() => {
+                    const st = stageOf(sq); const [label, cls] = STAGE_LABEL[st.key] || ['Pending', 'bg-yellow-500/15 text-yellow-400'];
+                    return <>
+                      {/* One status dropdown: Sold / Sent / Follow up come from Jobber; Accepted, Declined, Gift are yours to set */}
+                      <select value={sq0.gift ? 'gift' : sq0.qStage === 'accepted' ? 'accepted' : sq0.qStage === 'unqualified' ? 'declined' : 'auto'}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={async (e) => {
+                          const v = e.target.value;
+                          await patchQuoteMeta(sq0.id, { gift: v === 'gift', qStage: v === 'accepted' ? 'accepted' : v === 'declined' ? 'unqualified' : '' });
+                          refreshList();
+                        }}
+                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold cursor-pointer border-0 outline-none appearance-none pr-4 ${cls}`}
+                        style={{ backgroundImage: 'none' }}>
+                        <option value="auto">{['accepted', 'gift', 'unqualified'].includes(st.key) ? 'From Jobber' : `${label}${st.key === 'follow' ? ` · ${st.days}d` : ''}`} ▾</option>
+                        <option value="accepted">✓ Accepted</option>
+                        <option value="declined">✕ Declined</option>
+                        <option value="gift">🎁 Gift</option>
+                      </select>
+                      {!sq.clientInfo?.id && <button onClick={(e) => { e.stopPropagation(); setLinking(sq); }} className="mt-0.5 px-2 py-0.5 rounded-md border border-amber-500/60 text-[10px] font-bold text-amber-500 hover:bg-amber-500/10 whitespace-nowrap cursor-pointer" title="Pick their client in Jobber">🔗 Link to Jobber</button>}
+                    </>;
+                  })()}</span>
                   <span className="hidden sm:flex justify-end" onClick={(e) => e.stopPropagation()}>
                     {confirmDel === sq.id
                       ? <span className="flex items-center gap-1 whitespace-nowrap text-[11px]">
                           <button onClick={() => setConfirmDel(null)} className="rounded px-1.5 py-0.5 text-muted hover:text-primary cursor-pointer">Cancel</button>
                           <button onClick={() => removeQuote(sq.id)} className="rounded bg-red-600 px-1.5 py-0.5 font-semibold text-white hover:bg-red-700 cursor-pointer">Delete</button>
                         </span>
-                      : <button onClick={() => setConfirmDel(sq.id)} className="p-1 text-muted hover:text-red-500 cursor-pointer" title="Delete"><Trash2 size={13} /></button>}
+                      : <span className="flex items-center gap-0.5">
+                          <button onClick={() => setAttaching(sq0)} className="p-1 text-muted hover:text-primary cursor-pointer" title="Put this quote inside another deal (as another scope or an add-on)"><Layers size={13} /></button>
+                          <button onClick={() => setConfirmDel(sq.id)} className="p-1 text-muted hover:text-red-500 cursor-pointer" title="Delete"><Trash2 size={13} /></button>
+                        </span>}
                   </span>
                 </div>
+                {openDeal === sq.id && (
+                  // Each piece of the deal on its own row, lined up under the same columns (plain gray, no extra colors)
+                  <div className="border-b border-border-subtle bg-surface-alt/30">
+                    {[...deal.opts.map((x) => ({ x, kind: 'option' })), ...deal.addons.map((x) => ({ x, kind: 'addon' }))].map(({ x, kind }) => {
+                      const agreed = kind === 'option' && x.id === deal.agreed.id;
+                      const y = Number(deal.agreed.planYears) || stageOf(sq0).jq?.years || 1;
+                      const per = num(x.total) * (1 - (PLAN_OFF[y] || 0) / 100);
+                      const xf = deal.ftOf(x);
+                      const dim = kind === 'option' && !agreed;
+                      return (
+                        <div key={x.id} onClick={() => open(x.id)}
+                          className={`group/sub grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,2fr)_80px_110px_60px_60px_44px_70px_150px_36px] gap-3 items-center px-4 py-1.5 text-xs cursor-pointer hover:bg-surface-alt ${dim ? 'opacity-50' : ''}`}>
+                          <span className="min-w-0 pl-4 truncate text-secondary">
+                            <span className="text-muted">↳ {kind === 'addon' ? 'Add-on' : agreed ? 'Agreed' : 'Not chosen'} · </span>{x.scopeName || (kind === 'option' ? 'Main quote' : 'Add-on')}
+                          </span>
+                          <span className="hidden sm:block" />
+                          <span className="text-right tabular-nums text-secondary">{num(x.total) > 0 ? dollars(per) : '—'}</span>
+                          <span className="hidden sm:block text-right tabular-nums text-secondary">{xf || '—'}</span>
+                          <span className="hidden sm:block text-right tabular-nums text-muted">{xf > 0 && per > 0 ? `$${(per / xf).toFixed(2)}` : ''}</span>
+                          <span className="hidden sm:block" />
+                          <span className="hidden sm:block" />
+                          <span className="hidden sm:flex gap-3 text-[11px] text-muted opacity-0 group-hover/sub:opacity-100" onClick={(e) => e.stopPropagation()}>
+                            {dim && <button onClick={async () => { await patchQuoteMeta(sq.id, { chosenId: x.id }); refreshList(); }} className="hover:text-primary underline cursor-pointer">Use this one</button>}
+                            {x.id !== sq.id && <button onClick={async () => { await patchQuoteMeta(x.id, { group: null, kind: null }); if (sq.chosenId === x.id) await patchQuoteMeta(sq.id, { chosenId: null }); refreshList(); }} className="hover:text-primary underline cursor-pointer">Take out</button>}
+                          </span>
+                          <span className="hidden sm:block" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                </Fragment>
               );
             })}
+            {/* Totals for what's showing (gifts don't count) */}
+            {(() => {
+              const t = rows.map(rowNums).filter((r) => r.st0.key !== 'gift').reduce((a, r) => ({ total: a.total + r.planPrice + r.addonsPrice, roof: a.roof + r.planPrice, add: a.add + r.addonsPrice, ft: a.ft + (r.ft > 0 && r.planPrice > 0 ? r.ft : 0), roofFt: a.roofFt + (r.ft > 0 && r.planPrice > 0 ? r.planPrice : 0) }), { total: 0, roof: 0, add: 0, ft: 0, roofFt: 0 });
+              return (
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,2fr)_80px_110px_60px_60px_44px_70px_150px_36px] gap-3 items-center px-4 py-3 border-t-2 border-border-default bg-surface-alt/50 text-sm font-bold">
+                  <span className="text-primary">Totals <span className="text-xs font-normal text-muted">· {rows.length} shown · per season</span></span>
+                  <span className="text-right tabular-nums text-brand-text">{dollars(t.total)}</span>
+                  <span className="hidden sm:block text-right tabular-nums text-primary">{dollars(t.roof)}</span>
+                  <span className="hidden sm:block text-right tabular-nums text-primary">{Math.round(t.ft)}</span>
+                  <span className="hidden sm:block text-right tabular-nums text-secondary">{t.ft > 0 ? `$${(t.roofFt / t.ft).toFixed(2)}` : '—'}</span>
+                  <span className="hidden sm:block" />
+                  <span className="hidden sm:block text-right tabular-nums text-sky-400">{dollars(t.add)}</span>
+                  <span className="hidden sm:block" /><span className="hidden sm:block" />
+                </div>
+              );
+            })()}
           </div>
+          </>
         );
       })()}
       {view === 'quote' && !editing && qView === 'gallery' && (
@@ -647,7 +915,49 @@ export default function LightsQuoter() {
         onType={setClient}
         onPick={pickClient}
         status={flash || (savedId && lastSaved ? '✓ Saved' : '')}
+        suggestionsTitle="Christmas lights requests in Jobber"
+        suggestions={(() => {
+          // Every lights request in Jobber (newest first), one per client; ones without a Hub quote yet on top.
+          const quoted = new Set(saved.flatMap((sq) => [sq.clientInfo?.id, nameKey(sq.clientInfo?.name || sq.client)]).filter(Boolean));
+          const seen = new Set();
+          return (jobberRequests || []).filter((r) => r.status !== 'archived' && r.clientId)
+            .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+            .filter((r) => (seen.has(r.clientId) ? false : seen.add(r.clientId)))
+            .map((r) => {
+              const has = quoted.has(r.clientId) || quoted.has(nameKey(r.clientName));
+              return { key: r.id, id: r.clientId, name: r.clientName, address: r.street, city: r.city, phone: r.phone, email: r.email,
+                sub: `${new Date(r.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${r.title}`, tag: has ? 'has a quote' : '', has };
+            })
+            .sort((a, b) => Number(a.has) - Number(b.has));
+        })()}
       />
+
+      {/* Deal: another scope (copy of this quote to change) or an add-on (new piece of work for the same client) */}
+      {savedId && clientInfo && (() => {
+        const main = dealMeta.group || savedId;
+        const newScope = async () => {
+          const id = `lq-${Date.now()}`;
+          const n = saved.filter((x) => x.id === main || x.group === main).filter((x) => x.kind !== 'addon').length + 1;
+          await putQuote({ ...snapshot(), id, savedId: id, group: main, kind: 'option', chosenId: null, scopeName: `Scope ${n}`, presentToken: '', crewToken: '', savedAt: new Date().toISOString() });
+          await refreshList(); await openQuote(id); say(`Scope ${n} made — change it, then mark it agreed from the list`);
+        };
+        const newAddon = () => {
+          const c = client; const ci = clientInfo; const id = `lq-${Date.now()}`;
+          reset();
+          setDealMeta({ group: main, kind: 'addon', scopeName: 'Add-on' });
+          setSavedId(id); setClient(c); setClientInfo(ci);
+          say('New add-on for the same deal — it counts on top of their quote');
+        };
+        return (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            {dealMeta.kind && <span className={`px-2 py-0.5 rounded-md font-bold ${dealMeta.kind === 'addon' ? 'bg-sky-500/15 text-sky-400' : 'bg-surface-alt text-secondary'}`}>{dealMeta.kind === 'addon' ? 'Add-on' : dealMeta.scopeName || 'Other scope'}</span>}
+            <input value={dealMeta.scopeName || ''} onChange={(e) => setDealMeta((m) => ({ ...m, scopeName: e.target.value }))} placeholder="Name this version (e.g. Front only)"
+              className="w-56 rounded-md border border-border-default bg-card px-2 py-1 text-xs text-primary" />
+            <button onClick={newScope} className="px-2.5 py-1 rounded-md border border-border-default font-semibold text-primary hover:bg-surface-alt cursor-pointer">＋ Other scope</button>
+            <button onClick={newAddon} className="px-2.5 py-1 rounded-md bg-sky-500/15 font-semibold text-sky-400 hover:bg-sky-500/25 cursor-pointer">＋ Add-on</button>
+          </div>
+        );
+      })()}
 
       {/* Wizard: one step at a time. Other steps stay mounted (hidden) so lines still refill materials. */}
       {(() => {
@@ -996,6 +1306,38 @@ export default function LightsQuoter() {
         {nav(12)}
       </div>
       <div className={wstep === 11 ? 'space-y-5' : 'hidden'}>
+      {/* Their decision: status + plan, saved on the quote (the Quotes list reads this) */}
+      {(() => {
+        const parent = dealMeta.kind === 'addon' ? saved.find((x) => x.id === dealMeta.group) : null;
+        const parentYrs = parent ? (Number(parent.planYears) || stageOf(parent).jq?.years || 1) : null;
+        const yrs = parentYrs || Number(dealMeta.planYears) || 1;
+        const status = dealMeta.gift ? 'gift' : qStage === 'accepted' ? 'accepted' : qStage === 'unqualified' ? 'declined' : 'out';
+        const setStatus = (v) => { setQStage(v === 'accepted' ? 'accepted' : v === 'declined' ? 'unqualified' : ''); setDealMeta((m) => ({ ...m, gift: v === 'gift' })); };
+        const per = num(q.total) * (1 - (PLAN_OFF[yrs] || 0) / 100);
+        const chip = (on) => `px-3 py-2 rounded-lg text-sm font-semibold cursor-pointer ${on ? 'bg-brand text-on-brand' : 'bg-surface-alt text-primary hover:bg-surface'}`;
+        return (
+          <div className="rounded-xl border-2 border-border-brand bg-card p-4 space-y-3">
+            <StepHead title="Their decision" sub="Set this after they tell you (text, call, in person). The Quotes list uses it." />
+            <div className="flex flex-wrap gap-2">
+              {[['out', 'Pending'], ['accepted', '✓ Accepted'], ['declined', '✕ Declined'], ['gift', '🎁 Gift']].map(([k, l]) => (
+                <button key={k} onClick={() => setStatus(k)} className={chip(status === k)}>{l}</button>
+              ))}
+            </div>
+            {status !== 'gift' && <>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted pt-1">Plan</p>
+              {parent ? <p className="text-sm text-primary">Add-on — follows <b>{parent.client}</b>’s plan: <b>{yrs} season{yrs > 1 ? 's' : ''}{PLAN_OFF[yrs] ? ` · ${PLAN_OFF[yrs]}% off` : ''}</b></p> : <div className="flex flex-wrap gap-2">
+                {[1, 2, 3].map((y) => (
+                  <button key={y} onClick={() => setDealMeta((m) => ({ ...m, planYears: y }))} className={chip(yrs === y)}>
+                    {y} season{y > 1 ? 's' : ''}{PLAN_OFF[y] ? ` · ${PLAN_OFF[y]}% off` : ''}
+                  </button>
+                ))}
+              </div>}
+              {num(q.total) > 0 && <p className="text-sm text-secondary">{yrs > 1 ? <><span className="line-through text-muted">{dollars(q.total)}</span> → </> : null}<b className="text-primary">{dollars(per)}</b>{yrs > 1 ? `/season for ${yrs} seasons` : ''} <span className="text-muted">({parent ? (feet && ['easy', 'medium', 'hard'].some((k) => num(feet[k]) > 0) ? 'counts as extra roofline' : 'counts as an add-on — add feet if it’s more roofline') : 'roofline, before add-ons'})</span></p>}
+            </>}
+          </div>
+        );
+      })()}
+
       {/* Summary of what you put in */}
       {(() => {
         const design = DESIGNS.find((d) => d.id === style);
@@ -1026,10 +1368,11 @@ export default function LightsQuoter() {
 
       {/* Plan photos (+ mockups) with downloads, then the exact quote text */}
       <LightsMockup part="lines" title="Plan photos" sub="Every side with your lines. Tap one to see it big, or download." angles={angles} setAngles={setAngles} client={client} previews={previews} setPreviews={setPreviews} designId={style} />
-      <LightsQuotePreview quoteId={savedId} />
+      <LightsQuotePreview quoteId={savedId} years={Number(dealMeta.planYears) || 1} onYears={(y) => setDealMeta((m) => ({ ...m, planYears: y }))} />
 
       {/* Client's exact-price page: the rough-estimate page look, with their real price, 1/2/3-year pick and add-ons. Accept drafts the Jobber quote. */}
-      <div className="rounded-xl border-2 border-emerald-500/40 bg-emerald-500/5 p-4 flex items-center gap-3 flex-wrap">
+      <div className="grid gap-3 md:grid-cols-2">
+      <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-4 flex flex-col gap-3">
         <div className="flex-1 min-w-[200px]">
           <p className="text-base font-bold text-primary">🎄 Exact-price page</p>
           <p className="text-xs text-muted">Text them this when they can't meet: their mockup, exact price, 1/2/3-year pick and add-ons. Accept makes the Jobber quote as a draft for you to send.</p>
@@ -1053,28 +1396,31 @@ export default function LightsQuoter() {
           };
           const pageUrl = (t) => `https://hub.heyjudeslawncare.com/estimate/${t}`;
           return (
-            <>
+            <div className="flex gap-2">
               <button disabled={!savedId} title={savedId ? '' : 'Pick the client first so the quote saves'} onClick={async () => { const u = pageUrl(make()); try { await navigator.clipboard.writeText(u); } catch { /* shown below */ } setPageCopied(u); setTimeout(() => setPageCopied(''), 6000); }}
-                className="rounded-xl bg-emerald-600 text-white px-5 py-3 text-base font-bold hover:bg-emerald-700 disabled:opacity-40 cursor-pointer">{pageCopied ? '✓ Link copied' : '📋 Copy their link'}</button>
+                className="flex-1 rounded-lg bg-emerald-600 text-white px-3 py-2 text-sm font-bold hover:bg-emerald-700 disabled:opacity-40 cursor-pointer">{pageCopied ? '✓ Link copied' : '📋 Copy their link'}</button>
               <button disabled={!savedId} onClick={() => { const t = make(); setTimeout(() => window.open(`/estimate/${t}?preview=1`, '_blank'), presentToken ? 0 : 2500); }}
-                className="rounded-xl border border-border-strong px-5 py-3 text-base font-bold text-primary hover:bg-surface-alt disabled:opacity-40 cursor-pointer">👀 Preview</button>
-            </>
+                className="rounded-lg border border-border-strong px-3 py-2 text-sm font-bold text-primary hover:bg-surface-alt disabled:opacity-40 cursor-pointer">👀 Preview</button>
+            </div>
           );
         })()}
       </div>
 
       {/* Crew view: send the team the plan + materials */}
-      <div className="rounded-xl border border-border-default bg-card p-4 flex items-center gap-3 flex-wrap">
-        <div className="flex-1 min-w-[200px]">
+      <div className="rounded-xl border border-border-default bg-card p-4 flex flex-col gap-3">
+        <div>
           <p className="text-base font-bold text-primary">Team view</p>
           <p className="text-xs text-muted">The plan (with feet) + materials for your team. No login, no prices.</p>
           {crewCopied && <p className="text-xs text-brand-text mt-1 break-all">Copied: {crewCopied}</p>}
         </div>
-        <button onClick={crewLink} disabled={!savedId} title={savedId ? '' : 'Pick the client first so the quote saves'} className="rounded-xl bg-brand text-on-brand px-5 py-3 text-base font-bold hover:bg-brand-hover disabled:opacity-40 cursor-pointer">
-          {crewCopied ? '✓ Link copied' : '📋 Copy team view link'}
-        </button>
-        <button onClick={() => openCrewView(savedId, crewToken).then(setCrewToken).catch((e) => say(`Couldn't open team view: ${e.message}`))}
-          disabled={!savedId} className="rounded-xl border border-border-strong px-5 py-3 text-base font-bold text-primary hover:bg-surface-alt disabled:opacity-40 cursor-pointer">👀 Open team view</button>
+        <div className="flex gap-2">
+          <button onClick={crewLink} disabled={!savedId} title={savedId ? '' : 'Pick the client first so the quote saves'} className="flex-1 rounded-lg bg-brand text-on-brand px-3 py-2 text-sm font-bold hover:bg-brand-hover disabled:opacity-40 cursor-pointer">
+            {crewCopied ? '✓ Link copied' : '📋 Copy team link'}
+          </button>
+          <button onClick={() => openCrewView(savedId, crewToken).then(setCrewToken).catch((e) => say(`Couldn't open team view: ${e.message}`))}
+            disabled={!savedId} className="rounded-lg border border-border-strong px-3 py-2 text-sm font-bold text-primary hover:bg-surface-alt disabled:opacity-40 cursor-pointer">👀 Open</button>
+        </div>
+      </div>
       </div>
 
       {/* Last thing: present */}

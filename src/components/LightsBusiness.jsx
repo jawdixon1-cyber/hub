@@ -2289,6 +2289,26 @@ export default function LightsBusiness({ view, onOpen = null }) {
           <p className="text-4xl font-bold text-brand-text">{schedule.loading && !sold.length ? '…' : money(total)}</p>
           {matTotal > 0 && <p className="mt-1 text-sm text-secondary">Materials {money(matTotal)} · {pct(matTotal, total)} of sales</p>}
         </div>
+        {(() => {
+          // Multi-year plans (sold Jobber lights quotes with an N-season term), one per client.
+          const by = {};
+          jobber.quotes.filter((q) => q.status === 'approved' || q.status === 'converted').forEach((q) => {
+            const k = q.clientId || nameKey(q.clientName);
+            const c = by[k] || (by[k] = { name: q.clientName, years: 1, total: 0 });
+            c.years = Math.max(c.years, q.years || 1); c.total += n(q.total);
+          });
+          const plans = Object.values(by).filter((c) => c.years > 1).sort((a, b) => b.total - a.total);
+          if (!plans.length) return null;
+          const per = plans.reduce((t, c) => t + c.total, 0);
+          return (
+            <div className="rounded-xl border border-sky-500/30 bg-sky-500/5 px-5 py-4">
+              <p className="text-xs font-semibold text-sky-400">🔁 Recurring from multi-year plans</p>
+              <p className="text-3xl font-bold text-primary">{money(per)}<span className="text-base font-semibold text-muted">/season</span></p>
+              <p className="text-sm text-secondary mt-0.5">{plans.length} clients on a plan · {money(plans.reduce((t, c) => t + c.total * c.years, 0))} locked in over their terms</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">{plans.map((c) => <span key={c.name} className="rounded-full bg-card border border-border-subtle px-2.5 py-0.5 text-xs text-primary">{c.name} · {c.years} seasons · {money(c.total)}</span>)}</div>
+            </div>
+          );
+        })()}
         {/* Upcoming (not installed yet) first, then Installed — each with its own sales + materials total. */}
         {[['Upcoming', 'Not installed yet — planned materials', sold.filter((j) => !matsOf(j).done)], ['Installed', 'What actually went up', sold.filter((j) => matsOf(j).done)]].map(([title, sub, list]) => list.length > 0 && (
           <section key={title} className="space-y-2">

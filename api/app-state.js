@@ -945,7 +945,7 @@ async function handleEstimatePage(req, res) {
     .replace('<h2>No messy spacing. No messy wires.</h2>', () => '<h2>No messy spacing.<br>No messy wires.</h2>')
     .replace('</body>', () => '<script>(function(){[].forEach.call(document.querySelectorAll(".hjl .close-vid, .hjl .clips .clip"),function(c){c.addEventListener("click",function(){var v=c.querySelector("video");if(!v)return;var o=document.createElement("div");o.className="hje-zoom";o.innerHTML="<b>\\u00d7</b>";var nv=document.createElement("video");nv.src=v.currentSrc||v.src;nv.poster=v.poster;nv.autoplay=true;nv.loop=true;nv.muted=true;nv.playsInline=true;nv.setAttribute("playsinline","");o.appendChild(nv);o.addEventListener("click",function(){o.remove();document.documentElement.classList.remove("hje-zooming")});document.body.appendChild(o);document.documentElement.classList.add("hje-zooming");try{nv.currentTime=v.currentTime}catch(e){}nv.play&&nv.play().catch(function(){})})})})();</script>' + '</body>')
     .replace('</body>', () => '<script>(function(){var bg=document.querySelector(".hjl .hero .bg");if(!bg)return;var m=/url\\([\\x27"]?([^\\x27")]+)/.exec(bg.style.backgroundImage||getComputedStyle(bg).backgroundImage);if(!m)return;var t=document.createElement("span");t.className="hje-tapzoom";t.textContent="\\u2922 Tap to see your mockup";bg.appendChild(t);(bg.closest(".hero")||bg).addEventListener("click",function(e){var k=bg.getBoundingClientRect();if(e.clientY>k.bottom||(e.target.closest&&e.target.closest("a,button,input")))return;var o=document.createElement("div");o.className="hje-zoom";o.innerHTML="<b>\\u00d7</b>";var im=document.createElement("img");im.src=m[1];o.appendChild(im);var bar=document.createElement("div");bar.className="hje-zbar";var nm=(document.title.split(String.fromCharCode(39))[0]||"My")+"-christmas-lights-mockup.jpg";function blob(){return fetch(m[1]).then(function(r){return r.blob()})}function dl(){blob().then(function(b){var a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=nm;document.body.appendChild(a);a.click();a.remove()}).catch(function(){window.open(m[1],"_blank")})}var d=document.createElement("button");d.type="button";d.textContent="\u2b07 Save photo";d.onclick=function(e){e.stopPropagation();dl()};bar.appendChild(d);if(navigator.share){var sh=document.createElement("button");sh.type="button";sh.textContent="\u2197 Share";sh.onclick=function(e){e.stopPropagation();blob().then(function(b){var f=new File([b],nm,{type:b.type||"image/jpeg"});if(navigator.canShare&&navigator.canShare({files:[f]}))return navigator.share({files:[f],title:"My Christmas lights mockup"});return navigator.share({title:"My Christmas lights mockup",url:location.href.replace(/[?&]preview=1/,"")})}).catch(function(){})};bar.appendChild(sh)}o.appendChild(bar);o.addEventListener("click",function(){o.remove()});document.body.appendChild(o)})})();</script>' + '</body>')
-    .replace(/Warm white, multicolor, candy cane \(red &amp; white\), or your own custom mix\. We bring real bulb samples to your free design visit so you can pick in person\./, () => 'It&#8217;s completely custom. Warm white is the most popular, then multicolor and candy cane (red &amp; white), but you can get whatever bulbs you want. We bring real bulb samples to your free design visit so you can pick in person.')
+    .replace(/Warm white, multicolor, candy cane \(red &amp; white\), or your own custom mix\. We bring real bulb samples to your free design visit so you can pick in person\./, () => 'It&#8217;s completely custom. Warm white is the most popular, then multicolor and candy cane (red &amp; white), but you can get whatever bulbs you want. We bring real bulb samples to your free design consultation so you can pick in person.')
     .replace('</body>', () => '<script>(function(){var ds=document.querySelectorAll(".hjl details");[].forEach.call(ds,function(d){d.addEventListener("toggle",function(){if(!d.open)return;[].forEach.call(ds,function(o){if(o!==d&&o.open)o.open=false})})})})();</script>' + '</body>')
     .replace('</body>', () => '<script>(function(){function zoom(src){var o=document.createElement("div");o.className="hje-zoom";o.innerHTML="<b>\\u00d7</b>";var im=document.createElement("img");im.src=src;o.appendChild(im);o.addEventListener("click",function(){o.remove()});document.body.appendChild(o)}document.addEventListener("click",function(e){if(!e.target.closest)return;var c=e.target.closest(".hjl .hje-jobs figure,.hjl .first .shot .pic:not(.ba)");var im=c?c.querySelector("img"):(e.target.tagName==="IMG"&&e.target.closest(".hjl .meet")?e.target:null);if(!im)return;zoom(im.currentSrc||im.src)});var st=document.createElement("style");st.textContent=".hjl .hje-jobs figure,.hjl .first .shot .pic:not(.ba),.hjl .meet img{cursor:zoom-in}";document.head.appendChild(st)})();</script>' + '</body>')
     .replace('</head>', () => '<style>.hjl .clips .clip{position:relative;cursor:zoom-in}.hjl .clips .clip::after,.hjl .close-vid::after{content:"\\2922";position:absolute;top:8px;right:8px;width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;display:grid;place-items:center;font:700 22px/1 system-ui;pointer-events:none}.hje-tapzoom{position:absolute;right:12px;bottom:12px;z-index:3;background:rgba(0,0,0,.65);backdrop-filter:blur(6px);color:#fff;font:700 14px/1 Poppins,system-ui,sans-serif;padding:9px 13px;border-radius:999px;pointer-events:none}.hjl .hero .bg{cursor:zoom-in}.hje-zoom{flex-direction:column;gap:14px}.hje-zbar{display:flex;gap:10px}.hje-zbar button{background:#fff;color:#111;border:0;border-radius:999px;padding:11px 18px;font:800 15px/1 Poppins,system-ui,sans-serif;cursor:pointer}.hje-zbar button+button{background:#00DF00;color:#04170a}.hjl section:has(.hje-jobs) .sec-head{margin-bottom:14px!important}.hje-zoom img{max-width:100%;max-height:78vh;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.6)}.hjl .first{padding-bottom:24px!important}.hjl section.close{padding-top:0!important}.hjl .close-vid{cursor:zoom-in}@media (max-width:700px){.hjl .close-txt{text-align:center}.hjl .close-txt ul{display:inline-grid;text-align:left;margin-left:auto;margin-right:auto}}.hje-zooming .hjl .close-vid video,.hje-zooming .hjl .clips video{visibility:hidden}.hje-zoom{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out}.hje-zoom video{max-width:100%;max-height:88vh;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.6)}.hje-zoom b{position:absolute;top:14px;right:18px;color:#fff;font:700 30px/1 system-ui}.hje-cmp{max-width:820px;margin:0 auto}.hje-cmp table{width:100%;border-collapse:separate;border-spacing:0;font-size:15px}.hje-cmp th,.hje-cmp td{padding:12px 8px;text-align:center;border-bottom:1px solid rgba(255,255,255,.07)}.hje-cmp tbody th{text-align:left;font-weight:600;color:#d9dde6;width:38%}.hje-cmp thead th{width:20.6%}.hje-cmp thead th:first-child{width:38%}.hje-cmp thead th{font-weight:800;font-size:15px;vertical-align:bottom;color:#fff;line-height:1.2}.hje-cmp thead small{display:block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8a92a3;margin-bottom:4px}.hje-cmp thead th:nth-child(2),.hje-cmp td:nth-child(2){opacity:.55}.hje-cmp .hje-us{background:rgba(0,223,0,.07);border-left:2px solid #00DF00;border-right:2px solid #00DF00}.hje-cmp thead .hje-us{border-top:2px solid #00DF00;border-radius:16px 16px 0 0}.hje-cmp tbody tr:last-child .hje-us{border-bottom:2px solid #00DF00;border-radius:0 0 16px 16px}.hje-cmp thead .hje-us img{height:34px;display:block;margin:0 auto 6px}.hje-cmp thead .hje-us small{color:#00DF00}.hje-y{color:#00DF00;font-weight:900;font-size:18px}.hje-n{color:#ff5a5a;font-weight:900;font-size:16px}.hje-q{color:#ffcf6b;font-weight:900;font-size:16px}.hje-warn{margin:18px auto 0;max-width:640px;background:rgba(255,90,90,.08);border:1px solid rgba(255,90,90,.35);border-radius:14px;padding:12px 14px;text-align:center;color:#e7c9c9;font-size:14px}@media (max-width:560px){.hje-cmp table{font-size:13px}.hje-cmp th,.hje-cmp td{padding:10px 4px}.hje-cmp thead th{font-size:12.5px}.hje-cmp thead .hje-us img{height:26px}.hje-cmp tbody th{font-size:12.5px}}</style>' + '</head>');
@@ -980,6 +980,8 @@ input[type=text],input[type=tel],input[type=email],select{width:100%;background:
 .thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}.thumbs:empty{display:none}.thumbs div{position:relative}.thumbs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block}.thumbs button{position:absolute;top:3px;right:3px;width:22px;height:22px;padding:0;margin:0;border-radius:50%;background:rgba(0,0,0,.7);color:#fff;font-size:13px;line-height:22px}
 button{width:100%;border:0;border-radius:14px;background:#00DF00;color:#04170a;font:800 18px Poppins,system-ui,sans-serif;padding:16px;cursor:pointer;margin-top:6px}
 button:disabled{opacity:.6}
+.how{list-style:none;margin:0 0 22px;padding:0;display:grid;gap:8px}.how li{display:flex;gap:10px;align-items:flex-start;background:#111621;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:10px 12px;font-size:14px;color:#c9ced8;line-height:1.4}.how li>b{flex:none;width:24px;height:24px;border-radius:50%;background:#00DF00;color:#04170a;display:grid;place-items:center;font-size:13px;font-weight:900;margin-top:1px}.how li span b{color:#fff}
+.prog{height:6px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden;margin:0 0 6px}.prog i{display:block;height:100%;background:#00DF00;transition:width .3s}.pstep{color:#a9b0bf;font-size:13px;font-weight:700;text-align:center;margin:0 0 14px}button.skip,button.back{background:none;color:#a9b0bf;font-size:15px;padding:10px;margin-top:2px}button.back{font-size:14px}
 .err{color:#ff6b6b;font-weight:700;text-align:center;min-height:20px}
 .done{text-align:center;padding:30px 10px}.done h2{font-size:26px;margin:0 0 8px}
 .hp{position:absolute;left:-9999px}
@@ -988,38 +990,118 @@ button:disabled{opacity:.6}
 <img class="logo" src="https://heyjudeslawncare.com/wp-content/uploads/2026/11/hey-judes-holiday-logo.png" alt="Hey Jude's">
 <div id="form">
 <h1>Get your rough Christmas lights estimate 🎄</h1>
-<p class="sub">Takes 1 minute. Then Jude will send you a mockup of your home with a rough estimate.</p>
-<div class="card">
+
+<div class="prog" id="prog" hidden><i id="pbar" style="width:20%"></i></div><p class="pstep" id="plabel" hidden>Step 1 of 5 · Which sides</p>
+<div class="stp" data-s="0">
+<p class="sub">Takes about a minute. Here&#8217;s how it works:</p>
+<ol class="how">
+<li><b>1</b><span><b>Roofline mockup + rough estimate.</b> Jude texts you your roofline lit up with a rough price, so you know if it fits your budget.</span></li>
+<li><b>2</b><span><b>Like it? Free design consultation.</b> We measure your roof, show you real bulbs, and plan any extras you want (wreaths, bushes, trees, windows).</span></li>
+<li><b>3</b><span><b>Your exact price.</b> One price for your roofline plus any extras: lights, install, maintenance, takedown and storage.</span></li>
+</ol>
+<button type="button" class="nx" data-go="1">Get started →</button>
+</div>
+<div class="stp" data-s="1" hidden>
+<div class="card"><p class="q">Which sides of the roofline?</p><p class="qs">C9 bulbs along the roofline. <b>Front = the side with your front door.</b> Left and right are as you stand in the street looking at your front door. Tap the sides you want lit.</p>
+<svg id="hsvg" viewBox="0 0 300 230" style="width:100%;max-width:340px;display:block;margin:6px auto 10px" aria-label="Your house from above">
+  <rect x="70" y="30" width="160" height="110" rx="6" fill="#1b2130" stroke="#2b3242" stroke-width="2"/>
+  <text x="150" y="80" text-anchor="middle" font-size="12" fill="#a9b0bf" font-weight="700">YOUR HOUSE</text>
+  <text x="150" y="96" text-anchor="middle" font-size="10" fill="#6b7385">(from above)</text>
+  <rect x="138" y="132" width="24" height="12" rx="2" fill="#c9a227"/>
+  <text x="150" y="158" text-anchor="middle" font-size="10" fill="#c9a227" font-weight="700">front door</text>
+  <rect x="0" y="196" width="300" height="34" fill="#232a38"/>
+  <text x="150" y="217" text-anchor="middle" font-size="11" fill="#a9b0bf" font-weight="700">STREET · you are here 👀</text>
+  <g class="hs" data-v="Back"><line x1="70" y1="30" x2="230" y2="30"/><text x="150" y="20" text-anchor="middle">BACK</text></g>
+  <g class="hs" data-v="Left side"><line x1="70" y1="30" x2="70" y2="140"/><text x="36" y="89" text-anchor="middle">LEFT</text></g>
+  <g class="hs" data-v="Right side"><line x1="230" y1="30" x2="230" y2="140"/><text x="264" y="89" text-anchor="middle">RIGHT</text></g>
+  <g class="hs" data-v="Front"><line x1="70" y1="140" x2="230" y2="140"/><text x="150" y="182" text-anchor="middle">FRONT</text></g>
+</svg>
+<style>.bl{display:flex;gap:4px;justify-content:center;margin-bottom:6px;font-style:normal}.bl b{width:9px;height:12px;border-radius:50% 50% 45% 45%;box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 6px rgba(255,255,255,.25);display:inline-block}#color span{display:flex;flex-direction:column;align-items:center}.hs{cursor:pointer}.hs line{stroke:#3a4256;stroke-width:9;stroke-linecap:round}.hs text{font-size:12px;font-weight:800;fill:#8a93a6}.hs.on line{stroke:#5bdd3f}.hs.on text{fill:#5bdd3f}.hs:hover line{stroke-width:12}</style>
+<div class="chips" id="sides">
+<label><input type="checkbox" value="Front" checked><span>Front</span></label><label><input type="checkbox" value="Left side"><span>Left side</span></label>
+<label><input type="checkbox" value="Right side"><span>Right side</span></label><label><input type="checkbox" value="Back"><span>Back</span></label></div></div>
+<p class="err" id="err1"></p><button type="button" class="nx" data-go="2">Next →</button>
+<button type="button" class="back" data-go="0">← How it works</button>
+</div>
+<div class="stp" data-s="2" hidden>
+<div class="card"><p class="q">Pick a color for your mockup</p><p class="qs">It doesn&#8217;t change your price. It&#8217;s just so you can see your house lit up the way you like. You can switch colors anytime.</p>
+<div class="chips" id="color">
+<label><input type="radio" name="col" value="Warm white" checked><span><i class="bl"><b style="background:#ffcf6b"></b><b style="background:#ffcf6b"></b><b style="background:#ffcf6b"></b><b style="background:#ffcf6b"></b><b style="background:#ffcf6b"></b><b style="background:#ffcf6b"></b></i>Warm white</span></label><label><input type="radio" name="col" value="Multicolor"><span><i class="bl"><b style="background:#e53935"></b><b style="background:#43a047"></b><b style="background:#1e88e5"></b><b style="background:#fdd835"></b><b style="background:#fb8c00"></b><b style="background:#8e24aa"></b></i>Multicolor</span></label>
+<label><input type="radio" name="col" value="Candy cane"><span><i class="bl"><b style="background:#e53935"></b><b style="background:#fff"></b><b style="background:#e53935"></b><b style="background:#fff"></b><b style="background:#e53935"></b><b style="background:#fff"></b></i>Candy cane</span></label>
+<label><input type="radio" name="col" value="Custom"><span><i class="bl"><b style="background:#7e57c2"></b><b style="background:#26c6da"></b><b style="background:#ec407a"></b><b style="background:#ffcf6b"></b><b style="background:#43a047"></b><b style="background:#fff"></b></i>Custom</span></label>
+</div>
+<input id="cc" type="text" placeholder="Your colors, e.g. red &amp; white, or blue + white" style="margin:10px 0 0;display:none" maxlength="80"></div>
+<p class="err" id="err2"></p><button type="button" class="nx" data-go="3">Next →</button>
+<button type="button" class="back" data-go="1">← Back</button>
+</div>
+<div class="stp" data-s="3" hidden>
+<div class="card"><p class="q">Want anything else lit up?</p><p class="qs"><b>Your rough estimate is for the roofline only.</b> Tap anything else you&#8217;d like and we&#8217;ll price it with you at your free design consultation.</p>
+<div class="chips" id="more">
+<label><input type="checkbox" value="Wreaths"><span>🎄 Wreaths</span></label><label><input type="checkbox" value="Windows"><span>🪟 Windows</span></label>
+<label><input type="checkbox" value="Bushes"><span>🌳 Bushes</span></label><label><input type="checkbox" value="Trees"><span>🌲 Trees</span></label>
+<label><input type="checkbox" value="Doorways"><span>🚪 Doorways</span></label><label><input type="checkbox" value="Pathway"><span>✨ Pathway</span></label></div>
+<input id="moreo" type="text" maxlength="120" placeholder="Anything else? (optional)" style="margin:10px 0 0"></div>
+<p class="err" id="err3"></p><button type="button" class="nx" data-go="4">Next →</button>
+<button type="button" class="back" data-go="2">← Back</button>
+</div>
+<div class="stp" data-s="4" hidden>
+<div class="card"><p class="q">Photos of your house <span style="font-weight:600;color:#a9b0bf">(optional)</span></p><p class="qs">Front first, then any other sides you picked (up to 4). Try to fit the <b>whole side</b> in each photo.</p>
+<div class="thumbs" id="thumbs"></div>
+<label class="photo" id="ph"><span id="phl">📷 Add photos</span><input id="pf" type="file" accept="image/*" multiple hidden></label></div>
+<p class="err" id="err4"></p><button type="button" class="nx" data-go="5">Next →</button>
+<button type="button" class="skip" data-go="5">Skip photos</button>
+<button type="button" class="back" data-go="3">← Back</button>
+</div>
+<div class="stp" data-s="5" hidden>
+<div class="card"><p class="q">Where should Jude send it?</p>
 <div class="row"><div><label class="f" for="n">First name</label><input id="n" type="text" autocomplete="given-name" placeholder="First"></div>
 <div><label class="f" for="ln">Last name</label><input id="ln" type="text" autocomplete="family-name" placeholder="Last"></div></div>
 <label class="f" for="p">Mobile phone</label><input id="p" type="tel" inputmode="numeric" autocomplete="tel" placeholder="803-555-1234">
 <label class="f" for="em">Email</label><input id="em" type="email" autocomplete="email" placeholder="you@email.com">
+</div>
+<div class="card"><p class="q">Your address</p>
 <label class="f" for="s">Street address</label><input id="s" type="text" autocomplete="off" placeholder="Start typing your address">
 <div class="row"><div><label class="f" for="c">City</label><input id="c" type="text" autocomplete="address-level2" placeholder="Rock Hill"></div>
 <div style="flex:.5"><label class="f" for="st">State</label><select id="st"><option>SC</option><option>NC</option></select></div>
 <div style="flex:.7"><label class="f" for="z">Zip</label><input id="z" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="29730"></div></div>
 <input class="hp" id="hp" type="text" tabindex="-1" autocomplete="off">
 </div>
-<div class="card"><p class="q">Which sides of the roofline?</p><p class="qs">C9 bulbs along the roofline. Pick every side you want lit.</p>
-<div class="chips" id="sides">
-<label><input type="checkbox" value="Front" checked><span>Front</span></label><label><input type="checkbox" value="Left side"><span>Left side</span></label>
-<label><input type="checkbox" value="Right side"><span>Right side</span></label><label><input type="checkbox" value="Back"><span>Back</span></label></div></div>
-<div class="card"><p class="q">Preferred mockup color</p><p class="qs">We&#8217;ll show your house lit up in this color.</p>
-<div class="chips" id="color">
-<label><input type="radio" name="col" value="Warm white" checked><span>Warm white</span></label><label><input type="radio" name="col" value="Multicolor"><span>Multicolor</span></label>
-<label><input type="radio" name="col" value="Candy cane"><span>Candy cane</span></label>
-<label><input type="radio" name="col" value="Custom"><span>Custom</span></label>
-<label><input type="radio" name="col" value="Not sure"><span>Not sure</span></label></div>
-<input id="cc" type="text" placeholder="Your colors, e.g. red &amp; white, or blue + white" style="margin:10px 0 0;display:none" maxlength="80"></div>
-<div class="card"><p class="q">Photos of your house <span style="font-weight:600;color:#a9b0bf">(optional)</span></p><p class="qs">Front first, then any other sides you picked (up to 4). Try to fit the <b>whole side</b> in each photo, so stand back or across the street.</p>
-<div class="thumbs" id="thumbs"></div>
-<label class="photo" id="ph"><span id="phl">📷 Add photos</span><input id="pf" type="file" accept="image/*" multiple hidden></label></div>
+<div class="card"><p class="q">How did you hear about us?</p><p class="qs">A neighbor, Google, Facebook, a yard sign…</p>
+<input id="heard" type="text" maxlength="200" placeholder="e.g. Saw your lights on Main St" style="margin:6px 0 0"></div>
 <p class="err" id="err"></p>
 <button id="go">Send me my rough estimate →</button>
+<button type="button" class="back" data-go="4">← Back</button>
 </div>
 <div id="ok" class="done" hidden><h2>Thank you! 🎄</h2><p class="sub">Jude will send you a mockup of your home with a rough estimate soon.</p><p style="margin:26px 0 10px;font-weight:700">Want to learn more about the service?</p><a href="https://heyjudeschristmaslights.com" style="display:block;background:#00DF00;color:#04170a;font-weight:800;font-size:17px;padding:15px;border-radius:14px;text-decoration:none">Click here →</a></div>
 </div>
 <script>
+// House drawing <-> side checkboxes: tap a side on the drawing or the button, both stay in step.
+(function(){
+  var boxes=[].slice.call(document.querySelectorAll('#sides input'));
+  var paint=function(){ [].slice.call(document.querySelectorAll('#hsvg .hs')).forEach(function(g){ var b=boxes.filter(function(x){return x.value===g.getAttribute('data-v')})[0]; g.classList.toggle('on', !!(b&&b.checked)); }); };
+  [].slice.call(document.querySelectorAll('#hsvg .hs')).forEach(function(g){ g.addEventListener('click',function(){ var b=boxes.filter(function(x){return x.value===g.getAttribute('data-v')})[0]; if(b){ b.checked=!b.checked; b.dispatchEvent(new Event('change',{bubbles:true})); paint(); } }); });
+  boxes.forEach(function(b){ b.addEventListener('change',paint); });
+  paint();
+})();
+
+// Steps: sides → color → extras → photos (optional) → your info. One question per screen.
+(function(){
+  var names={1:'Which sides',2:'Your colors',3:'Anything else?',4:'Photos (optional)',5:'Your info'};
+  var cur=0;
+  function show(n){
+    if(n>cur&&cur===1&&!document.querySelectorAll('#sides input:checked').length){ var e=document.getElementById('err1'); if(e) e.textContent='Pick at least one side.'; return; }
+    if(n>cur&&cur===2){ var cc=document.querySelector('#color input:checked'); if(cc&&cc.value==='Custom'&&!document.getElementById('cc').value.trim()){ var e2=document.getElementById('err2'); if(e2) e2.textContent='Tell us your colors (or pick another option).'; return; } }
+    [].forEach.call(document.querySelectorAll('.err'),function(x){x.textContent=''});
+    cur=n;
+    [].forEach.call(document.querySelectorAll('.stp'),function(d){d.hidden=d.getAttribute('data-s')!=String(n)});
+    document.getElementById('prog').hidden=n===0; document.getElementById('plabel').hidden=n===0;
+    document.getElementById('pbar').style.width=(n*20)+'%';
+    if(n) document.getElementById('plabel').textContent='Step '+n+' of 5 · '+names[n];
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  [].forEach.call(document.querySelectorAll('[data-go]'),function(b){b.addEventListener('click',function(){show(Number(b.getAttribute('data-go')))})});
+})();
+
 (function(){
   var photos=[];
   function $(i){return document.getElementById(i)}
@@ -1044,9 +1126,11 @@ button:disabled{opacity:.6}
   $('go').addEventListener('click',function(){
     var b=this, d={ first:$('n').value.trim(), last:$('ln').value.trim(), email:$('em').value.trim(), phone:$('p').value.trim(), street:$('s').value.trim(), city:$('c').value.trim(), state:$('st').value, zip:$('z').value.trim(),
       sides:[].slice.call(document.querySelectorAll('#sides input:checked')).map(function(x){return x.value}),
-      color:(document.querySelector('#color input:checked')||{}).value||'', customColor:$('cc').value.trim(), photos:photos, hp:$('hp').value };
+      color:(document.querySelector('#color input:checked')||{}).value||'', customColor:$('cc').value.trim(), heard:($('heard')||{value:''}).value.trim(), more:[].slice.call(document.querySelectorAll('#more input:checked')).map(function(x){return x.value}), moreOther:($('moreo')||{value:''}).value.trim(), photos:photos, hp:$('hp').value };
     var digits=d.phone.replace(/\\D/g,'');
-    if(!d.first||!d.last||digits.length<10||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(d.email)||!d.street||!d.city){ $('err').textContent='Please fill in your name, phone, email and address.'; return; }
+    var miss=[!d.first&&'first name',!d.last&&'last name',digits.length<10&&'mobile phone',!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(d.email)&&'email',!d.heard&&'how you heard about us'].filter(Boolean);
+    if(miss.length){ $('err').textContent='Please add your '+miss.join(', ')+'.'; return; }
+    if(!d.street||!d.city||!d.zip){ $('err').textContent='Please add your full address (street, city and zip).'; return; }
     if(!d.sides.length){ $('err').textContent='Pick at least one side.'; return; }
     if(d.color==='Custom'&&!d.customColor){ $('err').textContent='Tell us your colors (or pick another option).'; return; }
     $('err').textContent=''; b.disabled=true; b.textContent='Sending…';
@@ -1094,15 +1178,18 @@ async function handleLightsForm(req, res) {
   const digits = String(b.phone || '').replace(/\D/g, '').slice(-10);
   const sides = (Array.isArray(b.sides) ? b.sides : []).filter((x) => ['Front', 'Left side', 'Right side', 'Back'].includes(x));
   const color = b.color === 'Custom' && clean(b.customColor, 80) ? `Custom: ${clean(b.customColor, 80)}`
-    : ['Warm white', 'Multicolor', 'Candy cane', 'Not sure'].includes(b.color) ? b.color : 'Not sure';
+    : ['Warm white', 'Multicolor', 'Candy cane'].includes(b.color) ? b.color : 'Warm white';
   const photos = (Array.isArray(b.photos) ? b.photos : [b.photo]).map(String)
     .filter((x) => /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(x) && x.length < 2_500_000).slice(0, 4);
   const photo = photos[0] || '';
+  const heard = clean(b.heard, 200); // "How did you hear about us?" — typed in by them
+  // Extras they want beyond the roofline (priced at the design visit, not in the rough estimate)
+  const more = [...(Array.isArray(b.more) ? b.more : []).filter((x) => ['Wreaths', 'Windows', 'Bushes', 'Trees', 'Doorways', 'Pathway'].includes(x)), ...(clean(b.moreOther, 120) ? [clean(b.moreOther, 120)] : [])];
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Please enter a valid email.' });
-  if (!firstName || !lastName || digits.length !== 10 || !street || !city || !sides.length) return res.status(400).json({ error: 'Please fill in your name, phone and address.' });
+  if (!firstName || !lastName || digits.length !== 10 || !street || !city || !zip || !sides.length || !heard) return res.status(400).json({ error: 'Please fill in every field (photos are optional).' });
 
   const pretty = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  const title = `Christmas Lights · C9 roofline · ${sides.join(', ')} · ${color}`;
+  const title = `Christmas Lights · C9 roofline · ${sides.join(', ')} · ${color}${more.length ? ` · + ${more.join(', ')}` : ''}`.slice(0, 250);
   let clientId = ''; let propertyId = ''; let requestUrl = ''; let jobberError = '';
   try {
     const { jobberQuery } = await import('../lib/jobberClient.js');
@@ -1138,6 +1225,9 @@ async function handleLightsForm(req, res) {
     const rErrs = rq?.requestCreate?.userErrors || [];
     if (rErrs.length) throw new Error(rErrs.map((e) => e.message).join('; '));
     requestUrl = rq.requestCreate.request.jobberWebUri || '';
+    // Where they heard about us → a note on their Jobber client
+    const noteLines = [heard && `How they heard about us: ${heard}`, more.length && `Also interested in: ${more.join(', ')}`].filter(Boolean);
+    if (noteLines.length) await jobberQuery(`mutation($id:EncodedId!,$i:ClientCreateNoteInput!){ clientCreateNote(clientId:$id, input:$i){ userErrors{ message } } }`, { id: clientId, i: { message: `Lights form:\n${noteLines.join('\n')}` } }).catch(() => null);
   } catch (err) {
     jobberError = String(err.message || err).slice(0, 300); // still save the lead in the Hub below
   }
@@ -1149,7 +1239,7 @@ async function handleLightsForm(req, res) {
   const address = `${street}, ${city}, ${state}${zip ? ` ${zip}` : ''}`;
   // first photo = the one the estimate reads; the rest are extra angles Jude can switch to in the builder
   for (const [i, src] of photos.entries()) await db.from('app_state').upsert({ key: `le-img:${id}:${i ? `x${i}` : 'photo'}`, value: { src }, ...org }, { onConflict: 'key' });
-  const meta = { id, client: name, phone: pretty, email, address, sides, color, lines: [], notes: '', confidence: '', has: { photo: !!photo }, extraPhotos: Math.max(0, photos.length - 1),
+  const meta = { id, client: name, phone: pretty, email, address, sides, color, heard, more, lines: [], notes: '', confidence: '', has: { photo: !!photo }, extraPhotos: Math.max(0, photos.length - 1),
     form: true, jobberRequestUrl: requestUrl, jobberError, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), imgStamp: Date.now() };
   const { error } = await db.from('app_state').upsert({ key: `le-meta:${id}`, value: meta, ...org }, { onConflict: 'key' });
   if (error && !requestUrl) return res.status(500).json({ error: 'Could not send. Try again.' });

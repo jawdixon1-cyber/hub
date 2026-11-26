@@ -814,10 +814,10 @@ async function handleLightsQuotes(req, res) {
       quotes(first: 100) {
         nodes {
           id quoteNumber quoteStatus title
-          amounts { total }
+          amounts { total subtotal }
           createdAt updatedAt sentAt
           client { id firstName lastName companyName }
-          lineItems(first: 15) { nodes { name } }
+          lineItems(first: 15) { nodes { name totalPrice } }
         }
       }
     }`);
@@ -836,6 +836,21 @@ async function handleLightsQuotes(req, res) {
         clientName: `${q.client?.firstName || ''} ${q.client?.lastName || ''}`.trim() || q.client?.companyName || 'Unknown',
         companyName: q.client?.companyName || '',
         clientId: q.client?.id || null,
+        // Multi-year plan: the "Holiday Display - N Season term" line item (1 when there's none)
+        years: (() => { const m = (q.lineItems?.nodes || []).map((li) => /(\d)\s*-?\s*(?:season|year|yr)/i.exec(li.name || '')).find(Boolean); return m ? Number(m[1]) : 1; })(),
+        // Roofline vs add-ons (wreaths, bushes, trees…), after the quote's discount — so $/ft can use roofline only.
+        ...(() => {
+          const items = (q.lineItems?.nodes || []).map((li) => ({ name: li.name || '', p: Number(li.totalPrice) || 0 }));
+          const tot = Number(q.amounts?.total) || 0;
+          const pos = items.filter((li) => li.p > 0);
+          const roofRaw = pos.filter((li) => /roof|eave|peak|ridge|fascia|outline/i.test(li.name)).reduce((t, li) => t + li.p, 0);
+          const allPos = pos.reduce((t, li) => t + li.p, 0);
+          // One package line (e.g. "Holiday Display - 3 Season term" = whole job) → it's all roofline.
+          if (!roofRaw || !allPos) return { roof: tot, addons: 0 };
+          // Discounts / special offers spread across everything, so take roofline's share of the final total.
+          const roof = Math.round(tot * (roofRaw / allPos) * 100) / 100;
+          return { roof, addons: Math.max(0, Math.round((tot - roof) * 100) / 100) };
+        })(),
       }))
       .sort((a, b) => new Date(b.sentAt || b.createdAt || 0) - new Date(a.sentAt || a.createdAt || 0));
     lightsQuotesCache = { data: quotes, time: Date.now() };
@@ -952,7 +967,7 @@ async function handleLightsRequests(req, res) {
       requests(first: 100) {
         nodes {
           id title requestStatus createdAt
-          client { firstName lastName companyName }
+          client { id firstName lastName companyName phones { number } emails { address } }
           property { address { street city } }
           assessment { startAt endAt completedAt }
         }
@@ -966,6 +981,11 @@ async function handleLightsRequests(req, res) {
         status: String(r.requestStatus || '').toLowerCase(),
         createdAt: r.createdAt,
         clientName: `${r.client?.firstName || ''} ${r.client?.lastName || ''}`.trim() || r.client?.companyName || 'Unknown',
+        clientId: r.client?.id || null,
+        phone: r.client?.phones?.[0]?.number || '',
+        email: r.client?.emails?.[0]?.address || '',
+        street: r.property?.address?.street || '',
+        city: r.property?.address?.city || '',
         address: [r.property?.address?.street, r.property?.address?.city].filter(Boolean).join(', '),
         assessmentAt: r.assessment?.startAt || null,
         assessmentDone: !!r.assessment?.completedAt,
@@ -1408,7 +1428,7 @@ const HUB_CLIENTS_QUERY = `
   query SyncClients($cursor: String, $filter: ClientFilterAttributes) {
     clients(first: 25, after: $cursor, filter: $filter) {
       nodes {
-        id firstName lastName companyName isCompany isLead isArchived title leadSource receivesReviewRequests
+        id firstName lastName companyName isCompany isLead isArchived title leadSource receivesReviewRequests updatedAt
         phones { number primary description smsAllowed }
         emails { address primary description }
         billingAddress { street1 street2 city province postalCode }
@@ -1444,6 +1464,7 @@ async function mirrorClientsPage(supabase, nodes) {
       phones: (c.phones || []).filter((p) => p.number).map((p, i) => ({ label: p.description || 'Main', number: p.number, primary: p.primary ?? i === 0, sms: p.smsAllowed !== false })),
       emails: (c.emails || []).filter((e) => e.address).map((e, i) => ({ label: e.description || 'Main', address: e.address, primary: e.primary ?? i === 0 })),
       lead_source: clean(c.leadSource),
+      ...(c.updatedAt ? { updated_at: c.updatedAt } : {}), // "Last activity" = last change in Jobber
       billing_street: clean([c.billingAddress?.street1, c.billingAddress?.street2].filter(clean).join(' ')),
       billing_city: clean(c.billingAddress?.city), billing_state: clean(c.billingAddress?.province), billing_zip: clean(c.billingAddress?.postalCode),
       is_lead: !!c.isLead,
@@ -2125,7 +2146,7 @@ async function handleClientArchive(req, res) {
   if (who?.user?.user_metadata?.role !== 'owner') return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
   const op = String(req.body?.op || '');
   if (!['archive', 'unarchive', 'delete'].includes(op)) return res.status(400).json({ error: 'op must be archive | unarchive | delete' });
-  const { data: c } = await db.from('clients').select('id, external_id, tags').eq('id', String(req.body?.clientId || '')).maybeSingle();
+  const { data: c } = await db.from('clients').select('id, external_id, tags, org_id').eq('id', String(req.body?.clientId || '')).maybeSingle();
   if (!c) return res.status(404).json({ error: 'Client not found' });
   if (c.external_id) {
     const m = op === 'unarchive' ? 'clientUnarchive' : 'clientArchive';
@@ -2137,7 +2158,8 @@ async function handleClientArchive(req, res) {
     if (c.external_id) {
       const { data: gone } = await db.from('app_state').select('value').eq('key', 'hub-deleted-clients').maybeSingle();
       const list = new Set(Array.isArray(gone?.value) ? gone.value : []); list.add(c.external_id);
-      await db.from('app_state').upsert({ key: 'hub-deleted-clients', value: [...list] }, { onConflict: 'key' });
+      const { error: e2 } = await db.from('app_state').upsert({ key: 'hub-deleted-clients', value: [...list], org_id: c.org_id }, { onConflict: 'key' });
+      if (e2) return res.status(500).json({ error: `Couldn't remember the delete: ${e2.message}` });
     }
     await db.from('properties').delete().eq('client_id', c.id);
     const { error } = await db.from('clients').delete().eq('id', c.id);
@@ -2147,6 +2169,77 @@ async function handleClientArchive(req, res) {
     await db.from('clients').update({ tags: [...t] }).eq('id', c.id);
   }
   return res.json({ ok: true });
+}
+
+// Client page extras, live from Jobber: billing (invoices, payments, balance, lifetime value), notes, contacts.
+// GET ?action=client-extras&id=<hub client id>  · POST ?action=client-extras { id, op, ... } to add a note/contact or remove a contact.
+async function handleClientExtras(req, res) {
+  const db = getSupabaseAdmin();
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const { data: who } = token ? await db.auth.getUser(token) : { data: null };
+  if (who?.user?.user_metadata?.role !== 'owner') return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const body = req.method === 'POST' ? (req.body || {}) : {};
+  const id = String(req.query.id || body.id || '');
+  const { data: c } = await db.from('clients').select('id, external_id').eq('id', id).maybeSingle();
+  if (!c?.external_id) return res.json({ linked: false });
+  const jid = c.external_id;
+  const err = (d, m) => d?.[m]?.userErrors?.[0]?.message;
+  if (req.method === 'POST') {
+    if (body.op === 'note') {
+      const msg = String(body.message || '').trim().slice(0, 5000);
+      if (!msg) return res.status(400).json({ error: 'Empty note' });
+      const d = await jobberQuery(`mutation($id:EncodedId!,$i:ClientCreateNoteInput!){ clientCreateNote(clientId:$id, input:$i){ userErrors{ message } } }`, { id: jid, i: { message: msg } });
+      if (err(d, 'clientCreateNote')) return res.status(422).json({ error: err(d, 'clientCreateNote') });
+    } else if (body.op === 'contact-add') {
+      const k = body.contact || {};
+      const [firstName, ...rest] = String(k.name || '').trim().split(/\s+/);
+      if (!firstName) return res.status(400).json({ error: 'Name required' });
+      const digits = String(k.phone || '').replace(/\D/g, '');
+      const add = { firstName, lastName: rest.join(' ') || '', role: k.role || '', isBillingContact: !!k.billing,
+        phones: digits.length >= 10 ? [{ number: k.phone, primary: true, description: 'MOBILE', smsAllowed: true }] : [],
+        emails: /@/.test(k.email || '') ? [{ address: k.email, primary: true, description: 'MAIN' }] : [] };
+      const d = await jobberQuery(`mutation($id:EncodedId!,$i:ClientEditInput!){ clientEdit(clientId:$id, input:$i){ userErrors{ message } } }`, { id: jid, i: { contactsToAdd: [add] } });
+      if (err(d, 'clientEdit')) return res.status(422).json({ error: err(d, 'clientEdit') });
+    } else if (body.op === 'contact-delete') {
+      const d = await jobberQuery(`mutation($id:EncodedId!,$i:ClientEditInput!){ clientEdit(clientId:$id, input:$i){ userErrors{ message } } }`, { id: jid, i: { contactsToDelete: [String(body.contactId)] } });
+      if (err(d, 'clientEdit')) return res.status(422).json({ error: err(d, 'clientEdit') });
+    } else return res.status(400).json({ error: 'Unknown op' });
+  }
+  const d = await jobberQuery(`query($id:EncodedId!){ client(id:$id){
+    balance jobberWebUri
+    invoices(first:25){ nodes{ id invoiceNumber subject issuedDate dueDate invoiceStatus jobberWebUri amounts{ total invoiceBalance paymentsTotal } } }
+    unallocatedDepositRecords(first:20){ nodes{ __typename amount entryDate quote{ quoteNumber } } }
+    notes(first:15){ nodes{ id message createdAt pinned } }
+    contacts(first:10){ nodes{ id name role isBillingContact phones{ nodes{ number } } emails{ nodes{ address } } } }
+    jobs(first:20){ nodes{ id jobNumber title jobStatus total startAt jobberWebUri } }
+    quotes(first:20){ nodes{ id quoteNumber title quoteStatus amounts{ total } createdAt jobberWebUri } }
+    requests(first:20){ nodes{ id title requestStatus createdAt jobberWebUri } }
+  } }`, { id: jid });
+  // Schedule in its own small query (one big query gets throttled by Jobber)
+  const sch = await jobberQuery(`query($id:EncodedId!){ client(id:$id){
+    scheduledItems(first:25){ nodes{ __typename ... on Visit{ id title startAt completedAt job{ jobNumber } assignedUsers(first:4){ nodes{ name{ full } } } } ... on Assessment{ id title startAt completedAt } ... on Task{ id title startAt isComplete } } }
+  } }`, { id: jid }).catch(() => null);
+  const cl = d?.client && { ...d.client, scheduledItems: sch?.client?.scheduledItems };
+  if (!cl) return res.json({ linked: false });
+  const invoices = (cl.invoices?.nodes || []).map((v) => ({ id: v.id, number: v.invoiceNumber, subject: v.subject, date: v.issuedDate, due: v.dueDate, status: v.invoiceStatus, total: v.amounts?.total || 0, balance: v.amounts?.invoiceBalance || 0, paid: v.amounts?.paymentsTotal || 0, url: v.jobberWebUri }));
+  const deposits = (cl.unallocatedDepositRecords?.nodes || []).map((p) => ({ amount: p.amount, date: p.entryDate, quote: p.quote?.quoteNumber || null, kind: p.__typename.replace(/PaymentRecord$/, '').replace(/([a-z])([A-Z])/g, '$1 $2') }));
+  return res.json({
+    linked: true, jobberUrl: cl.jobberWebUri, balance: cl.balance || 0,
+    lifetime: invoices.reduce((t, v) => t + v.paid, 0) + deposits.reduce((t, p) => t + p.amount, 0),
+    invoices, deposits,
+    notes: (cl.notes?.nodes || []).map((n) => ({ id: n.id, message: n.message, at: n.createdAt, pinned: n.pinned })),
+    work: [
+      ...(cl.requests?.nodes || []).map((r) => ({ kind: 'request', id: r.id, label: 'Request', title: r.title, date: r.createdAt, status: r.requestStatus, url: r.jobberWebUri })),
+      ...(cl.quotes?.nodes || []).map((q) => ({ kind: 'quote', id: q.id, label: `Quote #${q.quoteNumber}`, title: q.title, date: q.createdAt, status: q.quoteStatus, amount: q.amounts?.total, url: q.jobberWebUri })),
+      ...(cl.jobs?.nodes || []).map((j) => ({ kind: 'job', id: j.id, label: `Job #${j.jobNumber}`, title: j.title, date: j.startAt, status: j.jobStatus, amount: j.total, url: j.jobberWebUri })),
+      ...invoices.map((v) => ({ kind: 'invoice', id: v.id, label: `Invoice #${v.number}`, title: v.subject, date: v.date, status: v.status, amount: v.total, url: v.url })),
+    ],
+    schedule: (cl.scheduledItems?.nodes || []).map((v) => ({
+      id: v.id, type: v.__typename, title: v.title, date: v.startAt, job: v.job?.jobNumber || null,
+      done: !!(v.completedAt || v.isComplete), crew: (v.assignedUsers?.nodes || []).map((u) => u.name?.full).filter(Boolean),
+    })),
+    contacts: (cl.contacts?.nodes || []).map((k) => ({ id: k.id, name: k.name, role: k.role, billing: k.isBillingContact, phone: k.phones?.nodes?.[0]?.number || '', email: k.emails?.nodes?.[0]?.address || '' })),
+  });
 }
 
 async function handleLeadArchive(req, res) {
@@ -2567,6 +2660,7 @@ export default async function handler(req, res) {
     if (action === 'lead-archive') return handleLeadArchive(req, res);
     if (action === 'client-push') return handleClientPush(req, res);
     if (action === 'client-archive') return handleClientArchive(req, res);
+    if (action === 'client-extras') return handleClientExtras(req, res);
     if (action === 'lights-job-summary') return handleLightsJobSummary(req, res);
     if (action === 'lights-job-expense') return handleLightsJobExpense(req, res);
     if (action === 'lights-quote-create') return handleLightsQuoteCreate(req, res);

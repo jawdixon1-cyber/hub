@@ -337,7 +337,7 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
           {/* 1. Who */}
           {est.form && (
             <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-primary">
-              <b>📝 From the form:</b> {(est.sides || []).join(', ') || 'Front'} · {est.color || 'Not sure'}
+              <b>📝 From the form:</b> {(est.sides || []).join(', ') || 'Front'} · {est.color || 'Not sure'}{est.more?.length ? ` · Also wants: ${est.more.join(', ')}` : ''}{est.heard ? ` · Heard about us: ${est.heard}` : ''}
               {est.jobberRequestUrl ? <a href={est.jobberRequestUrl} target="_blank" rel="noreferrer" className="ml-2 font-semibold text-sky-600 dark:text-sky-400">Jobber request ↗</a> : est.jobberError ? <span className="ml-2 text-rose-500">Jobber request failed: {est.jobberError}</span> : null}
               {(est.sides || []).some((x) => x !== 'Front') && <p className="mt-1 text-xs text-muted">They want more than the front: add the other sides' runs by hand (Claude only sees the photo).</p>}
             </div>

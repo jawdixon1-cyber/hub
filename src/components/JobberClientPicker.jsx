@@ -3,7 +3,8 @@ import { Search, User, X, Loader2 } from 'lucide-react';
 
 // Type a name, pick a client from Jobber. Calls onPick({ id, name, address, ... })
 // or onPick(null) when cleared. Typing without picking still sets a plain name.
-export default function JobberClientPicker({ value, picked, onType, onPick, status }) {
+// suggestions: quick-pick list shown before typing (e.g. open Christmas-lights requests in Jobber).
+export default function JobberClientPicker({ value, picked, onType, onPick, status, suggestions = [], suggestionsTitle = '' }) {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -48,7 +49,7 @@ export default function JobberClientPicker({ value, picked, onType, onPick, stat
   }
 
   return (
-    <div className="relative" ref={boxRef}>
+    <div className="relative z-[70]" ref={boxRef}>
       <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
       <input
         value={value}
@@ -59,6 +60,22 @@ export default function JobberClientPicker({ value, picked, onType, onPick, stat
       />
       {status && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">{loading ? '' : status}</span>}
       {loading && <Loader2 size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted animate-spin" />}
+      {open && (value || '').trim().length < 2 && suggestions.length > 0 && (
+        <div className="absolute z-[70] left-0 right-0 mt-1 rounded-xl border border-border-default bg-card shadow-2xl overflow-hidden max-h-96 overflow-y-auto">
+          {suggestionsTitle && <p className="px-3 pt-2.5 pb-1 text-[11px] font-bold uppercase tracking-wide text-muted">{suggestionsTitle}</p>}
+          {suggestions.map((c) => (
+            <button key={c.key || c.id} onClick={() => { onPick(c); setOpen(false); }}
+              className="w-full text-left px-3 py-2.5 hover:bg-surface-alt flex items-center gap-3 cursor-pointer">
+              <User size={15} className="text-muted shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-primary truncate">{c.name}{c.tag && <span className="ml-2 text-[10px] font-bold text-amber-500">{c.tag}</span>}</p>
+                <p className="text-[11px] text-muted truncate">{c.sub || c.address}</p>
+              </div>
+            </button>
+          ))}
+          <p className="px-3 py-2 text-[11px] text-muted border-t border-border-subtle">Or type a name to search all of Jobber.</p>
+        </div>
+      )}
       {open && shown.length > 0 && (
         <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border border-border-default bg-card shadow-2xl overflow-hidden">
           {shown.map((c) => (

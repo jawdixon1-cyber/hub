@@ -64,5 +64,7 @@ export const STAGE_LABEL = {
   sent: ['Sent', 'bg-brand text-on-brand'],
   follow: ['Follow up', 'bg-red-500 text-white'],
   sold: ['Sold', 'bg-emerald-500 text-white'],
+  accepted: ['Accepted', 'bg-emerald-500/20 text-emerald-400'],
+  gift: ['🎁 Gift', 'bg-pink-500/15 text-pink-400'],
   unqualified: ['Unqualified', 'bg-black/60 text-white'],
 };
