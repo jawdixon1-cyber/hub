@@ -759,7 +759,7 @@ async function handleEstimatePage(req, res) {
     function season(y){var ids=picked(),full=P.base;P.addons.forEach(function(a){if(ids.indexOf(a.id)>=0)full+=a.price});var sub=full;P.offers.forEach(function(o){if(o.kind!=='free')sub-=o.kind==='%'?Math.round(full*o.amount)/100:o.amount});return Math.round(sub*(100-(P.off[y]||0)))/100}
     function draw(){[1,2,3].forEach(function(y){var el=root.querySelector('.hje-yp[data-y="'+y+'"]');if(el)el.textContent=m(season(y))+(y>1?'/yr':'')});
       var s=season(years);root.querySelector('.hje-lqprice').textContent=m(s)+(years>1?' / season':'');[].forEach.call(root.querySelectorAll('.hje-half'),function(e){e.textContent=m(Math.round(s*50)/100)});
-      root.querySelector('.hje-lqsub').textContent=years>1?(years+' seasons, price locked. '+m(s*years)+' total, paid in equal installments.'):'This Christmas. Installed, maintained, taken down and stored.'}
+      root.querySelector('.hje-lqsub').textContent=years>1?(years+' seasons, price locked.'):'This Christmas. Installed, maintained, taken down and stored.'}
     [].forEach.call(root.querySelectorAll('.hje-yrs button'),function(b){b.addEventListener('click',function(){years=Number(b.dataset.y);[].forEach.call(root.querySelectorAll('.hje-yrs button'),function(x){x.classList.toggle('on',x===b)});draw()})});
     [].forEach.call(root.querySelectorAll('.hje-adds input'),function(i){i.addEventListener('change',draw)});
     draw();
