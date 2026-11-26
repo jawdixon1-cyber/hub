@@ -14,7 +14,7 @@ const newId = () => `o${Date.now().toString(36)}${Math.random().toString(36).sli
 // Only things we can always deliver — no timing promises.
 const BONUSES = [
   { cat: 'wreath', icon: '🎄', bg: 'from-emerald-700 to-emerald-950', type: 'free', title: 'Free 24" lit wreath', sub: 'Hung on your front door — a $250 value', tag: '$250 value' },
-  { cat: 'gutter', icon: '🍂', bg: 'from-amber-600 to-orange-950', type: 'free', title: 'Free gutter cleaning', sub: 'Every gutter we light up, cleaned right before we install — a $150 value', tag: '$150 value' },
+  { cat: 'gutter', icon: '🍂', bg: 'from-amber-600 to-orange-950', type: 'free', title: 'Free gutter cleaning', sub: 'We clean the gutters where we install your lights when we take them down, since we’re already up there — a $150 value, free', tag: '$150 value' },
   { cat: 'garland', icon: '🌲', bg: 'from-green-700 to-green-950', type: 'free', title: 'Free lit garland', sub: 'On your front door or railing — a $180 value', tag: '$180 value' },
   { cat: 'bush', icon: '🌿', bg: 'from-lime-700 to-lime-950', type: 'free', title: 'Free bush wrap', sub: 'One bush by the door, wrapped in lights — a $40 value', tag: '$40 value' },
   { cat: 'photo', icon: '📸', bg: 'from-indigo-700 to-indigo-950', type: 'free', title: 'Free night photo', sub: 'A pro photo of your home all lit up — yours to keep and share', tag: 'Keepsake' },

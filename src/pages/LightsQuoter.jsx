@@ -15,6 +15,7 @@ import JobberClientPicker from '../components/JobberClientPicker';
 import LightsBusiness, { QuoteMaterialsCard } from '../components/LightsBusiness';
 import { openCrewView, getExtrasMeta, DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, listCovers, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt } from '../lib/lightsStore';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 import { useAppStore } from '../store/AppStoreContext';
 import { useJobberList, quoteStage, STAGE_LABEL } from '../lib/jobberLights';
 
@@ -223,6 +224,16 @@ export default function LightsQuoter() {
   const [crewToken, setCrewToken] = useState(''); // secret for the no-login Crew view link
   const [presentToken, setPresentToken] = useState(''); // secret for the client's exact-price page (/estimate/<token>)
   const [pageCopied, setPageCopied] = useState('');
+  // Opens of their exact-price page (lq-views:<id>), shown in the Present step.
+  const [pageViews, setPageViews] = useState(null);
+  useEffect(() => {
+    if (wstep !== 11 || !savedId) return undefined;
+    let off = false;
+    const load = () => supabase.from('app_state').select('value').eq('key', `lq-views:${savedId}`).maybeSingle().then(({ data }) => { if (!off) setPageViews(data?.value || null); });
+    load();
+    const t = setInterval(load, 30000);
+    return () => { off = true; clearInterval(t); };
+  }, [wstep, savedId]);
   const [crewCopied, setCrewCopied] = useState(false);
   const [extras, setExtras] = useState([]); // columns, railings, trees, bushes… [{ id, side, x, y, type, run, around, wraps, width, strands, label }] // { stepNumber: true } — confirmed steps (6 + 7 use matOk / linesOk so changes un-confirm)
   const [clientInfo, setClientInfo] = useState(null); // Jobber client picked from search
@@ -1023,6 +1034,16 @@ export default function LightsQuoter() {
           <p className="text-base font-bold text-primary">🎄 Exact-price page</p>
           <p className="text-xs text-muted">Text them this when they can't meet: their mockup, exact price, 1/2/3-year pick and add-ons. Accept makes the Jobber quote as a draft for you to send.</p>
           {pageCopied && <p className="text-xs text-brand-text mt-1 break-all">Copied: {pageCopied}</p>}
+          {presentToken && (() => {
+            const theirs = (pageViews?.list || []).filter((v) => !v.me).reverse();
+            const ago = (iso) => { const m = Math.round((Date.now() - new Date(iso)) / 6e4); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
+            return (
+              <div className="mt-2 text-xs">
+                <p className="font-bold text-primary">{theirs.length ? `👀 They opened it ${theirs.length}× · last ${ago(theirs[0].at)}` : '👀 Not opened yet'}{pageViews?.mine ? <span className="font-normal text-muted"> · you {pageViews.mine}×</span> : null}</p>
+                {theirs.slice(0, 5).map((v) => <p key={v.at} className="text-muted">{ago(v.at)} · {v.device}{v.app ? ` · ${v.app}` : ''}{v.city ? ` · ${v.city}` : ''}</p>)}
+              </div>
+            );
+          })()}
         </div>
         {(() => {
           const make = () => {

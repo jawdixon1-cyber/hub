@@ -314,17 +314,23 @@ async function handleLightsEstimate(req, res) {
   const token = String(req.query.token || '');
   if (!/^[A-Za-z0-9_-]{20,}$/.test(token)) return res.status(404).json({ error: 'Not found' });
   const db = getSupabaseAdmin();
-  const { data: row, error } = await db.from('app_state').select('key, value, org_id, updated_at')
+  let { data: row, error } = await db.from('app_state').select('key, value, org_id, updated_at')
     .like('key', 'le-meta:%').eq('value->>token', token).maybeSingle();
   if (error) return res.status(500).json({ error: 'Lookup failed' });
+  // An exact-price quote page (same page, lights quote's presentToken): only opens are logged here, in lq-views:<id>.
+  let viewsKey = row ? `le-views:${row.key.slice('le-meta:'.length)}` : '';
+  if (!row && req.method === 'POST' && req.body?.view) {
+    const { data: q } = await db.from('app_state').select('key, value, org_id, updated_at').like('key', 'lq-meta:%').eq('value->>presentToken', token).maybeSingle();
+    if (q) { row = q; viewsKey = `lq-views:${q.key.slice('lq-meta:'.length)}`; }
+  }
   if (!row || row.value?.off) return res.status(404).json({ error: 'Not found' });
   const e = row.value;
-  const id = row.key.slice('le-meta:'.length);
+  const id = row.key.slice(row.key.indexOf(':') + 1);
   if (req.method === 'POST' && req.body?.view) {
     const ua = String(req.headers['user-agent'] || '');
     if (/bot|crawl|spider|preview|facebookexternalhit|whatsapp|slack|telegram|curl/i.test(ua)) return res.json({ ok: true });
     const device = /iphone/i.test(ua) ? 'iPhone' : /ipad/i.test(ua) ? 'iPad' : /android/i.test(ua) ? 'Android' : /mac os/i.test(ua) ? 'Mac' : /windows/i.test(ua) ? 'Windows' : 'Other';
-    const { data: vr } = await db.from('app_state').select('value').eq('key', `le-views:${id}`).maybeSingle();
+    const { data: vr } = await db.from('app_state').select('value').eq('key', viewsKey).maybeSingle();
     const now = new Date().toISOString();
     const prev = vr?.value || {};
     // me = opened on Jude's own device: logged with the list (tagged), never counted as them opening it
@@ -337,9 +343,10 @@ async function handleLightsEstimate(req, res) {
     const value = me
       ? { ...prev, count: prev.count || 0, mine: (prev.mine || 0) + 1, list: [...(prev.list || []), { at: now, device, ...extra, me: true }].slice(-50) }
       : { ...prev, count: (prev.count || 0) + 1, first: prev.first || now, last: now, list: [...(prev.list || []), { at: now, device, ...extra }].slice(-50) };
-    await db.from('app_state').upsert({ key: `le-views:${id}`, value, ...(row.org_id ? { org_id: row.org_id } : {}) }, { onConflict: 'key' });
+    await db.from('app_state').upsert({ key: viewsKey, value, ...(row.org_id ? { org_id: row.org_id } : {}) }, { onConflict: 'key' });
     return res.json({ ok: true });
   }
+  if (!row.key.startsWith('le-meta:')) return res.status(404).json({ error: 'Not found' });
   if (req.method === 'POST') {
     const color = ['warm', 'multi'].includes(req.body?.color) ? req.body.color : '';
     const declined = req.body?.decline === true;
@@ -614,7 +621,7 @@ async function handleEstimatePage(req, res) {
     const lqPics = `<div class="hje-pic">${shots.map(([k, label], i) => `<figure data-look="${k}"${i ? ' hidden' : ''}><img src="${lqImg(k)}" alt="${label}"></figure>`).join('')}</div>
             ${shots.length > 1 ? `<div class="hje-tabs">${shots.map(([k, label], i) => `<button type="button" data-look="${k}"${i ? '' : ' class="on"'}>${label}</button>`).join('')}</div>` : ''}`;
     const dates = [lqQ.installDate ? `<li><em>🎄</em><b>We install</b><span>${fmtDay(lqQ.installDate)}</span></li>` : '', lqQ.installDate && lqQ.takedownDate ? '<li class="hje-arrow">→</li>' : '', lqQ.takedownDate ? `<li><em>📦</em><b>We take it down</b><span>${fmtDay(lqQ.takedownDate)}</span></li>` : ''].join('');
-    const gifts = [...parts.perks.map((x) => x.title), ...parts.offers.map((o) => `${o.label}${o.kind === 'free' ? ' (free)' : ''}`)];
+    const gifts = [...parts.perks.map((x) => `${String(x.title).replace(/^[^\w"]+\s*/u, '')} (free)`), ...parts.offers.map((o) => `${o.label}${o.kind === 'free' ? ' (free)' : ''}`)];
     const firstName = String(e.client || '').trim().split(/\s+/)[0] || 'me';
     const nextBtn = (label) => `<button type="button" class="btn btn-go hje-next">${label}</button>`;
     const lqCard = `<div class="hje-range">
@@ -628,6 +635,7 @@ async function handleEstimatePage(req, res) {
           <div class="hje-card hje-main hje-lqcard hje-step" data-s="1">
             <h3 class="hje-lqh">Everything included</h3>
             <p class="hje-small" style="margin:0 0 16px!important">One price. We handle all of it, start to finish.</p>
+            ${parts.perks.length ? `<div class="hje-bonus">${parts.perks.map((b) => `<div><span class="hje-btag">🎁 Bonus, free</span><b>${escHtml(String(b.title).replace(/^[^\w"]+\s*/u, ''))}</b>${b.sub ? `<small>${escHtml(String(b.sub).replace(/\s+—\s+(\S)/g, (m, c) => `. ${c.toUpperCase()}`))}</small>` : ''}</div>`).join('')}</div>` : ''}
             <ul class="hje-incl hje-incl-big">${[['🎨', 'Design', 'Custom-designed for your home, planned to the foot'], ['🪜', 'Install', 'Clipped on clean. No damage to your roof or gutters'], ['🔧', 'Maintenance', 'A bulb goes out? We fix it, all season'], ['🗓️', 'Takedown + January guarantee', 'Down in January or your money back (weather and safety permitting)'], ['📦', 'Storage', 'We store everything until next year'], ['⏲️', 'Timer set for you', 'Comes on at dusk when it gets dark and stays on 6 hours. Nothing to remember'], ['📐', 'See the plan first', 'Every bulb mapped before you pay'], ['🎯', 'Tight, color-matched wire', 'Pulled tight, no sagging or dangling wire. Matched to your roof and gutters, not that cheap green cord'], ['💡', 'Commercial-grade products', 'The best you can buy. Bulbs 7x brighter than hardware-store ones. The best on the block'], ['🛡️', 'Fully insured ($1M)', 'Your home is protected']].map(([i, t, d]) => `<li><span>${i}</span><div><b>${t}</b><small>${d}</small></div></li>`).join('')}</ul>
             <p class="hje-trust" style="margin-top:14px!important"><span class="hje-stars">★★★★★</span> <b>5.0</b> · 195 Google reviews</p>
             ${nextBtn('Next: see your plan →')}
@@ -646,7 +654,7 @@ async function handleEstimatePage(req, res) {
             </div>
             <p class="hje-price hje-lqprice"></p>
             <p class="hje-rough hje-lqsub"></p>
-            ${gifts.length ? `<div class="hje-gifts">${gifts.map((g) => `<p>🎁 ${escHtml(g)}</p>`).join('')}</div>` : ''}
+            ${gifts.length ? `<div class="hje-gifts"><p class="hje-pick" style="margin:6px 0 4px!important">Also included</p>${gifts.map((g) => `<p>🎁 ${escHtml(g)}</p>`).join('')}</div>` : ''}
             ${dates ? `<div class="hje-when"><p class="hje-eyebrow">When we&#8217;ll install</p><ul class="hje-dates">${dates}</ul><p class="hje-hold">This is the date we can commit to right now, and we may be able to come sooner. It could change if it gets booked before you accept.</p></div>` : ''}
             
             <p class="hje-trust"><span class="hje-stars">★★★★★</span> <b>5.0</b> · 195 Google reviews</p>
@@ -708,6 +716,11 @@ async function handleEstimatePage(req, res) {
     @keyframes hjespin{to{transform:rotate(360deg)}}
     #quote .hje-step{display:none!important}
     #quote .hje-step.on{display:block!important}
+    #quote .hje-bonus{display:grid;gap:8px;max-width:620px;margin:0 auto 14px;text-align:left}
+    #quote .hje-bonus div{padding:12px 14px;border-radius:14px;background:linear-gradient(135deg,rgba(255,207,107,.16),rgba(255,207,107,.04));border:1px solid rgba(255,207,107,.45)}
+    #quote .hje-btag{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#111;background:#ffcf6b;border-radius:999px;padding:2px 8px;margin-bottom:6px}
+    #quote .hje-bonus b{display:block;font-size:16px;color:#fff}
+    #quote .hje-bonus small{display:block;font-size:12.5px;opacity:.75;margin-top:2px;line-height:1.4}
     #quote .hje-incl-big{grid-template-columns:1fr 1fr!important;max-width:620px!important;gap:12px!important}
     #quote .hje-incl-big li{display:flex;gap:10px;align-items:flex-start;padding:12px!important;border-radius:14px;background:rgba(255,255,255,.05);text-align:left}
     #quote .hje-incl-big li::before{display:none!important}
