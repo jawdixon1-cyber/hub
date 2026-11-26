@@ -638,10 +638,11 @@ async function handleEstimatePage(req, res) {
             ${nextBtn('Next: see your price →')}
           </div>
           <div class="hje-card hje-main hje-lqcard hje-step" data-s="3">
-            <div class="hje-pic"><img src="${heroImg}" alt="Your house with your lights"></div>
-            ${parts.addons.length ? `<p class="hje-card-h hje-sub" style="border-top:0;padding-top:4px;margin-top:6px!important">Add to your display</p><div class="hje-adds">${parts.addons.map((a) => `<label><input type="checkbox" data-id="${escHtml(a.id)}"${a.on ? ' checked' : ''}>${a.photo ? `<img src="${lqImg(`k:${a.photo}`)}" alt="" loading="lazy">` : ''}<span><b>${escHtml(a.label)}</b>${a.sub ? `<small>${escHtml(a.sub)}</small>` : ''}</span><i>+${money(a.price)}</i></label>`).join('')}</div>` : ''}
+            <div class="hje-pic" id="hje-lqhero"><img src="${heroImg}" alt="Your house with your lights"></div>
+            ${parts.addons.length ? `<p class="hje-card-h hje-sub" style="border-top:0;padding-top:4px;margin-top:6px!important">Add to your display</p><p class="hje-pick" style="margin-top:-8px!important">Tap to add or remove</p><div class="hje-adds">${parts.addons.map((a) => `<label><input type="checkbox" data-id="${escHtml(a.id)}"${a.on ? ' checked' : ''}>${a.photo ? `<img src="${lqImg(`k:${a.photo}`)}" alt="" loading="lazy">` : ''}<span><b>${escHtml(a.label)}</b>${a.sub ? `<small>${escHtml(a.sub)}</small>` : ''}</span><i>+${money(a.price)}</i></label>`).join('')}</div>` : ''}
+            <p class="hje-pick">Choose your plan</p>
             <div class="hje-yrs" role="radiogroup">
-              ${[[1, '1 season', ''], [2, '2 years', 'Save 5%'], [3, '3 years', 'Save 10%']].map(([y, t, save]) => `<button type="button" data-y="${y}"${y === 1 ? ' class="on"' : ''}><b>${t}</b>${save ? `<em>${save}</em>` : '<em>&nbsp;</em>'}<span class="hje-yp" data-y="${y}"></span></button>`).join('')}
+              ${[[1, '1 season', ''], [2, '2 years', 'Save 5%'], [3, '3 years', 'Save 10%']].map(([y, t, save]) => `<button type="button" data-y="${y}"${y === 1 ? ' class="on"' : ''}><i class="hje-radio"></i><b>${t}</b>${save ? `<em>${save}</em>` : '<em>&nbsp;</em>'}<span class="hje-yp" data-y="${y}"></span></button>`).join('')}
             </div>
             <p class="hje-price hje-lqprice"></p>
             <p class="hje-rough hje-lqsub"></p>
@@ -669,6 +670,10 @@ async function handleEstimatePage(req, res) {
     #quote .hje-yrs button b{font-size:14px}
     #quote .hje-yrs button em{font-style:normal;font-size:11px;font-weight:800;color:#5fe03a}
     #quote .hje-yrs button .hje-yp{font-size:12px;opacity:.75}
+    #quote .hje-pick{font-size:12px!important;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.6;margin:14px 0 0!important;text-align:center}
+    #quote .hje-yrs button{position:relative;padding-top:30px!important}
+    #quote .hje-radio{position:absolute;top:9px;left:50%;margin-left:-8px;width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.45)}
+    #quote .hje-yrs button.on .hje-radio{border-color:#5fe03a;background:#5fe03a;box-shadow:inset 0 0 0 3px #10140f}
     #quote .hje-yrs button.on{border-color:#5fe03a;background:rgba(95,224,58,.12);box-shadow:0 0 0 1px #5fe03a inset}
     #quote .hje-adds{display:flex;flex-direction:column;gap:8px;max-width:480px;margin:0 auto 6px;text-align:left}
     #quote .hje-adds label{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);cursor:pointer}
@@ -716,6 +721,7 @@ async function handleEstimatePage(req, res) {
     #quote .hje-stepbar button.on{opacity:1;border-color:#5fe03a;background:rgba(95,224,58,.12)}
     #quote .hje-stepbar button.on i{background:#5fe03a;color:#111}
     #quote .hje-stepbar button.done{opacity:.9}
+    #quote .hje-stepbar button.locked{opacity:.3;cursor:not-allowed}
     @media (max-width:520px){#quote .hje-stepbar{gap:4px}#quote .hje-stepbar button{font-size:11px;gap:3px;padding:8px 1px}#quote .hje-stepbar i{width:17px;height:17px;font-size:10px}}
     #quote .hje-next{display:block;width:100%;margin:20px 0 0!important;padding:15px!important;border:0;cursor:pointer;font-size:17px}
     #quote .hje-terms{list-style:none;padding:0;margin:18px auto 0!important;max-width:460px;text-align:left;display:flex;flex-direction:column;gap:8px;padding-top:18px;border-top:1px solid rgba(255,255,255,.1)}
@@ -738,6 +744,7 @@ async function handleEstimatePage(req, res) {
     @media (max-width:520px){#quote .hje-plan{grid-template-columns:1fr}}
     #quote .hje-sl{position:relative;border-radius:14px;overflow:hidden;background:#000;touch-action:pan-y;user-select:none;margin-bottom:10px}
     #quote .hje-sl img{display:block;width:100%;pointer-events:none}
+    #quote .hje-pause{position:absolute;right:10px;bottom:10px;z-index:3;padding:6px 12px;border-radius:999px;border:0;background:rgba(0,0,0,.65);color:#fff;font:700 12px Poppins,system-ui,sans-serif;cursor:pointer}
     #quote .hje-sl .a{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;clip-path:inset(0 0 0 var(--p,50%))}
     #quote .hje-sl .bar{position:absolute;top:0;bottom:0;left:var(--p,50%);width:3px;margin-left:-1.5px;background:#fff;box-shadow:0 0 8px rgba(0,0,0,.6)}
     #quote .hje-sl .bar::after{content:'⟷';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:36px;height:36px;border-radius:50%;background:#fff;color:#111;display:grid;place-items:center;font:700 16px system-ui}
@@ -759,7 +766,7 @@ async function handleEstimatePage(req, res) {
     function season(y){var ids=picked(),full=P.base;P.addons.forEach(function(a){if(ids.indexOf(a.id)>=0)full+=a.price});var sub=full;P.offers.forEach(function(o){if(o.kind!=='free')sub-=o.kind==='%'?Math.round(full*o.amount)/100:o.amount});return Math.round(sub*(100-(P.off[y]||0)))/100}
     function draw(){[1,2,3].forEach(function(y){var el=root.querySelector('.hje-yp[data-y="'+y+'"]');if(el)el.textContent=m(season(y))+(y>1?'/yr':'')});
       var s=season(years);root.querySelector('.hje-lqprice').textContent=m(s)+(years>1?' / season':'');[].forEach.call(root.querySelectorAll('.hje-half'),function(e){e.textContent=m(Math.round(s*50)/100)});
-      root.querySelector('.hje-lqsub').textContent=years>1?(years+' seasons, price locked.'):'This Christmas. Installed, maintained, taken down and stored.'}
+      root.querySelector('.hje-lqsub').textContent=years>1?(years+' seasons, price locked.'):''}
     [].forEach.call(root.querySelectorAll('.hje-yrs button'),function(b){b.addEventListener('click',function(){years=Number(b.dataset.y);[].forEach.call(root.querySelectorAll('.hje-yrs button'),function(x){x.classList.toggle('on',x===b)});draw()})});
     [].forEach.call(root.querySelectorAll('.hje-adds input'),function(i){i.addEventListener('change',draw)});
     draw();
@@ -788,19 +795,32 @@ async function handleEstimatePage(req, res) {
       var s1=root.querySelector('.hje-step[data-s="0"]'),n1=s1&&s1.querySelector('.hje-next');
       if(pairs.length&&s1){[].forEach.call(s1.querySelectorAll('.hje-pic,.hje-tabs'),function(e){e.style.display='none'});
         if(n1){n1.dataset.lbl=n1.textContent;n1.textContent='\ud83d\udc48 Slide at least halfway to keep going';n1.disabled=true;n1.style.opacity='.45'}
-        [].forEach.call(x.querySelectorAll('.hje-sl'),function(b){b.style.setProperty('--p','93%');var chk=function(e){if(e.type==='pointermove'&&!e.buttons)return;var k=b.getBoundingClientRect();if((e.clientX-k.left)/k.width<=0.5&&n1&&n1.disabled){n1.disabled=false;n1.style.opacity='';n1.textContent=n1.dataset.lbl}};b.addEventListener('pointerdown',chk);b.addEventListener('pointermove',chk)})}
-      [].forEach.call(x.querySelectorAll('.hje-sl'),function(b){function at(e){var k=b.getBoundingClientRect();b.style.setProperty('--p',Math.max(0,Math.min(100,(e.clientX-k.left)/k.width*100))+'%')}var on=false;b.addEventListener('pointerdown',function(e){on=true;try{b.setPointerCapture(e.pointerId)}catch(z){}at(e)});b.addEventListener('pointermove',function(e){if(on)at(e)});['pointerup','pointercancel'].forEach(function(t){b.addEventListener(t,function(){on=false})})});
+        [].forEach.call(x.querySelectorAll('.hje-sl'),function(b){b.style.setProperty('--p','93%');b.addEventListener('hjehalf',function(){if(n1&&n1.disabled){n1.disabled=false;n1.style.opacity='';n1.textContent=n1.dataset.lbl}})})}
+      [].forEach.call(x.querySelectorAll('.hje-sl'),function(b){function at(e){var k=b.getBoundingClientRect(),v=Math.max(0,Math.min(100,(e.clientX-k.left)/k.width*100));b.style.setProperty('--p',v+'%');if(v<=50)b.dispatchEvent(new Event('hjehalf'))}var on=false;b.addEventListener('pointerdown',function(e){on=true;try{b.setPointerCapture(e.pointerId)}catch(z){}at(e)});b.addEventListener('pointermove',function(e){if(on)at(e)});['pointerup','pointercancel'].forEach(function(t){b.addEventListener(t,function(){on=false})})});
       [].forEach.call(pl.querySelectorAll('.hje-plan figure'),function(f){f.addEventListener('click',function(){var o=document.createElement('div');o.className='hje-zoom';o.innerHTML='<b>×</b>';var c=f.cloneNode(true);c.style.cssText='position:relative;display:inline-block;margin:auto;line-height:0';var im=c.querySelector('img');im.style.cssText='display:block;max-width:96vw;max-height:88vh;width:auto;height:auto;border-radius:12px';var sv=c.querySelector('svg');if(sv)sv.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none';var fc=c.querySelector('figcaption');if(fc)fc.style.cssText='position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.65);color:#fff;font:700 12px Poppins,system-ui,sans-serif;padding:4px 10px;border-radius:999px;line-height:1.2';o.appendChild(c);o.addEventListener('click',function(){o.remove()});document.body.appendChild(o)})});
+      // Step 4: their display lights up on its own (before -> after on a loop), with a pause button.
+      var hero=document.getElementById('hje-lqhero');
+      if(hero&&d.q.nightPhoto&&pv){hero.innerHTML='<div class="hje-sl hje-auto"><img src="'+d.q.nightPhoto+'" alt="Before"><img class="a" src="'+pv.image+'" alt="After"><div class="bar"></div><span style="left:10px">Before</span><span style="right:10px">After</span><button type="button" class="hje-pause">⏸ Pause</button></div>';
+        var a=hero.querySelector('.hje-sl'),pb=hero.querySelector('.hje-pause'),paused=false,t0=null;
+        function put(v){a.style.setProperty('--p',v+'%')}
+        function loop(t){if(!t0)t0=t;if(!paused){var k=((t-t0)%6000)/6000;put(50+50*Math.cos(k*2*Math.PI))}requestAnimationFrame(loop)}requestAnimationFrame(loop);
+        function setP(v){paused=v;pb.textContent=v?'▶ Play':'⏸ Pause'}
+        pb.addEventListener('pointerdown',function(e){e.stopPropagation()});
+        pb.addEventListener('click',function(e){e.stopPropagation();setP(!paused);if(paused)put(0);t0=null});
+        var on=false;function at(e){var k=a.getBoundingClientRect();put(Math.max(0,Math.min(100,(e.clientX-k.left)/k.width*100)))}
+        a.addEventListener('pointerdown',function(e){on=true;setP(true);try{a.setPointerCapture(e.pointerId)}catch(z){}at(e)});a.addEventListener('pointermove',function(e){if(on)at(e)});['pointerup','pointercancel'].forEach(function(x){a.addEventListener(x,function(){on=false})});
+      }
       var mats=(d.supplies||[]).filter(function(s){return Number(d.q.materials&&d.q.materials[s.id])>0});
       if(!hp&&!mats.length)pl.innerHTML='<p class="hje-small">Your detailed plan is built at install.</p>';
       if(mats.length&&mt)mt.innerHTML='<div class="hje-lqsec"><h3>What we&#8217;re using</h3><p>Commercial-grade products, the best you can buy. Bulbs 7x brighter than hardware-store ones. The best on the block.</p><div class="hje-mats">'+mats.map(function(s){return '<div>'+(s.image?'<img src="'+s.image+'" alt="" loading="lazy">':'')+'<span><b>'+esc(s.name)+'</b><small>'+esc(d.q.materials[s.id])+'</small></span></div>'}).join('')+'</div></div>';
     }).catch(function(){var pl=document.getElementById('hje-lqplan');if(pl)pl.innerHTML='<div class="hje-loading"><b>Couldn&#8217;t load your plan</b><small>Refresh the page to try again.</small></div>'});
-    var cur=0;
-    function go(n){cur=n;[].forEach.call(root.querySelectorAll('.hje-step'),function(c){c.classList.toggle('on',Number(c.dataset.s)===n)});
-      [].forEach.call(root.querySelectorAll('.hje-stepbar button'),function(b){var k=Number(b.dataset.s);b.classList.toggle('on',k===n);b.classList.toggle('done',k<n)});
+    var cur=0,reached=0;
+    function go(n){if(n>reached)return;cur=n;[].forEach.call(root.querySelectorAll('.hje-step'),function(c){c.classList.toggle('on',Number(c.dataset.s)===n)});
+      [].forEach.call(root.querySelectorAll('.hje-stepbar button'),function(b){var k=Number(b.dataset.s);b.classList.toggle('on',k===n);b.classList.toggle('done',k<n);b.classList.toggle('locked',k>reached)});
       var bar=root.querySelector('.hje-stepbar');if(bar)window.scrollTo({top:bar.getBoundingClientRect().top+window.scrollY-80,behavior:'smooth'})}
     [].forEach.call(root.querySelectorAll('.hje-stepbar button'),function(b){b.addEventListener('click',function(){go(Number(b.dataset.s))})});
-    [].forEach.call(root.querySelectorAll('.hje-next'),function(b){b.addEventListener('click',function(){go(Math.min(3,cur+1))})});
+    [].forEach.call(root.querySelectorAll('.hje-next'),function(b){b.addEventListener('click',function(){if(b.disabled)return;reached=Math.max(reached,Math.min(3,cur+1));go(Math.min(3,cur+1))})});
+    [].forEach.call(root.querySelectorAll('.hje-stepbar button'),function(b){b.classList.toggle('locked',Number(b.dataset.s)>0)});
     var yes=root.querySelector('.hje-lqyes');
     if(yes)yes.addEventListener('click',function(ev){ev.preventDefault();var ids=picked(),s=season(years);
       if(!pv)fetch(api,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({years:years,addonIds:ids,accept:true})}).catch(function(){});
