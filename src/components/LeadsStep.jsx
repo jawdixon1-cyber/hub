@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, MessageSquare, ExternalLink, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -29,11 +29,52 @@ const money = (n) => `$${Math.round(n).toLocaleString()}`;
 const CACHE = 'hub-leads-cache';
 
 // Their recent Quo chat, opened under the row: texts + calls, and a reply box (you hit Send).
+// Save every photo from a chat into a new folder named after them.
+// Chrome on a computer: you pick where, we make "<Name> photos" there. Otherwise: one .zip that unzips to that folder.
+async function savePhotos(urls, name, setSaving) {
+  const folder = `${String(name || 'Client').replace(/[^\w .-]/g, '').trim() || 'Client'} photos`;
+  const ext = (b) => (/png/.test(b.type) ? 'png' : /gif/.test(b.type) ? 'gif' : /heic/.test(b.type) ? 'heic' : 'jpg');
+  try {
+    let dir = null;
+    if (window.showDirectoryPicker) {
+      try { const base = await window.showDirectoryPicker({ mode: 'readwrite' }); dir = await base.getDirectoryHandle(folder, { create: true }); }
+      catch (e) { if (e?.name === 'AbortError') return; dir = null; }
+    }
+    const files = [];
+    for (const [i, u] of urls.entries()) {
+      setSaving(`Downloading ${i + 1} of ${urls.length}…`);
+      const b = await fetch(u).then((r) => r.blob());
+      const fname = `${folder} ${String(i + 1).padStart(2, '0')}.${ext(b)}`;
+      if (dir) { const fh = await dir.getFileHandle(fname, { create: true }); const w = await fh.createWritable(); await w.write(b); await w.close(); }
+      else files.push([fname, new Uint8Array(await b.arrayBuffer())]);
+    }
+    if (!dir) {
+      const { zipSync } = await import('fflate');
+      const zip = zipSync({ [folder]: Object.fromEntries(files) }, { level: 0 });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([zip], { type: 'application/zip' })); a.download = `${folder}.zip`;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    setSaving(dir ? `✓ Saved to “${folder}”` : '✓ Downloaded');
+  } catch (e) { setSaving(`Couldn't save: ${e.message}`); }
+  setTimeout(() => setSaving(''), 4000);
+}
+
 export function LeadChat({ phone, name, token }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const boxRef = useRef(null);
+  const [saving, setSaving] = useState('');
+  const [view, setView] = useState(-1); // which photo is open full size (index into every photo in the chat)
+  const photos = (d?.items || []).flatMap((m) => m.media || []);
+  useEffect(() => {
+    if (view < 0) return undefined;
+    const k = (e) => { if (e.key === 'Escape') setView(-1); if (e.key === 'ArrowRight') setView((v) => Math.min(photos.length - 1, v + 1)); if (e.key === 'ArrowLeft') setView((v) => Math.max(0, v - 1)); };
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
+  }, [view, photos.length]);
+  // Newest texts at the bottom: jump there whenever the chat loads or a text is sent
+  useEffect(() => { const b = boxRef.current; if (b) b.scrollTop = b.scrollHeight; }, [d]);
   const load = useCallback(() => {
     setErr('');
     fetch('/api/quo?action=thread', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ phone }) })
@@ -58,18 +99,42 @@ export function LeadChat({ phone, name, token }) {
       {!d && !err && <p className="text-xs text-muted">Loading your chat with {name}…</p>}
       {d && !d.items.length && <p className="text-xs text-muted">No texts or calls with {name} yet.</p>}
       {d && d.items.length > 0 && (
-        <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
+        <div ref={boxRef} className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
           {d.items.map((m) => (m.type === 'call'
             ? <p key={m.id} className="text-center text-[11px] text-muted">📞 {m.dir === 'incoming' ? 'They called' : 'You called'}{m.duration ? ` · ${Math.round(m.duration / 60) || '<1'} min` : m.status ? ` · ${m.status}` : ''} · {t(m.at)}</p>
             : (
               <div key={m.id} className={`flex ${m.dir === 'outgoing' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[80%] rounded-2xl px-3 py-1.5 text-sm ${m.dir === 'outgoing' ? 'bg-sky-600 text-white' : 'bg-card text-primary border border-card-border'}`}>
                   {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
-                  {m.media.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer" className="block text-xs underline">📎 Attachment</a>)}
+                  {m.media.length > 0 && (
+                    <div className={`grid gap-1 mt-0.5 ${m.media.length > 1 ? 'grid-cols-3' : 'grid-cols-1'}`}>
+                      {m.media.map((u) => (
+                        <button key={u} type="button" onClick={() => setView(photos.indexOf(u))} className="block cursor-zoom-in">
+                          <img src={u} alt="" loading="lazy" className={`rounded-lg object-cover ${m.media.length > 1 ? 'w-20 h-20' : 'max-w-[220px] max-h-56'}`} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <p className={`text-[10px] mt-0.5 ${m.dir === 'outgoing' ? 'text-white/70' : 'text-muted'}`}>{t(m.at)}</p>
                 </div>
               </div>
             )))}
+        </div>
+      )}
+      {photos.length > 0 && (
+        <div className="flex flex-wrap gap-3 items-center">
+          {photos.length > 1 && <button type="button" onClick={() => setView(0)} className="text-xs font-semibold text-sky-500 hover:underline cursor-pointer">🖼️ See all {photos.length} photos</button>}
+          <button type="button" disabled={!!saving} onClick={() => savePhotos(photos, name, setSaving)} className="text-xs font-semibold text-sky-500 hover:underline cursor-pointer disabled:opacity-50">{saving || `📁 Download all ${photos.length} to a folder`}</button>
+        </div>
+      )}
+      {view >= 0 && photos[view] && (
+        <div className="fixed inset-0 z-[90] bg-black/90 flex items-center justify-center" onClick={() => setView(-1)}>
+          <img src={photos[view]} alt="" className="max-w-[92vw] max-h-[86vh] rounded-xl" onClick={(e) => e.stopPropagation()} />
+          <p className="absolute top-4 left-1/2 -translate-x-1/2 text-white/80 text-sm font-semibold">{view + 1} / {photos.length}</p>
+          <a href={photos[view]} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="absolute top-3 right-14 rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold text-white">Open ↗</a>
+          <button type="button" className="absolute top-3 right-4 text-white text-2xl cursor-pointer">×</button>
+          {view > 0 && <button type="button" onClick={(e) => { e.stopPropagation(); setView(view - 1); }} className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-2xl cursor-pointer">‹</button>}
+          {view < photos.length - 1 && <button type="button" onClick={(e) => { e.stopPropagation(); setView(view + 1); }} className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-2xl cursor-pointer">›</button>}
         </div>
       )}
       {err && <p className="text-xs font-bold text-rose-500">{err}</p>}
@@ -160,9 +225,12 @@ export default function LeadsStep() {
 
   const reqs = state.requests.filter((r) => !gone[r.id]);
   const overdue = reqs.filter((r) => r.status === 'overdue').sort((a, b) => new Date(a.assessmentAt) - new Date(b.assessmentAt));
-  const toContact = reqs.filter((r) => r.status === 'new').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // longest waiting first
-  const scheduled = reqs.filter((r) => ['today', 'upcoming', 'unscheduled'].includes(r.status) || (r.assessmentAt && !r.assessed && r.status !== 'overdue' && r.status !== 'new'))
-    .sort((a, b) => new Date(a.assessmentAt || 8.64e15) - new Date(b.assessmentAt || 8.64e15));
+  // Only requests with an actual assessment date count as "scheduled". No date yet = still working on them,
+  // so they go in the contact groups (haven't reached out / replied / no reply) like a new request.
+  const scheduled = reqs.filter((r) => r.assessmentAt && !r.assessed && r.status !== 'overdue' && r.status !== 'new')
+    .sort((a, b) => new Date(a.assessmentAt) - new Date(b.assessmentAt));
+  const toContact = reqs.filter((r) => r.status === 'new' || (r.status !== 'overdue' && !r.assessed && !r.assessmentAt && ['today', 'upcoming', 'unscheduled'].includes(r.status)))
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // longest waiting first
   const changes = state.quotes.filter((q) => q.status === 'changes_requested');
   const drafts = state.quotes.filter((q) => q.status === 'draft');
   const out = state.quotes.filter((q) => q.status === 'awaiting_response').sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt));

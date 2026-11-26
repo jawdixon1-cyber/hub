@@ -12,8 +12,9 @@ import LightsPairs from '../components/LightsPairs';
 import { DESIGNS } from '../lib/lightsDesigns';
 import { kindOf } from '../lib/lightsMaterials';
 import JobberClientPicker from '../components/JobberClientPicker';
+import LightsEstimate from './LightsEstimate';
 import LightsBusiness, { QuoteMaterialsCard } from '../components/LightsBusiness';
-import { openCrewView, getExtrasMeta, DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, listCovers, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt, patchQuoteMeta } from '../lib/lightsStore';
+import { openCrewView, ensureCrewToken, getExtrasMeta, DRAFT_ID, putQuote, getQuote, deleteQuote, listQuotes, listCovers, getLocalQuote, setLightsOrg, cloudHas, warmQuotes, cloudSavedAt, patchQuoteMeta } from '../lib/lightsStore';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useAppStore } from '../store/AppStoreContext';
@@ -56,12 +57,16 @@ const runsOf = (angles, wire) => angles.flatMap((a) => (a.lines || []).map((l) =
 // Zip (jump) lines measured in Measure: feet + color for zip cord.
 const zipsOf = (angles) => angles.flatMap((a) => (a.jumps || []).map((j) => ({ ft: Number(j.feet) || 0, color: j.color || 'white' })));
 
-const WIZARD = ['', 'Discovery', 'Photos', 'Plan', 'Measure', 'Difficulty', 'Add-ons', 'Materials', 'Lights', 'Mockup', 'Dates', 'Present', 'Offers'];
+const WIZARD = ['', 'Discovery', 'Photos', 'Plan', 'Measure', 'Difficulty', 'Add-ons', 'Materials', 'Lights', 'Mockup', 'Dates', 'Present', 'Offers', 'Summary', 'Production'];
 // The order you walk the steps in. Step numbers stay the same (saved confirmations use them);
 // Materials (7) is shown inside Plan (3): one step, one lock, one Confirm (2026-11-12).
-const STEP_ORDER = [1, 2, 3, 4, 5, 7, 6, 9, 10, 12, 11]; // Materials (7) is its own step after Difficulty; Extras (6) replaced by Add-ons in Present; Lights (8) dropped — the Plan already shows the lines
-const nextStep = (n) => STEP_ORDER[STEP_ORDER.indexOf(n) + 1];
-const prevStep = (n) => STEP_ORDER[STEP_ORDER.indexOf(n) - 1];
+const STEP_ORDER = [1, 2, 3, 4, 5, 7, 6, 9, 10, 12, 11, 13, 14]; // 14 Production: strands + team view // 11 Present (just the button), then 13 Summary (their decision, links, Jobber quote)
+const _so = STEP_ORDER; // Materials (7) is its own step after Difficulty; Extras (6) replaced by Add-ons in Present; Lights (8) dropped — the Plan already shows the lines
+// Add-ons skip the sales steps: Photos → Plan → Measure → Materials → Summary (price + Jobber approval) → Production.
+const ADDON_ORDER = [2, 3, 4, 7, 13, 14];
+let ACTIVE_ORDER = STEP_ORDER; // set each render from the open quote
+const nextStep = (n) => ACTIVE_ORDER[ACTIVE_ORDER.indexOf(n) + 1];
+const prevStep = (n) => ACTIVE_ORDER[ACTIVE_ORDER.indexOf(n) - 1];
 // Back / Next at the bottom of each wizard step.
 function StepNav({ step, onGo, ok, changed, onConfirm, onUndo }) {
   const next = WIZARD[nextStep(step)];
@@ -208,7 +213,7 @@ export default function LightsQuoter() {
   // Main views: all quotes (default), one quote, supplies
   const [view, setView] = useState(() => params.get('view') || (params.get('q') ? 'quote' : 'jobs'));
   const [editing, setEditing] = useState(() => !!params.get('q')); // Quotes tab: gallery vs one open quote
-  const [wstep, setWstep] = useState(() => { const st = (params.get('q') && Math.min(12, Math.max(1, Number(params.get('step')) || 1))) || 1; return st === 8 ? 9 : st; }); // quote wizard step; a reload stays on it (?step=)
+  const [wstep, setWstep] = useState(() => { const st = (params.get('q') && Math.min(14, Math.max(1, Number(params.get('step')) || 1))) || 1; return st === 8 ? 9 : st; }); // quote wizard step; a reload stays on it (?step=)
   const goStep = (n) => { setWstep(n);
     window.scrollTo({ top: 0, behavior: 'smooth' }); document.querySelector('main')?.scrollTo?.({ top: 0, behavior: 'smooth' }); };
   const [angles, setAngles] = useState([EMPTY_SIDE]);
@@ -223,7 +228,7 @@ export default function LightsQuoter() {
   // "Ready to present?" also shows the price bump + offers (they live in lq-ba, set in the Offers step).
   const [present, setPresent] = useState(null);
   useEffect(() => {
-    if (wstep !== 11 || !savedId) return undefined;
+    if (wstep !== 13 || !savedId) return undefined;
     let off = false;
     getExtrasMeta(savedId).then((v) => { if (!off) setPresent({ id: savedId, v }); }).catch(() => {});
     return () => { off = true; };
@@ -262,7 +267,7 @@ export default function LightsQuoter() {
   // Opens of their exact-price page (lq-views:<id>), shown in the Present step.
   const [pageViews, setPageViews] = useState(null);
   useEffect(() => {
-    if (wstep !== 11 || !savedId) return undefined;
+    if (wstep !== 13 || !savedId) return undefined;
     let off = false;
     const load = () => supabase.from('app_state').select('value').eq('key', `lq-views:${savedId}`).maybeSingle().then(({ data }) => { if (!off) setPageViews(data?.value || null); });
     load();
@@ -290,6 +295,8 @@ export default function LightsQuoter() {
   const wireSet = planLocked ? () => {} : setWire;
   // Deal info (options / add-ons): kept as-is through every save so the editor never wipes it.
   const [dealMeta, setDealMeta] = useState({});
+  // Add-ons start on Photos (they skip Discovery and the sales steps)
+  useEffect(() => { if (dealMeta.kind === 'addon' && !ADDON_ORDER.includes(wstep)) setWstep(2); }, [dealMeta.kind, wstep]);
   const snapshot = () => ({ ...dealMeta, client, clientInfo, feet, strands, count, angles, previews, quoted, qStage, style, materials, matNotes, wire, power, powerPhoto, nightPhoto, disc, installDate, takedownDate, matOk, linesOk, stepsOk, stepsV: 2, extras, crewToken, presentToken, customColor, planLocked, savedId, addonMats });
   // The cloud version this device is working from — if another device saves after it,
   // this device's copy is stale and must not overwrite (that's how removed photos came back).
@@ -513,7 +520,7 @@ export default function LightsQuoter() {
           <Lightbulb size={24} className="text-brand" /> Lights
         </h1>
         <div className="flex gap-1 bg-surface-alt rounded-lg p-1 max-w-full overflow-x-auto">
-          {[['quotes', 'Pipeline'], ['quote', 'Quotes'], ['jobs', 'Jobs'], ['supplies', 'Material'], ['sales', 'Sales']].map(([id, label]) => (
+          {[['estimate', 'Rough Estimate'], ['quotes', 'Pipeline'], ['quote', 'Quotes'], ['jobs', 'Jobs'], ['supplies', 'Material'], ['sales', 'Sales']].map(([id, label]) => (
             <button
               key={id}
               onClick={() => { setView(id); if (id === 'quote') setEditing(false); }}
@@ -544,7 +551,8 @@ export default function LightsQuoter() {
         </div>
       </div>
 
-      {view !== 'quote' && (
+      {view === 'estimate' && <LightsEstimate />}
+      {view !== 'quote' && view !== 'estimate' && (
         <>
           <LightsBusiness view={view} onNew={view === 'quotes' ? () => { reset(); setView('quote'); setEditing(true); } : null} onOpen={async (id, step) => { await openQuote(id); if (step) setWstep(step); setView('quote'); setEditing(true); }} />
         </>
@@ -797,7 +805,7 @@ export default function LightsQuoter() {
                         <div key={x.id} onClick={() => open(x.id)}
                           className={`group/sub grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,2fr)_80px_110px_60px_60px_44px_70px_150px_36px] gap-3 items-center px-4 py-1.5 text-xs cursor-pointer hover:bg-surface-alt ${dim ? 'opacity-50' : ''}`}>
                           <span className="min-w-0 pl-4 truncate text-secondary">
-                            <span className="text-muted">↳ {kind === 'addon' ? 'Add-on' : agreed ? 'Agreed' : 'Not chosen'} · </span>{x.scopeName || (kind === 'option' ? 'Main quote' : 'Add-on')}
+                            <span className={`mr-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${kind === 'addon' ? 'bg-sky-500/15 text-sky-400' : agreed ? 'bg-emerald-500/15 text-emerald-500' : 'bg-surface-alt text-muted'}`}>{kind === 'addon' ? '➕ ADD-ON' : agreed ? '✓ MAIN' : 'NOT CHOSEN'}</span>{x.scopeName || (kind === 'option' ? 'Main quote' : 'Add-on')}
                           </span>
                           <span className="hidden sm:block" />
                           <span className="text-right tabular-nums text-secondary">{num(x.total) > 0 ? dollars(per) : '—'}</span>
@@ -962,7 +970,8 @@ export default function LightsQuoter() {
       {/* Wizard: one step at a time. Other steps stay mounted (hidden) so lines still refill materials. */}
       {(() => {
         const lines = angles.flatMap((a) => a.lines || []);
-        const tabs = [
+        ACTIVE_ORDER = dealMeta.kind === 'addon' ? ADDON_ORDER : STEP_ORDER;
+        const allTabs = [
           [1, 'Discovery', !!(disc.pain?.trim() || disc.pleasure?.trim())],
           [2, 'Photos', angles.some((a) => a.plain)],
           [3, 'Plan', lines.length > 0],
@@ -974,26 +983,31 @@ export default function LightsQuoter() {
           [10, 'Dates', !!installDate && !!takedownDate],
           [12, 'Offers', false],
           [11, 'Present', false],
+          [13, 'Summary', false],
+          [14, 'Production', false],
         ];
+        const tabs = allTabs.filter(([n]) => ACTIVE_ORDER.includes(n));
         return (
           <div className="sticky top-0 z-30 -mx-2 mt-4 px-2 py-2 bg-surface/95 backdrop-blur">
           {/* Steps grouped into the parts of a visit: Meet → Roofline → Add-ons → Present */}
-          <div className="flex gap-1 overflow-x-auto rounded-xl border border-border-default bg-card p-1 shadow-lg">
-            {[['Meet', [1, 2]], ['Roofline', [3, 4, 5, 7]], ['Add-ons', [6]], ['Present', [9, 10, 12, 11]]].map(([group, ns], gi) => {
+          <div className="flex flex-wrap gap-1 rounded-xl border border-border-default bg-card p-1 shadow-lg">
+            {(dealMeta.kind === 'addon'
+              ? [['Add-on plan', [2, 3, 4, 7]], ['Approve', [13]], ['Production', [14]]]
+              : [['Meet', [1, 2]], ['Roofline', [3, 4, 5, 7]], ['Add-ons', [6]], ['Prep', [9, 10, 12]], ['Present', [11, 13]], ['Production', [14]]]).map(([group, ns], gi) => {
               const here = ns.includes(wstep);
-              const allOk = ns.every((n) => n === 11 || isOk(n));
+              const allOk = ns.every((n) => n === 11 || n === 13 || n === 14 || isOk(n));
               return (
-                <div key={group} className={`shrink-0 sm:shrink rounded-lg border px-1 pt-1 pb-0.5 transition-colors ${here ? 'border-brand/60 bg-brand/5' : 'border-border-subtle bg-surface-alt/20'}`} style={{ flex: `${Math.max(ns.length, 1.3)} 1 0`, minWidth: ns.length === 1 ? 88 : undefined }}>
-                  <p className={`px-1 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.12em] ${here ? 'text-brand-text' : allOk && group !== 'Present' ? 'text-brand-text/70' : 'text-muted'}`}>{gi + 1} · {group}</p>
+                <div key={group} className={`rounded-lg border px-1 pt-1 pb-0.5 transition-colors ${here ? 'border-brand/60 bg-brand/5' : 'border-border-subtle bg-surface-alt/20'}`} style={{ flex: '1 1 auto' }} /* width by label length, so no step name gets cut off */>
+                  <p className={`px-1 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.12em] ${here ? 'text-brand-text' : allOk && !['Present', 'Prep', 'Production'].includes(group) ? 'text-brand-text/70' : 'text-muted'}`}>{gi + 1} · {group}</p>
                   <div className="flex gap-0.5">
                     {tabs.filter(([n]) => ns.includes(n)).map(([n, label]) => {
                       const ti = tabs.findIndex(([m]) => m === n);
                       return (
                         <button key={n} onClick={() => goStep(n)}
-                          className={`min-w-[50px] flex-1 flex flex-col items-center justify-center gap-1 rounded-md px-0 py-1.5 text-[10px] tracking-tight leading-none font-semibold cursor-pointer transition-colors ${wstep === n ? 'bg-surface-alt text-primary' : isOk(n) ? 'text-brand-text' : 'text-muted hover:text-primary'}`}>
+                          className={`flex-1 flex flex-col items-center justify-center gap-1 rounded-md px-1 py-1.5 text-[10px] tracking-tight leading-none font-semibold cursor-pointer transition-colors ${wstep === n ? 'bg-surface-alt text-primary' : isOk(n) ? 'text-brand-text' : 'text-muted hover:text-primary'}`}>
                           {/* Locked plan → Plan shows a lock */}
                           <span className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold ${planLocked && n === 3 ? 'bg-yellow-400 text-black' : isOk(n) ? 'bg-brand text-on-brand' : wstep === n ? 'bg-primary text-surface' : 'bg-surface-alt text-muted'}`}>{planLocked && n === 3 ? '🔒' : isOk(n) ? '✓' : ti + 1}</span>
-                          <span className="max-w-full truncate">{label}</span>
+                          <span className="whitespace-nowrap">{label}</span>
                         </button>
                       );
                     })}
@@ -1305,7 +1319,48 @@ export default function LightsQuoter() {
 
         {nav(12)}
       </div>
-      <div className={wstep === 11 ? 'space-y-5' : 'hidden'}>
+      <div className={wstep === 13 ? 'space-y-5' : 'hidden'}>
+      {/* One card: what they're getting, then their decision + plan */}
+      <div className="rounded-xl border-2 border-border-brand bg-card p-4 space-y-5">
+      {/* Summary of what you put in */}
+      {(() => {
+        const design = DESIGNS.find((d) => d.id === style);
+        // Last check before presenting: who, what color, materials confirmed, any bump / offers.
+        const ba = present?.id === savedId ? present.v : null;
+        const offerList = (ba?.offers || []).filter((o) => o.on !== false && Number(o.amount) > 0);
+        void offerList; // price bump + offers live on the Offers step
+        const ftTotal = ['easy', 'medium', 'hard'].reduce((t, k) => t + num(feet[k]), 0);
+        const mats = Object.entries(materials || {}).filter(([, v]) => num(v) > 0)
+          .map(([id, v]) => { const it = allSupplies.find((x) => x.id === id); return [it?.name || id, num(v), it?.image || '']; });
+        const included = ['Roofline', ...((ba?.perks || []).map((p) => String(p.title || '').replace(/^[^\w]+\s*/u, '')).filter(Boolean)), ...((ba?.offers || []).filter((o) => o.on !== false && o.kind === 'free').map((o) => o.label).filter(Boolean))]; // the main pieces only, not the full service list
+        const Row = ({ k, children }) => (
+          <div className="flex items-start justify-between gap-3 border-b border-border-subtle py-2">
+            <span className="text-sm text-muted shrink-0">{k}</span>
+            <div className="text-sm font-semibold text-primary text-right">{children}</div>
+          </div>
+        );
+        return (
+          <div className="space-y-1">
+            <StepHead title="Summary" sub="What they're getting." />
+            <Row k="Light color">{design?.label || <span className="text-red-400">—</span>}</Row>
+            <Row k="Feet">{ftTotal ? `${Math.round(ftTotal * 10) / 10} ft` : <span className="text-red-400">—</span>}</Row>
+            <Row k="Materials">{mats.length ? <ul className="space-y-1">{mats.map(([n, v, img]) => (
+              <li key={n} className="flex items-center justify-end gap-2">
+                <span>{n} <span className="text-muted font-normal">× {v}</span></span>
+                {img ? <img src={img} alt="" className="w-9 h-9 rounded-md object-cover bg-white shrink-0" /> : <span className="w-9 h-9 rounded-md bg-surface-alt shrink-0" />}
+              </li>
+            ))}</ul> : <span className="text-red-400">—</span>}</Row>
+            <Row k="Add-ons">{(ba?.addons || []).filter((a) => a.on !== false).length
+              ? <ul className="space-y-0.5">{(ba?.addons || []).filter((a) => a.on !== false).map((a) => <li key={a.id}>{a.label}{a.sub ? <span className="text-muted font-normal"> · {a.sub}</span> : null}{Number(a.price) > 0 ? <span className="text-muted font-normal"> · {money(Number(a.price))}</span> : null}</li>)}</ul>
+              : <span className="text-muted font-normal">None</span>}</Row>
+            <Row k="What's included"><ul className="space-y-0.5">{included.map((x) => <li key={x}>{x}</li>)}</ul></Row>
+          </div>
+        );
+      })()}
+
+      <LightsMockup part="lines" title="Plan photos" sub="Every side with your lines. Tap one to see it big, or download." angles={angles} setAngles={setAngles} client={client} previews={previews} setPreviews={setPreviews} designId={style} />
+      </div>
+
       {/* Their decision: status + plan, saved on the quote (the Quotes list reads this) */}
       {(() => {
         const parent = dealMeta.kind === 'addon' ? saved.find((x) => x.id === dealMeta.group) : null;
@@ -1316,7 +1371,7 @@ export default function LightsQuoter() {
         const per = num(q.total) * (1 - (PLAN_OFF[yrs] || 0) / 100);
         const chip = (on) => `px-3 py-2 rounded-lg text-sm font-semibold cursor-pointer ${on ? 'bg-brand text-on-brand' : 'bg-surface-alt text-primary hover:bg-surface'}`;
         return (
-          <div className="rounded-xl border-2 border-border-brand bg-card p-4 space-y-3">
+          <div className="rounded-xl border border-border-default bg-card p-4 space-y-3">
             <StepHead title="Their decision" sub="Set this after they tell you (text, call, in person). The Quotes list uses it." />
             <div className="flex flex-wrap gap-2">
               {[['out', 'Pending'], ['accepted', '✓ Accepted'], ['declined', '✕ Declined'], ['gift', '🎁 Gift']].map(([k, l]) => (
@@ -1332,43 +1387,20 @@ export default function LightsQuoter() {
                   </button>
                 ))}
               </div>}
-              {num(q.total) > 0 && <p className="text-sm text-secondary">{yrs > 1 ? <><span className="line-through text-muted">{dollars(q.total)}</span> → </> : null}<b className="text-primary">{dollars(per)}</b>{yrs > 1 ? `/season for ${yrs} seasons` : ''} <span className="text-muted">({parent ? (feet && ['easy', 'medium', 'hard'].some((k) => num(feet[k]) > 0) ? 'counts as extra roofline' : 'counts as an add-on — add feet if it’s more roofline') : 'roofline, before add-ons'})</span></p>}
+              {(() => { const jq = savedId && clientInfo ? quoteStage({ id: savedId, client, clientInfo }, jobberQuotes, jobberRequests).jq : null;
+                return jq?.quoteNumber ? <p className="text-sm text-secondary">Signed in Jobber: <b className="text-primary">{money(num(jq.total))}</b>{(jq.years || 1) > 1 ? `/season for ${jq.years} seasons` : ''} <span className="text-muted">(quote #{jq.quoteNumber})</span>
+                  {(() => { const ft = num(dealMeta.feetOverride) || ['easy', 'medium', 'hard'].reduce((t, k) => t + num(feet[k]), 0); const roof = num(jq.roof ?? jq.total);
+                    return ft > 0 ? <span className="block mt-0.5"><b className="text-primary">${(roof / ft).toFixed(2)}/ft</b> <span className="text-muted">(roofline {money(roof)} ÷ {Math.round(ft * 10) / 10} ft)</span></span> : null; })()}</p> : null; })()}
+              {num(q.total) > 0 && !(savedId && clientInfo && quoteStage({ id: savedId, client, clientInfo }, jobberQuotes, jobberRequests).jq?.quoteNumber) && <p className="text-sm text-secondary">{yrs > 1 ? <><span className="line-through text-muted">{dollars(q.total)}</span> → </> : null}<b className="text-primary">{dollars(per)}</b>{yrs > 1 ? `/season for ${yrs} seasons` : ''}{(() => { const ft = num(dealMeta.feetOverride) || ['easy', 'medium', 'hard'].reduce((t, k) => t + num(feet[k]), 0); return ft > 0 ? <> · <b className="text-primary">${(per / ft).toFixed(2)}/ft</b></> : null; })()} <span className="text-muted">({parent ? (feet && ['easy', 'medium', 'hard'].some((k) => num(feet[k]) > 0) ? 'counts as extra roofline' : 'counts as an add-on — add feet if it’s more roofline') : 'roofline, before add-ons'})</span></p>}
             </>}
+            {/* What their Jobber quote will say + Create in Jobber */}
+            <LightsQuotePreview quoteId={savedId} years={Number(dealMeta.planYears) || 1} onYears={(y) => setDealMeta((m) => ({ ...m, planYears: y }))}
+              linked={savedId && clientInfo ? (() => { const st = quoteStage({ id: savedId, client, clientInfo }, jobberQuotes, jobberRequests); return st.jq?.quoteNumber ? st.jq : null; })() : null} />
           </div>
         );
       })()}
 
-      {/* Summary of what you put in */}
-      {(() => {
-        const design = DESIGNS.find((d) => d.id === style);
-        // Last check before presenting: who, what color, materials confirmed, any bump / offers.
-        const ba = present?.id === savedId ? present.v : null;
-        const offerList = (ba?.offers || []).filter((o) => o.on !== false && Number(o.amount) > 0);
-        const rows = [
-          ['Client', client || '—'],
-          ['Light color', design?.label || '—'],
-          ['Materials', isOk(7) ? 'Confirmed' : '—'],
-          ['Price bump', !ba ? '…' : Number(ba.adjust) > 0 ? `+${money(Number(ba.adjust))}` : 'None'],
-          ['Offers', !ba ? '…' : offerList.length ? offerList.map((o) => `${o.label || 'Offer'} (${o.kind === 'free' ? 'free' : o.kind === '%' ? `${o.amount}% off` : `${money(Number(o.amount))} off`})`).join(', ') : 'None'],
-        ];
-        return (
-          <div className="rounded-xl border border-border-default bg-card p-4 space-y-2">
-            <StepHead title="Ready to present?" sub="Quick check, then tap ▶ Present." />
-            <div className="grid gap-x-6 gap-y-2">
-              {rows.map(([k, v]) => (
-                <div key={k} className="flex items-baseline justify-between gap-3 border-b border-border-subtle py-1.5">
-                  <span className="text-sm text-muted">{k}</span>
-                  <span className={`text-sm font-semibold text-right ${v === '—' ? 'text-red-400' : 'text-primary'}`}>{v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
 
-      {/* Plan photos (+ mockups) with downloads, then the exact quote text */}
-      <LightsMockup part="lines" title="Plan photos" sub="Every side with your lines. Tap one to see it big, or download." angles={angles} setAngles={setAngles} client={client} previews={previews} setPreviews={setPreviews} designId={style} />
-      <LightsQuotePreview quoteId={savedId} years={Number(dealMeta.planYears) || 1} onYears={(y) => setDealMeta((m) => ({ ...m, planYears: y }))} />
 
       {/* Client's exact-price page: the rough-estimate page look, with their real price, 1/2/3-year pick and add-ons. Accept drafts the Jobber quote. */}
       <div className="grid gap-3 md:grid-cols-2">
@@ -1405,7 +1437,16 @@ export default function LightsQuoter() {
           );
         })()}
       </div>
+      </div>
 
+        <div className="flex items-center gap-3 pt-2">
+          <button onClick={() => goStep(prevStep(13))} className="rounded-xl border border-border-strong px-5 py-3 text-sm font-semibold text-secondary hover:text-primary cursor-pointer">← {WIZARD[prevStep(13)]}</button>
+          <button onClick={() => goStep(14)} className="ml-auto rounded-xl bg-brand px-6 py-3 text-base font-bold text-on-brand hover:bg-brand-hover cursor-pointer">Production →</button>
+        </div>
+      </div>
+
+      {/* Production: the crew's team view (strands, plan with feet, materials) */}
+      <div className={wstep === 14 ? 'space-y-5' : 'hidden'}>
       {/* Crew view: send the team the plan + materials */}
       <div className="rounded-xl border border-border-default bg-card p-4 flex flex-col gap-3">
         <div>
@@ -1421,9 +1462,32 @@ export default function LightsQuoter() {
             disabled={!savedId} className="rounded-lg border border-border-strong px-3 py-2 text-sm font-bold text-primary hover:bg-surface-alt disabled:opacity-40 cursor-pointer">👀 Open</button>
         </div>
       </div>
+        {crewToken
+          ? <div className="rounded-xl border border-border-default overflow-hidden bg-card">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-border-subtle">
+                <p className="text-sm font-bold text-primary">Their phone · strands &amp; team view</p>
+                <a href={`/crew/${crewToken}`} target="_blank" rel="noreferrer" className="text-xs font-semibold text-brand-text hover:underline">Open full screen ↗</a>
+              </div>
+              {/* What the crew sees on their phone — it's the real page, so edits here save for them too */}
+              {wstep === 14 && (
+                <div className="py-5 flex justify-center bg-surface-alt/40">
+                  <div className="rounded-[44px] border-[10px] border-neutral-800 bg-black shadow-2xl overflow-hidden" style={{ width: 390 + 20, height: 820 }}>
+                    <iframe title="Team view on their phone" src={`/crew/${crewToken}`} className="block bg-surface" style={{ width: 390, height: 800, border: 0 }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          : <div className="rounded-xl border border-dashed border-border-default p-6 text-center space-y-2">
+              <p className="text-sm text-secondary">No team view yet for this job.</p>
+              <button onClick={async () => { try { setCrewToken(await ensureCrewToken(savedId, crewToken)); } catch (e) { say(`Couldn't make it: ${e.message}`); } }} disabled={!savedId} className="rounded-lg bg-brand text-on-brand px-4 py-2 text-sm font-bold disabled:opacity-40 cursor-pointer">Make the team view</button>
+            </div>}
+        <div className="flex items-center gap-3 pt-2">
+          <button onClick={() => goStep(13)} className="rounded-xl border border-border-strong px-5 py-3 text-sm font-semibold text-secondary hover:text-primary cursor-pointer">← Summary</button>
+        </div>
       </div>
 
-      {/* Last thing: present */}
+      {/* Present: just the button */}
+      <div className={wstep === 11 ? 'space-y-5' : 'hidden'}>
       <button
         onClick={() => savedId && navigate(`/lights-presentation/${savedId}`)}
         disabled={!savedId}

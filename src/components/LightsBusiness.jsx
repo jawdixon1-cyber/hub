@@ -832,8 +832,18 @@ function InstallWrapUp({ saved, onPatch, hideReview }) {
 // Returns [{ id, name, at, mats, problems, late, landBy, landEst }].
 // The Hub quote for a Jobber job: one you linked by hand, else same Jobber client,
 // else same name, else a near-identical name ("McPeters" vs "mcpeter") if only one fits.
-function matchQuote(quotes, { quoteId, clientId, clientName }) {
-  if (quoteId) { const q = quotes.find((x) => x.id === quoteId); if (q) return q; }
+// nth: this is the client's 1st (0), 2nd (1)… lights job in Jobber. The 2nd+ job is an add-on trip → that add-on's quote.
+function matchQuote(allQuotes, { quoteId, clientId, clientName, nth = 0 }) {
+  if (quoteId) { const q = allQuotes.find((x) => x.id === quoteId); if (q) return q; }
+  // Only the main quote of a deal (never an add-on or another scope inside it), and its agreed scope if one is set.
+  const ids = new Set(allQuotes.map((x) => x.id));
+  const mains = allQuotes.filter((x) => !x.group || !ids.has(x.group));
+  if (nth > 0) {
+    const main = mains.find((x) => (clientId && x.clientInfo?.id === clientId) || nameKey(x.clientInfo?.name || x.client) === nameKey(clientName));
+    const addons = main ? allQuotes.filter((x) => x.group === main.id && x.kind === 'addon').sort((a, b) => String(a.createdAt || a.id).localeCompare(String(b.createdAt || b.id))) : [];
+    if (addons[nth - 1]) return addons[nth - 1];
+  }
+  const quotes = mains.map((x) => (x.chosenId && x.chosenId !== x.id ? allQuotes.find((y) => y.id === x.chosenId) || x : x));
   if (clientId) { const q = quotes.find((x) => x.clientInfo?.id === clientId); if (q) return q; }
   const k = nameKey(clientName);
   const exact = quotes.find((x) => nameKey(x.clientInfo?.name || x.client) === k);
@@ -1517,12 +1527,16 @@ export default function LightsBusiness({ view, onOpen = null }) {
   const jobsMap = useMemo(() => {
     const raw = jobsStored || {};
     const live = Object.fromEntries((schedule.jobs || []).map((j) => [j.id, j]));
-    const ids = new Set([...Object.keys(raw), ...(schedule.jobs || []).filter((j) => j.status !== 'archived' && isLightsTitle(j.title)).map((j) => j.id)]);
+    // Which lights job this is for the client (by job number): 0 = first install, 1+ = add-on trips
+    const lightsJobs = (schedule.jobs || []).filter((j) => j.status !== 'archived' && (isLightsTitle(j.title) || !String(j.title || '').trim())); // an add-on job often has no title
+    const nthOf = (id) => { const me = live[id]; if (!me) return 0; const mine = lightsJobs.filter((x) => (me.clientId && x.clientId === me.clientId) || nameKey(x.clientName) === nameKey(me.clientName)).sort((a, b) => Number(a.jobNumber) - Number(b.jobNumber)); return Math.max(0, mine.findIndex((x) => x.id === id)); };
+    const ids = new Set([...Object.keys(raw), ...lightsJobs.filter((j) => isLightsTitle(j.title) || quotes.some((q) => (j.clientId && q.clientInfo?.id === j.clientId))).map((j) => j.id)]);
+
     const out = {};
     ids.forEach((id) => {
       const j = raw[id] || { clientName: live[id]?.clientName, title: live[id]?.title, date: live[id]?.visitAt };
       if (j.installed) { out[id] = j; return; }
-      const q = matchQuote(quotes, { quoteId: j.quoteId, clientId: live[id]?.clientId, clientName: j.clientName || live[id]?.clientName });
+      const q = matchQuote(quotes, { quoteId: j.quoteId, clientId: live[id]?.clientId, clientName: j.clientName || live[id]?.clientName, nth: nthOf(id) });
       // "Real" materials = anything besides the default plugs + timer every quote shows.
       const isDefault = (itemId) => { const nm = items.find((x) => x.id === itemId)?.name || ''; return AUTO_ON_JOB.some(([re, , not]) => re.test(nm) && !(not && not.test(nm))); };
       const real = (m) => Object.entries(m || {}).filter(([k, v]) => n(v) > 0 && !isDefault(k));
@@ -1592,7 +1606,10 @@ export default function LightsBusiness({ view, onOpen = null }) {
     const patchJob = (j, p) => setJobsMap((m) => ({ ...(m || {}), [j.id]: { clientName: j.clientName, title: j.title, date: j.visitAt, ...((m || {})[j.id] || {}), ...p } }));
     const itemById = (id) => items.find((x) => x.id === id);
     // A quote you linked by hand wins; otherwise match by Jobber client / name.
-    const jobQuote = (j) => matchQuote(quotes, { quoteId: j.saved?.quoteId, clientId: j.clientId, clientName: j.clientName });
+    const jobNth = (j) => { const lj = (schedule.jobs || []).filter((x) => x.status !== 'archived' && (isLightsTitle(x.title) || !String(x.title || '').trim())); const mine = lj.filter((x) => (j.clientId && x.clientId === j.clientId) || nameKey(x.clientName) === nameKey(j.clientName)).sort((a, b) => Number(a.jobNumber) - Number(b.jobNumber)); return Math.max(0, mine.findIndex((x) => x.id === j.id)); };
+    const jobQuote = (j) => matchQuote(quotes, { quoteId: j.saved?.quoteId, clientId: j.clientId, clientName: j.clientName, nth: jobNth(j) });
+    // An add-on install (its own trip): its quote is an add-on inside another deal
+    const isAddonJob = (j) => jobQuote(j)?.kind === 'addon';
     const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : 'no date');
     const DAY = 864e5;
 
@@ -1755,7 +1772,8 @@ export default function LightsBusiness({ view, onOpen = null }) {
         return 'done';
       }
       if (!j.saved.confirmed) return 'materials';
-      if (!inst?.startAt || !take?.startAt) return 'schedule';
+      // An add-on trip only needs its install visit; its lights come down with the main job's takedown.
+      if (!inst?.startAt || (!take?.startAt && !isAddonJob(j))) return 'schedule';
       const rd = readyById[j.id];
       if (rd && (rd.problems.length || rd.late)) return 'stock';
       return 'ready';
@@ -1817,7 +1835,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
           : !v.startAt ? <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-red-500/15 text-red-400" title={v.title}>⚠️ {label}: not scheduled</span>
             : <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${v.done ? 'bg-emerald-500/15 text-emerald-400' : 'bg-surface-alt text-primary'}`} title={v.title}>{label}: {fmtV(v)}{v.done ? ' ✓' : ''}</span>
       );
-      return <div className="flex items-center gap-1.5 flex-wrap">{chip('🔨 Install', inst)}{chip('📦 Takedown', take)}</div>;
+      return <div className="flex items-center gap-1.5 flex-wrap">{chip('🔨 Install', inst)}{isAddonJob(j) && !take ? <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-surface-alt text-muted">📦 Takedown: with the main job</span> : chip('📦 Takedown', take)}</div>;
     };
 
     const stockLine = (j) => {
@@ -2172,7 +2190,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
                   const jobL = listOf(j.saved.oldList); const qL = listOf(q?.materials);
                   return (
                     <div key={j.id} className="rounded-lg bg-card border border-border-default p-3 space-y-2">
-                      <p className="text-sm font-bold text-primary">{j.clientName} <span className="text-xs font-normal text-muted">{j.hubOnly ? "🏠 not in Jobber" : `#${j.jobNumber}`}</span></p>
+                      <p className="text-sm font-bold text-primary">{j.clientName} <span className="text-xs font-normal text-muted">{isAddonJob(j) ? <span className="ml-1 px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 text-[10px] font-bold">➕ Add-on{jobQuote(j)?.scopeName && !/^add-on$/i.test(jobQuote(j).scopeName) ? ` · ${jobQuote(j).scopeName}` : ''}</span> : j.hubOnly ? "🏠 not in Jobber" : `#${j.jobNumber}`}</span></p>
                       <div className="grid sm:grid-cols-2 gap-3 text-xs">
                         <div><p className="font-semibold text-secondary mb-1">Old job list</p>{jobL.map((t) => <p key={t} className="text-primary">{t}</p>)}</div>
                         <div><p className="font-semibold text-secondary mb-1">Quote</p>{qL.length ? qL.map((t) => <p key={t} className="text-primary">{t}</p>) : <p className="text-muted">Empty</p>}</div>
@@ -2203,7 +2221,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
                 <button onClick={() => setOpenJob(isOpen ? '' : j.id)} className="flex-1 min-w-0 flex items-center gap-3 pl-4 pr-4 py-3 text-left cursor-pointer hover:bg-surface-alt/40 rounded-xl">
                   <span className="text-muted text-sm w-3">{isOpen ? '▾' : '▸'}</span>
                   <span className="flex-1 min-w-0">
-                    <span className="block text-base font-semibold text-primary truncate">{j.clientName} <span className="text-xs font-normal text-muted">{j.hubOnly ? "🏠 not in Jobber" : `#${j.jobNumber}`}</span>{jobQuote(j)?.planLocked && <span title="Plan + materials locked" className="ml-1.5">🔒</span>}</span>
+                    <span className="block text-base font-semibold text-primary truncate">{j.clientName} <span className="text-xs font-normal text-muted">{isAddonJob(j) ? <span className="ml-1 px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 text-[10px] font-bold">➕ Add-on{jobQuote(j)?.scopeName && !/^add-on$/i.test(jobQuote(j).scopeName) ? ` · ${jobQuote(j).scopeName}` : ''}</span> : j.hubOnly ? "🏠 not in Jobber" : `#${j.jobNumber}`}</span>{jobQuote(j)?.planLocked && <span title="Plan + materials locked" className="ml-1.5">🔒</span>}</span>
                     <span className="block text-xs text-muted">{inst?.startAt ? `Install ${fmtDate(inst.startAt)}` : 'No install date'}</span>
                     {/* Installed jobs: the wrap-up checklist right on the row (tap to check off; after pics come from the photos) */}
                     {(stage === 'wrap' || stage === 'takedown' || stage === 'done') && (() => {
@@ -2230,7 +2248,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
                   <div className="fixed inset-0 z-50 bg-black/60 flex items-start sm:items-center justify-center p-0 sm:p-6" onClick={() => setOpenJob('')}>
                     <div className="w-full sm:max-w-2xl max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto rounded-none sm:rounded-2xl border border-border-default bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
                       <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border-subtle bg-card px-4 py-3">
-                        <p className="flex-1 text-lg font-bold text-primary">{j.clientName} <span className="text-sm font-normal text-muted">{j.hubOnly ? '🏠 not in Jobber' : `#${j.jobNumber}`}</span></p>
+                        <p className="flex-1 text-lg font-bold text-primary">{j.clientName} <span className="text-sm font-normal text-muted">{isAddonJob(j) ? <span className="ml-1 px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 text-[10px] font-bold">➕ Add-on{jobQuote(j)?.scopeName && !/^add-on$/i.test(jobQuote(j).scopeName) ? ` · ${jobQuote(j).scopeName}` : ''}</span> : j.hubOnly ? "🏠 not in Jobber" : `#${j.jobNumber}`}</span></p>
                         <button onClick={() => setOpenJob('')} className="w-9 h-9 rounded-lg bg-surface-alt text-lg cursor-pointer">✕</button>
                       </div>
                       {card(j, stage)}
@@ -2392,11 +2410,19 @@ export default function LightsBusiness({ view, onOpen = null }) {
         {/* (Top money cards removed — the money ledger lives in Real orders, 2026-11-13) */}
         {(() => {
           // Which booked (not installed) jobs use each item, for the tap-to-open breakdown.
+          // Exactly what makes up "for jobs": jobs not installed yet + won quotes with no job yet (same as committed)
           const byJob = {};
+          const jobNames = new Set();
           Object.values(jobsMap).forEach((j) => {
+            jobNames.add(nameKey(j.clientName));
             if (j.installed) return;
             Object.entries(withDefaults(j.materials, items, j.noAuto)).forEach(([id, q]) => {
-              if (n(q)) (byJob[id] = byJob[id] || []).push([String(j.clientName || 'Job').split(' ')[0], n(q)]);
+              if (n(q)) (byJob[id] = byJob[id] || []).push([String(j.clientName || 'Job'), n(q), quotes.find((x) => x.id === j.fromQuote)?.kind === 'addon' ? 'addon' : 'job']);
+            });
+          });
+          quotes.filter((q) => statusOf(q) === 'won' && !jobNames.has(nameKey(q.clientInfo?.name || q.client))).forEach((q) => {
+            Object.entries(withDefaults(q.materials, items)).forEach(([id, v]) => {
+              if (n(v)) (byJob[id] = byJob[id] || []).push([String(q.client || 'Quote'), n(v), 'quote']);
             });
           });
           const ordered = groupSupplies(rows.map((r) => r.x)).flatMap(([, , its]) => its.map((it) => rows.find((r) => r.x.id === it.id)));
@@ -2436,6 +2462,11 @@ export default function LightsBusiness({ view, onOpen = null }) {
                   {head}
                   <div className={`border-t border-border-subtle border-l-4 ${buy ? 'bg-red-500/[0.09] border-l-red-500' : x.note ? 'bg-yellow-500/[0.08] border-l-yellow-500' : 'border-l-transparent'}`}>
                     <button onClick={() => setEditing(open ? '' : x.id)} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-alt/50 cursor-pointer">
+                      {/* NEED: how many upcoming jobs need */}
+                      <span className="w-16 text-right shrink-0">
+                        <span className="block text-[10px] uppercase tracking-wide text-muted">Need</span>
+                        <span className={`block text-lg font-bold tabular-nums leading-tight ${com > 0 ? 'text-primary' : 'text-muted'}`}>{Math.round(com)}</span>
+                      </span>
                       {buy ? (
                         <span className="w-28 text-right shrink-0 text-red-400 whitespace-nowrap">
                           <span className="block text-[10px] uppercase tracking-wide">Left</span>
@@ -2463,6 +2494,11 @@ export default function LightsBusiness({ view, onOpen = null }) {
                           {/* Already went up on installed jobs (came out of Have) — shown, not subtracted again */}
                           {n(x.used) > 0 && <span className="text-muted"> · {n(x.used)} used on installs</span>}
                         </span>
+                        {(byJob[x.id] || []).length > 0 && (
+                          <span className="block text-[11px] text-muted tabular-nums">
+                            ↳ {byJob[x.id].slice().sort((a, b) => b[1] - a[1]).map(([who, q, kind]) => `${who}${kind === 'addon' ? ' add-on' : ''} ${Math.round(q)}${kind === 'quote' ? ' (quote)' : ''}`).join(' · ')}
+                          </span>
+                        )}
                         {buy && (
                           <span className="block text-xs text-red-400 tabular-nums">
                             {shortJobs > 0 ? `Short ${Math.ceil(shortJobs)} for jobs` : `Under ${spare}`} → order <b>{Math.ceil(need)}</b>
@@ -2484,7 +2520,7 @@ export default function LightsBusiness({ view, onOpen = null }) {
                     {open && (
                       <div className="px-4 pb-3 pt-1 space-y-3 bg-surface-alt/40">
                         {(byJob[x.id] || []).length > 0 && (
-                          <p className="text-xs text-secondary"><span className="text-muted">Jobs using it:</span> {byJob[x.id].map(([who, q]) => `${who} ${q}`).join(' · ')}</p>
+                          <p className="text-xs text-secondary"><span className="text-muted">Jobs using it:</span> {byJob[x.id].map(([who, q, kind]) => `${who}${kind === 'addon' ? ' add-on' : ''} ${Math.round(q)}${kind === 'quote' ? ' (quote)' : ''}`).join(' · ')}</p>
                         )}
                         <div className="flex items-end gap-3 flex-wrap">
                           {[['Have', 'onHand'], ['Alert below', 'spare'], ['Buy at a time', 'buy'], ['Ordered (no receipt)', 'extraOnOrder'], ['Cost $', 'cost']].map(([lbl, k]) => (

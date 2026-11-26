@@ -44,7 +44,7 @@ export const STYLE_LABEL = { warm: 'Warm white', cool: 'Cool white', redwhite: '
 const STYLE_PATTERN = {
   warm: [[/warm/i, 1]],
   cool: [[/cool/i, 1]],
-  redwhite: [[/\bred\b/i, 1], [/warm/i, 1]],
+  redwhite: [[/\bred\b/i, 1], [/pure/i, 1]], // candy cane = red + PURE white (Jude, 2026-11-26)
   redgreen: [[/\bred\b/i, 1], [/green/i, 1]],
   multi: [[/multi/i, 1]],
 };

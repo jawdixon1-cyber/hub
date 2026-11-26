@@ -5,7 +5,7 @@ const DESIGNS = {
   warm: 'warm white C9 LED bulbs — a clean, bright warm white like real-world C9 warm white, not too yellow',
   cool: 'cool white C9 LED bulbs — crisp, bright cool white with a slight blue tint',
   multi: 'classic multicolor C9 LED bulbs in a strict repeating order — red, green, blue, yellow, orange, then red again — never two of the same color next to each other',
-  redwhite: 'C9 LED bulbs strictly alternating one red, one warm white (red, white, red, white…) — exactly 1-to-1, never two whites or two reds next to each other',
+  redwhite: 'C9 LED bulbs strictly alternating one red, one pure white (red, white, red, white…) — exactly 1-to-1, never two whites or two reds next to each other',
   redgreen: 'C9 LED bulbs strictly alternating one red, one green (red, green, red, green…) — exactly 1-to-1, never two of the same color next to each other',
 };
 

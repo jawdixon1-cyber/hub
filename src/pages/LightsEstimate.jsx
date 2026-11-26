@@ -482,6 +482,12 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
           <div className="rounded-xl border border-card-border bg-card p-4 space-y-2 md:sticky md:top-4">
             <p className="text-[11px] font-black uppercase tracking-[0.15em] text-muted">Their range</p>
             <p className="text-3xl font-black text-primary">{est.lines.length ? `${money(p.low)}–${money(p.high)}` : '—'}</p>
+            {est.lines.length > 0 && p.total > 0 && (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-surface-alt px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted">Total feet</p><p className="text-xl font-black text-primary">{Math.round(p.total)} ft</p></div>
+                <div className="rounded-lg bg-surface-alt px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted">We get per ft</p><p className="text-xl font-black text-brand-text">${(p.est / p.total).toFixed(2)}</p><p className="text-[10px] text-muted">${(p.low / p.total).toFixed(2)}–${(p.high / p.total).toFixed(2)} range</p></div>
+              </div>
+            )}
             {est.lines.length > 0 && (
               <div className="text-xs text-muted space-y-0.5 tabular-nums">
                 {LEVELS.map((lv) => (

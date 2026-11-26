@@ -8,7 +8,8 @@ import { useAuth } from '../contexts/AuthContext';
 const money = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // years/onYears: the plan they picked (saved on the quote) — the preview follows it.
-export default function LightsQuotePreview({ quoteId, years: yearsProp, onYears }) {
+// linked: their Jobber quote if one already exists ({ id, quoteNumber, status, total }) → shows as synced.
+export default function LightsQuotePreview({ quoteId, years: yearsProp, onYears, linked = null }) {
   const { session } = useAuth();
   const token = session?.access_token || '';
   const [yearsLocal, setYearsLocal] = useState(1);
@@ -56,12 +57,21 @@ export default function LightsQuotePreview({ quoteId, years: yearsProp, onYears 
     <div className="rounded-xl border border-border-default bg-card p-4">
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-3 cursor-pointer text-left">
         <span>
-          <span className="block text-base font-bold text-primary">Their Jobber quote</span>
-          <span className="block text-xs text-muted">{d ? `${years} season${years > 1 ? 's' : ''} · ${money(d.total)} · deposit ${money(d.deposit)}` : 'The exact quote Jobber gets'}</span>
+          <span className="flex items-center gap-2 text-base font-bold text-primary">Their Jobber quote
+            {linked && <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 text-[11px] font-bold">✓ Synced · #{linked.quoteNumber} · {String(linked.status || '').replace(/_/g, ' ')}</span>}
+          </span>
+          <span className="block text-xs text-muted">{linked ? `In Jobber: ${money(linked.total)}${(linked.years || 1) > 1 ? `/season · ${linked.years} seasons` : ''}` : d ? `${years} season${years > 1 ? 's' : ''} · ${money(d.total)} · deposit ${money(d.deposit)}` : 'The exact quote Jobber gets'}</span>
         </span>
         <ChevronDown size={18} className={`text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && <div className="mt-3">
+      {open && linked && (
+        <div className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3 space-y-2">
+          <p className="text-sm text-primary"><b>What they signed: quote #{linked.quoteNumber}</b> · {money(linked.total)}{(linked.years || 1) > 1 ? `/season for ${linked.years} seasons` : ''}{linked.roof != null && linked.addons > 0 ? <span className="text-secondary"> · roofline {money(linked.roof)} + add-ons {money(linked.addons)}</span> : null}</p>
+          <p className="text-xs text-muted">This is the real quote in Jobber. Changes here in Hub don&#8217;t change it.</p>
+          {(() => { let n = ''; try { n = atob(linked.id || '').split('/').pop(); } catch { n = ''; } return n ? <a href={`https://secure.getjobber.com/quotes/${n}`} target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg bg-brand text-on-brand px-4 py-2 text-sm font-bold">Open in Jobber ↗</a> : null; })()}
+        </div>
+      )}
+      {open && !linked && <div className="mt-3">
 
       {/* Options they can pick at the presentation */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -117,7 +127,12 @@ export default function LightsQuotePreview({ quoteId, years: yearsProp, onYears 
 
       {d && (
         <div className="mt-3">
-          {made.quote ? (
+          {linked && !made.quote ? (
+            <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3 flex items-center gap-3 flex-wrap">
+              <p className="flex-1 text-sm font-semibold text-primary">✓ In Jobber: quote #{linked.quoteNumber}{linked.total != null && <span className="text-secondary"> · {money(linked.total)}</span>}</p>
+              {(() => { let n = ''; try { n = atob(linked.id || '').split('/').pop(); } catch { n = ''; } return n ? <a href={`https://secure.getjobber.com/quotes/${n}`} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-brand text-on-brand px-4 py-2 text-sm font-bold">Open in Jobber ↗</a> : null; })()}
+            </div>
+          ) : made.quote ? (
             <div className="rounded-lg border border-border-brand bg-brand-light p-3 flex items-center gap-3 flex-wrap">
               <p className="flex-1 text-sm font-semibold text-primary">
                 {made.quote.existing ? 'Already in Jobber' : '✓ Created in Jobber'}: quote #{made.quote.quoteNumber}

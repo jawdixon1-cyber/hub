@@ -28,7 +28,7 @@ import {
   TrendingUp,
   Settings as SettingsIcon,
   MessageSquare,
-  Inbox,
+  Inbox, Globe, Network, Trees,
   Briefcase,
   CreditCard,
   CalendarDays,
@@ -89,6 +89,7 @@ const ReceiptTracker = lazy(() => import('./pages/ReceiptTracker'));
 const PlaybookDetail = lazy(() => import('./pages/PlaybookDetail'));
 const Standards = lazy(() => import('./pages/Standards'));
 const Settings = lazy(() => import('./pages/Settings'));
+const Connections = lazy(() => import('./pages/Connections'));
 const Commander = lazy(() => import('./pages/Commander'));
 const ServiceAgreement = lazy(() => import('./pages/ServiceAgreement'));
 const Territory = lazy(() => import('./pages/Dominate'));
@@ -107,6 +108,9 @@ const PublicQuoteView = lazy(() => import('./pages/PublicQuoteView'));
 const Messages = lazy(() => import('./pages/Messages'));
 const Requests = lazy(() => import('./pages/Requests'));
 const LeadsStep = lazy(() => import('./components/LeadsStep'));
+const HQ = lazy(() => import('./pages/HQ'));
+const Agents = lazy(() => import('./pages/Agents'));
+const Landscaping = lazy(() => import('./pages/Landscaping'));
 const WorkflowManager = lazy(() => import('./pages/WorkflowManager'));
 const NewClient = lazy(() => import('./pages/NewClient'));
 const Schedule = lazy(() => import('./pages/Schedule'));
@@ -615,6 +619,9 @@ function TopbarSettingsMenu({ currentUser, userEmail, onNav, onSignOut }) {
             <button onClick={() => { setOpen(false); onNav('/settings'); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
               Settings
             </button>
+            <button onClick={() => { setOpen(false); onNav('/connections'); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              Connections
+            </button>
           </div>
           <TeamViewToggle onDone={() => setOpen(false)} />
           <div className="border-t border-border-subtle py-1">
@@ -781,10 +788,10 @@ function AppShell() {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [buildingOpen, setBuildingOpen] = useState(true);
   const [hideBuilding] = useLocalPref(PREF_HIDE_BUILDING, false);
   const [hideSchedule] = useLocalPref(PREF_HIDE_SCHEDULE, false);
-  const [ownerMoreOpen, setOwnerMoreOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(() => { try { return JSON.parse(localStorage.getItem('hub-nav-open') || '{}'); } catch { return {}; } });
+  useEffect(() => { try { localStorage.setItem('hub-nav-open', JSON.stringify(navOpen)); } catch { /* ignore */ } }, [navOpen]);
   const [operationsOpen, setOperationsOpen] = useState(false);
 
   const toggleSidebar = () => {
@@ -912,94 +919,75 @@ function AppShell() {
 
       {ownerMode && (
         <>
-          {/* Jude's Start Day / End Day checklists (his wall sheet), with today's count. */}
-          <div className="h-px bg-border-subtle my-3 mx-2" />
-          {[
-            { id: 'o-start', path: '/workflow/start', label: 'Start · 8 AM', icon: Sunrise, done: dailyProgress.startDone, total: dailyProgress.startTotal },
-            { id: 'o-end', path: '/workflow/end', label: 'End · 5 PM', icon: Sunset, done: dailyProgress.endDone, total: dailyProgress.endTotal },
-            { id: 'o-plan', path: '/plan', label: 'Plan', icon: CalendarCheck },
-            { id: 'o-requests', path: '/leads', label: 'Requests', icon: Inbox },
-          ].map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            const allDone = item.total > 0 && item.done === item.total;
-            return (
-              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? `${item.label} ${item.done}/${item.total}` : undefined}
-                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
-                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-                }`}>
-                <Icon size={15} className="shrink-0" />
-                {!collapsed && (
-                  <>
-                    <span className="truncate flex-1 text-left">{item.label}</span>
-                    {item.total != null && <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${allDone ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-tertiary'}`}>{item.done}/{item.total}</span>}
-                  </>
-                )}
-              </button>
-            );
-          })}
-          {/* Tools — flat in the bar. "More" holds the overflow and the Building group. */}
-          <div className="h-px bg-border-subtle my-3 mx-2" />
-          {OWNER_TOOLS_PINNED.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            return (
-              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
-                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-                }`}>
-                <Icon size={15} className="shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
-            );
-          })}
-
-          {/* Building — our own CRM (Clients, Schedule, Quotes, Jobs, Invoices, Payments). */}
-          {!hideBuilding && !collapsed && (
-            <button onClick={() => setBuildingOpen((o) => !o)}
-              className="w-full flex items-center justify-between px-3 py-2 mt-1 text-xs font-semibold text-muted hover:text-secondary cursor-pointer">
-              <span className="inline-flex items-center gap-2">
-                <ChevronRight size={14} className={`transition-transform ${buildingOpen ? 'rotate-90' : ''}`} />
-                Building
-              </span>
-            </button>
-          )}
-          {!hideBuilding && buildingOpen && !collapsed && OPERATIONS_ITEMS.filter((item) => !(item.id === 'schedule' && hideSchedule)).map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            return (
-              <button key={item.id} onClick={() => handleNav(item.path)}
-                className={`w-full flex items-center gap-2.5 px-3 pl-6 py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
-                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-                }`}>
-                <Icon size={14} className="shrink-0" />
-                <span className="truncate">{item.label}</span>
-              </button>
-            );
-          })}
-
-          {!collapsed && (
-            <button onClick={() => setOwnerMoreOpen((o) => !o)}
-              className="w-full flex items-center justify-between px-3 py-2 mt-1 text-xs font-semibold text-muted hover:text-secondary cursor-pointer">
-              <span className="inline-flex items-center gap-2">
-                <ChevronRight size={14} className={`transition-transform ${ownerMoreOpen ? 'rotate-90' : ''}`} />
-                Extra
-              </span>
-            </button>
-          )}
-          {ownerMoreOpen && !collapsed && OWNER_TOOLS_MORE.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-            return (
-              <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3 pl-6'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
-                  active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
-                }`}>
-                <Icon size={14} className="shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
-            );
-          })}
+          {/* Owner sidebar — grouped by part of the business. Building + Old start closed. */}
+          {(() => {
+            const groups = [
+              { id: 'today', label: 'Today', items: [
+                { id: 'o-hq', path: '/hq', label: 'HQ', icon: Globe },
+              ] },
+              { id: 'sales', label: 'Sales', items: [
+                { id: 'landscaping', path: '/landscaping', label: 'Landscaping', icon: Trees },
+                { id: 'lights', path: '/lights-quoter', label: 'Christmas Lights', icon: Lightbulb },
+              ] },
+              ...(!hideBuilding ? [{ id: 'building', label: 'Building (our CRM)', items: (() => { const ops = OPERATIONS_ITEMS.filter((item) => !(item.id === 'schedule' && hideSchedule)); return [ops[0], { id: 'o-requests', path: '/leads', label: 'Requests', icon: Inbox }, ...ops.slice(1)]; })() }] : []),
+              { id: 'marketing', label: 'Marketing', items: [
+                { id: 'social', path: '/social', label: 'Social media', icon: Video },
+              ] },
+              { id: 'money', label: 'Money', items: [
+                { id: 'payroll', path: '/payroll', label: 'Finance', icon: DollarSign },
+                { id: 'timesheets', path: '/timesheets', label: 'Timesheets', icon: Clock },
+                { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
+              ] },
+              { id: 'team', label: 'Team', items: [
+                { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
+              ] },
+              { id: 'old', label: 'Old / ideas', closed: true, items: [
+                { id: 'guides', path: '/playbooks', label: 'Playbooks', icon: BookOpen },
+                { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
+                { id: 'suppliers', path: '/suppliers', label: 'Suppliers', icon: Truck },
+                { id: 'receipts', path: '/receipts', label: 'Receipts', icon: Receipt },
+                { id: 'insights', path: '/insights', label: 'Insights', icon: BarChart3 },
+                { id: 'eyeballs', path: '/eyeballs', label: 'Eyeballs', icon: Eye },
+                { id: 'hangers', path: '/print/hangers', label: 'Door Hangers', icon: DoorOpen },
+                { id: 'o-agents', path: '/agents', label: 'Agents map', icon: Network },
+                { id: 'home', path: '/home', label: 'Old home', icon: HomeIcon },
+                { id: 'hub-requests', path: '/requests', label: 'Hub requests (old)', icon: Inbox },
+              ] },
+            ];
+            return groups.map((g) => {
+              const open = g.id === 'building' || (g.closed ? navOpen[g.id] === true : navOpen[g.id] !== false);
+              return (
+                <div key={g.id}>
+                  {!collapsed ? (
+                    <button onClick={() => setNavOpen((o) => ({ ...o, [g.id]: !open }))}
+                      className="w-full flex items-center gap-1.5 px-3 pt-3 pb-1 text-[10px] font-black uppercase tracking-widest text-muted hover:text-secondary cursor-pointer">
+                      <ChevronRight size={12} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
+                      {g.label}
+                    </button>
+                  ) : <div className="h-px bg-border-subtle my-2 mx-2" />}
+                  {(open || collapsed) && g.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.path);
+                    const allDone = item.total > 0 && item.done === item.total;
+                    return (
+                      <button key={item.id} onClick={() => handleNav(item.path)} title={collapsed ? item.label : undefined}
+                        className={`w-full flex items-center gap-2.5 ${collapsed ? 'justify-center px-2' : 'px-3'} py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
+                          active ? 'bg-brand-light text-brand-text-strong' : 'text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer'
+                        }`}>
+                        <Icon size={15} className="shrink-0" />
+                        {!collapsed && (
+                          <>
+                            <span className="truncate flex-1 text-left">{item.label}</span>
+                            {item.total != null && <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${allDone ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-tertiary'}`}>{item.done}/{item.total}</span>}
+                          </>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            });
+          })()}
 
         </>
       )}
@@ -1174,6 +1162,8 @@ function AppShell() {
               <Routes>
                 <Route path="/" element={ownerMode ? <Navigate to="/lights-quoter" replace /> : <Home />} />
                 <Route path="/home" element={ownerMode ? <OwnerHome /> : <Navigate to="/" replace />} />
+                <Route path="/hq" element={ownerMode ? <HQ progress={dailyProgress} /> : <Navigate to="/" replace />} />
+                <Route path="/agents" element={ownerMode ? <Agents /> : <Navigate to="/" replace />} />
                 <Route path="/client-base" element={ownerMode ? <Plans /> : <Navigate to="/" replace />} />
                 <Route path="/warm-leads" element={<Navigate to="/client-base" replace />} />
                 <Route path="/plans" element={<Navigate to="/client-base" replace />} />
@@ -1201,6 +1191,7 @@ function AppShell() {
                 <Route path="/agreement" element={<TeamAgreement />} />
                 <Route path="/mowing" element={<MowingSchedule />} />
                 <Route path="/sales" element={<Sales />} />
+                <Route path="/landscaping" element={ownerMode ? <Landscaping /> : <Navigate to="/" replace />} />
                 <Route path="/lights-quoter" element={ownerMode ? <LightsQuoter /> : <Navigate to="/" replace />} />
                 <Route path="/lights-presentation/:id" element={ownerMode ? <LightsPresentation /> : <Navigate to="/" replace />} />
                 <Route path="/lights-estimate" element={ownerMode ? <LightsEstimate /> : <Navigate to="/" replace />} />
@@ -1247,6 +1238,7 @@ function AppShell() {
                 <Route path="/checklist-tracker" element={<ChecklistTrackerPage />} />
                 <Route path="/owner-dashboard" element={<OwnerDashboard />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/connections" element={<Connections />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
           </Suspense>
