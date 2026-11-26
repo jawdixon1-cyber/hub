@@ -792,7 +792,7 @@ async function handleEstimatePage(req, res) {
       var mats=(d.supplies||[]).filter(function(s){return Number(d.q.materials&&d.q.materials[s.id])>0});
       if(!hp&&!mats.length)pl.innerHTML='<p class="hje-small">Your detailed plan is built at install.</p>';
       if(mats.length&&mt)mt.innerHTML='<div class="hje-lqsec"><h3>What we&#8217;re using</h3><p>Commercial-grade products, the best you can buy. Bulbs 7x brighter than hardware-store ones. The best on the block.</p><div class="hje-mats">'+mats.map(function(s){return '<div>'+(s.image?'<img src="'+s.image+'" alt="" loading="lazy">':'')+'<span><b>'+esc(s.name)+'</b><small>'+esc(d.q.materials[s.id])+'</small></span></div>'}).join('')+'</div></div>';
-    }).catch(function(){});
+    }).catch(function(){var pl=document.getElementById('hje-lqplan');if(pl)pl.innerHTML='<div class="hje-loading"><b>Couldn&#8217;t load your plan</b><small>Refresh the page to try again.</small></div>'});
     var cur=0;
     function go(n){cur=n;[].forEach.call(root.querySelectorAll('.hje-step'),function(c){c.classList.toggle('on',Number(c.dataset.s)===n)});
       [].forEach.call(root.querySelectorAll('.hje-stepbar button'),function(b){var k=Number(b.dataset.s);b.classList.toggle('on',k===n);b.classList.toggle('done',k<n)});
