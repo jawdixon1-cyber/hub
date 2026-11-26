@@ -980,7 +980,18 @@ input[type=text],input[type=tel],input[type=email],select{width:100%;background:
 .thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}.thumbs:empty{display:none}.thumbs div{position:relative}.thumbs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block}.thumbs button{position:absolute;top:3px;right:3px;width:22px;height:22px;padding:0;margin:0;border-radius:50%;background:rgba(0,0,0,.7);color:#fff;font-size:13px;line-height:22px}
 button{width:100%;border:0;border-radius:14px;background:#00DF00;color:#04170a;font:800 18px Poppins,system-ui,sans-serif;padding:16px;cursor:pointer;margin-top:6px}
 button:disabled{opacity:.6}
-.how{list-style:none;margin:0 0 22px;padding:0;display:grid;gap:8px}.how li{display:flex;gap:10px;align-items:flex-start;background:#111621;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:10px 12px;font-size:14px;color:#c9ced8;line-height:1.4}.how li>b{flex:none;width:24px;height:24px;border-radius:50%;background:#00DF00;color:#04170a;display:grid;place-items:center;font-size:13px;font-weight:900;margin-top:1px}.how li span b{color:#fff}
+.how{list-style:none;margin:0 0 22px;padding:0;display:grid;gap:8px}.how li{display:flex;gap:10px;align-items:flex-start;background:#111621;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:10px 12px;font-size:14px;color:#c9ced8;line-height:1.4}.how li>b{flex:none;width:28px;height:28px;border-radius:50%;background:rgba(0,223,0,.15);display:grid;place-items:center;font-size:15px}.how li{align-items:center!important;font-size:16px!important;padding:14px!important}.how li span b{color:#fff}.how .now{color:#00DF00;font-weight:800;font-size:13px}
+.wait{margin:28px 0 12px;font-weight:800;color:#a9b0bf;text-transform:uppercase;letter-spacing:.12em;font-size:12px}
+.lit{position:relative;display:block;text-decoration:none;color:#04170a;background:linear-gradient(135deg,#00ff5a,#00DF00 45%,#7dff3b);border-radius:20px;padding:30px 16px 22px;overflow:hidden;animation:pop 1.6s ease-in-out infinite;box-shadow:0 0 0 3px rgba(0,223,0,.35),0 0 40px rgba(0,223,0,.55),0 0 90px rgba(255,207,59,.25)}
+.lit:active{transform:scale(.98)}
+.lit .lt{display:block;font-size:22px;font-weight:900;line-height:1.15}
+.lit .ls{display:block;margin-top:8px;font-size:14px;font-weight:600;opacity:.85}
+.lit::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.55),transparent);transform:skewX(-20deg);animation:shine 2.4s ease-in-out infinite}
+.bulbs{position:absolute;top:6px;left:10px;right:10px;display:flex;justify-content:space-between}
+.bulbs i{width:10px;height:14px;border-radius:50% 50% 45% 45%;background:var(--c);box-shadow:0 0 10px var(--c),0 0 18px var(--c);animation:blink 1.2s ease-in-out infinite;animation-delay:var(--d)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes pop{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}
+@keyframes shine{0%{left:-60%}60%,100%{left:130%}}
 .prog{height:6px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden;margin:0 0 16px}.prog i{display:block;height:100%;background:#00DF00;transition:width .3s}.pstep{color:#a9b0bf;font-size:13px;font-weight:700;text-align:center;margin:0 0 14px}button.skip,button.back{background:none;color:#a9b0bf;font-size:15px;padding:10px;margin-top:2px}button.back{font-size:14px}
 .err{color:#ff6b6b;font-weight:700;text-align:center;min-height:20px}
 .done{text-align:center;padding:30px 10px}.done h2{font-size:26px;margin:0 0 8px}
@@ -995,9 +1006,9 @@ button:disabled{opacity:.6}
 <div class="stp" data-s="0">
 <p class="sub">Takes about a minute. Here&#8217;s how it works:</p>
 <ol class="how">
-<li><b>1</b><span><b>Get your mockup &amp; rough estimate.</b> Jude texts you a mockup of your roofline lit up with a rough price, so you know if it fits your budget.</span></li>
-<li><b>2</b><span><b>Like it? Free design consultation.</b> We measure your roof, show you real bulbs, and plan any extras you want (wreaths, bushes, trees, windows).</span></li>
-<li><b>3</b><span><b>Your exact price.</b> One price for your roofline plus any extras: lights, install, maintenance, takedown and storage.</span></li>
+<li><b>✍️</b><span><b>You tell us what you want</b> <span class="now">(right now)</span></span></li>
+<li><b>📱</b><span><b>We text you a mockup + rough price</b></span></li>
+<li><b>📏</b><span><b>Like it? Free design consultation + your exact price</b></span></li>
 </ol>
 <button type="button" class="nx" data-go="1">Get started →</button>
 </div>
@@ -1070,7 +1081,10 @@ button:disabled{opacity:.6}
 <button id="go">Send me my rough estimate →</button>
 <button type="button" class="back" data-go="4">← Back</button>
 </div>
-<div id="ok" class="done" hidden><h2>Thank you! 🎄</h2><p class="sub">Jude will send you a mockup of your home with a rough estimate soon.</p><p style="margin:26px 0 10px;font-weight:700">Want to learn more about the service?</p><a href="https://heyjudeschristmaslights.com" style="display:block;background:#00DF00;color:#04170a;font-weight:800;font-size:17px;padding:15px;border-radius:14px;text-decoration:none">Click here →</a></div>
+</div>
+<div id="ok" class="done" hidden><h2>You&#8217;re all set! 🎄</h2><p class="sub">Jude will make your mockup and rough estimate and text it to you soon.</p>
+<p class="wait">While you wait, learn more about the service 👇</p>
+<a class="lit" href="https://heyjudeschristmaslights.com"><span class="bulbs"><i style="--c:#ff3b3b;--d:0.00s"></i><i style="--c:#ffcf3b;--d:0.15s"></i><i style="--c:#3bff6e;--d:0.30s"></i><i style="--c:#3bb4ff;--d:0.45s"></i><i style="--c:#ff7a3b;--d:0.60s"></i><i style="--c:#c43bff;--d:0.75s"></i><i style="--c:#ff3b3b;--d:0.90s"></i><i style="--c:#ffcf3b;--d:1.05s"></i><i style="--c:#3bff6e;--d:1.20s"></i><i style="--c:#3bb4ff;--d:1.35s"></i><i style="--c:#ff7a3b;--d:1.50s"></i><i style="--c:#c43bff;--d:1.65s"></i><i style="--c:#ff3b3b;--d:1.80s"></i><i style="--c:#ffcf3b;--d:1.95s"></i><i style="--c:#3bff6e;--d:2.10s"></i><i style="--c:#3bb4ff;--d:2.25s"></i><i style="--c:#ff7a3b;--d:2.40s"></i><i style="--c:#c43bff;--d:2.55s"></i></span><span class="lt">✨ Learn more about the service ✨</span><span class="ls">Watch the magic, see real houses, and everything we handle for you →</span></a></div>
 </div>
 <script>
 // House drawing <-> side checkboxes: tap a side on the drawing or the button, both stay in step.
