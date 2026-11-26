@@ -1405,8 +1405,8 @@ async function setSyncCursor(supabase, key, isoString) {
 }
 
 const HUB_CLIENTS_QUERY = `
-  query SyncClients($cursor: String) {
-    clients(first: 25, after: $cursor) {
+  query SyncClients($cursor: String, $filter: ClientFilterAttributes) {
+    clients(first: 25, after: $cursor, filter: $filter) {
       nodes {
         id firstName lastName companyName isCompany isLead isArchived title leadSource receivesReviewRequests
         phones { number primary description smsAllowed }
@@ -1453,8 +1453,8 @@ async function mirrorClientsPage(supabase, nodes) {
     // Jobber's custom fields ("Dog?"…), title, review requests → custom_fields (Hub keeps its own keys).
     const jf = (c.customFields || []).map((f) => ({ label: f.label, value: f.valueText ?? f.valueDropdown ?? f.valueTrueFalse ?? f.valueNumeric ?? f.valueLink?.url ?? null, type: f.__typename.replace('CustomField', '') }));
     row.custom_fields = { ...(cfOf.get(c.id) || {}), title: clean(c.title), is_company: !!c.isCompany, receives_reviews: c.receivesReviewRequests !== false, jobber_fields: jf };
-    // Tags: Jobber's tags + Hub's own; archived in Jobber ⇄ 'archived' tag in Hub
-    const t = new Set([...(tagsOf.get(c.id) || []), ...(c.tags?.nodes || []).map((x) => x.label)]);
+    // Tags: Jobber's tags (tags sync both ways, so Jobber's list is the truth here); archived ⇄ 'archived' tag
+    const t = new Set((c.tags?.nodes || []).map((x) => x.label));
     if (c.isArchived) t.add('archived'); else t.delete('archived');
     row.tags = [...t];
     const { error } = id
@@ -1473,10 +1473,21 @@ async function mirrorClientsPage(supabase, nodes) {
   }
 }
 
-async function syncJobberClients(supabase) {
+// One client, right after Jobber says it changed (webhook CLIENT_CREATE / CLIENT_UPDATE).
+export async function syncOneJobberClient(supabase, jobberId) {
+  const q = HUB_CLIENTS_QUERY.replace(/query SyncClients[\s\S]*?nodes \{/, 'query One($id: EncodedId!) { client(id: $id) {').replace(/\s*\}\s*pageInfo[\s\S]*$/, ' } }');
+  const data = await jobberQuery(q, { id: jobberId });
+  if (!data?.client) return { gone: jobberId };
+  await mirrorClientsPage(supabase, [data.client]);
+  return { synced: jobberId };
+}
+
+// sinceIso: only clients changed in Jobber after that time (the nightly catch-up). Omit = everyone.
+export async function syncJobberClients(supabase, sinceIso = null) {
   let cursor = null, totalUpserted = 0, pages = 0;
+  const filter = sinceIso ? { updatedAt: { after: sinceIso } } : null;
   do {
-    const data = await jobberQuery(HUB_CLIENTS_QUERY, { cursor });
+    const data = await jobberQuery(HUB_CLIENTS_QUERY, { cursor, filter });
     const nodes = data.clients?.nodes || [];
     pages++;
     if (nodes.length > 0) {

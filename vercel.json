@@ -1,17 +1,53 @@
 {
   "rewrites": [
-    { "source": "/api/team-auth", "destination": "/api/app-state?key=team-auth" },
-    { "source": "/api/gmail-callback", "destination": "/api/gmail?action=callback" },
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/refer/:token", "destination": "/api/app-state?key=refer-page&token=:token" },
-    { "source": "/estimate/:token", "destination": "/api/app-state?key=estimate-page&token=:token" },
-    { "source": "/lights-start", "destination": "/api/app-state?key=lights-form" },
-    { "source": "/rough-light-estimate", "destination": "/api/app-state?key=lights-form" },
-    { "source": "/rough-estimate-form", "destination": "/api/app-state?key=lights-form" },
-    { "source": "/e", "destination": "/api/app-state?key=lights-form" },
-    { "source": "/e/:token", "destination": "/api/app-state?key=estimate-page&token=:token" },
-    { "source": "/rough-light-estimate-form", "destination": "/api/app-state?key=lights-form" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/api/team-auth",
+      "destination": "/api/app-state?key=team-auth"
+    },
+    {
+      "source": "/api/gmail-callback",
+      "destination": "/api/gmail?action=callback"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/refer/:token",
+      "destination": "/api/app-state?key=refer-page&token=:token"
+    },
+    {
+      "source": "/estimate/:token",
+      "destination": "/api/app-state?key=estimate-page&token=:token"
+    },
+    {
+      "source": "/lights-start",
+      "destination": "/api/app-state?key=lights-form"
+    },
+    {
+      "source": "/rough-light-estimate",
+      "destination": "/api/app-state?key=lights-form"
+    },
+    {
+      "source": "/rough-estimate-form",
+      "destination": "/api/app-state?key=lights-form"
+    },
+    {
+      "source": "/e",
+      "destination": "/api/app-state?key=lights-form"
+    },
+    {
+      "source": "/e/:token",
+      "destination": "/api/app-state?key=estimate-page&token=:token"
+    },
+    {
+      "source": "/rough-light-estimate-form",
+      "destination": "/api/app-state?key=lights-form"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
   ],
   "functions": {
     "api/generate-playbook.js": {
@@ -63,5 +99,10 @@
       "maxDuration": 300
     }
   },
-  "crons": []
+  "crons": [
+    {
+      "path": "/api/cron/sync-jobber",
+      "schedule": "0 9 * * *"
+    }
+  ]
 }

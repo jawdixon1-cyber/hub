@@ -19,6 +19,7 @@ import { waitUntil } from '@vercel/functions';
 import { getSupabaseAdmin } from '../../lib/supabaseAdmin.js';
 import { jobberQuery, JobberDisconnectedError } from '../../lib/jobberClient.js';
 import { syncJobberClientToQuo, syncJobberRequestToQuo } from '../../lib/quoContactSync.js';
+import { syncOneJobberClient } from '../jobber-data.js';
 
 export const config = { api: { bodyParser: false } };
 
@@ -229,7 +230,10 @@ export default async function handler(req, res) {
     const work = (topic === 'REQUEST_CREATE' ? syncJobberRequestToQuo(itemId) : later(12000).then(() => syncJobberClientToQuo(itemId, '', true)))
       .then((result) => logHit({ topic, itemId, result }))
       .catch((err) => logHit({ topic, itemId, error: err.message }));
-    waitUntil(work);
+    // …and keep Hub's Clients page in step with Jobber (new or edited client → Hub in seconds).
+    const hub = topic === 'REQUEST_CREATE' ? Promise.resolve()
+      : syncOneJobberClient(getSupabaseAdmin(), itemId).then((r) => logHit({ topic, itemId, hubClients: r })).catch((err) => logHit({ topic, itemId, hubClientsError: err.message }));
+    waitUntil(Promise.all([work, hub]));
     return res.status(200).json({ ok: true, topic, queued: true });
   }
 
