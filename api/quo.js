@@ -353,6 +353,30 @@ async function handleContacts(req, res) {
   res.json({ results });
 }
 
+// One person's recent Quo conversation (texts + calls, every line), for the Requests list's inline chat.
+// Replies go out on the line they last talked on (else the business line).
+async function handleThread(req, res) {
+  const phone = String(req.body?.phone || '');
+  if (last10(phone).length !== 10) return res.status(400).json({ error: 'Bad phone' });
+  const { data: numbers } = await quo('/phone-numbers');
+  const to = `+1${last10(phone)}`;
+  const per = await Promise.all((numbers || []).map(async (n) => {
+    const who = `phoneNumberId=${n.id}&participants=${encodeURIComponent(to)}`;
+    const [m, c] = await Promise.all([
+      quo(`/messages?${who}&maxResults=30`).catch(() => ({ data: [] })),
+      quo(`/calls?${who}&maxResults=10`).catch(() => ({ data: [] })),
+    ]);
+    return [
+      ...(m.data || []).filter((x) => x.text || (x.media || []).length).map((x) => ({ id: x.id, type: 'text', dir: x.direction, text: x.text || '', media: (x.media || []).filter((y) => y?.url).map((y) => y.url), at: x.createdAt, line: n.id })),
+      ...(c.data || []).map((x) => ({ id: x.id, type: 'call', dir: x.direction, status: x.status, duration: x.duration || 0, at: x.createdAt, line: n.id })),
+    ];
+  }));
+  const items = per.flat().sort((a, b) => new Date(a.at) - new Date(b.at)).slice(-25);
+  const biz = (numbers || []).find((n) => last10(n.number) === '8039027447') || (numbers || [])[0];
+  const lineId = items.length ? items[items.length - 1].line : biz?.id;
+  return res.json({ to, phoneNumberId: lineId, items });
+}
+
 async function handleSend(req, res) {
   const { phoneNumberId, to, content, markDone } = req.body || {};
   const text = String(content || '').trim();
@@ -408,6 +432,7 @@ export default async function handler(req, res) {
     if (action === 'inbox' && req.method === 'GET') return await handleInbox(req, res, db);
     if (action === 'draft' && req.method === 'POST') return await handleDraft(req, res);
     if (action === 'send' && req.method === 'POST') return await handleSend(req, res);
+    if (action === 'thread' && req.method === 'POST') return await handleThread(req, res);
     if (action === 'contacts' && req.method === 'POST') return await handleContacts(req, res);
     if (action === 'done' && req.method === 'POST') return await handleDone(req, res);
     if (action === 'call' && req.method === 'GET') return await handleCall(req, res);

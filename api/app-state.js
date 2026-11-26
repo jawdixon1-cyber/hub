@@ -198,6 +198,7 @@ async function handleLightsRefer(req, res) {
 // GET /api/app-state?key=lights-present&token=… → ONLY what the Present page shows for that one quote
 // (no phone/email/address, no crew link, no other quotes). Pictures come one at a time with &img=…
 // POST { years, addonIds } → records what they picked in lq-yes:<id> (the quote itself is never touched).
+let suppliesLite = { at: 0, list: null };
 async function handleLightsPresent(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const token = String(req.query.token || '');
@@ -226,12 +227,20 @@ async function handleLightsPresent(req, res) {
 
   const { data: baRow } = await db.from('app_state').select('value').eq('key', `lq-ba:${id}`).maybeSingle();
   const ba = baRow?.value || {};
-  const sendImg = (dataUrl) => {
+  // Phone-sized copies (full photos were ~1 MB each: the plan took 10-15 s on a phone, 11-25).
+  // The URL carries a version stamp + the secret token, so the CDN can keep it for good.
+  const sendImg = async (dataUrl) => {
     const m = /^data:(image\/[a-z+]+);base64,(.+)$/s.exec(String(dataUrl || ''));
     if (!m) return res.status(404).end();
-    res.setHeader('Content-Type', m[1]);
-    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
-    return res.status(200).send(Buffer.from(m[2], 'base64'));
+    let buf = Buffer.from(m[2], 'base64'); let type = m[1];
+    try {
+      const sharp = (await import('sharp')).default;
+      buf = await sharp(buf).rotate().resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 74, mozjpeg: true }).toBuffer();
+      type = 'image/jpeg';
+    } catch { /* send the original */ }
+    res.setHeader('Content-Type', type);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');
+    return res.status(200).send(buf);
   };
   // One picture: side:<n> (house photo) · prev:<n> (mockup) · night · k:<name> (before/after or add-on photo of THIS quote)
   if (req.query.img != null) {
@@ -280,7 +289,12 @@ async function handleLightsPresent(req, res) {
   }
   const url = (im) => `/api/app-state?key=lights-present&token=${encodeURIComponent(token)}&img=${encodeURIComponent(im)}&v=${encodeURIComponent(stamp)}`;
   const kUrl = (k) => (typeof k === 'string' && k.startsWith(`lq-img:${id}:`) ? url(`k:${k.slice(`lq-img:${id}:`.length)}`) : '');
-  const { data: suppliesRow } = await db.from('app_state').select('value').eq('key', 'greenteam-lightsSupplies').maybeSingle();
+  // Names only, cached: the full list carries every material photo (~190 KB, ~1.3 s to read).
+  if (!suppliesLite.list || Date.now() - suppliesLite.at > 10 * 60e3) {
+    const { data: suppliesRow } = await db.from('app_state').select('value').eq('key', 'greenteam-lightsSupplies').maybeSingle();
+    suppliesLite = { at: Date.now(), list: (Array.isArray(suppliesRow?.value) ? suppliesRow.value : []).map((x) => ({ id: x.id, name: x.name, image: !!x.image })) };
+  }
+  const suppliesRow = { value: suppliesLite.list.map((x) => ({ ...x, image: x.image ? 'y' : '' })) };
   // Roofline materials + what the add-ons that start added use (bush/tree mini strands…)
   const mats = { ...(q.materials && typeof q.materials === 'object' ? q.materials : {}) };
   // The Quoter's materials already include its add-ons (addonMats): take those out, then add what the add-ons use NOW.
@@ -291,7 +305,8 @@ async function handleLightsPresent(req, res) {
   return res.json({
     q: {
       client: q.client || '', quoted: q.quoted || '', total: q.total || 0, installDate: q.installDate || '', takedownDate: q.takedownDate || '',
-      materials: mats,
+      // Which products only — never the counts (clips, bulbs, feet) on a client-facing link.
+      materials: Object.fromEntries(Object.keys(mats).map((k) => [k, 1])),
       angles: plan.sides.map((s) => ({ ...s, plain: url(`side:${s.ai}`) })),
       previews: Array.from({ length: plan.previews }, (_, i) => ({ image: url(`prev:${i}`) })),
       nightPhoto: plan.night ? url('night') : '',
@@ -825,7 +840,7 @@ async function handleEstimatePage(req, res) {
       }
       var mats=(d.supplies||[]).filter(function(s){return Number(d.q.materials&&d.q.materials[s.id])>0});
       if(!hp&&!mats.length)pl.innerHTML='<p class="hje-small">Your detailed plan is built at install.</p>';
-      if(mats.length&&mt)mt.innerHTML='<div class="hje-lqsec"><h3>What we&#8217;re using</h3><p>Commercial-grade products, the best you can buy. Bulbs 7x brighter than hardware-store ones. The best on the block.</p><div class="hje-mats">'+mats.map(function(s){return '<div>'+(s.image?'<img src="'+s.image+'" alt="" loading="lazy">':'')+'<span><b>'+esc(s.name)+'</b><small>'+esc(d.q.materials[s.id])+'</small></span></div>'}).join('')+'</div></div>';
+      if(mats.length&&mt)mt.innerHTML='<div class="hje-lqsec"><h3>What we&#8217;re using</h3><p>Commercial-grade products, the best you can buy. Bulbs 7x brighter than hardware-store ones. The best on the block.</p><div class="hje-mats">'+mats.map(function(s){return '<div>'+(s.image?'<img src="'+s.image+'" alt="" loading="lazy">':'')+'<span><b>'+esc(s.name)+'</b></span></div>'}).join('')+'</div></div>';
     }).catch(function(){var pl=document.getElementById('hje-lqplan');if(pl)pl.innerHTML='<div class="hje-loading"><b>Couldn&#8217;t load your plan</b><small>Refresh the page to try again.</small></div>'});
     var cur=0,reached=0;
     function go(n){if(n>reached)return;cur=n;[].forEach.call(root.querySelectorAll('.hje-step'),function(c){c.classList.toggle('on',Number(c.dataset.s)===n)});

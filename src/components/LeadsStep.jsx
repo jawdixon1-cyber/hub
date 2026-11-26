@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { RefreshCw, MessageSquare, ExternalLink, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -28,9 +28,63 @@ const when = (iso) => new Date(iso).toLocaleString('en-US', { weekday: 'short', 
 const money = (n) => `$${Math.round(n).toLocaleString()}`;
 const CACHE = 'hub-leads-cache';
 
+// Their recent Quo chat, opened under the row: texts + calls, and a reply box (you hit Send).
+function LeadChat({ phone, name, token }) {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState('');
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const load = useCallback(() => {
+    setErr('');
+    fetch('/api/quo?action=thread', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ phone }) })
+      .then((r) => r.json().then((j) => { if (!r.ok) throw new Error(j.error || `Error ${r.status}`); setD(j); }))
+      .catch((e) => setErr(e.message));
+  }, [phone, token]);
+  useEffect(() => { load(); }, [load]);
+  const send = async () => {
+    const t = text.trim(); if (!t || !d?.phoneNumberId) return;
+    setSending(true); setErr('');
+    try {
+      const r = await fetch('/api/quo?action=send', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ phoneNumberId: d.phoneNumberId, to: d.to, content: t }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+      setText(''); load();
+    } catch (e) { setErr(e.message); }
+    setSending(false);
+  };
+  const t = (iso) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return (
+    <div className="mb-2 ml-[52px] rounded-xl border border-card-border bg-surface-alt/50 p-3 space-y-2">
+      {!d && !err && <p className="text-xs text-muted">Loading your chat with {name}…</p>}
+      {d && !d.items.length && <p className="text-xs text-muted">No texts or calls with {name} yet.</p>}
+      {d && d.items.length > 0 && (
+        <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
+          {d.items.map((m) => (m.type === 'call'
+            ? <p key={m.id} className="text-center text-[11px] text-muted">📞 {m.dir === 'incoming' ? 'They called' : 'You called'}{m.duration ? ` · ${Math.round(m.duration / 60) || '<1'} min` : m.status ? ` · ${m.status}` : ''} · {t(m.at)}</p>
+            : (
+              <div key={m.id} className={`flex ${m.dir === 'outgoing' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] rounded-2xl px-3 py-1.5 text-sm ${m.dir === 'outgoing' ? 'bg-sky-600 text-white' : 'bg-card text-primary border border-card-border'}`}>
+                  {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+                  {m.media.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer" className="block text-xs underline">📎 Attachment</a>)}
+                  <p className={`text-[10px] mt-0.5 ${m.dir === 'outgoing' ? 'text-white/70' : 'text-muted'}`}>{t(m.at)}</p>
+                </div>
+              </div>
+            )))}
+        </div>
+      )}
+      {err && <p className="text-xs font-bold text-rose-500">{err}</p>}
+      <div className="flex gap-2">
+        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder={`Text ${name}…`} className="flex-1 rounded-lg border border-card-border bg-card px-3 py-2 text-sm text-primary resize-y" />
+        <button onClick={send} disabled={sending || !text.trim() || !d?.phoneNumberId} className="self-end rounded-lg bg-sky-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40 cursor-pointer">{sending ? 'Sending…' : 'Send'}</button>
+      </div>
+    </div>
+  );
+}
+
 export default function LeadsStep() {
   const { session } = useAuth();
   const token = session?.access_token || '';
+  const [chatOpen, setChatOpen] = useState('');
   const [state, setState] = useState(() => {
     try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); if (c) return { ...c, loading: true, error: null }; } catch { /* ignore */ }
     return { requests: [], quotes: [], loading: true, error: null };
@@ -154,8 +208,10 @@ export default function LeadsStep() {
               {(g.byDate ? g.items : byService(g.items)).map((x) => {
                 const svc = serviceOf(`${x.title} ${x.need || ''}`);
                 const stale = g.key === 'out' && x.age >= 3;
+                const open = chatOpen === x.id;
                 return (
-                  <div key={x.id} className={`flex items-center gap-3 py-2 ${x.dim ? 'opacity-50' : ''}`} title={x.dim ? 'Tried today, nothing to do until tomorrow' : undefined}>
+                  <Fragment key={x.id}>
+                  <div onClick={(e) => { if (x.phone && !e.target.closest('a,button')) setChatOpen(open ? '' : x.id); }} className={`flex items-center gap-3 py-2 ${x.phone ? 'cursor-pointer hover:bg-surface-alt/60 rounded-lg' : ''} ${open ? 'bg-surface-alt/60 rounded-lg' : ''} ${x.dim && !open ? 'opacity-50' : ''}`} title={x.dim ? 'Tried today, nothing to do until tomorrow' : x.phone ? 'Tap to see your chat and reply' : undefined}>
                     <span className={`w-10 h-10 shrink-0 flex items-center justify-center text-3xl leading-none ${svc?.startsWith('🎄') ? 'rounded-full bg-[#B3121F]/10 ring-1 ring-[#B3121F]/30' : svc?.startsWith('💡') ? 'rounded-full bg-amber-400/15 ring-1 ring-amber-500/40' : ''}`} title={svc ? svc.split(' ').slice(1).join(' ') : 'Service not known yet'}>{svc ? svc.split(' ')[0] : '❔'}</span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-primary truncate">
@@ -190,6 +246,8 @@ export default function LeadsStep() {
                     {x.kind === 'req' && /^(🎄|💡)/.test(svc || '') && <a href={`/lights-estimate?client=${encodeURIComponent(x.client)}&phone=${encodeURIComponent(x.phone || '')}`} title="Make a price-range page for them" className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-white bg-[#B3121F] hover:brightness-110">$ Range</a>}
                     {x.url && <a href={x.url} target="_blank" rel="noopener noreferrer" title="Open in Jobber" className="shrink-0 p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface-alt"><ExternalLink size={14} /></a>}
                   </div>
+                  {open && <LeadChat phone={x.phone} name={String(x.client || '').split(' ')[0] || 'them'} token={token} />}
+                  </Fragment>
                 );
               })}
             </div>

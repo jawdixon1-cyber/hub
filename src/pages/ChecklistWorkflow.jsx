@@ -386,6 +386,7 @@ export default function ChecklistWorkflow() {
           >
             <Pencil size={14} />
           </button>
+          {ownerMode && !isTeam && <button onClick={() => navigate('/workflow/manage')} className="text-[11px] font-bold text-muted hover:text-primary px-1.5 py-0.5 rounded-md hover:bg-surface-alt cursor-pointer" title="Start + End side by side: reorder, turn off, add tools">Manage</button>}
         </div>
         {top ? (
           // Wide steps: the step list as a row of chips (checks, current, next).

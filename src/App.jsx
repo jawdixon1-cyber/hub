@@ -106,6 +106,8 @@ const Quotes = lazy(() => import('./pages/Quotes'));
 const PublicQuoteView = lazy(() => import('./pages/PublicQuoteView'));
 const Messages = lazy(() => import('./pages/Messages'));
 const Requests = lazy(() => import('./pages/Requests'));
+const LeadsStep = lazy(() => import('./components/LeadsStep'));
+const WorkflowManager = lazy(() => import('./pages/WorkflowManager'));
 const NewClient = lazy(() => import('./pages/NewClient'));
 const Schedule = lazy(() => import('./pages/Schedule'));
 const Jobs = lazy(() => import('./pages/Jobs'));
@@ -915,6 +917,7 @@ function AppShell() {
             { id: 'o-start', path: '/workflow/start', label: 'Start · 8 AM', icon: Sunrise, done: dailyProgress.startDone, total: dailyProgress.startTotal },
             { id: 'o-end', path: '/workflow/end', label: 'End · 5 PM', icon: Sunset, done: dailyProgress.endDone, total: dailyProgress.endTotal },
             { id: 'o-plan', path: '/plan', label: 'Plan', icon: CalendarCheck },
+            { id: 'o-requests', path: '/leads', label: 'Requests', icon: Inbox },
           ].map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
@@ -1177,6 +1180,7 @@ function AppShell() {
                 <Route path="/end-day" element={<Navigate to="/workflow/team-end" replace />} />
                 <Route path="/open" element={<Navigate to="/workflow/team-start" replace />} />
                 <Route path="/close" element={<Navigate to="/workflow/team-end" replace />} />
+                <Route path="/workflow/manage" element={ownerMode ? <WorkflowManager /> : <Navigate to="/" replace />} />
                 <Route path="/workflow/:kind" element={<ChecklistWorkflow />} />
                 <Route path="/workflow/:kind/:stepIndex" element={<ChecklistWorkflow />} />
                 <Route path="/timesheets" element={<Timesheets />} />
@@ -1206,6 +1210,7 @@ function AppShell() {
                 <Route path="/quotes" element={<Quotes />} />
                 <Route path="/quotes/:quoteNumber" element={<Quotes />} />
                 <Route path="/messages" element={<Messages />} />
+                <Route path="/leads" element={ownerMode ? <div className="max-w-5xl mx-auto space-y-4"><h1 className="text-2xl font-bold text-primary">Requests</h1><LeadsStep /></div> : <Navigate to="/" replace />} />
                 <Route path="/requests" element={<Requests />} />
                 <Route path="/requests/:requestNumber" element={<Requests />} />
                 <Route path="/schedule" element={<Schedule />} />
