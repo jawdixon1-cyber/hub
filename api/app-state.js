@@ -651,14 +651,14 @@ async function handleEstimatePage(req, res) {
             <p class="hje-trust"><span class="hje-stars">★★★★★</span> <b>5.0</b> · 195 Google reviews</p>
             <ul class="hje-terms"><li><b>💳 50% now (<span class="hje-half"></span>), 50% after install (<span class="hje-half"></span>).</b> The first half locks in your install date.</li><li><b>🗓️ January takedown guarantee.</b> If we don&#8217;t take your lights down in January, you get your money back (weather and safety permitting).</li><li><b>🔒 Multi-year plans:</b> cancel early? You just pay back the discount you&#8217;ve used.</li></ul>
             <p class="hje-after">Tap Accept and Jude sends your official quote to sign.</p>
-            <div class="hje-choice hje-lqchoice"${lqInfo.accepted ? ' hidden' : ''}>
+            <div class="hje-choice hje-lqchoice">
               <a class="btn btn-go hje-yes hje-lqyes" href="#"><span>✅ Accept</span><small>Send me my quote to sign</small></a>
               <div class="hje-choice2">
                 <a class="hje-no" href="${sms(`Hi Jude, it's ${firstName}. I'd like to change my lights quote: `)}"><span>Make a change</span><small>Add or remove areas</small></a>
                 <a class="hje-no" href="${sms(`Hi Jude, it's ${firstName}. Thanks for the quote! I'm not going to move forward right now.`)}"><span>Decline</span><small>No follow-up messages</small></a>
               </div>
             </div>
-            <div class="hje-done hje-lqdone"${lqInfo.accepted ? '' : ' hidden'}><p class="hje-big">You&#8217;re all set! 🎄</p><p>Jude is sending your official quote to sign. Questions? Text (803) 902-7447.</p></div>`;
+            `;
     section = section
       .replace(/<div class="hje-range">[\s\S]*?<p class="hje-small" style="margin-top:10px">[^<]*<\/p>/, () => lqCard)
       .replace(/here&#8217;s your mockup and rough estimate\./g, 'here&#8217;s your Christmas lights quote.')
@@ -797,7 +797,6 @@ async function handleEstimatePage(req, res) {
     var yes=root.querySelector('.hje-lqyes');
     if(yes)yes.addEventListener('click',function(ev){ev.preventDefault();var ids=picked(),s=season(years);
       if(!pv)fetch(api,{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({years:years,addonIds:ids,accept:true})}).catch(function(){});
-      root.querySelector('.hje-lqchoice').hidden=true;root.querySelector('.hje-lqdone').hidden=false;
       var body="Hi Jude, it's ${firstName.replace(/[\\"'<>]/g, '')}. I accept my Christmas lights quote: "+(years>1?years+'-year plan, '+m(s)+' a season':'this season, '+m(s))+'. Please send it over to sign! 🎄';
       location.href='sms:+18039027447?&body='+encodeURIComponent(body)});
   })();
