@@ -56,7 +56,8 @@ async function refreshIfNeeded(supabase, tokens) {
       refresh_expires_at: Date.now() + (newTokens.x_refresh_token_expires_in || 8726400) * 1000,
     };
 
-    await supabase.from('app_state').upsert({ key: 'qb-tokens', value: updated }, { onConflict: 'key' });
+    const { error: saveErr } = await supabase.from('app_state').update({ value: updated, updated_at: new Date().toISOString() }).eq('key', 'qb-tokens');
+    if (saveErr) console.error('[qb] could not save refreshed tokens:', saveErr.message);
     console.log(`[qb-refresh] ok, next expires in ${newTokens.expires_in}s, refresh window ${newTokens.x_refresh_token_expires_in}s`);
     return updated;
   })().finally(() => {
@@ -122,10 +123,10 @@ export default async function handler(req, res) {
     const appBase = process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL
       : process.env.APP_URL || 'http://localhost:5173';
-    if (qbError || !code) return res.redirect(`${appBase}/finance?qb=error&msg=${encodeURIComponent(qbError || 'No code')}`);
+    if (qbError || !code) return res.redirect(`${appBase}/connections?qb=error&msg=${encodeURIComponent(qbError || 'No code')}`);
     const clientId = (process.env.QB_CLIENT_ID || '').trim();
     const clientSecret = (process.env.QB_CLIENT_SECRET || '').trim();
-    if (!clientId || !clientSecret) return res.redirect(`${appBase}/finance?qb=error&msg=QB+credentials+not+configured`);
+    if (!clientId || !clientSecret) return res.redirect(`${appBase}/connections?qb=error&msg=QB+credentials+not+configured`);
     const baseUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL
       : process.env.APP_URL || 'http://localhost:3001';
@@ -135,10 +136,20 @@ export default async function handler(req, res) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}` },
       body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri }),
     });
-    if (!tokenRes.ok) return res.redirect(`${appBase}/finance?qb=error&msg=Token+exchange+failed`);
+    if (!tokenRes.ok) return res.redirect(`${appBase}/connections?qb=error&msg=${encodeURIComponent('Token exchange failed: ' + (await tokenRes.text()).slice(0, 200))}`);
     const t = await tokenRes.json();
-    await supabase.from('app_state').upsert({ key: 'qb-tokens', value: { access_token: t.access_token, refresh_token: t.refresh_token, realm_id: realmId, expires_at: Date.now() + t.expires_in * 1000, refresh_expires_at: Date.now() + (t.x_refresh_token_expires_in || 8726400) * 1000 } }, { onConflict: 'key' });
-    return res.redirect(`${appBase}/finance?qb=success`);
+    const value = { access_token: t.access_token, refresh_token: t.refresh_token, realm_id: realmId, expires_at: Date.now() + t.expires_in * 1000, refresh_expires_at: Date.now() + (t.x_refresh_token_expires_in || 8726400) * 1000 };
+    // app_state.org_id is NOT NULL, so update the existing row (or insert with a known org_id) — a bare upsert failed silently.
+    const { data: existing } = await supabase.from('app_state').select('key').eq('key', 'qb-tokens').maybeSingle();
+    let saveErr;
+    if (existing) {
+      ({ error: saveErr } = await supabase.from('app_state').update({ value, updated_at: new Date().toISOString() }).eq('key', 'qb-tokens'));
+    } else {
+      const { data: any } = await supabase.from('app_state').select('org_id').not('org_id', 'is', null).limit(1).maybeSingle();
+      ({ error: saveErr } = await supabase.from('app_state').insert({ key: 'qb-tokens', value, org_id: any?.org_id }));
+    }
+    if (saveErr) return res.redirect(`${appBase}/connections?qb=error&msg=${encodeURIComponent('Could not save login: ' + saveErr.message)}`);
+    return res.redirect(`${appBase}/connections?qb=success`);
   }
 
   // Status check

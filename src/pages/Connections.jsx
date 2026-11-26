@@ -26,6 +26,7 @@ const APPS = [
 
 export default function Connections() {
   const [state, setState] = useState({});
+  const [back] = useState(() => { const q = new URLSearchParams(window.location.search); return q.get('qb') ? { ok: q.get('qb') === 'success', msg: q.get('msg') || '' } : null; });
   useEffect(() => {
     APPS.forEach((a) => {
       a.test().then((s) => setState((p) => ({ ...p, [a.key]: s }))).catch(() => setState((p) => ({ ...p, [a.key]: { ok: false, note: 'Could not check' } })));
@@ -35,6 +36,7 @@ export default function Connections() {
     <div className="max-w-2xl mx-auto px-4 py-6">
       <h1 className="text-2xl font-black text-primary flex items-center gap-2"><Plug size={22} /> Connections</h1>
       <p className="text-sm text-tertiary mt-1">Apps Hub pulls your data from.</p>
+      {back && <p className={`mt-4 rounded-lg px-3 py-2 text-sm ${back.ok ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-400'}`}>{back.ok ? '✅ QuickBooks connected' : `QuickBooks didn't connect: ${back.msg}`}</p>}
       <div className="mt-5 space-y-3">
         {APPS.map((a) => {
           const s = state[a.key];
