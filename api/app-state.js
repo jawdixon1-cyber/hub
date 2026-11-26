@@ -646,7 +646,7 @@ async function handleEstimatePage(req, res) {
             <p class="hje-price hje-lqprice"></p>
             <p class="hje-rough hje-lqsub"></p>
             ${gifts.length ? `<div class="hje-gifts">${gifts.map((g) => `<p>🎁 ${escHtml(g)}</p>`).join('')}</div>` : ''}
-            ${dates ? `<div class="hje-when"><p class="hje-eyebrow">When we&#8217;ll install</p><ul class="hje-dates">${dates}</ul><p class="hje-hold">This is our next open install date right now. It could change if it gets booked before you accept.</p></div>` : ''}
+            ${dates ? `<div class="hje-when"><p class="hje-eyebrow">When we&#8217;ll install</p><ul class="hje-dates">${dates}</ul><p class="hje-hold">This is the date we can commit to right now, and we may be able to come sooner. It could change if it gets booked before you accept.</p></div>` : ''}
             
             <p class="hje-trust"><span class="hje-stars">★★★★★</span> <b>5.0</b> · 195 Google reviews</p>
             <ul class="hje-terms"><li><b>💳 50% now (<span class="hje-half"></span>), 50% after install (<span class="hje-half"></span>).</b> The first half locks in your install date.</li><li><b>🗓️ January takedown guarantee.</b> If we don&#8217;t take your lights down in January, you get your money back (weather and safety permitting).</li><li><b>🔒 Multi-year plans:</b> cancel early? You just pay back the discount you&#8217;ve used.</li></ul>
