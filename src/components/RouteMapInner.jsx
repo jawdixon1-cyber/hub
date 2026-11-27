@@ -20,7 +20,7 @@ function Fit({ pts }) {
 }
 
 // stops: [{ id, client, address, lat, lng, done, n }] already in route order.
-export default function RouteMapInner({ stops }) {
+export default function RouteMapInner({ stops, line = true }) {
   const pts = stops.map((s) => [s.lat, s.lng]);
   return (
     <MapContainer center={pts[0]} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
@@ -31,7 +31,7 @@ export default function RouteMapInner({ stops }) {
       />
       <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}" maxZoom={16} />
       <Fit pts={pts} />
-      <Polyline positions={pts} pathOptions={{ color: '#B0FF03', weight: 3, opacity: 0.7, dashArray: '6 6' }} />
+      {line && <Polyline positions={pts} pathOptions={{ color: '#B0FF03', weight: 3, opacity: 0.7, dashArray: '6 6' }} />}
       {stops.map((s) => (
         <Marker key={s.id} position={[s.lat, s.lng]} icon={pin(s.n, s.done)}>
           <Popup>

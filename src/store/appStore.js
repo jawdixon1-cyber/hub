@@ -58,6 +58,8 @@ const STATE_KEYS = [
   { key: 'userXP',              supaKey: 'greenteam-userXP',              initial: {} },
   { key: 'vehicles',            supaKey: 'greenteam-vehicles',            initial: initialVehicles },
   { key: 'mileageLog',          supaKey: 'greenteam-mileageLog',          initial: initialMileageLog },
+  { key: 'schedColors',         supaKey: 'greenteam-schedColors',         initial: null }, // Schedule color rules: { types: {Visit,Assessment,Task,Event}, rules: [{ id, words, color }] }
+  { key: 'routeOrder',          supaKey: 'greenteam-routeOrder',          initial: {} }, // Schedule: 'YYYY-MM-DD' -> [item ids] (anytime stop order; Jobber's API can't reorder)
   { key: 'planNotes',           supaKey: 'greenteam-planNotes',           initial: {} }, // Plans page: clientId -> { reason, note, dnc, updatedAt }
   { key: 'planCampaigns',       supaKey: 'greenteam-planCampaigns',       initial: [] }, // Warm Leads outreach campaigns (see PlanCampaigns.jsx)
   { key: 'planManual',          supaKey: 'greenteam-planManual',          initial: [] }, // Warm Leads people added by hand: [{ id, name, phone, note, createdAt }]
@@ -148,7 +150,7 @@ function seedMissingGuides(guides, allInitialGuides) {
 
 // Keys saved by merging with the cloud copy instead of overwriting it, so two tabs/devices
 // editing different clients or campaign cards don't wipe each other's changes.
-const MERGE_KEYS = new Set(['greenteam-planNotes', 'greenteam-planCampaigns', 'greenteam-planManual',
+const MERGE_KEYS = new Set(['greenteam-routeOrder', 'greenteam-planNotes', 'greenteam-planCampaigns', 'greenteam-planManual',
   // Lights: an open tab with an old copy was overwriting newer edits (lost a shingle-tab rule + an item delete, 2026-11-12).
   'greenteam-lightsSupplies', 'greenteam-lightsOrders', 'greenteam-lightsJobs', 'greenteam-lightsReturns', 'greenteam-lightsColdLeads',
   // Owner checklists: an old tab saved its copy over restored headers/steps (2026-11-17).

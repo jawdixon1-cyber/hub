@@ -961,10 +961,13 @@ function AppShell() {
               ] },
             ];
             return groups.map((g) => {
-              const open = g.id === 'building' || (g.closed ? navOpen[g.id] === true : navOpen[g.id] !== false);
+              const fixed = g.id === 'building' || g.id === 'today'; // always open, no collapse arrow
+              const open = fixed || (g.closed ? navOpen[g.id] === true : navOpen[g.id] !== false);
               return (
                 <div key={g.id}>
-                  {!collapsed ? (
+                  {!collapsed && fixed ? (
+                    <p className="px-3 pt-3 pb-1 text-[10px] font-black uppercase tracking-widest text-muted">{g.label}</p>
+                  ) : !collapsed ? (
                     <button onClick={() => setNavOpen((o) => ({ ...o, [g.id]: !open }))}
                       className="w-full flex items-center gap-1.5 px-3 pt-3 pb-1 text-[10px] font-black uppercase tracking-widest text-muted hover:text-secondary cursor-pointer">
                       <ChevronRight size={12} className={`transition-transform ${open ? 'rotate-90' : ''}`} />

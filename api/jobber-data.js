@@ -2339,14 +2339,15 @@ const REQS_TTL = 5 * 60 * 1000;
 let reqsCache = null; // { data, time }
 async function handleRequestsList(req, res) {
   const force = req.query.refresh === '1';
-  if (!force && reqsCache && Date.now() - reqsCache.time < REQS_TTL) return res.json(reqsCache.data);
+  // Not forced: answer instantly from the last copy (any age). The page asks again with refresh=1 in the background.
+  if (!force && reqsCache) return res.json({ ...reqsCache.data, stale: Date.now() - reqsCache.time > REQS_TTL });
   const db = getSupabaseAdmin();
-  if (!force && !reqsCache) {
+  if (!force) {
     try {
       const { data } = await db.from('app_state').select('value').eq('key', REQS_KEY).maybeSingle();
-      if (data?.value?.updatedAt && Date.now() - new Date(data.value.updatedAt).getTime() < REQS_TTL) {
-        reqsCache = { data: data.value, time: new Date(data.value.updatedAt).getTime() };
-        return res.json(data.value);
+      if (data?.value?.requests) {
+        reqsCache = { data: data.value, time: new Date(data.value.updatedAt || 0).getTime() };
+        return res.json({ ...data.value, stale: true });
       }
     } catch { /* fall through to Jobber */ }
   }
@@ -2488,6 +2489,19 @@ async function handleRequestAction(req, res) {
   } catch (err) {
     res.status(err.status || 502).json({ error: err.message });
   }
+}
+
+// Exact map pin Jobber has for a client's first property (used for the Schedule shop address).
+async function handleClientPin(req, res) {
+  const id = String(req.query.id || '');
+  if (!id || id.length > 200) return res.status(400).json({ error: 'id required' });
+  try {
+    const d = await jobberQueryRetry(`query($id: EncodedId!) { client(id: $id) { properties { address { street city province coordinates { latitudeString longitudeString } } } } }`, { id });
+    const a = d.client?.properties?.[0]?.address;
+    const lat = Number(a?.coordinates?.latitudeString); const lng = Number(a?.coordinates?.longitudeString);
+    if (!lat || !lng) return res.status(404).json({ error: 'Jobber has no map pin for this client' });
+    res.json({ address: [a.street, a.city, a.province].filter(Boolean).join(', '), lat, lng });
+  } catch (err) { res.status(502).json({ error: err.message }); }
 }
 
 async function handlePlans(req, res) {
@@ -2815,6 +2829,7 @@ export default async function handler(req, res) {
     if (action === 'recurring-summary') return handleRecurringSummary(req, res);
     if (action === 'plans') return handlePlans(req, res);
     if (action === 'requests-list') return handleRequestsList(req, res);
+    if (action === 'client-pin') return handleClientPin(req, res);
     if (action === 'request-detail') return handleRequestDetail(req, res);
     if (action === 'request-action') return handleRequestAction(req, res);
     if (action === 'leads') return handleLeads(req, res);
