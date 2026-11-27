@@ -17,6 +17,10 @@
       "destination": "/api/app-state?key=refer-page&token=:token"
     },
     {
+      "source": "/q/:token",
+      "destination": "/api/jobber-data?action=quote-page&token=:token"
+    },
+    {
       "source": "/estimate/:token",
       "destination": "/api/app-state?key=estimate-page&token=:token"
     },

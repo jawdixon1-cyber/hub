@@ -60,7 +60,7 @@ export default function RequestDetail({ id, onBack, onChanged }) {
                     <button onClick={() => setMenu((m) => !m)} className="inline-flex items-center gap-1 rounded-lg border border-border-subtle px-3 py-2 text-sm font-semibold text-primary hover:bg-surface-alt cursor-pointer">More <ChevronDown size={14} /></button>
                     {menu && (
                       <div className="absolute right-0 top-full mt-1 z-20 w-56 rounded-xl border border-border-subtle bg-card shadow-2xl py-1.5 text-sm">
-                        <a href={r.url} target="_blank" rel="noreferrer" onClick={() => setMenu(false)} className="flex items-center justify-between px-3 py-2 text-secondary hover:bg-surface-alt hover:text-primary">Convert to Quote <ExternalLink size={12} /></a>
+                        <Link to={`/quotes?new=1&client=${encodeURIComponent(r.clientId || '')}&request=${encodeURIComponent(r.id)}`} onClick={() => setMenu(false)} className="block px-3 py-2 text-secondary hover:bg-surface-alt hover:text-primary">Convert to Quote</Link>
                         <a href={r.url} target="_blank" rel="noreferrer" onClick={() => setMenu(false)} className="flex items-center justify-between px-3 py-2 text-secondary hover:bg-surface-alt hover:text-primary">Convert to Job <ExternalLink size={12} /></a>
                         <div className="my-1 border-t border-border-subtle" />
                         <button onClick={() => act(archived ? 'unarchive' : 'archive')} disabled={!!busy} className="w-full text-left px-3 py-2 text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">{archived ? 'Unarchive' : 'Archive'}</button>

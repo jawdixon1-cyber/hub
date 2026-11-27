@@ -6,7 +6,7 @@ import { registerSW } from 'virtual:pwa-register'
 // Public pages served by the server (client estimate pages, the lights lead form, referral links).
 // A device with an OLD copy of the Hub app cached opens the app here instead (→ login screen).
 // Get the page from the server: update the app helper once, then reload; if that still fails, step around it.
-const PUBLIC_PAGE = /^\/(e\/|e$|estimate\/|rough-|lights-start|refer\/)/;
+const PUBLIC_PAGE = /^\/(e\/|e$|estimate\/|q\/|rough-|lights-start|refer\/)/;
 if (PUBLIC_PAGE.test(window.location.pathname) && 'serviceWorker' in navigator) {
   const target = window.location.href; // the app may redirect to its login before we reload — keep the real address
   const tried = sessionStorage.getItem('hub-public-page-retry');

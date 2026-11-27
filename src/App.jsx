@@ -101,6 +101,8 @@ const Finance = lazy(() => import('./pages/Finance'));
 const PnL = lazy(() => import('./pages/PnL'));
 const JobberSchedule = lazy(() => import('./pages/JobberSchedule'));
 const RequestsList = lazy(() => import('./pages/RequestsList'));
+const QuotesList = lazy(() => import('./pages/QuotesList'));
+const ProductsServices = lazy(() => import('./pages/ProductsServices'));
 const LaborEfficiency = lazy(() => import('./pages/LaborEfficiency'));
 const Sales = lazy(() => import('./pages/Sales'));
 const Marketing = lazy(() => import('./pages/Marketing'));
@@ -624,6 +626,9 @@ function TopbarSettingsMenu({ currentUser, userEmail, onNav, onSignOut }) {
             </button>
             <button onClick={() => { setOpen(false); onNav('/connections'); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
               Connections
+            </button>
+            <button onClick={() => { setOpen(false); onNav('/products'); }} className="w-full text-left px-4 py-2 text-sm text-secondary hover:bg-surface-alt hover:text-primary cursor-pointer">
+              Products & Services
             </button>
           </div>
           <TeamViewToggle onDone={() => setOpen(false)} />
@@ -1209,7 +1214,8 @@ function AppShell() {
                 <Route path="/clients/new" element={<NewClient />} />
                 <Route path="/clients/:clientNumber" element={<Clients />} />
                 <Route path="/clients/:clientNumber/edit" element={<EditClientPage />} />
-                <Route path="/quotes" element={<Quotes />} />
+                <Route path="/quotes" element={ownerMode ? <div className="max-w-[1500px] mx-auto space-y-4">{!new URLSearchParams(location.search).get('new') && <h1 className="text-2xl font-bold text-primary">Quotes</h1>}<QuotesList /></div> : <Quotes />} />
+                <Route path="/quotes-old" element={<Quotes />} />
                 <Route path="/quotes/:quoteNumber" element={<Quotes />} />
                 <Route path="/messages" element={<Messages />} />
                 <Route path="/leads" element={ownerMode ? <div className="max-w-[1500px] mx-auto space-y-4"><h1 className="text-2xl font-bold text-primary">Requests</h1><RequestsList /></div> : <Navigate to="/" replace />} />
@@ -1251,6 +1257,7 @@ function AppShell() {
                 <Route path="/owner-dashboard" element={<OwnerDashboard />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/connections" element={<Connections />} />
+                <Route path="/products" element={ownerMode ? <ProductsServices /> : <Navigate to="/" replace />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
           </Suspense>

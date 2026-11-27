@@ -2,6 +2,7 @@ import { pricedAddons } from '../src/lib/lightsAddonMath.js';
 import { jobberQuery, jobberStatus, forceRefresh, JobberDisconnectedError } from '../lib/jobberClient.js';
 import { syncJobberClientToQuo } from '../lib/quoContactSync.js';
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
+import crypto from 'node:crypto';
 
 // ── Pay Rate Overrides (actual pay, not Jobber billing rate) ──
 const PAY_RATE_OVERRIDES = {
@@ -2504,6 +2505,550 @@ async function handleClientPin(req, res) {
   } catch (err) { res.status(502).json({ error: err.message }); }
 }
 
+// ── Quotes list + detail (Jobber → Hub), same pattern as requests: instant saved copy, refresh in background ──
+const QUOTES_KEY = 'jobber-quotes';
+let quotesListCache = null; // { data, time }
+async function saveAppState(key, value) {
+  const db = getSupabaseAdmin();
+  const { data: row } = await db.from('app_state').select('key').eq('key', key).maybeSingle();
+  if (row) return db.from('app_state').update({ value, updated_at: new Date().toISOString() }).eq('key', key);
+  const { data: org } = await db.from('app_state').select('org_id').not('org_id', 'is', null).limit(1).maybeSingle();
+  return db.from('app_state').insert({ key, value, org_id: org?.org_id, updated_at: new Date().toISOString() });
+}
+async function handleQuotesList(req, res) {
+  const force = req.query.refresh === '1';
+  if (!force && quotesListCache) return res.json({ ...quotesListCache.data, stale: true });
+  if (!force) {
+    try {
+      const { data } = await getSupabaseAdmin().from('app_state').select('value').eq('key', QUOTES_KEY).maybeSingle();
+      if (data?.value?.quotes) { quotesListCache = { data: data.value, time: Date.now() }; return res.json({ ...data.value, stale: true }); }
+    } catch { /* fall through */ }
+  }
+  try {
+    const nodes = [];
+    let after = null;
+    for (let i = 0; i < 30; i++) {
+      const d = await jobberQueryRetry(`{ quotes(first: 50${after ? `, after: "${after}"` : ''}) { nodes { id quoteNumber title quoteStatus createdAt sentAt transitionedAt clientHubViewedAt jobberWebUri
+        amounts { total } client { id name } property { address { street1 street2 city province postalCode } } salesperson { name { full } } }
+        pageInfo { hasNextPage endCursor } } }`);
+      nodes.push(...(d.quotes?.nodes || []));
+      if (!d.quotes?.pageInfo?.hasNextPage) break;
+      after = d.quotes.pageInfo.endCursor;
+    }
+    const quotes = nodes.map((q) => ({
+      id: q.id, number: q.quoteNumber, title: q.title || '', status: q.quoteStatus, createdAt: q.createdAt, sentAt: q.sentAt,
+      changedAt: q.transitionedAt, viewedAt: q.clientHubViewedAt, url: q.jobberWebUri, total: Number(q.amounts?.total || 0),
+      clientId: q.client?.id || null, client: q.client?.name || '', address: fmtAddress(q.property?.address), salesperson: q.salesperson?.name?.full || '',
+    }));
+    const payload = { quotes, updatedAt: new Date().toISOString() };
+    quotesListCache = { data: payload, time: Date.now() };
+    saveAppState(QUOTES_KEY, payload).catch((e) => console.warn('[quotes-list] save', e.message));
+    return res.json(payload);
+  } catch (err) {
+    console.error('[quotes-list]', err.message);
+    if (quotesListCache) return res.json({ ...quotesListCache.data, stale: true });
+    return res.status(500).json({ error: err.message });
+  }
+}
+async function handleQuoteDetail(req, res) {
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const id = String(req.query.id || '');
+  if (!id || id.length > 200) return res.status(400).json({ error: 'id required' });
+  try {
+    const d = await jobberQueryRetry(`query($id: EncodedId!) { quote(id: $id) {
+      id quoteNumber title quoteStatus createdAt sentAt transitionedAt clientHubViewedAt jobberWebUri clientHubUri message
+      amounts { subtotal total discountAmount taxAmount depositAmount }
+      salesperson { name { full } }
+      client { id name phones { number primary } emails { address primary } }
+      property { id address { street1 street2 city province postalCode } }
+      contractDisclaimer
+      lineItems(first: 60) { nodes { id name description quantity unitPrice totalPrice optional textOnly sortOrder linkedProductOrService { id } } }
+      notes(first: 30) { nodes { __typename ... on QuoteNote { id message createdAt pinned } ... on ClientNote { id message createdAt } } }
+      jobs(first: 5) { nodes { id jobNumber jobStatus jobberWebUri } }
+      request { id title }
+    } }`, { id });
+    const q = d.quote;
+    if (!q) return res.status(404).json({ error: 'Quote not found in Jobber' });
+    const pick = (list, k) => (list || []).find((x) => x.primary)?.[k] || list?.[0]?.[k] || '';
+    let hubClientId = null;
+    if (q.client?.id) { const { data: hc } = await getSupabaseAdmin().from('clients').select('id').eq('external_id', q.client.id).limit(1); hubClientId = hc?.[0]?.id || null; }
+    res.json({
+      id: q.id, number: q.quoteNumber, title: q.title || '', status: q.quoteStatus, createdAt: q.createdAt, sentAt: q.sentAt, changedAt: q.transitionedAt,
+      viewedAt: q.clientHubViewedAt, url: q.jobberWebUri, clientHubUrl: q.clientHubUri, message: q.message || '', amounts: q.amounts || {},
+      salesperson: q.salesperson?.name?.full || '', client: q.client?.name || '', clientId: q.client?.id || null, hubClientId,
+      phone: pick(q.client?.phones, 'number'), email: pick(q.client?.emails, 'address'), address: fmtAddress(q.property?.address),
+      disclaimer: q.contractDisclaimer || '', propertyId: q.property?.id || null,
+      lineItems: (q.lineItems?.nodes || []).slice().sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)).map((l) => ({ id: l.id, name: l.name, description: l.description || '', qty: l.quantity, unit: l.unitPrice, total: l.totalPrice, optional: !!l.optional, textOnly: !!l.textOnly, productId: l.linkedProductOrService?.id || null })),
+      view: await readQuoteLinks().then((ql) => ql.view[q.id] || null).catch(() => null),
+      notes: (q.notes?.nodes || []).filter((n) => n?.id && n.__typename === 'QuoteNote').sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+      jobs: q.jobs?.nodes || [], request: q.request || null,
+    });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+}
+// Jobber's quote templates (read-only in the API) → "Use a template" on Hub's New Quote.
+let quoteTemplatesCache = null;
+async function handleQuoteTemplates(req, res) {
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  if (quoteTemplatesCache && Date.now() - quoteTemplatesCache.at < 10 * 60 * 1000 && !req.query.refresh) return res.json(quoteTemplatesCache.data);
+  try {
+    // Kept small — a bigger query blows Jobber's cost limit and just comes back THROTTLED.
+    const d = await jobberQueryRetry(`{ quoteTemplates(first: 25) { nodes { id name message disclaimer requiredDeposit { rate type }
+      lineItems(first: 30) { nodes { name description quantity unitPrice optional textOnly } } } } }`);
+    const data = { templates: (d.quoteTemplates?.nodes || []).filter((t) => !/^archive/i.test(t.name || '')).map((t) => ({ id: t.id, name: t.name, message: t.message || '', disclaimer: t.disclaimer || '',
+      deposit: t.requiredDeposit?.type === 'Percent' || t.requiredDeposit?.type === 'PERCENT' ? t.requiredDeposit.rate : null,
+      lineItems: (t.lineItems?.nodes || []).map((l) => ({ name: l.name, description: l.description || '', qty: l.quantity, unit: l.unitPrice, optional: !!l.optional, textOnly: !!l.textOnly, productId: null })) })) };
+    quoteTemplatesCache = { at: Date.now(), data };
+    res.json(data);
+  } catch (err) { res.status(502).json({ error: err.message }); }
+}
+
+// Convert to Job: creates the job in Jobber from the quote (approved lines only) — visits are added after via the schedule API.
+async function handleQuoteConvert(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const b = req.body || {};
+  const id = String(b.id || '');
+  if (!id) return res.status(400).json({ error: 'id required' });
+  try {
+    const d = await jobberQueryRetry(`query($id: EncodedId!) { quote(id: $id) { id title property { id } salesperson { id } amounts { subtotal discountAmount }
+      lineItems(first: 100) { nodes { id name description quantity unitPrice unitCost optional textOnly sortOrder taxable linkedProductOrService { id } } } } }`, { id });
+    const q = d.quote;
+    if (!q?.property?.id) return res.status(400).json({ error: 'Quote has no property' });
+    const ql = await readQuoteLinks();
+    const picked = new Set((ql.responses[id]?.optional || []).map((x) => x.id));
+    const include = new Set(Array.isArray(b.lineIds) ? b.lineIds : []);
+    const lines = (q.lineItems?.nodes || []).slice().sort((a, c) => (a.sortOrder ?? 0) - (c.sortOrder ?? 0))
+      .filter((l) => (include.size ? include.has(l.id) : (!l.optional || picked.has(l.id))))
+      .map((l, i) => ({ name: l.name, description: l.description || '', quantity: l.textOnly ? 1 : Number(l.quantity) || 1, unitPrice: l.textOnly ? 0 : Number(l.unitPrice) || 0,
+        totalPrice: l.textOnly ? 0 : Math.round((Number(l.quantity) || 1) * (Number(l.unitPrice) || 0) * 100) / 100, unitCost: Number(l.unitCost) || 0,
+        saveToProductsAndServices: false, quoteLineItemId: l.id, sortOrder: i, ...(l.linkedProductOrService?.id ? { productOrServiceId: l.linkedProductOrService.id } : {}) }));
+    // Jobs have no discount field in the API — carry the quote's discount as a negative line, same total as Jobber's convert.
+    const disc = Number(q.amounts?.discountAmount) || 0; const sub = Number(q.amounts?.subtotal) || 0;
+    if (disc > 0 && sub > 0) {
+      const pctOff = disc / sub;
+      const base = lines.reduce((n, l) => n + (l.totalPrice || 0), 0);
+      const off = Math.round(base * pctOff * 100) / 100;
+      if (off > 0) lines.push({ name: `Discount (${Math.round(pctOff * 1000) / 10}%)`, description: '', quantity: 1, unitPrice: -off, totalPrice: -off, saveToProductsAndServices: false, sortOrder: lines.length });
+    }
+    const input = {
+      propertyId: q.property.id, quoteId: q.id, title: String(b.title || q.title || '').slice(0, 255),
+      ...(q.salesperson?.id ? { salespersonId: q.salesperson.id } : {}),
+      ...(b.instructions ? { instructions: String(b.instructions).slice(0, 4000) } : {}),
+      invoicing: { invoicingType: 'FIXED_PRICE', invoicingSchedule: b.remindInvoice === false ? 'NEVER' : 'ON_COMPLETION' },
+      scheduling: { createVisits: false, notifyTeam: false },
+      lineItems: lines,
+    };
+    const r = await jobberQuery('mutation($input: JobCreateAttributes!) { jobCreate(input: $input) { job { id jobNumber jobberWebUri total } userErrors { message path } } }', { input });
+    const ue = (r.jobCreate?.userErrors || []).map((e) => e.message).join('; ');
+    if (ue || !r.jobCreate?.job) throw new Error(ue || 'Jobber did not create the job');
+    quotesListCache = null;
+    res.json({ ok: true, job: r.jobCreate.job });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+}
+
+// Hub-owned status: mark approved / awaiting / clear (Jobber's API can't change quote status).
+async function handleQuoteHubStatus(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const { id, status } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'id required' });
+  const ql = await readQuoteLinks();
+  const now = new Date().toISOString();
+  if (status === 'approved') ql.responses[id] = { status: 'approved', at: now, name: 'Jude (marked approved)', marked: true, optional: ql.responses[id]?.optional || [] };
+  else if (status === 'awaiting') { delete ql.responses[id]; ql.sent = { ...ql.sent, [id]: ql.sent[id] || { at: now, via: 'marked' } }; }
+  else if (status === 'clear') { delete ql.responses[id]; }
+  else return res.status(400).json({ error: 'Bad status' });
+  await saveAppState(QL_KEY, ql);
+  const m = status === 'approved' ? '✅ Marked approved in Hub' : status === 'awaiting' ? '⏳ Marked awaiting response in Hub' : '↩︎ Hub approval cleared';
+  await jobberQuery('mutation($id: EncodedId!, $m: String!) { quoteCreateNote(quoteId: $id, input: { message: $m }) { userErrors { message } } }', { id, m }).catch(() => {});
+  quotesListCache = null;
+  res.json({ ok: true });
+}
+
+// Edit an existing quote in Jobber from Hub: header fields + add / change / delete / reorder lines.
+async function handleQuoteUpdate(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const b = req.body || {};
+  const id = String(b.id || '');
+  if (!id || id.length > 200) return res.status(400).json({ error: 'id required' });
+  const errs = (p) => (p?.userErrors || []).map((e) => e.message).join('; ');
+  try {
+    const cur = await jobberQueryRetry('query($id: EncodedId!) { quote(id: $id) { lineItems(first: 100) { nodes { id } } } }', { id });
+    const curIds = new Set((cur.quote?.lineItems?.nodes || []).map((l) => l.id));
+    const lines = (Array.isArray(b.lineItems) ? b.lineItems : []).filter((l) => String(l.name || '').trim()).slice(0, 60);
+    if (!lines.length) return res.status(400).json({ error: 'Add at least one line item' });
+    const keep = new Set(lines.filter((l) => l.id && curIds.has(l.id)).map((l) => l.id));
+    // 1) delete lines that were removed
+    const del = [...curIds].filter((x) => !keep.has(x));
+    if (del.length) {
+      const d = await jobberQuery('mutation($id: EncodedId!, $ids: [EncodedId!]!) { quoteDeleteLineItems(quoteId: $id, lineItemIds: $ids) { userErrors { message } } }', { id, ids: del });
+      if (errs(d.quoteDeleteLineItems)) throw new Error(errs(d.quoteDeleteLineItems));
+    }
+    // 2) create new lines, remember their new ids in order
+    const newIds = {};
+    for (const [i, l] of lines.entries()) {
+      if (l.id && keep.has(l.id)) continue;
+      if (l.textOnly) {
+        const d = await jobberQuery('mutation($id: EncodedId!, $li: [QuoteCreateTextLineItemAttributes!]!) { quoteCreateTextLineItems(quoteId: $id, lineItems: $li) { createdLineItems { id } userErrors { message } } }',
+          { id, li: [{ name: String(l.name).slice(0, 255), description: String(l.description || '') }] });
+        if (errs(d.quoteCreateTextLineItems)) throw new Error(errs(d.quoteCreateTextLineItems));
+        newIds[i] = d.quoteCreateTextLineItems.createdLineItems?.[0]?.id;
+      } else {
+        const qty = Number(l.quantity) || 1; const unit = Number(l.unitPrice) || 0;
+        const d = await jobberQuery('mutation($id: EncodedId!, $li: [QuoteCreateLineItemAttributes!]!) { quoteCreateLineItems(quoteId: $id, lineItems: $li) { createdLineItems { id } userErrors { message } } }',
+          { id, li: [{ name: String(l.name).slice(0, 255), description: String(l.description || ''), quantity: qty, unitPrice: unit, totalPrice: Math.round(qty * unit * 100) / 100, optional: !!l.optional, saveToProductsAndServices: false, ...(l.productOrServiceId ? { productOrServiceId: l.productOrServiceId } : {}) }] });
+        if (errs(d.quoteCreateLineItems)) throw new Error(errs(d.quoteCreateLineItems));
+        newIds[i] = d.quoteCreateLineItems.createdLineItems?.[0]?.id;
+      }
+    }
+    // 3) edit every line (values + order)
+    const edits = lines.map((l, i) => {
+      const lineItemId = keep.has(l.id) ? l.id : newIds[i];
+      if (!lineItemId) return null;
+      if (l.textOnly) return { lineItemId, name: String(l.name).slice(0, 255), description: String(l.description || ''), sortOrder: i };
+      const qty = Number(l.quantity) || 1; const unit = Number(l.unitPrice) || 0;
+      return { lineItemId, name: String(l.name).slice(0, 255), description: String(l.description || ''), quantity: qty, unitPrice: unit, totalPrice: Math.round(qty * unit * 100) / 100, optional: !!l.optional, sortOrder: i };
+    }).filter(Boolean);
+    const e = await jobberQuery('mutation($id: EncodedId!, $li: [QuoteEditLineItemAttributes!]!) { quoteEditLineItems(quoteId: $id, lineItems: $li) { userErrors { message } } }', { id, li: edits });
+    if (errs(e.quoteEditLineItems)) throw new Error(errs(e.quoteEditLineItems));
+    // 4) header fields
+    const cv = b.clientView && typeof b.clientView === 'object' ? b.clientView : null;
+    const attrs = {
+      title: String(b.title || '').slice(0, 255), message: String(b.message || ''), contractDisclaimer: String(b.disclaimer || ''),
+      ...(b.quoteNumber ? { quoteNumber: String(b.quoteNumber) } : {}),
+      discount: { rate: Math.max(0, Math.min(100, Number(b.discountPercent) || 0)), type: 'Percent' },
+      deposit: { rate: Math.max(0, Math.min(100, Number(b.depositPercent) || 0)), type: 'Percent' },
+      ...(cv ? { clientViewOptions: { showLineItemQty: !!cv.showLineItemQty, showLineItemUnitCosts: !!cv.showLineItemUnitCosts, showLineItemTotalCosts: !!cv.showLineItemTotalCosts, showTotals: !!cv.showTotals } } : {}),
+    };
+    const h = await jobberQuery('mutation($id: EncodedId!, $a: QuoteEditAttributes!) { quoteEdit(quoteId: $id, attributes: $a) { quote { id quoteNumber amounts { total } } userErrors { message } } }', { id, a: attrs });
+    if (errs(h.quoteEdit)) throw new Error(errs(h.quoteEdit));
+    if (cv) { const ql = await readQuoteLinks(); ql.view = { ...ql.view, [id]: { qty: !!cv.showLineItemQty, unit: !!cv.showLineItemUnitCosts, line: !!cv.showLineItemTotalCosts, totals: !!cv.showTotals } }; await saveAppState(QL_KEY, ql).catch(() => {}); }
+    quotesListCache = null;
+    res.json({ ok: true, id, number: h.quoteEdit.quote?.quoteNumber, total: h.quoteEdit.quote?.amounts?.total });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+}
+
+async function handleQuoteAction(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const { id, op } = req.body || {};
+  if (!id || String(id).length > 200) return res.status(400).json({ error: 'id required' });
+  try {
+    let key; let d;
+    if (op === 'archive') {
+      key = 'quoteArchive';
+      d = await jobberQuery('mutation($id: EncodedId!) { quoteArchive(id: $id) { userErrors { message } } }', { id });
+    } else if (op === 'note-edit' || op === 'note-pin') {
+      const noteId = String(req.body.noteId || '');
+      if (!noteId) return res.status(400).json({ error: 'noteId required' });
+      key = 'quoteEditNote';
+      const input = op === 'note-pin' ? { noteId, pinned: !!req.body.pinned } : { noteId, message: String(req.body.message || '').trim().slice(0, 5000) };
+      if (op === 'note-edit' && !input.message) return res.status(400).json({ error: 'Note is empty' });
+      d = await jobberQuery('mutation($input: QuoteEditNoteInput!) { quoteEditNote(input: $input) { userErrors { message } } }', { input });
+    } else if (op === 'note') {
+      const message = String(req.body.message || '').trim().slice(0, 5000);
+      if (!message) return res.status(400).json({ error: 'Note is empty' });
+      key = 'quoteCreateNote';
+      d = await jobberQuery('mutation($id: EncodedId!, $m: String!) { quoteCreateNote(quoteId: $id, input: { message: $m }) { userErrors { message } } }', { id, m: message });
+    } else return res.status(400).json({ error: 'Unknown action' });
+    const e = d?.[key]?.userErrors?.[0]?.message;
+    if (e) return res.status(422).json({ error: e });
+    quotesListCache = null;
+    res.json({ ok: true });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+}
+
+// ── New quote (Hub → Jobber) ──
+let productsCache = null; // { at, data }
+async function handleProducts(req, res) {
+  const all = req.query.all === '1';
+  if (productsCache && Date.now() - productsCache.at < 30 * 60e3 && req.query.refresh !== '1') {
+    return res.json({ items: all ? productsCache.data.items : productsCache.data.items.filter((p) => p.visible) });
+  }
+  try {
+    const d = await jobberQueryRetry(`{ products(first: 300) { nodes { id name description category visible taxable defaultUnitCost internalUnitCost markup durationMinutes
+      lastQuoteLineItem { unitPrice } lastJobLineItem { unitPrice } } } }`);
+    const items = (d.products?.nodes || []).map((p) => ({
+      id: p.id, name: p.name, description: p.description || '', category: p.category, taxable: !!p.taxable, visible: p.visible !== false,
+      unitPrice: Number(p.defaultUnitCost) || 0, cost: Number(p.internalUnitCost) || 0, markup: Number(p.markup) || 0, duration: p.durationMinutes || 60,
+      lastPrice: Number(p.lastQuoteLineItem?.unitPrice) || Number(p.lastJobLineItem?.unitPrice) || 0,
+      // What a new quote line fills in: Jobber's unit price, or what you last charged if that's blank.
+      price: Number(p.defaultUnitCost) || Number(p.lastQuoteLineItem?.unitPrice) || Number(p.lastJobLineItem?.unitPrice) || 0,
+    })).sort((a, b) => a.name.localeCompare(b.name));
+    productsCache = { at: Date.now(), data: { items } };
+    res.json({ items: all ? items : items.filter((p) => p.visible) });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+}
+async function handleProductSave(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const b = req.body || {};
+  const name = String(b.name || '').trim().slice(0, 255);
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+  const input = {
+    name, description: String(b.description || '').slice(0, 4000), category: b.category === 'PRODUCT' ? 'PRODUCT' : 'SERVICE',
+    defaultUnitCost: Math.max(0, Number(b.unitPrice) || 0), internalUnitCost: Math.max(0, Number(b.cost) || 0), markup: Number(b.markup) || 0,
+    taxable: !!b.taxable, durationMinutes: Math.max(0, Math.round(Number(b.duration) || 0)),
+  };
+  try {
+    let d; let key;
+    if (b.id) {
+      key = 'productsAndServicesEdit';
+      d = await jobberQuery('mutation($id: EncodedId!, $in: ProductsAndServicesEditInput!) { productsAndServicesEdit(productOrServiceId: $id, input: $in) { productOrService { id } userErrors { message } } }', { id: b.id, in: { ...input, visible: b.visible !== false } });
+    } else {
+      key = 'productsAndServicesCreate';
+      d = await jobberQuery('mutation($in: ProductsAndServicesInput!) { productsAndServicesCreate(input: $in) { productOrService { id } userErrors { message } } }', { in: input });
+    }
+    const e = d?.[key]?.userErrors?.[0]?.message;
+    if (e) return res.status(422).json({ error: e });
+    productsCache = null;
+    res.json({ ok: true, id: d[key]?.productOrService?.id });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+}
+async function handleClientProperties(req, res) {
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const id = String(req.query.id || '');
+  if (!id || id.length > 200) return res.status(400).json({ error: 'id required' });
+  try {
+    const d = await jobberQueryRetry(`query($id: EncodedId!) { client(id: $id) { id name
+      phones { number primary } emails { address primary }
+      properties { id address { street1 street2 city province postalCode } }
+      requests(first: 15) { nodes { id title requestStatus createdAt } } } }`, { id });
+    const c = d.client;
+    if (!c) return res.status(404).json({ error: 'Client not found in Jobber' });
+    const pick = (list, k) => (list || []).find((x) => x.primary)?.[k] || list?.[0]?.[k] || '';
+    res.json({
+      id: c.id, name: c.name, phone: pick(c.phones, 'number'), email: pick(c.emails, 'address'),
+      properties: (c.properties || []).map((p) => ({ id: p.id, address: fmtAddress(p.address) })),
+      requests: (c.requests?.nodes || []).filter((r) => !['converted', 'archived'].includes(r.requestStatus)).map((r) => ({ id: r.id, title: r.title || 'Request', status: r.requestStatus, createdAt: r.createdAt })),
+    });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+}
+async function handleQuoteCreate(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const b = req.body || {};
+  if (!b.clientId || !b.propertyId) return res.status(400).json({ error: 'Pick a client and property' });
+  const lines = (Array.isArray(b.lineItems) ? b.lineItems : []).filter((l) => String(l.name || '').trim()).slice(0, 60).map((l) => {
+    const qty = Number(l.quantity) || 1; const unit = Number(l.unitPrice) || 0;
+    return {
+      name: String(l.name).trim().slice(0, 255), description: String(l.description || '').slice(0, 4000),
+      quantity: qty, unitPrice: unit, totalPrice: Math.round(qty * unit * 100) / 100,
+      ...(l.productOrServiceId ? { productOrServiceId: l.productOrServiceId } : {}), ...(l.optional ? { optional: true } : {}),
+      ...(l.textOnly ? { textOnly: true, quantity: 1, unitPrice: 0, totalPrice: 0 } : {}),
+      saveToProductsAndServices: false,
+    };
+  });
+  if (!lines.length) return res.status(400).json({ error: 'Add at least one line item' });
+  const attributes = {
+    clientId: b.clientId, propertyId: b.propertyId,
+    ...(b.requestId ? { requestId: b.requestId } : {}),
+    ...(String(b.title || '').trim() ? { title: String(b.title).trim().slice(0, 255) } : {}),
+    ...(String(b.message || '').trim() ? { message: String(b.message).slice(0, 4000) } : {}),
+    ...(Number(b.depositPercent) > 0 ? { deposit: { rate: Math.min(100, Number(b.depositPercent)), type: 'Percent' } } : {}),
+    ...(Number(b.discountPercent) > 0 ? { discount: { rate: Math.min(100, Number(b.discountPercent)), type: 'Percent' } } : {}),
+    ...(Number(b.quoteNumber) > 0 ? { quoteNumber: Math.floor(Number(b.quoteNumber)) } : {}),
+    ...(b.salespersonId ? { salespersonId: b.salespersonId } : {}),
+    ...(String(b.disclaimer || '').trim() ? { contractDisclaimer: String(b.disclaimer).slice(0, 4000) } : {}),
+    ...(b.awaiting ? { transitionQuoteTo: 'AWAITING_RESPONSE' } : {}),
+    ...(b.clientView && typeof b.clientView === 'object' ? { clientViewOptions: {
+      showLineItemQty: !!b.clientView.showLineItemQty, showLineItemUnitCosts: !!b.clientView.showLineItemUnitCosts,
+      showLineItemTotalCosts: !!b.clientView.showLineItemTotalCosts, showTotals: !!b.clientView.showTotals } } : {}),
+    lineItems: lines,
+  };
+  try {
+    if (!attributes.salespersonId) { // default salesperson = the account owner (Jude), like Jobber does
+      const u = await jobberQuery('{ users(first: 30) { nodes { id isAccountOwner } } }').catch(() => null);
+      const owner = (u?.users?.nodes || []).find((x) => x.isAccountOwner);
+      if (owner) attributes.salespersonId = owner.id;
+    }
+    const r = await jobberQuery('mutation($a: QuoteCreateAttributes!) { quoteCreate(attributes: $a) { quote { id quoteNumber jobberWebUri amounts { total } } userErrors { message path } } }', { a: attributes });
+    const e = r?.quoteCreate?.userErrors?.[0];
+    if (e) return res.status(422).json({ error: e.message });
+    const q = r.quoteCreate.quote;
+    const note = String(b.note || '').trim();
+    if (note) await jobberQuery('mutation($id: EncodedId!, $m: String!) { quoteCreateNote(quoteId: $id, input: { message: $m }) { userErrors { message } } }', { id: q.id, m: note.slice(0, 5000) }).catch(() => {});
+    quotesListCache = null;
+    if (b.clientView && typeof b.clientView === 'object') {
+      // Jobber's API won't read client view back, so Hub keeps a copy for its own quote page.
+      const ql = await readQuoteLinks(); ql.view = { ...(ql.view || {}), [q.id]: { qty: !!b.clientView.showLineItemQty, unit: !!b.clientView.showLineItemUnitCosts, line: !!b.clientView.showLineItemTotalCosts, totals: !!b.clientView.showTotals } };
+      await saveAppState(QL_KEY, ql).catch(() => {});
+    }
+    res.json({ ok: true, id: q.id, number: q.quoteNumber, url: q.jobberWebUri, total: q.amounts?.total });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+}
+
+// ── Hub quote links + approvals (Jude's way: client approves on a Hub page, texted from Quo) ──
+// app_state 'quote-links' = { byToken: { token: quoteId }, byQuote: { quoteId: token }, responses: { quoteId: { status, at, name, note } } }
+const QL_KEY = 'quote-links';
+async function readQuoteLinks() {
+  const { data } = await getSupabaseAdmin().from('app_state').select('value').eq('key', QL_KEY).maybeSingle();
+  const v = data?.value || {};
+  return { byToken: v.byToken || {}, byQuote: v.byQuote || {}, responses: v.responses || {}, sent: v.sent || {}, view: v.view || {} };
+}
+const siteOrigin = (req) => (process.env.VERCEL ? 'https://hub.heyjudeslawncare.com' : `http://${req.headers.host}`);
+async function handleQuoteLink(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const id = String(req.body?.id || '');
+  if (!id || id.length > 200) return res.status(400).json({ error: 'id required' });
+  const ql = await readQuoteLinks();
+  let token = ql.byQuote[id];
+  if (!token) {
+    token = crypto.randomBytes(12).toString('base64url');
+    ql.byToken[token] = id; ql.byQuote[id] = token;
+    await saveAppState(QL_KEY, ql);
+  }
+  const url = process.env.VERCEL ? `https://hub.heyjudeslawncare.com/q/${token}` : `${siteOrigin(req)}/api/jobber-data?action=quote-page&token=${token}`;
+  res.json({ token, url, response: ql.responses[id] || null, sent: ql.sent[id] || null });
+}
+async function handleQuoteResponses(req, res) {
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const ql = await readQuoteLinks();
+  res.json({ responses: Object.fromEntries(Object.entries(ql.responses).map(([k, v]) => [k, { ...v, signature: undefined }])), sent: ql.sent });
+}
+async function loadPublicQuote(quoteId) {
+  const d = await jobberQueryRetry(`query($id: EncodedId!) { quote(id: $id) { id quoteNumber title quoteStatus message contractDisclaimer createdAt
+    amounts { subtotal discountAmount taxAmount total depositAmount }
+    client { firstName name } property { address { street1 street2 city province postalCode } }
+    lineItems(first: 60) { nodes { id name description quantity unitPrice totalPrice optional textOnly } } } }`, { id: quoteId });
+  return d.quote;
+}
+const esc = (x) => String(x ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const usd = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+async function handleQuotePage(req, res) {
+  const token = String(req.query.token || req.body?.token || '');
+  if (!/^[A-Za-z0-9_-]{10,40}$/.test(token)) return res.status(404).send('Not found');
+  const ql = await readQuoteLinks();
+  const quoteId = ql.byToken[token];
+  if (!quoteId) return res.status(404).send('This quote link is no longer active. Text us at (803) 902-7447.');
+  if (req.method === 'POST') {
+    const b = req.body || {};
+    const status = b.decision === 'approve' ? 'approved' : b.decision === 'changes' ? 'changes' : null;
+    if (!status) return res.status(400).json({ error: 'Bad decision' });
+    const name = String(b.name || '').trim().slice(0, 80);
+    const note = String(b.note || '').trim().slice(0, 2000);
+    const signature = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(String(b.signature || '')) && String(b.signature).length < 300000 ? String(b.signature) : '';
+    if (status === 'approved' && name.length < 2 && !signature) return res.status(400).json({ error: 'Type your name or sign to approve' });
+    if (status === 'changes' && !note) return res.status(400).json({ error: 'Tell us what to change' });
+    const picks = Array.isArray(b.optional) ? b.optional.map(String).slice(0, 30) : [];
+    let extras = [];
+    if (status === 'approved' && picks.length) {
+      try { const qq = await loadPublicQuote(quoteId); extras = (qq?.lineItems?.nodes || []).filter((l) => l.optional && picks.includes(l.id)).map((l) => ({ id: l.id, name: l.name, total: l.totalPrice })); } catch { /* ignore */ }
+    }
+    ql.responses[quoteId] = { status, at: new Date().toISOString(), name: name || (signature ? 'signature' : ''), signed: !!signature, signature, optional: extras, total: Number(b.total) || null };
+    await saveAppState(QL_KEY, ql);
+    quotesListCache = null;
+    const msg = status === 'approved' ? `✅ Approved via Hub link by ${name || 'signature (signed on screen)'}${extras.length ? ` — added optional: ${extras.map((x) => `${x.name} (${usd(x.total)})`).join(', ')}` : ''}${b.total ? ` — total ${usd(b.total)}` : ''}${note ? ` — "${note}"` : ''}` : `✏️ Changes requested via Hub link${name ? ` by ${name}` : ''}: ${note}`;
+    await jobberQuery('mutation($id: EncodedId!, $m: String!) { quoteCreateNote(quoteId: $id, input: { message: $m }) { userErrors { message } } }', { id: quoteId, m: msg }).catch(() => {});
+    return res.json({ ok: true, status });
+  }
+  let q;
+  try { q = await loadPublicQuote(quoteId); } catch { return res.status(502).send('Could not load this quote right now. Please try again in a minute.'); }
+  if (!q) return res.status(404).send('Quote not found.');
+  const resp = ql.responses[quoteId] || null;
+  const view = ql.view[quoteId] || { qty: false, unit: false, line: true, totals: true }; // Jobber's defaults
+  const a = q.amounts || {};
+  const addr = fmtAddress(q.property?.address);
+  const done = resp?.status === 'approved' || ['approved', 'converted'].includes(q.quoteStatus);
+  const chosen = new Set((resp?.optional || []).map((x) => x.id));
+  const qtyLine = (l) => {
+    const parts = [];
+    if (view.qty) parts.push(`Qty ${esc(l.quantity)}`);
+    if (view.unit) parts.push(`${usd(l.unitPrice)} each`);
+    return parts.length ? `<p class="q">${parts.join(' · ')}</p>` : '';
+  };
+  const rows = (q.lineItems?.nodes || []).map((l) => {
+    if (l.textOnly) return `<div class="li text">${esc(l.description || l.name).replace(/\n/g, '<br>')}</div>`;
+    const amt = view.line ? `<span class="amt">${usd(l.totalPrice)}</span>` : '';
+    const desc = l.description ? `<p>${esc(l.description).replace(/\n/g, '<br>')}</p>` : '';
+    if (l.optional) {
+      const on = chosen.has(l.id);
+      return `<label class="li opt${done ? ' locked' : ''}"><div class="lt"><input type="checkbox" class="pick" data-id="${esc(l.id)}" data-total="${Number(l.totalPrice) || 0}" ${on ? 'checked' : ''} ${done ? 'disabled' : ''}><b>${esc(l.name)}</b><span class="tag">Optional</span>${amt}</div>${desc}${qtyLine(l)}</label>`;
+    }
+    return `<div class="li"><div class="lt"><b>${esc(l.name)}</b>${amt}</div>${desc}${qtyLine(l)}</div>`;
+  }).join('');
+  const hasOpt = (q.lineItems?.nodes || []).some((l) => l.optional && !l.textOnly);
+  const baseTotal = Number(a.total) || 0;
+  const pickedTotal = (resp?.optional || []).reduce((n, x) => n + (Number(x.total) || 0), 0);
+  const logo = 'https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6a0c9c767f72486315221b19.png'; // same logo as the Hub sidebar
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Your quote from Hey Jude's</title><meta name="robots" content="noindex">
+<meta property="og:title" content="Your quote from Hey Jude's Lawn Care"><meta property="og:description" content="${esc(q.title || 'Tap to view and approve')}">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,system-ui,Segoe UI,Roboto,sans-serif;background:#f4f6f3;color:#16211a}
+.w{max-width:640px;margin:0 auto;padding:20px 16px 60px}.hd{display:flex;justify-content:center;margin:8px 0 18px}.hd img{height:84px;max-width:90%;object-fit:contain}
+.card{background:#fff;border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:14px}
+h1{font-size:24px;margin:0 0 4px}.mut{color:#6b766e;font-size:14px;margin:0}.li{padding:12px 0;border-top:1px solid #eef0ed}.li:first-child{border-top:0}
+.lt{display:flex;gap:8px;align-items:baseline}.lt b{flex:1}.amt{font-weight:700}.li p{margin:4px 0 0;color:#525d55;font-size:14px;line-height:1.45}.li .q{color:#8a948c;font-size:13px}
+.li.text{color:#525d55;font-size:14px}label.opt{display:block;cursor:pointer;border-radius:10px}label.opt .pick{width:22px;height:22px;accent-color:#7DC243;margin:0 4px 0 0;flex:none;align-self:center}label.opt:has(.pick:not(:checked)) b,label.opt:has(.pick:not(:checked)) .amt{color:#8a948c}.hint{font-size:13px;color:#4d7c0f;margin:8px 0 0}.tag{font-size:11px;background:#eef4e6;color:#4d7c0f;border-radius:99px;padding:2px 8px;font-weight:600}
+.tot{display:flex;justify-content:space-between;padding:4px 0;font-size:15px;color:#525d55}.tot.big{font-size:22px;font-weight:800;color:#16211a;border-top:2px solid #16211a;margin-top:6px;padding-top:10px}
+.btn{display:block;width:100%;border:0;border-radius:12px;padding:16px;font-size:17px;font-weight:800;cursor:pointer;margin-top:10px}
+.go{background:#7DC243;color:#0d1a05}.ghost{background:#fff;color:#16211a;border:2px solid #d8ddd6}input,textarea{width:100%;border:2px solid #d8ddd6;border-radius:10px;padding:12px;font-size:16px;font-family:inherit;margin-top:8px}
+.ok{background:#eaf6dc;border:2px solid #7DC243;border-radius:14px;padding:18px;text-align:center}.ok b{font-size:20px;display:block;margin-bottom:4px}
+.tabs{display:flex;gap:6px;margin-top:10px}.tabs button{flex:1;border:2px solid #d8ddd6;background:#fff;border-radius:10px;padding:10px;font-weight:700;font-size:15px;cursor:pointer;color:#16211a}.tabs .on{border-color:#7DC243;background:#eaf6dc}#sigwrap{position:relative;margin-top:8px}#sig{width:100%;height:150px;border:2px dashed #b9c2b6;border-radius:10px;background:#fff;touch-action:none}.clr{position:absolute;top:6px;right:8px;border:0;background:none;color:#6b766e;font-weight:600;cursor:pointer}.sigimg{max-height:70px;display:block;margin:6px auto 0}@media print{#act,.hint{display:none!important}body{background:#fff}.card{box-shadow:none;border:1px solid #ddd}}.small{font-size:12px;color:#8a948c;line-height:1.5}.err{color:#c0392b;font-size:14px;margin-top:8px}[hidden]{display:none!important}
+</style></head><body><div class="w">
+<div class="hd"><img src="${logo}" alt="Hey Jude's Lawn Care" onerror="this.remove()"></div>
+<div class="card"><p class="mut">Quote #${esc(q.quoteNumber)} · for ${esc(q.client?.firstName || q.client?.name || '')}</p><h1>${esc(q.title || 'Your quote')}</h1>${addr ? `<p class="mut">${esc(addr)}</p>` : ''}</div>
+${q.message ? `<div class="card"><p style="margin:0;white-space:pre-wrap;line-height:1.5">${esc(q.message)}</p></div>` : ''}
+<div class="card">${rows}
+${hasOpt && !done ? '<p class="hint">Tap an optional item to add it to your quote.</p>' : ''}
+${view.totals ? `<div style="margin-top:10px">${a.subtotal != null && a.subtotal !== a.total ? `<div class="tot"><span>Subtotal</span><span>${usd(a.subtotal)}</span></div>` : ''}${a.discountAmount ? `<div class="tot"><span>Discount</span><span>−${usd(a.discountAmount)}</span></div>` : ''}${a.taxAmount ? `<div class="tot"><span>Tax</span><span>${usd(a.taxAmount)}</span></div>` : ''}
+<div class="tot" id="addrow" ${pickedTotal ? '' : 'hidden'}><span>Optional items added</span><span id="addamt">+${usd(pickedTotal)}</span></div>
+<div class="tot big"><span>Total</span><span id="total">${usd(baseTotal + pickedTotal)}</span></div>${a.depositAmount ? `<div class="tot"><span>Deposit to book</span><span>${usd(a.depositAmount)}</span></div>` : ''}</div>` : ''}</div>
+<div class="card" id="act">
+${done ? `<div class="ok"><b>✅ Approved — thank you${resp?.name && !resp.signed ? `, ${esc(resp.name.split(' ')[0])}` : ''}!</b>${resp?.signature ? `<img class="sigimg" src="${resp.signature}" alt="signature">` : ''}We'll text you to lock in your date.</div>`
+  : resp?.status === 'changes' ? `<div class="ok" style="background:#fff7e6;border-color:#f0b429"><b>Got it — changes requested.</b>Jude will send an updated quote soon.</div>`
+  : `<div id="choose"><button class="btn go" onclick="show('ap')">Approve quote</button><button class="btn ghost" onclick="show('ch')">Request changes</button></div>
+<div id="ap" hidden><b>Approve this quote</b>
+<div class="tabs"><button type="button" id="tb-type" class="on" onclick="mode('type')">Type name</button><button type="button" id="tb-sign" onclick="mode('sign')">Sign</button></div>
+<input id="nm" placeholder="Type your full name" autocomplete="name">
+<div id="sigwrap" hidden><canvas id="sig" width="600" height="180"></canvas><button type="button" class="clr" onclick="clearSig()">Clear</button></div><button class="btn go" id="apbtn" onclick="send('approve')">Approve${view.totals ? ` ${usd(baseTotal)}` : ''}</button><button class="btn ghost" onclick="show('choose')">Back</button></div>
+<div id="ch" hidden><b>What would you like changed?</b><textarea id="chn" rows="4" placeholder="Tell Jude what to change"></textarea><input id="chnm" placeholder="Your name (optional)"><button class="btn go" onclick="send('changes')">Send to Jude</button><button class="btn ghost" onclick="show('choose')">Back</button></div>
+<p class="err" id="err"></p>`}
+</div>
+${q.contractDisclaimer ? `<p class="small">${esc(q.contractDisclaimer)}</p>` : ''}
+<p class="small">Questions? Text or call us at <a href="sms:8039027447">(803) 902-7447</a>.</p>
+</div><script>
+if(/[?&]print=1/.test(location.search))window.addEventListener('load',function(){setTimeout(function(){window.print()},400)});
+var BASE=${baseTotal};function fmt(n){return '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function picks(){return Array.prototype.slice.call(document.querySelectorAll('.pick:checked'));}
+function retotal(){var add=picks().reduce(function(n,x){return n+Number(x.dataset.total)},0);var t=document.getElementById('total');if(t)t.textContent=fmt(BASE+add);var r=document.getElementById('addrow');if(r){r.hidden=!add;document.getElementById('addamt').textContent='+'+fmt(add);}var b=document.getElementById('apbtn');if(b&&t)b.textContent='Approve '+fmt(BASE+add);}
+document.querySelectorAll('.pick').forEach(function(x){x.addEventListener('change',retotal)});
+var M='type',drew=false;function mode(m){M=m;document.getElementById('tb-type').className=m==='type'?'on':'';document.getElementById('tb-sign').className=m==='sign'?'on':'';document.getElementById('nm').hidden=m!=='type';document.getElementById('sigwrap').hidden=m!=='sign';}
+(function(){var c=document.getElementById('sig');if(!c)return;var x=c.getContext('2d'),down=false;x.lineWidth=3;x.lineCap='round';x.strokeStyle='#16211a';
+function p(e){var r=c.getBoundingClientRect();return[(e.clientX-r.left)*c.width/r.width,(e.clientY-r.top)*c.height/r.height];}
+c.addEventListener('pointerdown',function(e){down=true;drew=true;var q=p(e);x.beginPath();x.moveTo(q[0],q[1]);c.setPointerCapture(e.pointerId);});
+c.addEventListener('pointermove',function(e){if(!down)return;var q=p(e);x.lineTo(q[0],q[1]);x.stroke();});
+c.addEventListener('pointerup',function(){down=false;});})();
+function clearSig(){var c=document.getElementById('sig');c.getContext('2d').clearRect(0,0,c.width,c.height);drew=false;}
+function show(id){['choose','ap','ch'].forEach(function(x){var e=document.getElementById(x);if(e)e.hidden=x!==id;});document.getElementById('err').textContent='';}
+function send(d){var b={token:${JSON.stringify(token)},decision:d,name:d==='approve'?(M==='type'?document.getElementById('nm').value:''):document.getElementById('chnm').value,signature:d==='approve'&&M==='sign'&&drew?document.getElementById('sig').toDataURL('image/png'):'',note:d==='approve'?'':document.getElementById('chn').value,optional:picks().map(function(x){return x.dataset.id}),total:BASE+picks().reduce(function(n,x){return n+Number(x.dataset.total)},0)};
+var btns=document.querySelectorAll('#act .btn');btns.forEach(function(x){x.disabled=true});
+fetch(location.pathname.indexOf('/q/')===0?'/api/jobber-data?action=quote-page':location.href,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||'Something went wrong');return j;})})
+.then(function(){location.reload()}).catch(function(e){document.getElementById('err').textContent=e.message;btns.forEach(function(x){x.disabled=false});});}
+</script></body></html>`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(200).send(html);
+}
+
+async function handleQuoteSent(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const id = String(req.body?.id || '');
+  try {
+    await jobberQuery('mutation($id: EncodedId!, $a: QuoteEditAttributes!) { quoteEdit(quoteId: $id, attributes: $a) { userErrors { message } } }', { id, a: { sentAt: new Date().toISOString() } });
+    // Hub remembers it was sent (Jobber's API can't move a draft to Awaiting response, so Hub tracks it).
+    const ql = await readQuoteLinks(); ql.sent = { ...(ql.sent || {}), [id]: { at: new Date().toISOString(), via: req.body?.via || 'text' } }; await saveAppState(QL_KEY, ql);
+    const m = req.body?.via === 'email' ? `📧 Quote link emailed from Hub${req.body?.to ? ` to ${String(req.body.to).slice(0, 80)}` : ''}` : `📱 Quote link texted from Hub (Quo)${req.body?.to ? ` to ${String(req.body.to).slice(0, 20)}` : ''}`;
+    await jobberQuery('mutation($id: EncodedId!, $m: String!) { quoteCreateNote(quoteId: $id, input: { message: $m }) { userErrors { message } } }', { id, m }).catch(() => {});
+    quotesListCache = null;
+    res.json({ ok: true });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+}
+
 async function handlePlans(req, res) {
   if (plansCache && req.query.refresh !== '1' && Date.now() - plansCache.time < PLANS_TTL) return res.json(plansCache.data);
   const saved = plansCache ? null : await readSavedPlans();
@@ -2830,6 +3375,21 @@ export default async function handler(req, res) {
     if (action === 'plans') return handlePlans(req, res);
     if (action === 'requests-list') return handleRequestsList(req, res);
     if (action === 'client-pin') return handleClientPin(req, res);
+    if (action === 'quotes-list') return handleQuotesList(req, res);
+    if (action === 'quote-detail') return handleQuoteDetail(req, res);
+    if (action === 'quote-action') return handleQuoteAction(req, res);
+    if (action === 'products') return handleProducts(req, res);
+    if (action === 'product-save') return handleProductSave(req, res);
+    if (action === 'client-properties') return handleClientProperties(req, res);
+    if (action === 'quote-create') return handleQuoteCreate(req, res);
+    if (action === 'quote-link') return handleQuoteLink(req, res);
+    if (action === 'quote-update') return handleQuoteUpdate(req, res);
+    if (action === 'quote-templates') return handleQuoteTemplates(req, res);
+    if (action === 'quote-convert') return handleQuoteConvert(req, res);
+    if (action === 'quote-hub-status') return handleQuoteHubStatus(req, res);
+    if (action === 'quote-responses') return handleQuoteResponses(req, res);
+    if (action === 'quote-page') return handleQuotePage(req, res);
+    if (action === 'quote-sent') return handleQuoteSent(req, res);
     if (action === 'request-detail') return handleRequestDetail(req, res);
     if (action === 'request-action') return handleRequestAction(req, res);
     if (action === 'leads') return handleLeads(req, res);
