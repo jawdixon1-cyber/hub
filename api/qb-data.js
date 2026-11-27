@@ -177,7 +177,8 @@ export default async function handler(req, res) {
     if (action === 'profit-and-loss') {
       const startDate = req.query.startDate || startOfYear();
       const endDate = req.query.endDate || today();
-      const data = await qbFetch(tokens, `reports/ProfitAndLoss?start_date=${startDate}&end_date=${endDate}&minorversion=65`);
+      const by = req.query.by === 'Month' ? '&summarize_column_by=Month' : '';
+      const data = await qbFetch(tokens, `reports/ProfitAndLoss?start_date=${startDate}&end_date=${endDate}${by}&minorversion=65`);
       return res.json(data);
     }
 

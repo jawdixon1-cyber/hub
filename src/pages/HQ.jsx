@@ -83,7 +83,7 @@ export default function HQ({ progress = {} }) {
       { key: 'installs', country: 'field', label: '🎄 Installs', big: upcoming.length, line: late ? `${late} late in Jobber` : 'next 7 days', status: late ? 'red' : upcoming.length ? 'green' : 'blue', path: '/lights-quoter?view=jobs' },
       { key: 'lquotes', country: 'sales', label: '🎄 Lights quotes', big: sent.length, line: changes ? `${changes} want changes` : follow ? `${follow} need a follow-up` : 'waiting on them', status: changes ? 'red' : follow ? 'yellow' : 'green', path: '/lights-quoter?view=quotes' },
       { key: 'materials', country: 'field', label: '🎄 Materials', big: otw.length, line: otw.length ? 'orders on the way' : 'nothing on the way', status: 'blue', path: '/lights-quoter?view=supplies' },
-      { key: 'land', country: 'sales', label: '🌿 Landscape quotes', big: landOpen.length, line: landFollow ? `${landFollow} need a follow-up` : 'quotes out', status: landFollow ? 'yellow' : 'green', path: '/landscaping' },
+      { key: 'land', country: 'sales', label: '🌿 Landscape quotes', big: landOpen.length, line: landFollow ? `${landFollow} need a follow-up` : 'quotes out', status: landFollow ? 'yellow' : 'green', path: '/landscaping?tab=quoter' },
       // CRM
       { key: 'requests', country: 'sales', label: 'Requests', big: newReqs.length, line: overdue ? `${overdue} overdue` : waiting2d ? `${waiting2d} waiting 2d+` : 'new requests', status: overdue ? 'red' : waiting2d ? 'yellow' : 'green', path: '/leads' },
       { key: 'today', country: 'field', label: 'Jobs today', big: visits.length, line: visits.length ? `${doneToday} done` : 'no visits', status: visits.length && doneToday < visits.length ? 'yellow' : 'green', path: '/schedule' },
@@ -273,6 +273,7 @@ export default function HQ({ progress = {} }) {
     { label: 'Start · 8 AM', path: '/workflow/start', done: progress.startDone, total: progress.startTotal },
     { label: 'End · 5 PM', path: '/workflow/end', done: progress.endDone, total: progress.endTotal },
     { label: 'Plan', path: '/plan' },
+    { label: 'Leads', path: '/work-leads', count: (leads?.requests || []).filter((r) => r.status === 'new').length },
   ];
 
   const red = buildings.filter((b) => b.status === 'red').length;
@@ -282,13 +283,15 @@ export default function HQ({ progress = {} }) {
     <>
         <div className="p-4 border-b border-white/10">
           <p className="text-[10px] font-black tracking-widest text-[#00DF00]">MY DAY</p>
-          <div className="grid grid-cols-3 gap-2 mt-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
             {day.map((d) => {
               const allDone = d.total > 0 && d.done === d.total;
               return (
                 <button key={d.path} onClick={() => navigate(d.path)} className="rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 px-2 py-2 text-left cursor-pointer">
                   <span className="block text-[11px] font-bold text-white/70">{d.label}</span>
-                  <span className="block text-lg font-black" style={{ color: d.total == null ? '#fff' : allDone ? '#00DF00' : '#FACC15' }}>{d.total == null ? 'Open →' : `${d.done || 0}/${d.total}`}</span>
+                  {d.count != null
+                    ? <span className="block text-lg font-black" style={{ color: d.count ? '#FACC15' : '#00DF00' }}>{leads ? `${d.count} new` : '…'}</span>
+                    : <span className="block text-lg font-black" style={{ color: d.total == null ? '#fff' : allDone ? '#00DF00' : '#FACC15' }}>{d.total == null ? 'Open →' : `${d.done || 0}/${d.total}`}</span>}
                 </button>
               );
             })}
@@ -331,7 +334,7 @@ export default function HQ({ progress = {} }) {
 
   if (!globe) {
     return (
-      <div className="-m-4 sm:-m-6 min-h-[calc(100vh-56px)] p-4 sm:p-8" style={{ background: '#07090a' }}>
+      <div className="-m-4 sm:-m-6 min-h-[calc(100vh-56px)] p-4 sm:p-8 bg-surface">
         <div className="max-w-3xl mx-auto">
           <div className="flex items-end justify-between gap-3 mb-4">
             <div>
@@ -340,7 +343,7 @@ export default function HQ({ progress = {} }) {
             </div>
             <button onClick={() => setGlobe(true)} className="text-xs text-white/40 hover:text-white/70 cursor-pointer">Show globe</button>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-black/60 overflow-hidden">{panelBody}</div>
+          <div className="rounded-2xl border border-white/10 bg-card overflow-hidden">{panelBody}</div>
         </div>
       </div>
     );

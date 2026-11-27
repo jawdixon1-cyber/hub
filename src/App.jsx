@@ -98,6 +98,9 @@ const FinanceHub = lazy(() => import('./pages/FinanceHub'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
 const MowingSchedule = lazy(() => import('./pages/MowingSchedule'));
 const Finance = lazy(() => import('./pages/Finance'));
+const PnL = lazy(() => import('./pages/PnL'));
+const JobberSchedule = lazy(() => import('./pages/JobberSchedule'));
+const RequestsList = lazy(() => import('./pages/RequestsList'));
 const LaborEfficiency = lazy(() => import('./pages/LaborEfficiency'));
 const Sales = lazy(() => import('./pages/Sales'));
 const Marketing = lazy(() => import('./pages/Marketing'));
@@ -158,7 +161,7 @@ const OWNER_TOOLS_PINNED = [
   { id: 'social', path: '/social', label: 'Social media', icon: Video },
 ];
 const OWNER_TOOLS_MORE = [
-  { id: 'payroll', path: '/payroll', label: 'Finance', icon: DollarSign },
+  { id: 'payroll', path: '/payroll', label: 'Payroll', icon: DollarSign },
   { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
   { id: 'guides', path: '/playbooks', label: 'Playbooks', icon: BookOpen },
   { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
@@ -924,17 +927,19 @@ function AppShell() {
             const groups = [
               { id: 'today', label: 'Today', items: [
                 { id: 'o-hq', path: '/hq', label: 'HQ', icon: Globe },
+                ...(!hideSchedule ? [{ id: 'schedule', path: '/schedule', label: 'Schedule', icon: CalendarDays }] : []),
               ] },
               { id: 'sales', label: 'Sales', items: [
                 { id: 'landscaping', path: '/landscaping', label: 'Landscaping', icon: Trees },
                 { id: 'lights', path: '/lights-quoter', label: 'Christmas Lights', icon: Lightbulb },
               ] },
-              ...(!hideBuilding ? [{ id: 'building', label: 'Building (our CRM)', items: (() => { const ops = OPERATIONS_ITEMS.filter((item) => !(item.id === 'schedule' && hideSchedule)); return [ops[0], { id: 'o-requests', path: '/leads', label: 'Requests', icon: Inbox }, ...ops.slice(1)]; })() }] : []),
+              ...(!hideBuilding ? [{ id: 'building', label: 'Building (our CRM)', items: (() => { const ops = OPERATIONS_ITEMS.filter((item) => item.id !== 'schedule'); return [ops[0], { id: 'o-requests', path: '/leads', label: 'Requests', icon: Inbox }, ...ops.slice(1)]; })() }] : []),
               { id: 'marketing', label: 'Marketing', items: [
                 { id: 'social', path: '/social', label: 'Social media', icon: Video },
               ] },
               { id: 'money', label: 'Money', items: [
-                { id: 'payroll', path: '/payroll', label: 'Finance', icon: DollarSign },
+                { id: 'pnl', path: '/pnl', label: 'P&L', icon: TrendingUp },
+                { id: 'payroll', path: '/payroll', label: 'Payroll', icon: DollarSign },
                 { id: 'timesheets', path: '/timesheets', label: 'Timesheets', icon: Clock },
                 { id: 'mileage', path: '/mileage', label: 'Mileage', icon: Gauge },
               ] },
@@ -942,6 +947,7 @@ function AppShell() {
                 { id: 'hiring', path: '/hiring', label: 'Hiring', icon: UserPlus2 },
               ] },
               { id: 'old', label: 'Old / ideas', closed: true, items: [
+                { id: 'schedule-old', path: '/schedule-old', label: 'Old schedule', icon: CalendarDays },
                 { id: 'guides', path: '/playbooks', label: 'Playbooks', icon: BookOpen },
                 { id: 'equipment', path: '/equipment', label: 'Equipment', icon: Wrench },
                 { id: 'suppliers', path: '/suppliers', label: 'Suppliers', icon: Truck },
@@ -1020,7 +1026,7 @@ function AppShell() {
         </button>
       )}
       {/* ─── Desktop Sidebar ─── */}
-      <aside className={`hidden lg:flex fixed left-0 top-0 h-full ${sidebarCollapsed ? 'w-14' : 'w-52'} bg-surface-alt border-r border-border-subtle z-40 flex-col transition-all duration-200`}>
+      <aside className={`hidden lg:flex fixed left-0 top-0 h-full ${sidebarCollapsed ? 'w-14' : 'w-52'} bg-sidebar border-r border-border-subtle z-40 flex-col transition-all duration-200`}>
         {/* Logo */}
         <div className={`h-16 flex items-center gap-2 ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'} border-b border-border-subtle shrink-0`}>
           <img src={'https://assets.cdn.filesafe.space/Umlo2UnfqbijiGqNU6g2/media/6a0c9c767f72486315221b19.png'} alt="Hey Jude's Lawn Care" className={`shrink-0 ${sidebarCollapsed ? 'h-10 w-10 object-contain' : 'h-10'}`} />
@@ -1060,7 +1066,7 @@ function AppShell() {
       </aside>
 
       {/* ─── Mobile Header ─── */}
-      <nav className="lg:hidden bg-card border-b border-border-default sticky top-0 z-40">
+      <nav className="lg:hidden bg-sidebar border-b border-border-default sticky top-0 z-40">
         <div className="flex items-center justify-between h-14 px-4">
           <button onClick={() => setMobileSidebarOpen(true)} className="p-1.5 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">
             <Menu size={22} className="text-secondary" />
@@ -1093,7 +1099,7 @@ function AppShell() {
           className={`absolute inset-0 bg-black/50 transition-opacity duration-200 ${mobileSidebarOpen ? 'opacity-100' : 'opacity-0'}`}
           onClick={() => setMobileSidebarOpen(false)}
         />
-        <aside className={`absolute left-0 top-0 h-full w-72 bg-surface-alt shadow-2xl flex flex-col transition-transform duration-200 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <aside className={`absolute left-0 top-0 h-full w-72 bg-sidebar shadow-2xl flex flex-col transition-transform duration-200 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <button
             onClick={() => setMobileSidebarOpen(false)}
             className="absolute top-4 right-4 p-1 text-muted hover:text-primary cursor-pointer z-10"
@@ -1129,7 +1135,7 @@ function AppShell() {
       {/* ─── Main Content ─── */}
       <main className={`${sidebarCollapsed ? 'lg:ml-14' : 'lg:ml-52'} transition-all duration-200`}>
         {/* Top app bar — biz name · search · icons (Jobber-style) */}
-        <div className="hidden lg:block sticky top-0 z-30 bg-card border-b border-border-subtle">
+        <div className="hidden lg:block sticky top-0 z-30 bg-sidebar border-b border-border-subtle">
           <div className="flex items-center gap-4 px-4 py-2.5">
             <p className="text-sm font-medium text-muted truncate">Hey Jude's</p>
             <div className="ml-auto flex items-center gap-2">
@@ -1203,16 +1209,19 @@ function AppShell() {
                 <Route path="/quotes" element={<Quotes />} />
                 <Route path="/quotes/:quoteNumber" element={<Quotes />} />
                 <Route path="/messages" element={<Messages />} />
-                <Route path="/leads" element={ownerMode ? <div className="max-w-5xl mx-auto space-y-4"><h1 className="text-2xl font-bold text-primary">Requests</h1><LeadsStep /></div> : <Navigate to="/" replace />} />
+                <Route path="/leads" element={ownerMode ? <div className="max-w-[1500px] mx-auto space-y-4"><h1 className="text-2xl font-bold text-primary">Requests</h1><RequestsList /></div> : <Navigate to="/" replace />} />
+                <Route path="/work-leads" element={ownerMode ? <div className="max-w-5xl mx-auto space-y-4"><h1 className="text-2xl font-bold text-primary">Work new leads</h1><LeadsStep /></div> : <Navigate to="/" replace />} />
                 <Route path="/requests" element={<Requests />} />
                 <Route path="/requests/:requestNumber" element={<Requests />} />
-                <Route path="/schedule" element={<Schedule />} />
+                <Route path="/schedule" element={ownerMode ? <JobberSchedule /> : <Schedule />} />
+                <Route path="/schedule-old" element={<Schedule />} />
                 <Route path="/jobs" element={<Jobs />} />
                 <Route path="/invoices" element={<Invoices />} />
                 <Route path="/payments" element={<Payments />} />
                 <Route path="/marketing" element={<Marketing />} />
                 <Route path="/hiring" element={<Hiring />} />
                 <Route path="/finance" element={<Finance />} />
+                <Route path="/pnl" element={<PnL />} />
                 <Route path="/labor" element={<LaborEfficiency />} />
                 <Route path="/insights" element={<Insights />} />
                 <Route path="/insights/clients" element={<InsightsRecurringClients />} />

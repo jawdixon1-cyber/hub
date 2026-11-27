@@ -1156,7 +1156,11 @@ button:disabled{opacity:.6}
     $('err').textContent=''; b.disabled=true; b.textContent='Sending…';
     fetch('/api/app-state?key=lights-form',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
       .then(function(r){return r.json().then(function(j){ if(!r.ok) throw new Error(j.error||'Something went wrong'); return j; })})
-      .then(function(){ $('form').hidden=true; $('ok').hidden=false; if(document.documentElement.classList.contains('emb')){ try{ parent.postMessage({hjForm:'top'},'*'); }catch(e){} } else window.scrollTo(0,0); })
+      .then(function(){ $('form').hidden=true; $('ok').hidden=false;
+        // Meta Pixel: count this as a Lead (Facebook ads optimize on it). Embedded on the website → tell the page too.
+        try{ if(window.fbq) window.fbq('track','Lead',{content_name:'Christmas lights rough estimate'}); }catch(e){}
+        try{ parent.postMessage({hjForm:'lead'},'*'); }catch(e){}
+        if(document.documentElement.classList.contains('emb')){ try{ parent.postMessage({hjForm:'top'},'*'); }catch(e){} } else window.scrollTo(0,0); })
       .catch(function(e){ $('err').textContent=e.message+' You can also text Jude at (803) 843-0699.'; b.disabled=false; b.textContent='Send me my rough estimate →'; });
   });
 })();
@@ -1187,7 +1191,12 @@ async function handleLightsForm(req, res) {
   if (req.method === 'GET') {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300');
-    return res.status(200).send(LIGHTS_FORM_HTML);
+    // Meta Pixel (Facebook ads): set META_PIXEL_ID on the server to turn it on. PageView on open, Lead on submit.
+    const pixel = String(process.env.META_PIXEL_ID || '1884094636032408').trim(); // "Hey Jude's Website" dataset
+    const html = /^\d{6,20}$/.test(pixel)
+      ? LIGHTS_FORM_HTML.replace('</head>', `<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixel}');fbq('track','PageView');</script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=${pixel}&ev=PageView&noscript=1"/></noscript></head>`)
+      : LIGHTS_FORM_HTML;
+    return res.status(200).send(html);
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const b = req.body || {};

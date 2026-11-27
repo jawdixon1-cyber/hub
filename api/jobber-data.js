@@ -2332,6 +2332,164 @@ const fmtAddress = (a) => {
   return [street, a.city, [a.province, a.postalCode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 };
 
+// ── Requests list (Jobber → Hub copy) ──
+// Every Jobber request, saved in app_state so the Requests page opens instantly; refreshes every 5 min or on ?refresh=1.
+const REQS_KEY = 'jobber-requests';
+const REQS_TTL = 5 * 60 * 1000;
+let reqsCache = null; // { data, time }
+async function handleRequestsList(req, res) {
+  const force = req.query.refresh === '1';
+  if (!force && reqsCache && Date.now() - reqsCache.time < REQS_TTL) return res.json(reqsCache.data);
+  const db = getSupabaseAdmin();
+  if (!force && !reqsCache) {
+    try {
+      const { data } = await db.from('app_state').select('value').eq('key', REQS_KEY).maybeSingle();
+      if (data?.value?.updatedAt && Date.now() - new Date(data.value.updatedAt).getTime() < REQS_TTL) {
+        reqsCache = { data: data.value, time: new Date(data.value.updatedAt).getTime() };
+        return res.json(data.value);
+      }
+    } catch { /* fall through to Jobber */ }
+  }
+  try {
+    const nodes = [];
+    let after = null;
+    for (let i = 0; i < 30; i++) {
+      const d = await jobberQueryRetry(`{ requests(first: 50${after ? `, after: "${after}"` : ''}) { nodes { id title requestStatus createdAt jobberWebUri phone email source
+        client { id name phones { number primary } emails { address primary } }
+        property { address { street1 street2 city province postalCode } }
+        assessment { startAt completedAt } } pageInfo { hasNextPage endCursor } } }`);
+      nodes.push(...(d.requests?.nodes || []));
+      if (!d.requests?.pageInfo?.hasNextPage) break;
+      after = d.requests.pageInfo.endCursor;
+    }
+    const pick = (list, k) => (list || []).find((x) => x.primary)?.[k] || list?.[0]?.[k] || '';
+    const requests = nodes.map((r) => ({
+      id: r.id,
+      title: r.title || '',
+      status: r.requestStatus,
+      createdAt: r.createdAt,
+      url: r.jobberWebUri,
+      clientId: r.client?.id || null,
+      client: r.client?.name || '',
+      phone: r.phone || pick(r.client?.phones, 'number'),
+      email: r.email || pick(r.client?.emails, 'address'),
+      address: fmtAddress(r.property?.address),
+      assessmentAt: r.assessment?.startAt || null,
+      assessmentDoneAt: r.assessment?.completedAt || null,
+      source: r.source || '',
+    }));
+    const payload = { requests, updatedAt: new Date().toISOString() };
+    reqsCache = { data: payload, time: Date.now() };
+    // Save (update the existing row; first time insert with the org id app_state rows use).
+    try {
+      const { data: row } = await db.from('app_state').select('key').eq('key', REQS_KEY).maybeSingle();
+      if (row) await db.from('app_state').update({ value: payload, updated_at: payload.updatedAt }).eq('key', REQS_KEY);
+      else {
+        const { data: org } = await db.from('app_state').select('org_id').not('org_id', 'is', null).limit(1).maybeSingle();
+        await db.from('app_state').insert({ key: REQS_KEY, value: payload, org_id: org?.org_id, updated_at: payload.updatedAt });
+      }
+    } catch (e) { console.warn('[requests-list] save failed', e.message); }
+    return res.json(payload);
+  } catch (err) {
+    console.error('[requests-list]', err.message);
+    if (reqsCache) return res.json({ ...reqsCache.data, stale: true });
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+// ── One request, full detail (Hub's request page) + the actions Jobber's buttons do ──
+async function ownerOnly(req) {
+  const db = getSupabaseAdmin();
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const { data: who } = token ? await db.auth.getUser(token) : { data: null };
+  return who?.user?.user_metadata?.role === 'owner';
+}
+async function handleRequestDetail(req, res) {
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const id = String(req.query.id || '');
+  if (!id || id.length > 200) return res.status(400).json({ error: 'id required' });
+  try {
+    const d = await jobberQueryRetry(`query($id: EncodedId!) { request(id: $id) {
+      id title requestStatus createdAt jobberWebUri source phone email
+      salesperson { name { full } }
+      client { id name phones { number primary } emails { address primary } }
+      property { address { street1 street2 city province postalCode } }
+      assessment { id startAt endAt completedAt isComplete instructions }
+      requestDetails { form { sections(first: 8) { nodes { label items(first: 20) { nodes { label ... on FormTextInput { answer } } } } } } }
+      notes(first: 30) { nodes { ... on RequestNote { id message createdAt } ... on ClientNote { id message createdAt } } }
+      quotes(first: 5) { nodes { id quoteNumber quoteStatus jobberWebUri amounts { total } } }
+      jobs(first: 5) { nodes { id jobNumber jobStatus jobberWebUri total } }
+    } }`, { id });
+    const r = d.request;
+    if (!r) return res.status(404).json({ error: 'Request not found in Jobber' });
+    const pick = (list, k) => (list || []).find((x) => x.primary)?.[k] || list?.[0]?.[k] || '';
+    let hubClientId = null;
+    if (r.client?.id) {
+      const { data: hc, error: hcErr } = await getSupabaseAdmin().from('clients').select('id').eq('external_id', r.client.id).limit(1);
+      if (hcErr) console.warn('[request-detail] client lookup', hcErr.message);
+      hubClientId = hc?.[0]?.id || null;
+    }
+    res.json({
+      id: r.id, title: r.title || '', status: r.requestStatus, createdAt: r.createdAt, url: r.jobberWebUri, source: r.source || '',
+      salesperson: r.salesperson?.name?.full || '',
+      client: r.client?.name || '', clientId: r.client?.id || null, hubClientId,
+      phone: r.phone || pick(r.client?.phones, 'number'), email: r.email || pick(r.client?.emails, 'address'),
+      address: fmtAddress(r.property?.address),
+      assessment: r.assessment || null,
+      answers: (r.requestDetails?.form?.sections?.nodes || []).map((sec) => ({ label: sec.label || '', items: (sec.items?.nodes || []).map((it) => ({ label: it.label || '', answer: it.answer ?? '' })) })),
+      notes: (r.notes?.nodes || []).filter((n) => n?.id).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+      quotes: r.quotes?.nodes || [], jobs: r.jobs?.nodes || [],
+    });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+}
+async function handleRequestAction(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (!(await ownerOnly(req))) return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
+  const { id, op } = req.body || {};
+  if (!id || String(id).length > 200) return res.status(400).json({ error: 'id required' });
+  const run = async (q, vars, key) => {
+    const d = await jobberQuery(q, vars);
+    const e = d?.[key]?.userErrors?.[0]?.message;
+    if (e) throw Object.assign(new Error(e), { status: 422 });
+    return d[key];
+  };
+  try {
+    if (op === 'archive' || op === 'unarchive') {
+      const m = op === 'archive' ? 'requestArchive' : 'requestUnarchive';
+      await run(`mutation($id: EncodedId!) { ${m}(requestId: $id) { userErrors { message } } }`, { id }, m);
+    } else if (op === 'note') {
+      const message = String(req.body.message || '').trim().slice(0, 5000);
+      if (!message) return res.status(400).json({ error: 'Note is empty' });
+      await run(`mutation($id: EncodedId!, $m: String!) { requestCreateNote(requestId: $id, input: { message: $m }) { userErrors { message } } }`, { id, m: message }, 'requestCreateNote');
+    } else if (op === 'title') {
+      const title = String(req.body.title || '').trim().slice(0, 255);
+      await run(`mutation($id: EncodedId!, $t: String!) { requestEdit(requestId: $id, input: { title: $t }) { userErrors { message } } }`, { id, t: title }, 'requestEdit');
+    } else if (op === 'assessment') {
+      // date YYYY-MM-DD, time HH:MM (local, America/New_York), minutes long
+      const date = String(req.body.date || ''); const time = String(req.body.time || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return res.status(400).json({ error: 'Pick a date and time' });
+      const mins = Math.min(Math.max(Number(req.body.minutes) || 60, 15), 480);
+      const [h, mi] = time.split(':').map(Number);
+      const endM = h * 60 + mi + mins;
+      const endTime = `${String(Math.floor(endM / 60) % 24).padStart(2, '0')}:${String(endM % 60).padStart(2, '0')}`;
+      const tz = 'America/New_York';
+      await run(`mutation($id: EncodedId!, $input: AssessmentCreateInput!) { assessmentCreate(requestId: $id, input: $input) { userErrors { message } } }`,
+        { id, input: { instructions: String(req.body.instructions || '').slice(0, 2000) || undefined, schedule: { startAt: { date, time: `${time}:00`, timezone: tz }, endAt: { date, time: `${endTime}:00`, timezone: tz } } } }, 'assessmentCreate');
+    } else if (op === 'assessment-complete') {
+      const aid = String(req.body.assessmentId || '');
+      await run(`mutation($a: EncodedId!) { assessmentComplete(assessmentId: $a) { userErrors { message } } }`, { a: aid }, 'assessmentComplete');
+    } else {
+      return res.status(400).json({ error: 'Unknown action' });
+    }
+    reqsCache = null; leadsCache = { at: 0, data: null };
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(err.status || 502).json({ error: err.message });
+  }
+}
+
 async function handlePlans(req, res) {
   if (plansCache && req.query.refresh !== '1' && Date.now() - plansCache.time < PLANS_TTL) return res.json(plansCache.data);
   const saved = plansCache ? null : await readSavedPlans();
@@ -2656,6 +2814,9 @@ export default async function handler(req, res) {
     if (action === 'ytd-revenue') return handleYTDRevenue(req, res);
     if (action === 'recurring-summary') return handleRecurringSummary(req, res);
     if (action === 'plans') return handlePlans(req, res);
+    if (action === 'requests-list') return handleRequestsList(req, res);
+    if (action === 'request-detail') return handleRequestDetail(req, res);
+    if (action === 'request-action') return handleRequestAction(req, res);
     if (action === 'leads') return handleLeads(req, res);
     if (action === 'lead-archive') return handleLeadArchive(req, res);
     if (action === 'client-push') return handleClientPush(req, res);

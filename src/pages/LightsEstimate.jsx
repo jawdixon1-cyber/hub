@@ -63,7 +63,9 @@ export default function LightsEstimate() {
   const [noTags, setNoTags] = useState(false); // hide the run # dots to see the lines
   const [hot, setHot] = useState(-1); // run highlighted on the photo
   // 'list' = table of everyone; 'edit' = one person's estimate. Opening from a lead's $ Range button (or a draft) goes straight to edit.
-  const [view, setView] = useState(() => (params.get('client') || params.get('phone') || (draft?.est?.client) ? 'edit' : 'list'));
+  // Always land on the list; an unsaved draft shows as a "Resume" bar instead of opening on its own.
+  const [view, setView] = useState(() => (params.get('client') || params.get('phone') ? 'edit' : 'list'));
+  const [resumable, setResumable] = useState(() => !params.get('client') && !params.get('phone') && !!draft?.est?.client);
   const [q, setQ] = useState('');
   const [jobber, setJobber] = useState([]); // Jobber clients matching what's typed
   const [jobberBusy, setJobberBusy] = useState(false);
@@ -99,11 +101,11 @@ export default function LightsEstimate() {
   const setRate = (k, v) => setEst((e) => ({ ...e, rates: { ...(e.rates || {}), [k]: v.replace(/[^\d.]/g, '') } }));
 
   const open = async (e) => {
-    setErr(''); setEst(e); setImgs({}); setDirtyImgs({}); setView('edit'); window.scrollTo(0, 0);
+    setResumable(false); setErr(''); setEst(e); setImgs({}); setDirtyImgs({}); setView('edit'); window.scrollTo(0, 0);
     setImgs(await getEstimateImages(e.id));
   };
-  const startNew = (prefill = {}) => { setErr(''); setEst({ ...BLANK, ...prefill }); setImgs({}); setDirtyImgs({}); setView('edit'); setQ(''); window.scrollTo(0, 0); };
-  const backToList = () => { setView('list'); refresh(); try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ } };
+  const startNew = (prefill = {}) => { setResumable(false); setErr(''); setEst({ ...BLANK, ...prefill }); setImgs({}); setDirtyImgs({}); setView('edit'); setQ(''); window.scrollTo(0, 0); };
+  const backToList = () => { setResumable(false); setView('list'); refresh(); try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ } };
   const fromJobber = (c) => startNew({ client: c.name || '', phone: c.phone || '', email: c.email || '', address: [c.address, c.city, [c.state, c.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') });
   const statusOf = (e) => (e.said ? ['✅ Wants consultation', 'text-emerald-600 dark:text-emerald-400']
     : e.declined ? ['❌ Not interested', 'text-rose-500']
@@ -287,6 +289,12 @@ I'm attaching 2 photos of the same house: the clean photo (edit this one) and a 
         const known = new Set(list.map((e) => String(e.client || '').toLowerCase()));
         return (
           <div className="space-y-3">
+            {resumable && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-2.5">
+                <p className="text-sm text-primary">Unfinished: <b>{est.client}</b>{est.address ? <span className="text-tertiary"> · {est.address}</span> : null}</p>
+                <button onClick={() => { setResumable(false); setView('edit'); window.scrollTo(0, 0); }} className="shrink-0 rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-bold text-black cursor-pointer">Resume</button>
+              </div>
+            )}
             <div className="relative">
               <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && q.trim() && !rows.length) startNew({ client: q.trim() }); }}
                 placeholder="Type a name to find someone or add a new person…" className="w-full rounded-xl border border-card-border bg-card px-4 py-3 text-base text-primary" />

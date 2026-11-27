@@ -8,6 +8,7 @@
   --color-card: #ffffff;           /* white */
   --color-surface-alt: #f3f4f6;   /* gray-100 */
   --color-surface-strong: #e5e7eb; /* gray-200 */
+  --color-sidebar: #f3f4f6;        /* gray-100 */
 
   --color-primary: #000000;        /* hj-black */
   --color-secondary: #1a1a1a;      /* near-black */
@@ -31,10 +32,12 @@
 
 /* ─── Dark mode ─── */
 .dark {
-  --color-surface: #0a0a0a;        /* near-black */
-  --color-card: #141414;           /* dark card */
-  --color-surface-alt: #1f1f1f;    /* neutral-900 */
-  --color-surface-strong: #2e2e2e; /* neutral-800 */
+  /* Jobber-style: darkest sidebar + top bar, lighter slate screen (2026-11-26) */
+  --color-sidebar: #121518;
+  --color-surface: #1d2125;        /* main screen */
+  --color-card: #252a2f;           /* cards */
+  --color-surface-alt: #2c3238;
+  --color-surface-strong: #3a4148;
 
   --color-primary: #ffffff;        /* hj-white */
   --color-secondary: #e5e5e5;      /* neutral-200 */
@@ -42,9 +45,9 @@
   --color-muted: #737373;          /* neutral-500 */
   --color-on-brand: #000000;       /* black on lime */
 
-  --color-border-subtle: #1f1f1f;  /* neutral-900 */
-  --color-border-default: #2e2e2e; /* neutral-800 */
-  --color-border-strong: #404040;  /* neutral-700 */
+  --color-border-subtle: #2f363c;
+  --color-border-default: #3a4148;
+  --color-border-strong: #4b535b;
 
   --color-brand-light: #1a2e00;    /* dark lime tint */
   --color-brand: #B0FF03;          /* hj-green */
@@ -58,6 +61,7 @@
 
 /* ─── Register tokens with Tailwind v4 ─── */
 @theme {
+  --color-sidebar: var(--color-sidebar);
   --color-surface: var(--color-surface);
   --color-card: var(--color-card);
   --color-surface-alt: var(--color-surface-alt);

@@ -343,6 +343,164 @@ async function build({ onlyToday = false } = {}) {
   return { workflow, today, duplicates: duplicates.map((x) => ({ id: x.id, client: x.client || x.title, crew: x.crew, url: x.url, jobNumber: x.jobNumber })), money, payments, requests, toInvoice, overdue: { items: lateItems, invoices: pastDue }, errors, at: new Date().toISOString() };
 }
 
+// ── Schedule range (Hub Schedule page): every visit, assessment, task and event between two dates ──
+const rangeCache = new Map(); // key → { at, data }
+const SCHED_TZ = 'America/New_York';
+// Jobber rate-limits by query cost: wait for the bucket to refill and try again.
+async function qRetry(q, vars) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await jobberQuery(q, vars); } catch (e) {
+      if (!/THROTTLED/i.test(e.message) || attempt >= 3) throw e;
+      await new Promise((ok) => setTimeout(ok, 2500 * (attempt + 1)));
+    }
+  }
+}
+async function pageAll(field, q) {
+  const out = [];
+  let after = null;
+  for (let i = 0; i < 10; i++) {
+    const d = await qRetry(q(after ? `, after: "${after}"` : ''));
+    out.push(...(d[field]?.nodes || []));
+    if (!d[field]?.pageInfo?.hasNextPage) break;
+    after = d[field].pageInfo.endCursor;
+  }
+  return out;
+}
+async function buildRange(startStr, days) {
+  const start = easternMidnight(startStr);
+  const end = new Date(easternMidnight(addDays(startStr, days)).getTime() - 1000);
+  const crew = 'assignedUsers(first: 6) { nodes { id name { full } } }';
+  const within = `{ startAt: { after: "${start.toISOString()}", before: "${end.toISOString()}" } }`;
+  const [visits, sched, tasks, unsched, users] = await Promise.all([
+    pageAll('visits', (a) => `{ visits(first: 100${a}, filter: ${within}) {
+      nodes { id title startAt endAt allDay isComplete ${crew} client { name } ${placeBits} job { id jobNumber jobType jobberWebUri } }
+      pageInfo { hasNextPage endCursor } } }`),
+    pageAll('scheduledItems', (a) => `{ scheduledItems(first: 100${a}, filter: { occursWithin: { startAt: "${start.toISOString()}", endAt: "${end.toISOString()}" } }) {
+      nodes { __typename id title startAt endAt allDay ${crew}
+        ... on Assessment { isComplete client { name } ${placeBits} request { id jobberWebUri } }
+        ... on Event { isComplete } }
+      pageInfo { hasNextPage endCursor } } }`),
+    pageAll('tasks', (a) => `{ tasks(first: 100${a}, filter: ${within}) { nodes { id title startAt endAt allDay isComplete ${crew} client { name } }
+      pageInfo { hasNextPage endCursor } } }`),
+    qRetry(`{ visits(first: 50, filter: { status: UNSCHEDULED }) { nodes { id title client { name } ${placeBits} job { id jobNumber jobType jobberWebUri } } } }`).catch(() => null),
+    qRetry('{ users(first: 30) { nodes { id name { full } status } } }').catch(() => null),
+  ]);
+  const base = (n, type) => ({
+    id: n.id, type, title: n.title || type, startAt: n.startAt, endAt: n.endAt, allDay: !!n.allDay, done: !!n.isComplete,
+    client: n.client?.name || null, address: addrOf(n.property),
+    lat: Number(n.property?.address?.coordinates?.latitudeString) || null, lng: Number(n.property?.address?.coordinates?.longitudeString) || null,
+    crew: (n.assignedUsers?.nodes || []).map((u) => ({ id: u.id, name: u.name?.full })),
+  });
+  const items = [
+    ...visits.map((n) => ({ ...base(n, 'Visit'), jobId: n.job?.id || null, jobNumber: n.job?.jobNumber || null, recurring: n.job?.jobType === 'RECURRING', url: n.job?.jobberWebUri || null })),
+    ...sched.filter((n) => n.__typename === 'Assessment' || n.__typename === 'Event')
+      .map((n) => ({ ...base(n, n.__typename), requestId: n.request?.id || null, url: n.request?.jobberWebUri || null })),
+    ...tasks.map((n) => base(n, 'Task')),
+  ];
+  const unscheduled = (unsched?.visits?.nodes || []).map((n) => ({
+    id: n.id, type: 'Visit', title: n.title || 'Visit', client: n.client?.name || null, address: addrOf(n.property),
+    jobId: n.job?.id || null, jobNumber: n.job?.jobNumber || null, recurring: n.job?.jobType === 'RECURRING', url: n.job?.jobberWebUri || null,
+  }));
+  const team = (users?.users?.nodes || []).filter((u) => u.status === 'ACTIVATED').map((u) => ({ id: u.id, name: u.name?.full }));
+  return { start: startStr, days, items, unscheduled, team, at: new Date().toISOString() };
+}
+
+// One visit, more detail for the popup.
+async function visitDetail(id) {
+  const d = await jobberQuery(`query($id: EncodedId!) { visit(id: $id) { id title instructions startAt endAt allDay isComplete
+    assignedUsers(first: 6) { nodes { id name { full } } }
+    client { id name phones { number primary } } ${placeBits}
+    lineItems(first: 20) { nodes { name quantity totalPrice } }
+    job { id jobNumber title jobType total jobberWebUri instructions } } }`, { id });
+  const v = d.visit;
+  if (!v) return null;
+  return {
+    id: v.id, title: v.title, instructions: v.instructions || v.job?.instructions || '', phone: phoneOf(v.client),
+    lineItems: (v.lineItems?.nodes || []).map((l) => ({ name: l.name, qty: l.quantity, total: l.totalPrice })),
+    job: v.job ? { id: v.job.id, number: v.job.jobNumber, title: v.job.title, total: v.job.total, url: v.job.jobberWebUri, recurring: v.job.jobType === 'RECURRING' } : null,
+  };
+}
+
+// Changes from the Schedule page → Jobber. Every write clears the range cache so the next load is fresh.
+const local = (date, time) => ({ date, time: `${time}:00`, timezone: SCHED_TZ });
+const isoLocal = (date, time) => { // Eastern wall clock → ISO instant
+  const mid = easternMidnight(date);
+  const [h, m] = time.split(':').map(Number);
+  return new Date(mid.getTime() + (h * 60 + m) * 60000).toISOString();
+};
+const endOf = (time, minutes) => { const t = time.split(':').map(Number); const e = t[0] * 60 + t[1] + minutes; return `${String(Math.min(23, Math.floor(e / 60))).padStart(2, '0')}:${String(e >= 24 * 60 ? 59 : e % 60).padStart(2, '0')}`; };
+async function scheduleAction(b) {
+  const run = async (q, vars, key) => {
+    const d = await jobberQuery(q, vars);
+    const e = d?.[key]?.userErrors?.[0]?.message;
+    if (e) throw Object.assign(new Error(e), { status: 422 });
+    return d[key];
+  };
+  const okDate = (x) => /^\d{4}-\d{2}-\d{2}$/.test(x || '');
+  const okTime = (x) => /^\d{2}:\d{2}$/.test(x || '');
+  const mins = Math.min(Math.max(Number(b.minutes) || 60, 15), 12 * 60);
+  switch (b.op) {
+    case 'visit-move': {
+      if (!okDate(b.date)) throw Object.assign(new Error('date required'), { status: 400 });
+      const input = b.allDay || !okTime(b.time)
+        ? { startAt: { date: b.date, timezone: SCHED_TZ }, endAt: { date: b.date, timezone: SCHED_TZ } }
+        : { startAt: local(b.date, b.time), endAt: local(b.date, endOf(b.time, mins)) };
+      return run('mutation($id: EncodedId!, $input: VisitEditScheduleInput!) { visitEditSchedule(id: $id, input: $input) { userErrors { message } } }', { id: b.id, input }, 'visitEditSchedule');
+    }
+    case 'visit-complete':
+      return run('mutation($id: EncodedId!) { visitComplete(visitId: $id, input: {}) { userErrors { message } } }', { id: b.id }, 'visitComplete');
+    case 'visit-uncomplete':
+      return run('mutation($id: EncodedId!) { visitUncomplete(visitId: $id) { userErrors { message } } }', { id: b.id }, 'visitUncomplete');
+    case 'visit-assign':
+      return run('mutation($id: EncodedId!, $ids: [EncodedId!]!) { visitEditAssignedUsers(visitId: $id, input: { assignedUserIds: $ids }) { userErrors { message } } }', { id: b.id, ids: (b.userIds || []).slice(0, 10) }, 'visitEditAssignedUsers');
+    case 'assessment-move': {
+      if (!okDate(b.date) || !okTime(b.time)) throw Object.assign(new Error('date and time required'), { status: 400 });
+      return run('mutation($id: EncodedId!, $input: AssessmentEditInput!) { assessmentEdit(assessmentId: $id, input: $input) { userErrors { message } } }',
+        { id: b.id, input: { schedule: { startAt: local(b.date, b.time), endAt: local(b.date, endOf(b.time, mins)) } } }, 'assessmentEdit');
+    }
+    case 'assessment-complete':
+      return run('mutation($id: EncodedId!) { assessmentComplete(assessmentId: $id) { userErrors { message } } }', { id: b.id }, 'assessmentComplete');
+    case 'assessment-uncomplete':
+      return run('mutation($id: EncodedId!) { assessmentUncomplete(assessmentId: $id) { userErrors { message } } }', { id: b.id }, 'assessmentUncomplete');
+    case 'task-move': case 'task-create': case 'event-create': {
+      if (!okDate(b.date)) throw Object.assign(new Error('date required'), { status: 400 });
+      const allDay = !!b.allDay || !okTime(b.time);
+      const startAt = allDay ? easternMidnight(b.date).toISOString() : isoLocal(b.date, b.time);
+      const endAt = allDay ? new Date(easternMidnight(addDays(b.date, 1)).getTime() - 1000).toISOString() : isoLocal(b.date, endOf(b.time, mins));
+      if (b.op === 'task-move') {
+        return run('mutation($id: EncodedId!, $input: TaskEditInput!) { taskEdit(taskId: $id, input: $input) { userErrors { message } } }', { id: b.id, input: { startAt, endAt, allDay } }, 'taskEdit');
+      }
+      const title = String(b.title || '').trim().slice(0, 200);
+      if (!title) throw Object.assign(new Error('Give it a title'), { status: 400 });
+      if (b.op === 'event-create') {
+        return run('mutation($input: EventCreateInput!) { eventCreate(input: $input) { userErrors { message } } }', { input: { title, startAt, endAt, allDay } }, 'eventCreate');
+      }
+      const input = { title, startAt, endAt, allDay, ...(b.instructions ? { instructions: String(b.instructions).slice(0, 2000) } : {}), ...(b.assignedTo ? { assignedTo: b.assignedTo } : {}) };
+      return run('mutation($input: TaskCreateInput!) { taskCreate(input: $input) { task { id } userErrors { message } } }', { input }, 'taskCreate');
+    }
+    case 'visit-create': {
+      if (!okDate(b.date) || !b.jobId) throw Object.assign(new Error('job and date required'), { status: 400 });
+      const schedule = b.allDay || !okTime(b.time)
+        ? { startAt: { date: b.date, timezone: SCHED_TZ }, endAt: { date: b.date, timezone: SCHED_TZ } }
+        : { startAt: local(b.date, b.time), endAt: local(b.date, endOf(b.time, mins)) };
+      const v = { schedule, ...(b.title ? { title: String(b.title).slice(0, 200) } : {}) };
+      return run('mutation($j: EncodedId!, $in: VisitCreateInput!) { visitCreate(jobId: $j, input: $in) { createdVisits { id } userErrors { message } } }', { j: b.jobId, in: { visits: [v] } }, 'visitCreate');
+    }
+    case 'event-move': {
+      // Jobber's generic "move any appointment" action (works for events, which have no edit action of their own).
+      if (!okDate(b.date)) throw Object.assign(new Error('date required'), { status: 400 });
+      const input = b.allDay || !okTime(b.time)
+        ? { scheduleAllDay: { startDate: b.date, endDate: b.date, timezone: SCHED_TZ } }
+        : { schedule: { startAt: `${b.date}T${b.time}:00`, endAt: `${b.date}T${endOf(b.time, mins)}:00`, timezone: SCHED_TZ } };
+      return run('mutation($id: EncodedId!, $in: AppointmentEditScheduleInput!) { appointmentEditSchedule(appointmentId: $id, input: $in) { userErrors { message } } }', { id: b.id, in: input }, 'appointmentEditSchedule');
+    }
+    case 'task-delete':
+      return run('mutation($ids: [EncodedId!]!) { taskDelete(taskIds: $ids) { userErrors { message } } }', { ids: [b.id] }, 'taskDelete');
+    default:
+      throw Object.assign(new Error('Unknown action'), { status: 400 });
+  }
+}
+
 export default async function handler(req, res) {
   const db = getSupabaseAdmin();
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -369,6 +527,36 @@ export default async function handler(req, res) {
   }
   if (role !== 'owner') return res.status(401).json({ error: 'Log in to the Hub as the owner first.' });
 
+  if (req.method === 'POST' && req.query?.schedule) {
+    try {
+      const out = await scheduleAction(req.body || {});
+      rangeCache.clear(); cache = { at: 0, data: null };
+      return res.json({ ok: true, out });
+    } catch (err) {
+      return res.status(err.status || 502).json({ error: err.message });
+    }
+  }
+  if (req.query?.visit) {
+    try { const v = await visitDetail(String(req.query.visit)); return v ? res.json(v) : res.status(404).json({ error: 'Visit not found' }); }
+    catch (err) { return res.status(502).json({ error: err.message }); }
+  }
+  if (req.query?.range) {
+    const startStr = String(req.query.range);
+    const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 42);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startStr)) return res.status(400).json({ error: 'range=YYYY-MM-DD' });
+    const key = `${startStr}:${days}`;
+    const hit = rangeCache.get(key);
+    if (!req.query.fresh && hit && Date.now() - hit.at < TTL) return res.json({ ...hit.data, cached: true });
+    try {
+      const data = await buildRange(startStr, days);
+      rangeCache.set(key, { at: Date.now(), data });
+      return res.json(data);
+    } catch (err) {
+      if (hit) return res.json({ ...hit.data, cached: true, stale: true });
+      return res.status(502).json({ error: /THROTTLED/i.test(err.message) ? 'Jobber is busy (rate limit). Try again in a minute.' : err.message });
+    }
+  }
+
   if (!req.query?.fresh && cache.data && Date.now() - cache.at < TTL) return res.json({ ...cache.data, cached: true });
   try {
     const data = await build();
@@ -386,4 +574,4 @@ export default async function handler(req, res) {
   }
 }
 
-export { build as buildJobberToday };
+export { build as buildJobberToday, buildRange, scheduleAction, visitDetail };

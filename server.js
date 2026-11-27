@@ -64,7 +64,7 @@ app.post('/api/lights-measure', lightsMeasure);
 app.all('/api/quo', quoHandler);
 app.all('/api/gmail', gmailHandler);
 app.get('/api/gmail-callback', gmailHandler);
-app.get('/api/jobber-today', jobberTodayHandler);
+app.all('/api/jobber-today', jobberTodayHandler);
 app.all('/api/imessage', imessageHandler);
 app.get('/api/plan-day', planDayHandler);
 app.post('/api/plan-ai', planAiHandler);
